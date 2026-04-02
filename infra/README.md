@@ -4,7 +4,7 @@
 
 ## What belongs here
 - Dockerfiles and local compose files
-- deployment manifests for platforms such as Render
+- deployment notes and support files for platforms such as Render
 - environment templates and hosting notes
 - scripts or helpers for local and remote environments
 
@@ -18,4 +18,4 @@
 - Platform-specific configuration must stay in `infra/`.
 - Application code must depend on abstract configuration, not on a hosting provider.
 - A service such as Render is an execution target, not a domain dependency.
-
+- The default Render blueprint lives at the repository root as `render.yaml` because Render expects that location by default.

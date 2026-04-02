@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
     qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(
@@ -26,4 +27,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

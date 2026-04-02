@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: starter
     dockerfilePath: ./infra/docker/server.Dockerfile
+    dockerContext: .
     autoDeploy: false
     envVars:
       - key: APP_ENV
@@ -23,6 +24,8 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
         sync: false
       - key: LOG_LEVEL
         value: INFO
