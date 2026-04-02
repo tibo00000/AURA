@@ -149,8 +149,8 @@ Resultat attendu :
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
 | AND-001 | android | Initialiser le projet Android Kotlin avec structure de modules minimale | completed | none | `docs/adrs/002-android-native-client.md`, `docs/android/app-architecture.md` | squelette Compose, structure Gradle et wrapper poses |
-| AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | not_started | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | bottom navigation et player entrypoint |
-| AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | not_started | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | persistance locale canonique |
+| AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | completed | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | graphe principal, surfaces detail et mini-player shell poses |
+| AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | completed | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | base Room, import local MediaStore et settings par defaut poses |
 | AND-004 | android | Implementer le moteur player Media3 et les regles de queue | not_started | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | la priority queue reste non persistante |
 | AND-005 | android | Implementer l'ecran `Search` avec orchestration local + online | not_started | AND-002, AND-003 | `docs/android/screens/search.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md` | fusion faite cote Android |
 | AND-006 | android | Implementer la gestion des playlists locales et leur UI | not_started | AND-002, AND-003 | `docs/android/screens/playlists.md`, `docs/product/user-flows.md` | create, rename, delete, reorder |
@@ -183,6 +183,7 @@ Resultat attendu :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 
 ## Journal des changements
+- 2026-04-02T20:35:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/*`, `BUILD.md` | implementation de AND-002 et AND-003 avec navigation Compose, shell multi-ecrans, Room et integration MediaStore.
 - 2026-04-02T19:05:53+02:00 | code | `android/gradlew`, `android/gradlew.bat`, `android/gradle/wrapper/*`, `render.yaml`, `server/.env.example`, `server/app/config.py`, `infra/*`, `BUILD.md` | ajout du wrapper Gradle, du blueprint Render racine et de la configuration Qdrant avec cle API.
 - 2026-04-02T19:05:53+02:00 | code | `android/*`, `server/*`, `infra/*`, `.gitignore`, `BUILD.md` | creation du socle monorepo Android, FastAPI et infra avec premiere base executable.
 - 2026-04-02T18:53:54+02:00 | docs | `BUILD.md`, `llms-full.txt` | ajout de la trajectoire globale priorisee pour guider l'ordre d'implementation et eviter la dispersion.

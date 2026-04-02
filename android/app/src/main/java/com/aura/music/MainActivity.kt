@@ -3,6 +3,7 @@ package com.aura.music
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.aura.music.ui.AuraApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -12,4 +13,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
