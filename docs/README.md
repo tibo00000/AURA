@@ -50,20 +50,21 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 37. `docs/android/screens/settings.md`
 38. `docs/server/architecture.md`
 39. `docs/server/api-contract.md`
-40. `docs/server/api-sync-flows.md`
-41. `docs/server/jobs.md`
-42. `docs/server/database-postgres.md`
-43. `docs/server/postgres-relationships.md`
-44. `docs/server/vector-search-qdrant.md`
-45. `docs/server/storage.md`
-46. `docs/server/providers/deezer.md`
-47. `docs/server/providers/streaming-bridge.md`
-48. `docs/server/security-and-secrets.md`
-49. `docs/mcp/overview.md`
-50. `docs/mcp/resources.md`
-51. `docs/mcp/use-cases.md`
-52. `docs/ops/logging-observability.md`
-53. `docs/ops/env-vars.md`
+40. `docs/server/sync-conflict-resolution.md`
+41. `docs/server/api-sync-flows.md`
+42. `docs/server/jobs.md`
+43. `docs/server/database-postgres.md`
+44. `docs/server/postgres-relationships.md`
+45. `docs/server/vector-search-qdrant.md`
+46. `docs/server/storage.md`
+47. `docs/server/providers/deezer.md`
+48. `docs/server/providers/streaming-bridge.md`
+49. `docs/server/security-and-secrets.md`
+50. `docs/mcp/overview.md`
+51. `docs/mcp/resources.md`
+52. `docs/mcp/use-cases.md`
+53. `docs/ops/logging-observability.md`
+54. `docs/ops/env-vars.md`
 
 ## Rythme de mise a jour
 - Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
