@@ -1,0 +1,24 @@
+# Android
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# Python
+server/.venv/
+server/.pytest_cache/
+server/__pycache__/
+server/**/*.pyc
+
+# Environment files
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.local
+
+# OS and editors
+.DS_Store
+Thumbs.db
+

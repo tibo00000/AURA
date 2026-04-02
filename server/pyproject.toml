@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aura-server"
+version = "0.1.0"
+description = "AURA FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.32,<1.0",
+  "pydantic-settings>=2.6,<3.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+

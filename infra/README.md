@@ -1,0 +1,21 @@
+# Infrastructure
+
+`infra/` contains non-application assets required to run, package, or deploy AURA.
+
+## What belongs here
+- Dockerfiles and local compose files
+- deployment manifests for platforms such as Render
+- environment templates and hosting notes
+- scripts or helpers for local and remote environments
+
+## What does not belong here
+- Android app source code
+- FastAPI application code
+- product documentation that is already canonical in `docs/`
+
+## External services policy
+- External services must be configured through environment variables.
+- Platform-specific configuration must stay in `infra/`.
+- Application code must depend on abstract configuration, not on a hosting provider.
+- A service such as Render is an execution target, not a domain dependency.
+

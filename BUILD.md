@@ -148,7 +148,7 @@ Resultat attendu :
 ### Android
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
-| AND-001 | android | Initialiser le projet Android Kotlin avec structure de modules minimale | not_started | none | `docs/adrs/002-android-native-client.md`, `docs/android/app-architecture.md` | point d'entree du code Android |
+| AND-001 | android | Initialiser le projet Android Kotlin avec structure de modules minimale | completed | none | `docs/adrs/002-android-native-client.md`, `docs/android/app-architecture.md` | squelette Compose et structure Gradle poses |
 | AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | not_started | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | bottom navigation et player entrypoint |
 | AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | not_started | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | persistance locale canonique |
 | AND-004 | android | Implementer le moteur player Media3 et les regles de queue | not_started | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | la priority queue reste non persistante |
@@ -159,7 +159,7 @@ Resultat attendu :
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
-| SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | not_started | none | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | base HTTP et configuration |
+| SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | completed | none | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | base HTTP, config et `/health` poses |
 | SRV-002 | backend | Implementer les endpoints online publics `health`, `search`, `artist`, `album` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | online only |
 | SRV-003 | backend | Implementer les endpoints de sync cloud optionnelle `/me/...` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/database-postgres.md` | sync user-scoped |
 | SRV-007 | backend | Implementer les endpoints batch `bootstrap`, `push-batch`, `pull-batch` pour la sync | not_started | SRV-001, SRV-004 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md` | transport canonique de sync |
@@ -170,8 +170,8 @@ Resultat attendu :
 ### Infrastructure et gouvernance
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
-| INF-001 | infra | Definir les variables d'environnement et fichiers d'exemple | not_started | SRV-001 | `docs/ops/env-vars.md`, `docs/server/security-and-secrets.md` | Android et backend |
-| INF-002 | infra | Definir Docker et l'environnement local de dev backend | not_started | SRV-001 | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | environnement executable |
+| INF-001 | infra | Definir les variables d'environnement et fichiers d'exemple | completed | SRV-001 | `docs/ops/env-vars.md`, `docs/server/security-and-secrets.md` | `.env.example` backend et exemple Android ajoutes |
+| INF-002 | infra | Definir Docker et l'environnement local de dev backend | completed | SRV-001 | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | Dockerfile, compose local et blueprint Render ajoutes |
 | GOV-001 | docs | Maintenir la coherence entre code, specs et index machine-friendly | in_progress | none | `docs/README.md`, `docs/documentation/style-guide.md`, `llms.txt`, `llms-full.txt` | activite continue |
 
 ## Done Before Code
@@ -183,6 +183,7 @@ Resultat attendu :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 
 ## Journal des changements
+- 2026-04-02T19:05:53+02:00 | code | `android/*`, `server/*`, `infra/*`, `.gitignore`, `BUILD.md` | creation du socle monorepo Android, FastAPI et infra avec premiere base executable.
 - 2026-04-02T18:53:54+02:00 | docs | `BUILD.md`, `llms-full.txt` | ajout de la trajectoire globale priorisee pour guider l'ordre d'implementation et eviter la dispersion.
 - 2026-04-02T18:50:43+02:00 | docs | `docs/server/sync-batch-api.md`, `docs/server/api-contract.md`, `docs/server/sync-conflict-resolution.md`, `docs/README.md`, `llms.txt`, `llms-full.txt`, `BUILD.md` | ajout des contrats API batch concrets pour bootstrap, push et pull de sync.
 - 2026-04-02T18:42:39+02:00 | docs | `docs/server/sync-conflict-resolution.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout de la strategie canonique de resolution des conflits de sync avec payloads exacts par entite.
