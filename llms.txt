@@ -1,0 +1,71 @@
+AURA Documentation Index
+
+Root
+- `AGENTS.md`: regles d'interaction, contraintes Android, secrets et politique de commit.
+- `docs/README.md`: carte de la documentation et ordre canonique de concatenation.
+- `docs/documentation/style-guide.md`: regles strictes de redaction, maintenance et coherence documentaire.
+
+Architecture Decision Records
+- `docs/adrs/001-machine-friendly-docs.md`: standard machine-friendly avec `llms.txt` et `llms-full.txt`.
+- `docs/adrs/002-android-native-client.md`: client officiel Android natif.
+- `docs/adrs/003-backend-fastapi-supabase-qdrant.md`: backend FastAPI, Supabase, Qdrant et jobs.
+- `docs/adrs/004-provider-adapter-strategy.md`: adaptateurs providers, Deezer v1 et evolution future.
+- `docs/adrs/005-mcp-bridge.md`: bridge MCP pour logs, schemas et jobs.
+
+Documentation Governance
+- `docs/documentation/style-guide.md`: normes d'ecriture intemporelles et regles de mise a jour.
+
+Product
+- `docs/product/vision.md`: mission, promesse et perimetre v1.
+- `docs/product/navigation.md`: structure des pages et hierarchie de navigation.
+- `docs/product/user-flows.md`: parcours produit principaux.
+
+Domain
+- `docs/domain/entities.md`: entites metier canoniques.
+- `docs/domain/data-relationships.md`: vue d'ensemble des relations metier et des frontieres de persistance.
+- `docs/domain/playback-model.md`: modele de lecture avec contexte, priority queue et history.
+- `docs/domain/playback-user-flows.md`: regles `play`, `pause`, `next`, `prev`, `remove`, `reorder`.
+- `docs/domain/provider-architecture.md`: architecture de providers online et fallback local.
+
+Android
+- `docs/android/app-architecture.md`: couches Android, MVVM, Room, MediaStore et player.
+- `docs/android/local-persistence.md`: repartition des donnees entre MediaStore et Room, tables locales candidates.
+- `docs/android/room-schema.md`: schema detaille Room avec colonnes, cles et contraintes.
+- `docs/android/room-relationships.md`: diagramme relationnel du schema Room.
+- `docs/android/navigation.md`: graphe de navigation Android.
+- `docs/android/ui/design-system.md`: design tokens et regles visuelles.
+- `docs/android/ui/components.md`: composants Compose reutilisables.
+- `docs/android/ui/ui-performance.md`: regles Compose et Media3 pour la fluidite.
+- `docs/android/player/architecture.md`: architecture du moteur de lecture.
+- `docs/android/player/queue-rules.md`: regles de queue prioritaire et reprise playlist.
+- `docs/android/player/states-and-events.md`: etats et evenements du player.
+- `docs/android/screens/home.md`: documentation de l'ecran Home.
+- `docs/android/screens/search.md`: recherche locale et online via Deezer.
+- `docs/android/screens/library.md`: bibliotheque utilisateur.
+- `docs/android/screens/playlists.md`: liste et detail des playlists.
+- `docs/android/screens/player.md`: surface player plein ecran.
+- `docs/android/screens/player-layout.md`: schema visuel du player et hypothese de densite.
+- `docs/android/screens/artist.md`: ecran artiste.
+- `docs/android/screens/album.md`: ecran album.
+- `docs/android/screens/downloads.md`: suivi des jobs de telechargement.
+- `docs/android/screens/settings.md`: reglages, sync et diagnostics.
+
+Server
+- `docs/server/architecture.md`: architecture du backend.
+- `docs/server/api-contract.md`: contrat HTTP detaille pour l'online, la sync cloud optionnelle et les jobs.
+- `docs/server/api-sync-flows.md`: diagrammes des flux entre Android, API, Supabase, Qdrant et jobs.
+- `docs/server/jobs.md`: cycle de vie des jobs.
+- `docs/server/database-postgres.md`: schema logique Postgres/Supabase et tables cloud candidates.
+- `docs/server/postgres-relationships.md`: diagramme relationnel du schema Postgres synchronisable.
+- `docs/server/vector-search-qdrant.md`: moteur vectoriel et Qdrant.
+- `docs/server/storage.md`: strategie de stockage.
+- `docs/server/providers/deezer.md`: provider de recherche online v1.
+- `docs/server/providers/streaming-bridge.md`: extension future pour streaming/Hi-Fi.
+- `docs/server/security-and-secrets.md`: secrets, variables et permissions.
+
+MCP And Operations
+- `docs/mcp/overview.md`: vue d'ensemble du serveur MCP.
+- `docs/mcp/resources.md`: ressources MCP minimales.
+- `docs/mcp/use-cases.md`: cas d'usage diagnostic et inspection.
+- `docs/ops/logging-observability.md`: logs et correlation.
+- `docs/ops/env-vars.md`: inventaire des variables d'environnement.

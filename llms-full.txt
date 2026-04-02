@@ -1,0 +1,4372 @@
+# AURA Documentation Full Context
+
+This file concatenates the canonical documentation set in the order defined by `docs/README.md`.
+
+---
+## AGENTS.md
+# AGENTS.md - Aura Music Player
+
+## Role And Identity
+Tu es un expert Android senior specialise en Kotlin, Jetpack Compose, architecture MVVM et integration d'API audio hors-ligne avec Media3/ExoPlayer. Ton objectif est de produire un code propre, modulaire et performant.
+
+## Build And Compilation Rules
+- L'utilisateur gere les builds et la compilation manuellement.
+- Ne lance jamais de commandes Gradle de ta propre initiative.
+- Si une erreur de compilation survient, attends que l'utilisateur fournisse le message exact ou une capture avant de proposer un correctif.
+
+## Secrets And Environment Rules
+- N'ecris jamais de cles d'API, tokens ou mots de passe en dur.
+- Utilise `local.properties` pour Android et `.env` pour le backend Python.
+- Si une variable d'environnement est ajoutee ou modifiee, mets a jour le fichier `.env_example` correspondant.
+
+## Android Code Conventions
+### Null Safety
+Tous les champs provenant d'API externes comme Deezer doivent etre modelises comme potentiellement nuls (`String?`). Utilise l'operateur Elvis (`?:`) pour fournir des valeurs par defaut.
+
+### StateFlow
+L'etat des ViewModels suit le modele "prive mutable, public immuable".
+
+```kotlin
+private val _state = MutableStateFlow<Type>(initialValue)
+val state = _state.asStateFlow()
+```
+
+### Compose Performance
+- Utilise des cles stables et uniques dans toutes les `LazyColumn`.
+- Utilise `derivedStateOf` pour isoler la lecture d'etats qui changent rapidement.
+
+### Immutability
+Prefere `val` et des data classes immuables pour les modeles UI.
+
+## Commit Policy
+- Fais un commit apres chaque fonctionnalite ou bug resolu.
+- Utilise des messages de commit clairs et descriptifs.
+- Demande toujours l'autorisation avant un `git push`.
+
+
+---
+## docs/README.md
+# AURA Documentation Map
+
+Ce dossier contient la source de verite documentaire du projet AURA.
+
+## Conventions
+- La documentation de reference vit en Markdown.
+- `llms.txt` est l'index semantique de haut niveau.
+- `llms-full.txt` est la concatenation canonique des documents ci-dessous.
+- Chaque fichier doit couvrir un seul sujet et annoncer explicitement ses dependances.
+- Les noms de fichiers doivent rester stables afin de limiter les changements dans l'index semantique.
+- Les regles de redaction et de maintenance sont definies dans `docs/documentation/style-guide.md`.
+
+## Ordre canonique de concatenation
+1. `AGENTS.md`
+2. `docs/adrs/001-machine-friendly-docs.md`
+3. `docs/adrs/002-android-native-client.md`
+4. `docs/adrs/003-backend-fastapi-supabase-qdrant.md`
+5. `docs/adrs/004-provider-adapter-strategy.md`
+6. `docs/adrs/005-mcp-bridge.md`
+7. `docs/documentation/style-guide.md`
+8. `docs/product/vision.md`
+9. `docs/product/navigation.md`
+10. `docs/product/user-flows.md`
+11. `docs/domain/entities.md`
+12. `docs/domain/data-relationships.md`
+13. `docs/domain/playback-model.md`
+14. `docs/domain/playback-user-flows.md`
+15. `docs/domain/provider-architecture.md`
+16. `docs/android/app-architecture.md`
+17. `docs/android/local-persistence.md`
+18. `docs/android/room-schema.md`
+19. `docs/android/room-relationships.md`
+20. `docs/android/navigation.md`
+21. `docs/android/ui/design-system.md`
+22. `docs/android/ui/components.md`
+23. `docs/android/ui/ui-performance.md`
+24. `docs/android/player/architecture.md`
+25. `docs/android/player/queue-rules.md`
+26. `docs/android/player/states-and-events.md`
+27. `docs/android/screens/home.md`
+28. `docs/android/screens/search.md`
+29. `docs/android/screens/library.md`
+30. `docs/android/screens/playlists.md`
+31. `docs/android/screens/player.md`
+32. `docs/android/screens/player-layout.md`
+33. `docs/android/screens/artist.md`
+34. `docs/android/screens/album.md`
+35. `docs/android/screens/downloads.md`
+36. `docs/android/screens/settings.md`
+37. `docs/server/architecture.md`
+38. `docs/server/api-contract.md`
+39. `docs/server/api-sync-flows.md`
+40. `docs/server/jobs.md`
+41. `docs/server/database-postgres.md`
+42. `docs/server/postgres-relationships.md`
+43. `docs/server/vector-search-qdrant.md`
+44. `docs/server/storage.md`
+45. `docs/server/providers/deezer.md`
+46. `docs/server/providers/streaming-bridge.md`
+47. `docs/server/security-and-secrets.md`
+48. `docs/mcp/overview.md`
+49. `docs/mcp/resources.md`
+50. `docs/mcp/use-cases.md`
+51. `docs/ops/logging-observability.md`
+52. `docs/ops/env-vars.md`
+
+## Rythme de mise a jour
+- Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
+- Toute modification de structure impose une regeneration de `llms-full.txt`.
+- Les documents produit et domaine doivent etre valides avant de documenter une implementation detaillee.
+- Toute modification documentaire doit respecter `docs/documentation/style-guide.md`.
+
+
+---
+## docs/adrs/001-machine-friendly-docs.md
+# ADR 001 - Machine-Friendly Documentation
+
+## Statut
+Accepte
+
+## Contexte
+Le projet AURA veut une documentation exploitable directement par des agents IA et par les developpeurs. Les formats PDF et HTML sont trop lourds, peu diffables et difficiles a concatener de facon deterministe.
+
+## Decision
+- Les documents source sont des fichiers Markdown versionnables.
+- `llms.txt` sert d'index semantique court, stable et humainement lisible.
+- `llms-full.txt` sert de contexte concatene complet, ordonne selon `docs/README.md`.
+- Les sections doivent etre explicites, nommees et sans references opaques.
+
+## Consequences
+- Les documents doivent rester decoupes par sujet.
+- Les liens internes doivent privilegier des chemins stables.
+- Toute nouvelle rubrique importante doit avoir un document dedie plutot qu'une annexe implicite.
+
+
+---
+## docs/adrs/002-android-native-client.md
+# ADR 002 - Android Native Client
+
+## Statut
+Accepte
+
+## Contexte
+AURA cible d'abord un usage personnel sur mobile avec fortes exigences sur la lecture audio, le mode hors-ligne et la fluidite UI. Le prototype precedent a deja valide l'orientation Android.
+
+## Decision
+- Le client officiel v1 est une application Android native.
+- La stack UI est Kotlin + Jetpack Compose + Material 3.
+- Le moteur de lecture repose sur Media3/ExoPlayer.
+- L'architecture client suit MVVM avec etat observable via StateFlow.
+
+## Consequences
+- La documentation fonctionnelle de reference est ecrite d'abord pour Android.
+- Les abstractions metier doivent rester suffisamment neutres pour autoriser plus tard un autre client.
+- Les composants UI, le player et la navigation sont documentes comme surfaces Android de reference.
+
+
+---
+## docs/adrs/003-backend-fastapi-supabase-qdrant.md
+# ADR 003 - Backend FastAPI, Supabase, Qdrant
+
+## Statut
+Accepte
+
+## Contexte
+Le projet doit rester peu couteux, personnel et modulaire. Il a deja eu un prototype avec Supabase, Qdrant, Docker et hebergement type Render. La documentation doit privilegier des contrats machines simples a lire.
+
+## Decision
+- L'API serveur de reference est ecrite en FastAPI.
+- Supabase est la source de verite cloud pour Postgres, Auth optionnelle et Storage.
+- Qdrant stocke les vecteurs de recommandation et les recherches par similarite.
+- Les operations couteuses comme les telechargements et preparations de flux passent par des jobs asynchrones.
+
+## Consequences
+- Les schemas JSON et les DTOs doivent rester stricts et explicites.
+- Le serveur doit separer clairement donnees transactionnelles, objets binaires et index vectoriels.
+- Les integrations externes sont encapsulees dans des adaptateurs de providers.
+
+
+---
+## docs/adrs/004-provider-adapter-strategy.md
+# ADR 004 - Provider Adapter Strategy
+
+## Statut
+Accepte
+
+## Contexte
+AURA doit supporter une recherche en ligne des titres, artistes et albums, avec Deezer comme provider v1 probable. A plus long terme, un bridge de streaming plus riche peut remplacer ou completer cette source.
+
+## Decision
+- Toute source externe passe derriere une interface d'adaptateur.
+- Deezer est le provider de reference pour la recherche online v1.
+- Les fonctionnalites de streaming futur ou de bridge Hi-Fi doivent s'integrer sans recoder le coeur du produit.
+
+## Consequences
+- Les objets metier ne doivent pas dependre directement du format natif d'un provider.
+- Le serveur peut changer de provider sans refaire la documentation produit.
+- Les limites juridiques, techniques et de quota d'un provider sont documentees dans son fichier dedie.
+
+
+---
+## docs/adrs/005-mcp-bridge.md
+# ADR 005 - MCP Bridge
+
+## Statut
+Accepte
+
+## Contexte
+Le projet veut qu'un agent IA puisse lire l'etat du systeme en temps reel sans contourner les limites du code source statique.
+
+## Decision
+- Un serveur MCP expose au minimum les logs applicatifs, les schemas de base et l'etat des jobs.
+- Le MCP est en lecture seule pour la majorite des ressources.
+- Les ressources exposees sont nommees de facon stable et documentees.
+
+## Consequences
+- Le serveur doit preparer des vues lisibles pour les jobs, erreurs et schemas.
+- La doc MCP complete la doc de code et ne la remplace pas.
+- Les secrets et donnees sensibles doivent etre filtres avant exposition.
+
+
+---
+## docs/documentation/style-guide.md
+# Documentation Style Guide
+
+## Objectif
+Definir des regles strictes pour que tout agent ou contributeur puisse mettre a jour la documentation AURA sans introduire de bruit, de temporalite inutile ou d'ambiguite.
+
+## Principes fondamentaux
+- La documentation decrit un etat de reference, pas un journal de changements.
+- La documentation doit etre lisible par un humain et exploitable par une machine.
+- Une information importante ne doit exister qu'a un seul endroit canonique.
+- Chaque document doit rester stable dans sa responsabilite et dans sa structure.
+
+## Regles de redaction
+- Ecrire de facon normative, precise et intemporelle.
+- Privilegier des phrases declaratives courtes et non ambigues.
+- Utiliser un vocabulaire stable pour les memes concepts dans toute la documentation.
+- Distinguer clairement les faits, les decisions et les hypotheses.
+- Eviter toute formulation dependante du moment ou de la personne qui ecrit.
+
+## Formulations interdites
+- marqueurs temporels comme `nouveau`, `ancien`, `actuellement` quand ils ne sont pas dates et justifies
+- etiquettes comme `[NOUVEAU]`, `[TODO]`, `[WIP]`, `[TEMP]`
+- commentaires de commit ou de conversation injectes dans les docs
+- formulations floues comme `etc.`, `a voir`, `plus tard` sans section dediee
+- references implicites comme `comme vu plus haut` si un lien ou un nom de section peut etre donne
+
+## Formulations autorisees
+- une evolution future peut etre documentee si elle est clairement placee dans une section `Evolutions prevues`, `Hors perimetre v1` ou `Point d'extension`
+- une hypothese peut etre documentee si elle est explicitement etiquetee comme telle
+- une limitation peut etre documentee si elle est precise et actionnable
+
+## Structure des documents
+- Un fichier couvre un seul sujet principal.
+- Un titre unique en tete de fichier.
+- Des sections stables avec des noms explicites.
+- Pas de sections decoratives ou narratives sans valeur documentaire.
+- Si un document decrit un comportement, il doit contenir au minimum son objectif, ses regles et ses limites.
+
+## Regles de maintenance
+- Lorsqu'une information change, mettre a jour le document canonique au lieu d'ajouter une note temporaire.
+- Si un document change de role, preferer creer un nouveau document cible et retirer l'ancien proprement.
+- Toute creation, suppression ou deplacement de fichier impose une mise a jour de `docs/README.md`, `llms.txt` et `llms-full.txt`.
+- Aucun fichier ne doit etre reference dans `llms.txt` s'il n'existe pas.
+
+## Regles de coherence
+- Le meme terme doit designer le meme concept partout.
+- Les noms d'ecrans, d'entites, de tables et d'artefacts doivent rester coherents entre produit, domaine, Android, serveur et MCP.
+- Une regle definie dans un document de domaine ne doit pas etre contredite dans un document d'ecran ou d'API.
+
+## Regles specifiques aux user flows
+- Chaque user flow doit documenter un objectif utilisateur clair.
+- Chaque user flow doit lister les preconditions.
+- Chaque user flow doit decrire le chemin ecran par ecran.
+- Chaque user flow doit nommer explicitement les boutons ou actions.
+- Chaque user flow doit indiquer les etats d'erreur et le resultat attendu.
+- Les user flows ne doivent pas melanger comportement reel et idee non decidee.
+- Les verbes d'action doivent etre explicites. Eviter des formulations ambigues comme `ouvrir un titre` si l'action reelle est `lancer la lecture`, `ouvrir le menu contextuel`, `ouvrir la page artiste` ou `ouvrir la page album`.
+
+## Regles specifiques aux schemas et contrats
+- Les schemas de donnees doivent etre complets, sans champs implicites critiques.
+- Les champs doivent porter des noms stables.
+- Les contrats d'API, de base de donnees et de domaine doivent utiliser la meme terminologie quand ils designent le meme objet.
+- Si un detail n'est pas decide, il doit etre signale comme hypothese ou decision a prendre, pas masque par une formulation vague.
+
+## Checklist avant validation
+- Le document est-il intemporel ?
+- Le document evite-t-il les marqueurs de changement temporaires ?
+- Le sujet canonique est-il unique et clair ?
+- Les termes utilises sont-ils coherents avec le reste du depot ?
+- Le fichier doit-il etre ajoute ou mis a jour dans `llms.txt` et `llms-full.txt` ?
+
+
+---
+## docs/product/vision.md
+# Vision Produit
+
+## Mission
+AURA est une application Android de lecture musicale orientee bibliotheque personnelle, ecoute hors-ligne, recherche enrichie et decouverte assistee par un moteur vectoriel.
+
+## Promesse utilisateur
+- Ecouter une bibliotheque locale sans dependre du reseau.
+- Retrouver des artistes, albums et titres en ligne quand Internet est disponible.
+- Construire des playlists personnelles et une file d'attente souple.
+- Beneficier plus tard de recommandations et de telechargements integres.
+
+## Perimetre v1
+- Lecture locale fiable.
+- Mini-player et player plein ecran robustes.
+- Recherche locale et recherche online conditionnelle au reseau.
+- Bibliotheque, playlists, artistes, albums, downloads et settings.
+- Synchronisation cloud optionnelle pour l'etat et les metadonnees utilisateur.
+
+## Hors perimetre v1
+- Collaboration en temps reel sur playlists.
+- Streaming universel complet.
+- Moteur de recommandation finement personnalise par session.
+
+
+---
+## docs/product/navigation.md
+# Navigation Produit
+
+## Navigation principale
+- `Home`
+- `Search`
+- `Library`
+
+## Surfaces secondaires
+- `Player`
+- `Playlists`
+- `Playlist Detail`
+- `Artist`
+- `Album`
+- `Downloads`
+- `Settings`
+
+## Regles de navigation
+- Le mini-player est visible sur toutes les surfaces principales si une lecture est active ou resumable.
+- `Player` s'ouvre depuis le mini-player, un track row ou une action de lecture.
+- `Artist`, `Album` et `Playlist Detail` sont accessibles depuis les resultats de recherche, la bibliotheque et les menus contextuels.
+- `Downloads` et `Settings` sont accessibles depuis `Library`.
+
+## Intention de hierarchie
+- `Home` met en avant reprise, mixes, recents et entrees rapides.
+- `Search` est la surface d'exploration locale et online.
+- `Library` concentre la collection personnelle et les entrees de gestion.
+
+
+---
+## docs/product/user-flows.md
+# User Flows Produit
+
+## Format canonique
+Chaque user flow documente :
+- un objectif utilisateur
+- des preconditions
+- un point d'entree
+- la sequence ecran par ecran
+- les boutons ou actions exactes
+- les etats de chargement et d'erreur
+- le resultat attendu
+- les postconditions
+
+## Perimetre de ce lot
+Ce document detaille les parcours de recherche, de lecture, de queue et de playlists. Le flow complet de telechargement reste hors de ce lot tant que la source audio finale n'est pas figee.
+
+## Recherche globale dans Search
+
+### Objectif
+Permettre a l'utilisateur de saisir une requete unique et d'obtenir les resultats les plus pertinents, qu'ils proviennent de la bibliotheque locale ou d'une source online.
+
+### Preconditions
+- L'utilisateur est sur l'application AURA.
+- L'index local est disponible.
+- Le reseau peut etre autorise ou non selon les reglages et la connectivite.
+
+### Point d'entree
+- Onglet `Search` depuis la navigation principale.
+
+### Sequence
+1. L'utilisateur ouvre `Search`.
+2. L'utilisateur appuie sur la barre `Rechercher...`.
+3. L'utilisateur saisit une requete.
+4. Tant que la requete contient moins de trois caracteres, l'application n'affiche pas encore de suggestions detaillees.
+5. A partir de trois caracteres, l'application affiche des suggestions locales uniquement.
+6. L'utilisateur valide la recherche ou touche une suggestion locale.
+7. L'application lance la recherche locale complete.
+8. Si le reseau est autorise et disponible, l'application lance aussi la recherche online complete.
+9. L'ecran affiche un bloc `Meilleur resultat`.
+10. L'ecran affiche ensuite `Dans votre bibliotheque` si des correspondances locales existent.
+11. L'ecran affiche ensuite les sections `En ligne - Titres`, `En ligne - Artistes` et `En ligne - Albums` si elles sont disponibles.
+
+### Boutons et actions
+- toucher la barre de recherche
+- saisir du texte
+- toucher `X` pour vider la requete
+- toucher une ligne de piste pour lancer la lecture
+- toucher `...` pour ouvrir le menu contextuel
+- toucher un resultat artiste pour ouvrir la page artiste
+- toucher un resultat album pour ouvrir la page album
+
+### Etats
+- Etat vide avant saisie.
+- Etat de suggestions locales pendant la saisie.
+- Etat de chargement pendant la recherche complete.
+- Etat mixte avec local et online.
+- Etat local uniquement si le reseau n'est pas autorise ou indisponible.
+- Etat d'erreur online non bloquant si le provider echoue.
+
+### Resultat attendu
+- L'utilisateur voit en haut le resultat juge le plus pertinent.
+- Si une piste locale correspond fortement, elle est privilegiee dans `Meilleur resultat`.
+- Les resultats locaux apparaissent avant les sections online lorsqu'ils sont pertinents.
+
+### Postconditions
+- La requete courante reste visible tant que l'utilisateur ne la vide pas.
+- L'utilisateur peut lancer une lecture, ouvrir un artiste, ouvrir un album ou ouvrir le menu contextuel d'une piste.
+
+## Recherche dans Search sans reseau autorise
+
+### Objectif
+Permettre une recherche utile meme sans reseau ou quand la recherche online est desactivee.
+
+### Preconditions
+- L'utilisateur est sur `Search`.
+- Le reseau est indisponible ou non autorise par les reglages.
+
+### Point d'entree
+- Onglet `Search`.
+
+### Sequence
+1. L'utilisateur saisit une requete.
+2. L'application interroge l'index local.
+3. L'ecran affiche `Meilleur resultat` si un resultat local est pertinent.
+4. L'ecran affiche `Dans votre bibliotheque`.
+5. Les sections online ne sont pas affichees.
+
+### Boutons et actions
+- saisir du texte
+- vider la requete
+- toucher une piste locale pour lancer la lecture
+- toucher `...` sur une piste locale
+
+### Etats
+- local uniquement
+- aucun resultat local
+
+### Resultat attendu
+- L'utilisateur peut continuer a chercher et a lire des contenus locaux sans rupture d'experience.
+
+### Postconditions
+- Aucune tentative online ne doit perturber l'experience locale.
+
+## Ouvrir le menu contextuel d'une TrackRow
+
+### Objectif
+Permettre a l'utilisateur d'acceder aux actions secondaires d'une piste depuis une ligne de resultat, de bibliotheque, de playlist ou de queue.
+
+### Preconditions
+- Une `TrackRow` est visible.
+- La piste possede au minimum un identifiant metier.
+
+### Point d'entree
+- Bouton `...` sur une `TrackRow`.
+
+### Sequence
+1. L'utilisateur appuie sur `...`.
+2. L'application ouvre le menu contextuel.
+3. L'utilisateur choisit une action disponible pour cette piste.
+
+### Actions possibles
+- `Lire maintenant`
+- `Ajouter a la file d'attente`
+- `Ajouter a une playlist`
+- `Voir l'artiste`
+- `Voir l'album`
+- `Telecharger` uniquement si la piste n'est pas disponible localement
+- `Supprimer le telechargement` uniquement si la piste est deja disponible localement
+- `Supprimer` uniquement dans les contextes ou cela a un sens metier
+
+### Etats
+- menu complet si toutes les metadonnees sont disponibles
+- menu degrade si l'artiste ou l'album ne peuvent pas etre resolus
+
+### Resultat attendu
+- Le menu ne presente que des actions valides pour l'etat reel de la piste.
+
+### Postconditions
+- Si l'utilisateur choisit `Voir l'artiste`, l'application ouvre la page artiste.
+- Si l'utilisateur choisit `Voir l'album`, l'application ouvre la page album.
+- Si l'utilisateur choisit `Ajouter a la file d'attente`, la piste rejoint la `priority queue`.
+
+## Ouvrir la page artiste depuis une TrackRow
+
+### Objectif
+Permettre a l'utilisateur de naviguer vers l'artiste associe a une piste.
+
+### Preconditions
+- La piste possede une reference artiste exploitable.
+
+### Point d'entree
+- Menu `...` puis action `Voir l'artiste`.
+
+### Sequence
+1. L'utilisateur ouvre le menu `...`.
+2. L'utilisateur appuie sur `Voir l'artiste`.
+3. L'application resout l'identifiant artiste.
+4. L'application ouvre `Artist`.
+5. L'ecran charge les informations locales puis les enrichissements online si disponibles.
+
+### Resultat attendu
+- La page artiste s'ouvre sur le bon artiste, sans lancer la lecture automatiquement.
+
+## Ouvrir la page album depuis une TrackRow
+
+### Objectif
+Permettre a l'utilisateur de naviguer vers l'album associe a une piste.
+
+### Preconditions
+- La piste possede une reference album exploitable.
+
+### Point d'entree
+- Menu `...` puis action `Voir l'album`.
+
+### Sequence
+1. L'utilisateur ouvre le menu `...`.
+2. L'utilisateur appuie sur `Voir l'album`.
+3. L'application resout l'identifiant album.
+4. L'application ouvre `Album`.
+5. L'ecran charge la liste ordonnee des pistes et les metadonnees de l'album.
+
+### Resultat attendu
+- La page album s'ouvre sur le bon album, sans modifier la lecture en cours.
+
+## Lecture depuis une playlist
+
+### Objectif
+Lancer la lecture d'une playlist comme contexte source principal.
+
+### Preconditions
+- Une playlist existe.
+- La playlist contient au moins une piste lisible.
+
+### Point d'entree
+- Ecran `Playlist Detail`.
+
+### Sequence
+1. L'utilisateur ouvre une playlist depuis `Playlists` ou `Library`.
+2. L'utilisateur appuie sur `Play` ou sur une piste.
+3. L'application cree un `playback context` de type playlist.
+4. Si l'utilisateur a touche `Play`, la lecture commence a la premiere piste du contexte courant.
+5. Si l'utilisateur a touche une piste, la lecture commence a cette position dans le contexte.
+6. La `priority queue` reste vide tant qu'aucun ajout manuel n'est fait.
+7. Le mini-player apparait.
+8. L'utilisateur peut ouvrir `Player` pour voir la queue et le contexte source.
+
+### Boutons et actions
+- `Play`
+- touche sur une `TrackRow`
+- mini-player
+
+### Etats
+- chargement du contexte
+- lecture en cours
+- erreur si aucune piste lisible n'est disponible
+
+### Resultat attendu
+- La lecture demarre depuis la playlist selectionnee et la playlist devient le contexte source actif.
+
+### Postconditions
+- `next` et `prev` utilisent ce contexte tant qu'il n'est pas remplace.
+
+## Ajouter une piste a la priority queue pendant la lecture d'une playlist
+
+### Objectif
+Permettre a l'utilisateur d'inserer une piste a jouer avant la suite de la playlist sans modifier l'ordre de la playlist.
+
+### Preconditions
+- Une playlist est deja en cours de lecture comme `playback context`.
+- Une piste cible est visible dans `Search`, `Library`, `Artist`, `Album` ou une playlist.
+
+### Point d'entree
+- Action `Ajouter a la file d'attente` depuis une ligne de piste ou un menu `...`.
+
+### Sequence
+1. L'utilisateur appuie sur `Ajouter a la file d'attente`.
+2. L'application ajoute la piste en fin de `priority queue`.
+3. La piste courante continue normalement.
+4. Au prochain `next` ou a la fin de la piste courante, l'application lit la premiere piste de la `priority queue`.
+5. Une fois la `priority queue` vide, la lecture reprend la playlist au prochain element non encore lu.
+
+### Etats
+- confirmation de l'ajout
+- file prioritaire non vide dans `Player`
+
+### Resultat attendu
+- La piste ajoutee passe avant la suite de la playlist.
+- L'ordre canonique de la playlist n'est pas modifie.
+
+### Postconditions
+- La `priority queue` contient la piste ajoutee jusqu'a sa lecture ou sa suppression.
+
+## Utiliser Next pendant qu'une priority queue existe
+
+### Objectif
+Permettre a l'utilisateur de passer a la piste suivante en respectant la priorite de la queue manuelle.
+
+### Preconditions
+- Une lecture est active.
+- La `priority queue` peut etre vide ou non.
+
+### Point d'entree
+- Bouton `Next` du mini-player ou du player plein ecran.
+
+### Sequence
+1. L'utilisateur appuie sur `Next`.
+2. L'application interroge d'abord la `priority queue`.
+3. Si la `priority queue` contient une piste en attente, cette piste devient la piste courante.
+4. Sinon, l'application avance dans le `playback context`.
+5. Si plus aucune piste n'est disponible, le player applique les regles de repetition ou passe en `Idle`.
+
+### Resultat attendu
+- `Next` privilegie toujours la `priority queue`.
+
+## Utiliser Previous pendant la lecture
+
+### Objectif
+Permettre a l'utilisateur de revenir logiquement en arriere sans casser l'historique reel de lecture.
+
+### Preconditions
+- Une lecture est active.
+
+### Point d'entree
+- Bouton `Previous` du mini-player ou du player plein ecran.
+
+### Sequence
+1. L'utilisateur appuie sur `Previous`.
+2. L'application compare la progression courante au seuil de redemarrage.
+3. Si ce seuil est depasse, la piste courante redemarre.
+4. Sinon, l'application consulte l'historique reel.
+5. Si un element precedent existe, il devient la piste courante.
+6. Sinon, la piste courante redemarre.
+
+### Resultat attendu
+- `Previous` suit la logique standard enrichie definie pour AURA.
+
+## Retirer une piste de la priority queue
+
+### Objectif
+Permettre a l'utilisateur de nettoyer la queue manuelle avant lecture.
+
+### Preconditions
+- La `priority queue` contient au moins une piste en attente.
+
+### Point d'entree
+- Ecran `Player`, section queue.
+
+### Sequence
+1. L'utilisateur ouvre `Player`.
+2. L'utilisateur repere une piste en attente dans la `priority queue`.
+3. L'utilisateur appuie sur l'action de suppression de cette ligne.
+4. L'application retire la piste de la `priority queue`.
+5. L'ecran met a jour l'ordre restant.
+
+### Resultat attendu
+- La piste retiree ne sera plus lue via la `priority queue`.
+- Le `playback context` n'est pas modifie.
+
+### Postconditions
+- La piste courante reste intacte.
+
+## Reordonner la priority queue
+
+### Objectif
+Permettre a l'utilisateur de changer l'ordre de lecture des pistes ajoutees manuellement.
+
+### Preconditions
+- La `priority queue` contient au moins deux pistes en attente.
+
+### Point d'entree
+- Ecran `Player`, section queue.
+
+### Sequence
+1. L'utilisateur ouvre `Player`.
+2. L'utilisateur saisit le `drag handle` d'une piste en attente.
+3. L'utilisateur la deplace dans la `priority queue`.
+4. L'application persiste le nouvel ordre.
+
+### Resultat attendu
+- Les prochaines lectures issues de la `priority queue` suivent le nouvel ordre.
+- Le `playback context` ne change pas.
+
+## Creer une playlist
+
+### Objectif
+Permettre a l'utilisateur de creer une playlist vide.
+
+### Preconditions
+- L'utilisateur a acces a `Playlists`.
+
+### Point d'entree
+- Ecran `Playlist List`.
+
+### Sequence
+1. L'utilisateur appuie sur `Creer une playlist`.
+2. L'application ouvre un formulaire ou une boite de dialogue.
+3. L'utilisateur saisit le nom de la playlist.
+4. L'utilisateur valide.
+5. L'application cree la playlist et ouvre son detail, ou met a jour la liste selon le design retenu.
+
+### Resultat attendu
+- Une nouvelle playlist existe avec un identifiant stable et un nom utilisateur.
+
+## Ajouter une piste a une playlist
+
+### Objectif
+Permettre a l'utilisateur d'enrichir une playlist depuis n'importe quelle ligne de piste.
+
+### Preconditions
+- Au moins une playlist existe ou peut etre creee au moment de l'action.
+- Une `TrackRow` est visible.
+
+### Point d'entree
+- Menu `...` puis `Ajouter a une playlist`.
+
+### Sequence
+1. L'utilisateur ouvre le menu `...` d'une piste.
+2. L'utilisateur choisit `Ajouter a une playlist`.
+3. L'application ouvre un selecteur de playlists.
+4. L'utilisateur choisit une playlist existante ou cree une nouvelle playlist si ce parcours est disponible.
+5. L'application ajoute la piste a la playlist cible.
+
+### Resultat attendu
+- La piste apparait dans la playlist cible.
+- La lecture en cours n'est pas modifiee.
+
+## Retirer une piste d'une playlist
+
+### Objectif
+Permettre a l'utilisateur de maintenir le contenu exact d'une playlist.
+
+### Preconditions
+- Une playlist existe.
+- La piste est deja presente dans cette playlist.
+
+### Point d'entree
+- Ecran `Playlist Detail`, menu `...` de la piste ou action de suppression dediee.
+
+### Sequence
+1. L'utilisateur ouvre le detail de la playlist.
+2. L'utilisateur ouvre l'action de suppression sur la piste cible.
+3. L'application demande confirmation si le design le requiert.
+4. L'application retire la piste de la playlist.
+
+### Resultat attendu
+- La piste n'apparait plus dans la playlist.
+- Si la playlist sert de contexte de lecture actif, son ordre source est mis a jour sans casser la piste courante.
+
+## Renommer une playlist
+
+### Objectif
+Permettre a l'utilisateur de corriger ou faire evoluer le nom d'une playlist.
+
+### Preconditions
+- Une playlist existe.
+
+### Point d'entree
+- Ecran `Playlist Detail`, bouton `Renommer`.
+
+### Sequence
+1. L'utilisateur appuie sur `Renommer`.
+2. L'application ouvre un champ ou une boite de dialogue pre-remplie.
+3. L'utilisateur modifie le nom.
+4. L'utilisateur valide.
+5. L'application met a jour le nom dans la liste et dans le detail.
+
+### Resultat attendu
+- La playlist conserve son identifiant et son contenu, seul son nom change.
+
+## Supprimer une playlist
+
+### Objectif
+Permettre a l'utilisateur de retirer une playlist devenue inutile.
+
+### Preconditions
+- Une playlist existe.
+
+### Point d'entree
+- Ecran `Playlist Detail`, bouton `Supprimer`.
+
+### Sequence
+1. L'utilisateur appuie sur `Supprimer`.
+2. L'application ouvre une confirmation.
+3. L'utilisateur confirme.
+4. L'application supprime la playlist.
+5. L'application revient a `Playlist List` ou a l'ecran precedent.
+
+### Etats
+- confirmation obligatoire
+- erreur de suppression si la sync echoue, sans reafficher une playlist incoherente
+
+### Resultat attendu
+- La playlist disparait de la liste.
+- La suppression d'une playlist n'efface pas les pistes elles-memes de la bibliotheque.
+
+
+---
+## docs/domain/entities.md
+# Entites Metier
+
+## Track
+- `id`
+- `title`
+- `artistName`
+- `albumTitle`
+- `durationMs`
+- `coverUri`
+- `localAudioUri`
+- `providerTrackId`
+- `isDownloaded`
+- `isLiked`
+- `audioSourceType`
+
+## Album
+- `id`
+- `title`
+- `artistId`
+- `coverUri`
+- `releaseDate`
+- `trackCount`
+- `providerAlbumId`
+
+## Artist
+- `id`
+- `name`
+- `pictureUri`
+- `providerArtistId`
+- `summary`
+
+## Playlist
+- `id`
+- `name`
+- `coverUri`
+- `trackIds`
+- `createdAt`
+- `updatedAt`
+- `isPinned`
+
+## PlaybackContext
+- `id`
+- `type` parmi `playlist`, `album`, `artist_mix`, `search_result`, `library`, `single_track`
+- `sourceId`
+- `orderedTrackIds`
+- `currentIndex`
+- `shuffleEnabled`
+- `repeatMode`
+
+## QueueItem
+- `id`
+- `trackId`
+- `origin` parmi `priority_queue`, `playback_context`, `history`
+- `position`
+- `addedAt`
+
+## DownloadJob
+- `id`
+- `trackId`
+- `provider`
+- `status`
+- `progress`
+- `errorCode`
+- `createdAt`
+- `updatedAt`
+
+## UserProfile
+- `id`
+- `displayName`
+- `avatarUri`
+- `syncEnabled`
+- `preferredSearchMode`
+- `lastSeenAt`
+
+## ListeningSession
+- `id`
+- `userId`
+- `startedAt`
+- `endedAt`
+- `sourceType`
+- `sourceId`
+- `deviceType`
+- `networkType`
+- `totalListeningMs`
+
+## PlaybackEvent
+- `id`
+- `sessionId`
+- `trackId`
+- `eventType`
+- `occurredAt`
+- `positionStartMs`
+- `positionEndMs`
+- `completionPercent`
+- `skipReason`
+- `likedDuringPlayback`
+
+## HistoryItem
+- `id`
+- `trackId`
+- `playedAt`
+- `completionPercent`
+- `wasSkipped`
+- `sourceContextType`
+- `sourceContextId`
+
+## TrackLike
+- `trackId`
+- `likedAt`
+- `sourceContextType`
+- `sourceContextId`
+
+## UserTrackStats
+- `userId`
+- `trackId`
+- `periodType`
+- `periodStart`
+- `playCount`
+- `skipCount`
+- `completePlayCount`
+- `lastPlayedAt`
+- `totalListeningMs`
+- `averageCompletionPercent`
+- `isLiked`
+
+## ProviderTrack
+- `provider`
+- `providerTrackId`
+- `title`
+- `artistName`
+- `albumTitle`
+- `durationMs`
+- `artworkUrl`
+- `previewUrl`
+- `streamCapability`
+
+
+---
+## docs/domain/data-relationships.md
+# Domain Data Relationships
+
+## Objectif
+Donner une vue d'ensemble des entites metier AURA et de leur repartition entre `MediaStore`, `Room`, `Postgres` et `Qdrant`.
+
+## Principes de lecture
+- Le domaine AURA est defini par des entites metier stables, puis projete vers plusieurs systemes de persistance.
+- `Room` porte l'etat applicatif local durable.
+- `Postgres` porte l'etat cloud synchronisable quand la sync est active.
+- `MediaStore` decrit les fichiers locaux reels presents sur le telephone.
+- `Qdrant` stocke des vecteurs et un payload de metadonnees, mais n'est jamais une base transactionnelle.
+
+```mermaid
+flowchart TB
+  subgraph Domain["Domaine AURA"]
+    Artist["Artist"]
+    Album["Album"]
+    Track["Track"]
+    Playlist["Playlist"]
+    ListeningSession["ListeningSession"]
+    PlaybackEvent["PlaybackEvent"]
+    UserTrackStats["UserTrackStats"]
+  end
+
+  subgraph Local["Persistance locale"]
+    MediaStore["MediaStore"]
+    Room["Room"]
+  end
+
+  subgraph Cloud["Persistance cloud optionnelle"]
+    Postgres["Supabase / Postgres"]
+    Qdrant["Qdrant"]
+  end
+
+  Artist --> Album
+  Artist --> Track
+  Album --> Track
+  Playlist --> Track
+  ListeningSession --> PlaybackEvent
+  Track --> PlaybackEvent
+  Track --> UserTrackStats
+  PlaybackEvent --> UserTrackStats
+
+  MediaStore --> Track
+  Track --> Room
+  Artist --> Room
+  Album --> Room
+  Playlist --> Room
+  ListeningSession --> Room
+  PlaybackEvent --> Room
+  UserTrackStats --> Room
+
+  Track --> Postgres
+  Artist --> Postgres
+  Album --> Postgres
+  Playlist --> Postgres
+  ListeningSession --> Postgres
+  PlaybackEvent --> Postgres
+  UserTrackStats --> Postgres
+
+  Track --> Qdrant
+```
+
+## Cardinalites importantes
+- Un `Track` reference zero ou un `Album` principal et zero ou un `Artist` principal.
+- Un `Playlist` contient plusieurs items ordonnes et une meme piste peut apparaitre plusieurs fois dans une meme playlist.
+- Une `ListeningSession` emet plusieurs `PlaybackEvent` et peut alimenter plusieurs lignes d'historique.
+- Un `UserTrackStats` agrege une piste pour une periode donnee, pas une session unique.
+- Une piste AURA peut exister sans fichier local, sans mapping provider ou sans presence cloud.
+
+## Frontieres de persistance
+- `MediaStore` ne porte ni playlists, ni likes, ni historique, ni snapshot de lecture.
+- `Room` est la source de verite locale pour playlists, likes, snapshots, historique, stats et mappings provider.
+- `Postgres` ne replique pas `MediaStore`, la navigation UI, le scroll ni la `priority queue`.
+- `Qdrant` conserve un vecteur par piste documentee ainsi qu'un payload de metadonnees, dont l'identifiant AURA de piste.
+
+## Donnees explicitement non persistees comme donnees metier
+- la `priority queue` du player
+- la pile d'ecrans de navigation
+- le niveau de scroll d'un ecran
+
+
+---
+## docs/domain/playback-model.md
+# Playback Model
+
+## Objectif
+Definir un modele de lecture robuste, explicite et testable afin d'eviter les bugs observes dans le prototype.
+
+## Trois structures distinctes
+- `playback context` : source de lecture principale, par exemple une playlist ou un album.
+- `priority queue` : ajouts manuels que l'utilisateur veut entendre avant le reste du contexte.
+- `history` : pile ordonnee des pistes deja jouees ou sautees en arriere.
+
+## Regle canonique
+- Quand un contexte source joue et que l'utilisateur ajoute une piste a la queue, cette piste entre dans la `priority queue`.
+- La `priority queue` est lue avant les pistes restantes du contexte source.
+- Quand la `priority queue` est vide, la lecture reprend au prochain element non encore lu du contexte source.
+
+## Invariants
+- La piste courante n'appartient qu'a une seule position logique a la fois.
+- `next` privilegie toujours la `priority queue` si elle contient au moins un element.
+- `prev` consulte l'historique reel de lecture avant de remonter dans le contexte source.
+- La suppression d'une piste dans la queue ne doit jamais decaler la definition du contexte source.
+- Le reorder ne concerne que la `priority queue`, jamais l'ordre canonique d'une playlist source.
+
+## Modes
+- `shuffle` reordonne le contexte source, pas la `priority queue` deja construite.
+- `repeat one` repete la piste courante.
+- `repeat all` repete le contexte source une fois la `priority queue` vide.
+
+
+---
+## docs/domain/playback-user-flows.md
+# Playback User Flows
+
+## Play
+- Precondition : une piste cible existe.
+- Effet : la piste devient courante et le moteur prepare sa source audio.
+- Regle : si la lecture part d'une playlist ou d'un album, un `playback context` est cree ou rehydrate.
+- Regle : si la lecture part d'une piste isolee, l'application cree un contexte minimal de type `single_track` ou `search_result`.
+
+## Pause
+- Precondition : une lecture est active.
+- Effet : la position courante est preservee et le mini-player reste visible.
+- Regle : `Pause` ne vide ni le `playback context`, ni la `priority queue`, ni l'historique.
+
+## Next
+- Regle : si la `priority queue` contient des pistes en attente, la premiere est lue.
+- Regle : sinon, la lecture avance dans le `playback context`.
+- Regle : si rien n'est disponible, le player termine en etat `Idle` ou applique `repeat`.
+- Postcondition : l'historique est mis a jour avec la piste quittee selon la politique de tracking definie par le moteur.
+
+## Previous
+- Regle : si la piste courante a depasse le seuil de redemarrage, `Previous` redemarre cette piste.
+- Regle : sinon, le player revient a l'element precedent reel de l'historique, y compris s'il venait de la `priority queue`.
+- Regle : si aucun historique n'existe, le player reste sur la piste courante redemarree.
+
+## Remove From Queue
+- Regle : l'utilisateur peut supprimer une piste en attente dans la `priority queue`.
+- Regle : la piste courante ne peut pas etre supprimee depuis la vue queue.
+- Regle : la suppression ne modifie pas le `playback context`.
+- Postcondition : l'ordre des autres pistes en attente est compacte et preserve.
+
+## Reorder Queue
+- Regle : l'utilisateur peut glisser-deposer les pistes en attente.
+- Regle : le nouvel ordre s'applique uniquement aux prochaines lectures issues de la `priority queue`.
+- Regle : le reorder n'a aucun effet sur l'ordre canonique du `playback context`.
+
+## End Of Track
+- Regle : le player sauvegarde la progression, met a jour l'historique et choisit la prochaine piste selon la priorite canonique.
+- Regle : la fin naturelle d'une piste et l'action `Next` partagent la meme logique de resolution de la prochaine piste.
+
+## Error Handling
+- Regle : si la source audio echoue, le player expose un etat erreur actionnable.
+- Regle : l'utilisateur peut reessayer, passer au titre suivant ou retirer le titre si l'erreur vient de la queue.
+- Regle : une erreur sur une piste de la `priority queue` ne doit pas corrompre le `playback context`.
+
+
+---
+## docs/domain/provider-architecture.md
+# Provider Architecture
+
+## But
+Permettre a AURA de combiner local, recherche online, telechargement futur et streaming futur sans coupler le domaine a un fournisseur externe unique.
+
+## Couches
+- `Domain layer` : entites metier stables.
+- `Provider adapter` : transforme les formats Deezer ou autres vers les objets internes.
+- `Application services` : orchestration recherche, download jobs, enrichissement des metadonnees.
+
+## Provider v1
+- Deezer sert de source de recherche online pour titres, artistes et albums.
+- Les reponses Deezer sont mappees vers `ProviderTrack`, `Artist` et `Album`.
+- Les quotas, indisponibilites et erreurs reseau restent confines a l'adaptateur.
+
+## Evolutions prevues
+- Un bridge de streaming ou Hi-Fi pourra implementer les memes interfaces.
+- Le telechargement futur utilisera les resultats de provider comme point d'entree, pas comme modele final de stockage.
+- En absence de reseau, seules les donnees locales et cachees restent visibles.
+
+
+---
+## docs/android/app-architecture.md
+# Android App Architecture
+
+## Couches
+- `UI` : ecrans Compose, composants reutilisables, navigation.
+- `Presentation` : ViewModels, `StateFlow`, intents utilisateur.
+- `Domain` : cas d'usage player, recherche, playlists, bibliotheque, sync.
+- `Data` : Room, MediaStore, adaptateurs reseau et persistance locale.
+
+## Dependances majeures
+- Media3/ExoPlayer pour la lecture.
+- Room pour l'etat local structure.
+- MediaStore pour decouvrir et lire les medias locaux presents sur l'appareil.
+- FastAPI et Supabase pour les flux online et la sync optionnelle.
+
+## Principes
+- Un seul service player pilote la lecture.
+- Le ViewModel n'encode pas la logique de queue, il delegue a un orchestrateur de playback.
+- Les ecrans affichent des `UiState` deja prepares.
+- La sync cloud ne doit pas bloquer l'usage local.
+
+## Etat Android a documenter
+- lecture courante
+- file prioritaire
+- contexte source
+- historiques recents
+- synchronisation utilisateur
+- jobs de telechargement
+- statistiques d'ecoute
+
+## Etat exclu du modele de persistance metier
+- pile d'ecrans de navigation
+- niveau de scroll
+- etats UI transitoires purement visuels
+
+
+---
+## docs/android/local-persistence.md
+# Android Local Persistence
+
+## Objectif
+Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persistes dans `Room`, et quelles donnees doivent survivre a un redemarrage de l'application.
+
+## Reference de schema
+- Voir `docs/android/room-schema.md` pour les tables detaillees, les colonnes, PK, FK et contraintes.
+
+## Regle de separation
+- `MediaStore` est la source de verite des fichiers audio reels presents sur l'appareil.
+- `Room` est la source de verite de l'etat applicatif AURA.
+- Une meme piste peut avoir des informations venant des deux couches sans que l'une remplace l'autre.
+- L'etat purement UI, comme la pile d'ecrans de navigation ou le niveau de scroll d'une liste, ne fait pas partie de ce modele de persistance metier.
+
+## Comment fonctionne MediaStore
+- `MediaStore` est l'index systeme Android des medias presents sur l'appareil.
+- L'application le lit pour decouvrir les fichiers audio existants.
+- Il expose des informations comme l'URI systeme, la duree, le titre, l'album, l'artiste et des metadonnees de base.
+- Il ne remplace pas une base applicative, car il ne porte pas l'etat metier propre a AURA.
+
+## Comment fonctionne Room
+- `Room` est une couche de persistance locale au-dessus de SQLite.
+- L'application y stocke ses objets metier, ses etats utilisateur et ses donnees de reprise.
+- `Room` est la bonne couche pour les playlists, les likes, l'etat du player, les jobs et les statistiques d'ecoute.
+
+## Donnees qui doivent vivre dans MediaStore
+- presence physique d'un fichier audio local
+- URI systeme du fichier
+- duree technique du fichier
+- titre, album et artiste tels qu'exposes par le systeme
+- informations techniques de base utiles a l'import local
+
+## Donnees qui doivent vivre dans Room
+- identifiant canonique AURA d'une piste
+- relation entre une piste AURA et une entree MediaStore
+- playlists et ordre des pistes
+- likes et preferes utilisateur
+- contexte de lecture, queue prioritaire et snapshot de reprise
+- jobs de telechargement
+- historique recent
+- recherches recentes
+- statistiques d'ecoute
+- mappings provider et metadonnees enrichies
+
+## Principe de retention locale
+- Par defaut, les donnees metier et utilisateur doivent etre conservees.
+- Les exceptions explicites sont `recent_searches` et `download_jobs` termines.
+- `recent_searches` suit une retention bornee et glissante.
+- `download_jobs` termines peuvent etre archives cote cloud puis supprimes du telephone apres retention locale.
+
+## Tables Room principales
+
+### `tracks`
+- role : representation canonique locale d'une piste dans AURA
+- champs principaux :
+  - `id`
+  - `title`
+  - `artist_name`
+  - `album_title`
+  - `duration_ms`
+  - `cover_uri`
+  - `canonical_audio_source_type`
+  - `is_liked`
+  - `is_downloaded_by_aura`
+  - `created_at`
+  - `updated_at`
+
+### `track_media_links`
+- role : lien entre une piste AURA et une entree observee dans `MediaStore`
+- champs principaux :
+  - `id`
+  - `track_id`
+  - `media_store_id`
+  - `content_uri`
+  - `file_size_bytes`
+  - `mime_type`
+  - `date_modified`
+  - `availability_status`
+
+### `track_source_links`
+- role : lien entre une piste AURA et ses sources online par usage
+- champs principaux :
+  - `id`
+  - `track_id`
+  - `provider_name`
+  - `provider_track_id`
+  - `provider_album_id`
+  - `provider_artist_id`
+  - `provider_match_score`
+  - `is_primary_mapping`
+
+### `artists`
+- role : entite artiste locale enrichie
+- champs principaux :
+  - `id`
+  - `name`
+  - `picture_uri`
+  - `summary`
+  - `created_at`
+  - `updated_at`
+
+### `albums`
+- role : entite album locale enrichie
+- champs principaux :
+  - `id`
+  - `title`
+  - `artist_id`
+  - `cover_uri`
+  - `release_date`
+  - `track_count`
+  - `created_at`
+  - `updated_at`
+
+### `playlists`
+- role : playlist utilisateur
+- champs principaux :
+  - `id`
+  - `name`
+  - `cover_uri`
+  - `is_pinned`
+  - `created_at`
+  - `updated_at`
+
+### `playlist_items`
+- role : ordre des pistes dans une playlist
+- champs principaux :
+  - `id`
+  - `playlist_id`
+  - `track_id`
+  - `position`
+  - `added_at`
+
+### `playback_snapshots`
+- role : reprise de lecture locale
+- champs principaux :
+  - `id`
+  - `current_track_id`
+  - `playback_context_type`
+  - `playback_context_id`
+  - `playback_context_index`
+  - `position_ms`
+  - `shuffle_enabled`
+  - `repeat_mode`
+  - `updated_at`
+
+### `history_items`
+- role : historique recent de lecture
+- champs principaux :
+  - `id`
+  - `snapshot_id`
+  - `track_id`
+  - `played_at`
+  - `completion_percent`
+
+### `download_jobs`
+- role : suivi local des jobs de telechargement
+- champs principaux :
+  - `id`
+  - `track_id`
+  - `provider_name`
+  - `status`
+  - `progress_percent`
+  - `error_code`
+  - `error_message`
+  - `created_at`
+  - `updated_at`
+- retention :
+  - conserver les jobs actifs localement
+  - conserver temporairement les jobs termines localement
+  - autoriser une purge locale apres archivage cloud ou apres expiration de la retention locale
+
+### `recent_searches`
+- role : requetes recentes et suggestions locales
+- champs principaux :
+  - `id`
+  - `query`
+  - `searched_at`
+- retention :
+  - liste glissante limitee a 10 recherches
+
+### `listening_sessions`
+- role : session d'ecoute utilisateur
+- champs principaux :
+  - `id`
+  - `started_at`
+  - `ended_at`
+  - `source_type`
+  - `source_id`
+  - `network_type`
+  - `total_listening_ms`
+
+### `playback_events`
+- role : evenements fins de lecture et de skip
+- champs principaux :
+  - `id`
+  - `session_id`
+  - `track_id`
+  - `event_type`
+  - `position_start_ms`
+  - `position_end_ms`
+  - `completion_percent`
+  - `skip_reason`
+  - `liked_during_playback`
+  - `created_at`
+
+### `user_track_stats`
+- role : agregats locaux par piste
+- champs principaux :
+  - `track_id`
+  - `play_count`
+  - `skip_count`
+  - `complete_play_count`
+  - `last_played_at`
+  - `total_listening_ms`
+  - `average_completion_percent`
+
+### `user_settings`
+- role : preferences applicatives locales
+- champs principaux :
+  - `id`
+  - `sync_enabled`
+  - `online_search_enabled`
+  - `online_search_network_policy`
+  - `stats_sync_network_policy`
+  - `last_sync_at`
+
+### `sync_outbox`
+- role : operations locales en attente de synchronisation cloud
+- champs principaux :
+  - `id`
+  - `entity_type`
+  - `entity_id`
+  - `operation_type`
+  - `payload_json`
+  - `status`
+  - `attempt_count`
+  - `created_at`
+  - `updated_at`
+
+## Donnees a faire survivre a un redemarrage
+- playlists
+- likes
+- playback snapshot
+- historique recent
+- jobs
+- recherches recentes
+- statistiques d'ecoute
+- settings
+- mappings provider et metadonnees enrichies
+
+## Donnees purement reconstituables
+- index brut MediaStore, relu depuis le systeme
+- suggestions online temporaires
+- details de recherche online non valides par l'utilisateur
+- etat purement UI de navigation
+- pile d'ecrans precedente
+- niveau de scroll si aucune exigence explicite de restauration forte n'est retenue
+- `priority queue`
+
+## Statistiques d'ecoute recommandees
+- nombre d'ecoutes par piste
+- nombre de skips par piste
+- pourcentage moyen de completion
+- temps d'ecoute cumule par piste
+- derniere date d'ecoute
+- nombre de likes
+- sessions d'ecoute
+- temps d'ecoute par session
+- source de lecture la plus frequente
+- nombre d'ajouts a la queue
+- nombre d'ajouts en playlist
+- nombre d'ecoutes completes
+- nombre d'ecoutes abandonnees tres tot
+- repartition par contexte source comme playlist, album ou recherche
+- repartition par type de reseau si utile a l'analyse produit
+
+
+---
+## docs/android/room-schema.md
+# Room Schema
+
+## Objectif
+Definir le schema detaille de `Room` pour AURA, avec les cles, les relations et les contraintes qui doivent permettre une utilisation hors ligne robuste.
+
+## Principes generaux
+- `Room` est la source de verite de l'etat applicatif AURA.
+- Chaque piste connue par AURA recoit un `id` interne stable.
+- Les fichiers locaux observes via `MediaStore` sont relies a ces pistes, mais ne remplacent pas les tables metier.
+- La `priority queue` n'est pas persistee en base.
+- Un seul snapshot de lecture actif est conserve.
+- Les statistiques sont stockees a la fois en evenements fins et en agregats.
+
+## Quand une piste online entre dans Room
+- Une piste online n'entre pas dans `Room` pour un simple resultat de recherche transitoire.
+- Une piste online est inseree ou mise a jour dans `Room` des qu'au moins une des actions suivantes survient :
+  - lancement de lecture
+  - ajout a une playlist
+  - like
+  - ouverture d'une page album ou artiste necessitant un cache detaille
+  - lancement ou preparation d'un telechargement
+- Les resultats de recherche online non actionnes restent ephemeres tant qu'ils ne deviennent pas utiles a l'etat metier.
+
+## Tables
+
+### `artists`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant AURA |
+| `name` | `TEXT` | no | INDEX | nom affiche |
+| `normalized_name` | `TEXT` | no | INDEX | nom normalise pour recherche |
+| `picture_uri` | `TEXT` | yes |  | image locale ou distante |
+| `summary` | `TEXT` | yes |  | resume enrichi |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Constraints:
+- `UNIQUE(normalized_name)` seulement si la fusion canonique d'artistes est jugee fiable. Sinon, simple index.
+
+### `albums`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant AURA |
+| `primary_artist_id` | `TEXT` | yes | FK -> `artists.id` | artiste principal |
+| `title` | `TEXT` | no | INDEX | titre album |
+| `normalized_title` | `TEXT` | no | INDEX | titre normalise |
+| `cover_uri` | `TEXT` | yes |  | cover locale ou distante |
+| `release_date` | `TEXT` | yes |  | ISO date ou annee |
+| `track_count` | `INTEGER` | yes |  | nombre de pistes |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Indexes:
+- `INDEX(primary_artist_id, normalized_title)`
+
+### `tracks`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant AURA |
+| `primary_artist_id` | `TEXT` | yes | FK -> `artists.id` | artiste principal |
+| `album_id` | `TEXT` | yes | FK -> `albums.id` | album principal |
+| `title` | `TEXT` | no | INDEX | titre |
+| `normalized_title` | `TEXT` | no | INDEX | titre normalise |
+| `display_artist_name` | `TEXT` | no |  | chaine affichee |
+| `display_album_title` | `TEXT` | yes |  | chaine affichee |
+| `duration_ms` | `INTEGER` | yes |  | duree connue |
+| `cover_uri` | `TEXT` | yes |  | image locale ou distante |
+| `canonical_audio_source_type` | `TEXT` | no |  | `local`, `downloaded`, `stream`, `cloud_only` |
+| `is_liked` | `INTEGER` | no |  | booleen denormalise |
+| `is_downloaded_by_aura` | `INTEGER` | no |  | booleen denormalise |
+| `is_explicit` | `INTEGER` | yes |  | booleen |
+| `popularity` | `INTEGER` | yes |  | metadata provider ou qdrant |
+| `genres_json` | `TEXT` | yes |  | liste json si connue |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Indexes:
+- `INDEX(primary_artist_id)`
+- `INDEX(album_id)`
+- `INDEX(normalized_title, primary_artist_id)`
+
+### `track_media_links`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant local |
+| `track_id` | `TEXT` | no | UNIQUE FK -> `tracks.id` | un seul fichier local par piste AURA dans ce schema |
+| `media_store_id` | `INTEGER` | no | UNIQUE | identifiant MediaStore |
+| `content_uri` | `TEXT` | no |  | URI Android |
+| `file_size_bytes` | `INTEGER` | yes |  | taille |
+| `mime_type` | `TEXT` | yes |  | type MIME |
+| `date_modified_epoch_ms` | `INTEGER` | yes |  | date systeme |
+| `availability_status` | `TEXT` | no |  | `present`, `missing`, `stale` |
+| `last_scanned_at` | `INTEGER` | no |  | dernier passage d'indexation |
+
+### `track_source_links`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant local |
+| `track_id` | `TEXT` | no | FK -> `tracks.id` | piste AURA |
+| `usage_type` | `TEXT` | no | INDEX | `search`, `stream`, `download`, `metadata` |
+| `provider_name` | `TEXT` | no | INDEX | `deezer`, `tidal_bridge`, autre |
+| `provider_track_id` | `TEXT` | no |  | id externe |
+| `provider_album_id` | `TEXT` | yes |  | id album externe |
+| `provider_artist_id` | `TEXT` | yes |  | id artiste externe |
+| `match_score` | `REAL` | yes |  | score de correspondance |
+| `is_active_for_usage` | `INTEGER` | no |  | booleen |
+| `metadata_json` | `TEXT` | yes |  | payload source utile |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Constraints:
+- `UNIQUE(track_id, usage_type, provider_name, provider_track_id)`
+
+### `track_likes`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `track_id` | `TEXT` | no | PK FK -> `tracks.id` | piste likee |
+| `liked_at` | `INTEGER` | no |  | epoch ms |
+| `source_context_type` | `TEXT` | yes |  | contexte du like |
+| `source_context_id` | `TEXT` | yes |  | identifiant source |
+
+Rule:
+- `tracks.is_liked` doit refleter l'existence ou non d'une ligne dans `track_likes`.
+
+### `playlists`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant AURA |
+| `name` | `TEXT` | no | INDEX | nom playlist |
+| `cover_uri` | `TEXT` | yes |  | cover ou mosaique calculee |
+| `is_pinned` | `INTEGER` | no |  | booleen |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+### `playlist_items`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant item |
+| `playlist_id` | `TEXT` | no | FK -> `playlists.id` | playlist |
+| `track_id` | `TEXT` | no | FK -> `tracks.id` | piste |
+| `position` | `INTEGER` | no | INDEX | ordre explicite |
+| `added_at` | `INTEGER` | no |  | secours en cas de reordonnancement |
+| `added_from_context_type` | `TEXT` | yes |  | origine d'ajout |
+| `added_from_context_id` | `TEXT` | yes |  | origine d'ajout |
+
+Constraints:
+- `UNIQUE(playlist_id, position)`
+- un meme `track_id` peut apparaitre plusieurs fois dans une playlist.
+
+### `playback_snapshots`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | valeur fixe recommandee : `active` |
+| `current_track_id` | `TEXT` | yes | FK -> `tracks.id` | piste courante |
+| `playback_context_type` | `TEXT` | yes |  | `playlist`, `album`, `artist_mix`, `search_result`, `library`, `single_track` |
+| `playback_context_id` | `TEXT` | yes |  | identifiant contexte |
+| `playback_context_index` | `INTEGER` | yes |  | position actuelle dans le contexte |
+| `position_ms` | `INTEGER` | no |  | progression courante |
+| `shuffle_enabled` | `INTEGER` | no |  | booleen |
+| `repeat_mode` | `TEXT` | no |  | `off`, `one`, `all` |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Rule:
+- une seule ligne active doit exister.
+
+### `history_items`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant item |
+| `track_id` | `TEXT` | no | FK -> `tracks.id` | piste |
+| `listening_session_id` | `TEXT` | yes | FK -> `listening_sessions.id` | session source |
+| `played_at` | `INTEGER` | no | INDEX | date d'ecoute |
+| `completion_percent` | `REAL` | yes |  | progression finale |
+| `was_skipped` | `INTEGER` | no |  | booleen |
+| `source_context_type` | `TEXT` | yes |  | contexte source |
+| `source_context_id` | `TEXT` | yes |  | id contexte |
+
+Retention:
+- historique long local
+- eligible a la sync cloud
+
+### `download_jobs`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant job |
+| `track_id` | `TEXT` | no | FK -> `tracks.id` | piste cible |
+| `provider_name` | `TEXT` | no |  | source ou backend |
+| `status` | `TEXT` | no | INDEX | `queued`, `running`, `succeeded`, `failed`, `cancelled` |
+| `progress_percent` | `REAL` | yes |  | progression |
+| `error_code` | `TEXT` | yes |  | code erreur |
+| `error_message` | `TEXT` | yes |  | message erreur |
+| `attempt_count` | `INTEGER` | no |  | nombre de tentatives |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+| `archived_in_cloud_at` | `INTEGER` | yes |  | archive cloud |
+| `purge_after_at` | `INTEGER` | yes |  | date de purge locale |
+
+Retention:
+- conserver les jobs actifs localement
+- autoriser la purge locale des jobs termines apres archivage cloud
+
+### `recent_searches`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant local |
+| `query` | `TEXT` | no | UNIQUE | texte cherche |
+| `searched_at` | `INTEGER` | no | INDEX | date de derniere utilisation |
+
+Retention:
+- liste glissante limitee aux 10 recherches les plus recentes
+
+### `listening_sessions`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant session |
+| `started_at` | `INTEGER` | no | INDEX | debut |
+| `ended_at` | `INTEGER` | yes |  | fin |
+| `source_type` | `TEXT` | yes |  | `playlist`, `album`, `search`, `library`, `single_track` |
+| `source_id` | `TEXT` | yes |  | id source |
+| `network_type` | `TEXT` | yes |  | `offline`, `wifi`, `cellular`, autre |
+| `total_listening_ms` | `INTEGER` | no |  | temps cumule |
+
+### `playback_events`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant evenement |
+| `session_id` | `TEXT` | no | FK -> `listening_sessions.id` | session parente |
+| `track_id` | `TEXT` | no | FK -> `tracks.id` | piste |
+| `event_type` | `TEXT` | no | INDEX | `play`, `pause`, `resume`, `seek`, `complete`, `skip`, `like` |
+| `occurred_at` | `INTEGER` | no | INDEX | date evenement |
+| `position_start_ms` | `INTEGER` | yes |  | position initiale |
+| `position_end_ms` | `INTEGER` | yes |  | position finale |
+| `completion_percent` | `REAL` | yes |  | completion finale si pertinente |
+| `skip_reason` | `TEXT` | yes |  | `manual`, `next`, `error`, `autoplay` |
+| `liked_during_playback` | `INTEGER` | no |  | booleen |
+
+### `user_track_stats`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant agrege |
+| `track_id` | `TEXT` | no | FK -> `tracks.id` | piste |
+| `period_type` | `TEXT` | no | INDEX | `day`, `week`, `month`, `all_time` |
+| `period_start` | `TEXT` | no | INDEX | debut de periode ISO |
+| `play_count` | `INTEGER` | no |  | nombre de lectures |
+| `skip_count` | `INTEGER` | no |  | nombre de skips |
+| `complete_play_count` | `INTEGER` | no |  | lectures completes |
+| `last_played_at` | `INTEGER` | yes |  | derniere ecoute |
+| `total_listening_ms` | `INTEGER` | no |  | temps cumule |
+| `average_completion_percent` | `REAL` | yes |  | moyenne |
+| `queue_add_count` | `INTEGER` | no |  | ajouts en queue |
+| `playlist_add_count` | `INTEGER` | no |  | ajouts en playlist |
+
+Constraints:
+- `UNIQUE(track_id, period_type, period_start)`
+
+### `user_settings`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | valeur fixe recommandee : `default` |
+| `sync_enabled` | `INTEGER` | no |  | booleen |
+| `online_search_enabled` | `INTEGER` | no |  | booleen |
+| `online_search_network_policy` | `TEXT` | no |  | `wifi_only`, `any_network`, `disabled` |
+| `stats_sync_network_policy` | `TEXT` | no |  | `wifi_only` par defaut |
+| `last_sync_at` | `INTEGER` | yes |  | date de sync |
+
+### `sync_outbox`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant item |
+| `entity_type` | `TEXT` | no | INDEX | `playlist`, `playlist_item`, `track_like`, `snapshot`, `stats`, autre |
+| `entity_id` | `TEXT` | no | INDEX | identifiant local |
+| `operation_type` | `TEXT` | no |  | `insert`, `update`, `delete`, `archive` |
+| `payload_json` | `TEXT` | yes |  | charge utile |
+| `status` | `TEXT` | no | INDEX | `pending`, `running`, `failed`, `done` |
+| `attempt_count` | `INTEGER` | no |  | tentatives |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+## Tables explicitement absentes
+- aucune table de `priority_queue_items`
+- aucune table de pile de navigation
+- aucune table de niveau de scroll
+
+## Regles de retention
+- toutes les donnees metier durables sont conservees localement
+- `recent_searches` est limitee a 10 entrees
+- `download_jobs` termines sont purgeables localement apres archivage cloud
+
+
+---
+## docs/android/room-relationships.md
+# Room Relationships
+
+## Objectif
+Donner une vue relationnelle des tables `Room` sans recopier l'integralite du schema colonne par colonne.
+
+## Principes de lecture
+- Ce diagramme ne couvre que les relations structurelles de `Room`.
+- Les resultats online transitoires n'entrent pas en base tant qu'aucune action metier significative n'a eu lieu.
+- La `priority queue` n'apparait pas ici car elle n'est pas persistee.
+
+```mermaid
+erDiagram
+    ARTISTS {
+      TEXT id PK
+      TEXT name
+    }
+
+    ALBUMS {
+      TEXT id PK
+      TEXT primary_artist_id FK
+      TEXT title
+    }
+
+    TRACKS {
+      TEXT id PK
+      TEXT primary_artist_id FK
+      TEXT album_id FK
+      TEXT title
+    }
+
+    TRACK_MEDIA_LINKS {
+      TEXT id PK
+      TEXT track_id FK
+      INTEGER media_store_id
+    }
+
+    TRACK_SOURCE_LINKS {
+      TEXT id PK
+      TEXT track_id FK
+      TEXT usage_type
+      TEXT provider_name
+    }
+
+    TRACK_LIKES {
+      TEXT track_id PK
+      INTEGER liked_at
+    }
+
+    PLAYLISTS {
+      TEXT id PK
+      TEXT name
+      INTEGER updated_at
+    }
+
+    PLAYLIST_ITEMS {
+      TEXT id PK
+      TEXT playlist_id FK
+      TEXT track_id FK
+      INTEGER position
+    }
+
+    PLAYBACK_SNAPSHOTS {
+      TEXT id PK
+      TEXT current_track_id FK
+      INTEGER position_ms
+    }
+
+    HISTORY_ITEMS {
+      TEXT id PK
+      TEXT track_id FK
+      TEXT listening_session_id FK
+      INTEGER played_at
+    }
+
+    LISTENING_SESSIONS {
+      TEXT id PK
+      INTEGER started_at
+      INTEGER ended_at
+    }
+
+    PLAYBACK_EVENTS {
+      TEXT id PK
+      TEXT session_id FK
+      TEXT track_id FK
+      TEXT event_type
+    }
+
+    USER_TRACK_STATS {
+      TEXT id PK
+      TEXT track_id FK
+      TEXT period_type
+      TEXT period_start
+    }
+
+    DOWNLOAD_JOBS {
+      TEXT id PK
+      TEXT track_id FK
+      TEXT status
+    }
+
+    RECENT_SEARCHES {
+      TEXT id PK
+      TEXT query
+      INTEGER searched_at
+    }
+
+    USER_SETTINGS {
+      TEXT id PK
+      INTEGER sync_enabled
+    }
+
+    SYNC_OUTBOX {
+      TEXT id PK
+      TEXT entity_type
+      TEXT entity_id
+      TEXT status
+    }
+
+    ARTISTS ||--o{ ALBUMS : "primary artist"
+    ARTISTS ||--o{ TRACKS : "primary artist"
+    ALBUMS ||--o{ TRACKS : "album"
+    TRACKS ||--o| TRACK_MEDIA_LINKS : "local file link"
+    TRACKS ||--o{ TRACK_SOURCE_LINKS : "provider mappings"
+    TRACKS ||--o| TRACK_LIKES : "like row"
+    PLAYLISTS ||--o{ PLAYLIST_ITEMS : "contains"
+    TRACKS ||--o{ PLAYLIST_ITEMS : "playlist member"
+    TRACKS ||--o{ HISTORY_ITEMS : "played track"
+    LISTENING_SESSIONS ||--o{ HISTORY_ITEMS : "groups history"
+    LISTENING_SESSIONS ||--o{ PLAYBACK_EVENTS : "emits"
+    TRACKS ||--o{ PLAYBACK_EVENTS : "event target"
+    TRACKS ||--o{ USER_TRACK_STATS : "aggregated into"
+    TRACKS ||--o{ DOWNLOAD_JOBS : "download target"
+    TRACKS ||--o{ PLAYBACK_SNAPSHOTS : "current track"
+```
+
+## Cardinalites importantes
+- `track_media_links` impose une relation 1 piste AURA <-> 1 entree `MediaStore` dans le schema actuel.
+- `track_source_links` autorise plusieurs mappings par piste, differencies par `usage_type`.
+- `playlist_items` porte l'ordre reel de lecture dans une playlist et autorise plusieurs occurrences d'une meme piste.
+- `playback_snapshots` ne contient qu'une seule ligne active au niveau applicatif, meme si la relation vers `tracks` reste structurellement optionnelle.
+- `recent_searches`, `user_settings` et `sync_outbox` sont volontairement faiblement relies au reste du graphe.
+
+## Regles de presence en base
+- Une piste online entre dans `Room` quand elle devient utile a l'etat metier : lecture, like, ajout a playlist, cache detaille ou preparation de telechargement.
+- Une piste online issue d'une simple recherche non actionnee reste ephemere et ne cree pas d'ecriture `Room`.
+
+
+---
+## docs/android/navigation.md
+# Android Navigation
+
+## Graphe principal
+- `Home`
+- `Search`
+- `Library`
+
+## Destinations detail
+- `Player`
+- `PlaylistList`
+- `PlaylistDetail`
+- `Artist`
+- `Album`
+- `Downloads`
+- `Settings`
+
+## Regles
+- `Player` est modal plein ecran depuis le mini-player.
+- Les ecrans detail recoivent un identifiant metier stable.
+- Le retour depuis `Player` revient a l'ecran precedent sans perdre l'etat de scroll.
+- `PlaylistList` et `Downloads` partent de `Library`.
+
+
+---
+## docs/android/ui/design-system.md
+# Systeme De Design Et Directives UI
+
+## Objectif
+Ce document definit les fondations visuelles d'AURA. Tout nouvel ecran Android doit utiliser ces jetons afin de garder une interface coherente.
+
+## Palette sombre
+- `DeepBlack` : `#000000`
+- `OffBlack` : `#121212`
+- `DarkGraphite` : `#1E1E1E`
+- `TextPrimary` : `#FFFFFF`
+- `SteelGray` : `#B3B3B3`
+
+## Accents
+- `BlazeOrange` : `#FF6B00`
+- `AmberGlow` : `#FF9E00`
+- `LighterOrange` : `#FFB74D`
+
+## Gradients
+- `PrimaryGradient` : `BlazeOrange` vers `AmberGlow`
+- `DiscoveryGradient` : `#792BEE` vers `#00E0FF`
+
+## Couleurs semantiques
+- `Error` : `#FF5252`
+- `Success` : `#00E676`
+- `Warning` : `#FFEA00`
+
+## Typographie
+- Les grands headers sont en gras, tres visibles, contrastes sur fond sombre.
+- Les titres de section sont gras et compacts.
+- Les titres de pistes restent blancs, les metadonnees secondaires en gris.
+
+## Formes
+- Boutons d'action et recherche : forme pilule.
+- Cartes et pochettes : rectangle ou carre a coins arrondis.
+- Avatars artistes : cercle parfait.
+- Mini-player : carte flottante tres arrondie avec bordure orange fine.
+
+## Regles d'espacement
+- Prevoir un bottom padding genereux dans chaque liste pour ne jamais masquer le dernier element sous le mini-player.
+- Garder des espacements constants entre header, barre de recherche, sections et listes.
+
+
+---
+## docs/android/ui/components.md
+# Composants UI Reutilisables
+
+## Objectif
+Les composants ci-dessous constituent la base Compose d'AURA. Tout composant expose un `Modifier`.
+
+## MiniPlayer
+- Role : lecteur persistant au-dessus de la navigation basse.
+- Contenu : pochette, titre, artiste, boutons `previous`, `play/pause`, `next`.
+- Action : ouvre `PlayerScreen` au clic.
+- Etat : gere `loading`, `playing`, `paused`, `error`.
+
+## TrackRow
+- Role : affichage standard d'une piste dans la bibliotheque, les playlists et la queue.
+- Gauche : pochette, titre, artiste.
+- Droite : `like`, `add to queue`, menu contextuel.
+- Variantes : standard, compact, currently playing.
+- Menu contextuel canonique :
+  - `Lire maintenant`
+  - `Ajouter a la file d'attente`
+  - `Ajouter a une playlist`
+  - `Voir l'artiste`
+  - `Voir l'album`
+  - `Telecharger` uniquement si la piste n'est pas disponible localement
+  - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
+  - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
+
+## QueueRow
+- Role : ligne dediee a la `priority queue`.
+- Actions : drag handle, supprimer, ouvrir le menu contextuel.
+- Contrainte : la piste courante ne montre pas l'action supprimer.
+
+## ActionButton
+- Role : bouton primaire pour creer une playlist, lancer un mix ou demarrer une action de fond.
+- Style : pilule, fond uni ou gradient.
+
+## BottomNavigationBar
+- Role : navigation `Home`, `Search`, `Library`.
+- Etat actif : texte et icone orange.
+
+## SectionHeader
+- Role : separer les zones d'un scroll.
+- Variantes : standard, accent orange pour resultats de recherche.
+
+## CategoryCard
+- Role : representer mixes, entrees de bibliotheque ou raccourcis.
+- Visuel : fond gradient, icone ou cover marquee.
+
+## SearchBar
+- Role : saisie uniforme sur toutes les pages de recherche.
+- Placeholder : `Rechercher...`
+- Etats : vide, saisie, loading, clear.
+
+## EmptyStateCard
+- Role : etat vide descriptif pour playlists, downloads et recherche online hors ligne.
+- Contenu : titre, message, action primaire facultative.
+
+
+---
+## docs/android/ui/ui-performance.md
+# Optimisation Des Performances UI
+
+## Objectif
+Maintenir une interface Compose fluide avec un player persistant et plusieurs listes riches.
+
+## Listes
+- Fournir une cle unique stable pour chaque item de `LazyColumn`.
+- Utiliser `contentType` quand plusieurs types de lignes coexistent.
+- Eviter les calculs couteux dans les items de liste.
+
+## Etat
+- Encapsuler les lectures d'etats rapides dans `derivedStateOf`.
+- Calculer tri, filtrage et sections hors des cellules UI.
+- Exposer des etats ecran deja pretransformes depuis le ViewModel.
+
+## Media3
+- Garder une instance unique de player.
+- Le rendu video n'est pas un besoin v1, mais les surfaces audio et notifications doivent etre gerees par une session unique.
+- Le moteur de queue est separe du composant visuel afin de faciliter les tests.
+
+## Images
+- Charger les pochettes via Coil avec dimensions adaptees.
+- Utiliser cache memoire et disque.
+
+## Scroll et overlays
+- Le mini-player et la bottom bar imposent un padding bas explicite.
+- Les drag handles de queue ne doivent pas provoquer de recompositions globales.
+
+
+---
+## docs/android/player/architecture.md
+# Player Architecture
+
+## Objectif
+Isoler la logique de lecture et de queue pour la rendre testable, persistante et moins sujette aux regressions.
+
+## Blocs principaux
+- `PlaybackService` : interface entre Media3, session Android et systeme.
+- `PlaybackOrchestrator` : applique les regles `play`, `pause`, `next`, `prev`, `seek`.
+- `QueueManager` : gere `playback context`, `priority queue`, `history`.
+- `PlaybackStateStore` : persiste le minimum necessaire pour reprendre une session.
+- `PlayerViewModel` : transforme l'etat metier en etat ecran.
+
+## Responsabilites
+- Media3 lit la source audio et expose les callbacks bruts.
+- L'orchestrateur decide quelle piste doit etre jouee ensuite.
+- Le queue manager gere reorder, remove, resume et priorites.
+- Le state store sauvegarde contexte, piste courante, position et modes.
+
+## Donnees persistantes minimales
+- identifiant de la piste courante
+- position courante
+- contexte de lecture
+- contenu de la priority queue
+- modes shuffle et repeat
+
+
+---
+## docs/android/player/queue-rules.md
+# Queue Rules
+
+## Regle centrale
+Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente, ces titres sont places dans une `priority queue` distincte. Cette queue passe avant le reste de la playlist. Quand elle est vide, la lecture reprend la playlist au prochain element non encore lu.
+
+## Ajout a la queue
+- Un ajout manuel ne modifie pas l'ordre canonique de la playlist source.
+- Plusieurs ajouts successifs s'empilent dans l'ordre d'ajout.
+- Un doublon est autorise si l'utilisateur ajoute volontairement le meme titre plusieurs fois.
+
+## Next
+- Priorite a la `priority queue`.
+- Sinon avance dans le contexte source.
+- Sinon applique les regles de repetition ou passe en `idle`.
+
+## Previous
+- Si la piste courante a avance au-dela du seuil de redemarrage, `prev` relance cette piste.
+- Sinon le player revient a la piste precedente reelle de l'historique.
+
+## Remove
+- Une piste en attente peut etre retiree de la queue.
+- La piste courante ne peut pas etre retiree depuis l'ecran queue.
+- Supprimer une piste de la queue n'affecte ni la playlist source ni l'historique.
+
+## Reorder
+- L'utilisateur peut reordonner la queue manuelle.
+- Le reorder n'a aucun effet sur le contexte source.
+
+
+---
+## docs/android/player/states-and-events.md
+# Player States And Events
+
+## Etats principaux
+- `Idle`
+- `Preparing`
+- `Playing`
+- `Paused`
+- `Buffering`
+- `Completed`
+- `Error`
+
+## Etat ecran attendu
+- track courant
+- metadonnees album et artiste
+- progression et duree
+- modes repeat et shuffle
+- contenu de la priority queue
+- information du contexte source
+- message d'erreur eventuel
+
+## Evenements utilisateur
+- `Play`
+- `Pause`
+- `TogglePlayPause`
+- `Next`
+- `Previous`
+- `SeekTo`
+- `AddToQueue`
+- `RemoveFromQueue`
+- `ReorderQueue`
+- `ToggleShuffle`
+- `CycleRepeatMode`
+
+## Evenements systeme
+- `AudioFocusLost`
+- `AudioFocusGained`
+- `PlaybackEnded`
+- `PlaybackFailed`
+- `BecomingNoisy`
+- `NetworkChanged`
+
+## Transitions critiques
+- `PlaybackEnded` doit demander au queue manager la prochaine piste.
+- `PlaybackFailed` doit exposer une action de retry et permettre `next`.
+- `RemoveFromQueue` sur la piste courante est refuse par le domaine.
+
+
+---
+## docs/android/screens/home.md
+# Home Screen
+
+## Role
+Point d'entree principal de l'application, centre sur la reprise d'ecoute et les acces rapides.
+
+## Structure generale
+- scroll vertical unique
+- header haut avec salutation ou titre contextuel
+- bloc de reprise d'ecoute
+- rail de playlists recentes
+- rail de mixes et recommandations
+- acces rapide aux downloads
+
+## Header
+- titre de contexte type `Bonsoir` ou `Accueil`
+- sous-texte facultatif rappelant la derniere activite
+- action de navigation rapide vers `Settings` si un acces global est retenu
+
+## Bloc reprise d'ecoute
+- carte hero large
+- affiche la piste ou la playlist la plus recente
+- bouton `Reprendre`
+- bouton `...`
+- toucher la carte ouvre `Player` si une lecture resumable existe
+
+## Playlists recentes
+- en-tete de section
+- rail horizontal de cartes playlist
+- chaque carte montre cover, nom et compteur approximatif de pistes
+- toucher une carte ouvre `Playlist Detail`
+
+## Mixes et recommandations
+- cartes de categorie a fort impact visuel
+- scroll horizontal
+- peut contenir des mixes locaux ou des recommandations derivees plus tard
+- si la recommandation online n'est pas disponible, la section peut etre masquee sans casser l'ecran
+
+## Acces rapide aux downloads
+- carte ou ligne dediee
+- affiche un compteur de jobs en cours ou en erreur si disponible
+- touche ouvre `Downloads`
+
+## Boutons et actions
+- `Reprendre`
+- toucher une carte playlist
+- toucher une carte de mix
+- ouvrir `Player`
+- ouvrir `Downloads`
+
+## Etats
+- vide si aucune bibliotheque n'est disponible
+- reprise seule si aucune recommandation n'est prete
+- erreur online non bloquante pour les suggestions enrichies
+
+
+---
+## docs/android/screens/search.md
+# Search Screen
+
+## Role
+Permettre une recherche unique orientee intention utilisateur, avec evaluation conjointe des resultats locaux et online si le reseau est autorise.
+
+## Structure generale
+- ecran en scroll vertical unique
+- barre de recherche sticky en tete
+- zone de suggestions locales sous la barre pendant la saisie
+- bloc `Meilleur resultat`
+- bandeau `Dans votre bibliotheque`
+- sections online sous le bloc local
+
+## Comportement de saisie
+- aucune proposition avant trois caracteres saisis
+- a partir de trois caracteres, l'application affiche des suggestions locales uniquement
+- les suggestions sont basees sur les donnees locales deja connues par l'application
+- la validation clavier ou l'action de recherche lance l'affichage complet des resultats
+- si le reseau est autorise et disponible, la recherche complete interroge local et online en parallele
+
+## Barre de recherche
+- largeur complete avec forme pilule
+- icone loupe a gauche
+- texte `Rechercher...` quand le champ est vide
+- bouton `X` a droite uniquement quand la requete n'est pas vide
+- le focus ouvre le clavier et reserve un espace aux suggestions locales
+
+## Suggestions locales
+- liste verticale compacte juste sous la barre de recherche
+- limitee a des correspondances locales rapides
+- chaque suggestion affiche type, titre principal et metadonnee secondaire
+- toucher une suggestion remplit la requete et lance la recherche complete
+- pas de suggestions online a ce stade
+
+## Bloc Meilleur resultat
+- grande carte hero occupant toute la largeur utile
+- hauteur visuellement marquee pour dominer le haut de page
+- contenu adapte au type retenu
+
+## Meilleur resultat - piste
+- grande cover a gauche ou en fond selon le design final
+- titre, artiste, album
+- bouton `Play` visible
+- bouton `Like` visible
+- bouton `...` visible
+- toucher la carte hors boutons lance la lecture
+
+## Meilleur resultat - artiste
+- visuel artiste large et dominant
+- nom artiste tres visible
+- bouton d'ouverture de la page artiste
+- bouton secondaire `Lancer un mix` reserve si cette fonction est disponible
+
+## Meilleur resultat - album
+- grande cover album
+- titre album, artiste, nombre de pistes si connu
+- bouton d'ouverture de la page album
+- bouton `Play`
+
+## Dans votre bibliotheque
+- section locale toujours prioritaire quand des resultats pertinents existent
+- en-tete avec titre de section
+- sous-navigation par onglets
+
+## Onglets locaux
+- `Titres`
+- `Albums`
+- `Artistes`
+- `Playlists`
+
+## Contenu de l'onglet local
+- `Titres` : liste verticale de `TrackRow`
+- `Albums` : rail horizontal de cartes album
+- `Artistes` : rail horizontal de cartes artiste
+- `Playlists` : rail horizontal de cartes playlist
+
+## Resultats locaux - pistes
+- `TrackRow` classique
+- bouton `Like` visible directement
+- les autres actions passent par `...`
+- toucher la ligne lance la lecture
+
+## Resultats locaux - albums et artistes
+- pas de rows textuelles simples
+- cartes carrees ou quasi carrees
+- largeur equivalente a une demi-row environ
+- hauteur equivalente a deux rows environ
+- scroll horizontal
+- artiste : image dominante + nom
+- album : cover dominante + titre + artiste
+
+## Sections online
+- affichees uniquement si le reseau est autorise et disponible
+- ordre :
+  - `En ligne - Titres`
+  - `En ligne - Artistes`
+  - `En ligne - Albums`
+
+## Resultats online - titres
+- liste verticale de pistes ou petit rail horizontal selon le volume de resultats
+- `Like` non prioritaire si la piste n'est pas encore locale
+- `...` visible pour les actions secondaires
+- toucher la ligne ne doit pas lancer un telechargement implicite
+
+## Resultats online - artistes et albums
+- cartes visuelles, pas de rows
+- meme famille visuelle que les cartes locales
+- scroll horizontal
+- toucher la carte ouvre la page detail
+
+## Menu contextuel d'une piste dans Search
+- `Lire maintenant`
+- `Ajouter a la file d'attente`
+- `Ajouter a une playlist`
+- `Voir l'artiste`
+- `Voir l'album`
+- `Telecharger` uniquement si la piste n'est pas disponible localement
+- `Supprimer le telechargement` uniquement si la piste est deja disponible localement
+
+## Etats
+- vide avant saisie
+- suggestions locales uniquement pendant la saisie
+- resultats complets apres validation
+- local uniquement si le reseau n'est pas autorise ou indisponible
+- erreur online non bloquante si le provider echoue
+- aucun resultat si ni local ni online ne correspondent
+
+## Regles
+- `Search` ne distingue pas explicitement recherche locale et recherche online dans l'intention utilisateur
+- l'application privilegie local dans `Meilleur resultat` si la correspondance est forte
+- `Library` reste la surface de possession locale, `Search` reste la surface de recherche globale
+
+
+---
+## docs/android/screens/library.md
+# Library Screen
+
+## Role
+Centraliser la collection personnelle locale et les points d'entree de gestion.
+
+## Structure generale
+- ecran a scroll vertical
+- header avec titre `Library`
+- barre de recherche locale dediee
+- grille ou liste d'entrees principales
+- acces secondaires vers downloads et settings
+
+## Barre de recherche locale
+- recherche orientee possession locale
+- porte uniquement sur les donnees presentes localement ou deja synchronisees
+- ne declenche pas de recherche online
+
+## Entrees principales
+- `Titres`
+- `Albums`
+- `Artistes`
+- `Playlists`
+
+## Presentation
+- cartes ou lignes larges selon le design final
+- chaque entree affiche un libelle, une icone et un sous-texte de contexte si disponible
+- toucher une entree ouvre la surface correspondante
+
+## Zones secondaires
+- acces a `Downloads`
+- acces a `Settings`
+- eventuelle zone compte et sync si cette information est importante au niveau bibliotheque
+
+## Boutons et actions
+- saisir une recherche locale
+- ouvrir une entree principale
+- ouvrir `Downloads`
+- ouvrir `Settings`
+
+## Etats
+- vide si aucune bibliotheque locale n'existe
+- charge si des medias sont indexes
+- sync optionnelle si un compte est connecte
+
+## Donnees
+- Room pour l'etat applicatif
+- MediaStore pour la presence des fichiers locaux
+- metadonnees cloud optionnelles
+
+
+---
+## docs/android/screens/playlists.md
+# Playlists Screens
+
+## Role
+Documenter la liste des playlists et leur detail avec une forte lisibilite des actions d'edition.
+
+## Playlist List - structure generale
+- header avec titre `Playlists`
+- action primaire `Creer une playlist`
+- liste verticale des playlists utilisateur
+
+## Playlist List - ligne de playlist
+- cover a gauche
+- nom de playlist
+- metadonnee secondaire type nombre de pistes
+- bouton `...` optionnel si des actions rapides sont exposees depuis la liste
+- toucher la ligne ouvre `Playlist Detail`
+
+## Playlist List - etats
+- etat vide avec message explicite
+- bouton primaire visible meme en etat vide
+- etat charge avec tri simple et stable
+
+## Playlist Detail - structure generale
+- header hero avec cover, nom et metadonnees
+- rangee d'actions principales
+- liste verticale des pistes
+
+## Playlist Detail - header
+- grande cover ou mosaique
+- nom de playlist
+- nombre de pistes
+- information secondaire eventuelle comme date de mise a jour
+
+## Playlist Detail - actions principales
+- `Play`
+- `Shuffle`
+- `Renommer`
+- `Supprimer`
+
+## Playlist Detail - liste des pistes
+- `TrackRow` standard
+- `Like` visible
+- `...` pour toutes les actions secondaires
+- toucher une ligne lance la lecture a cette position dans le contexte playlist
+
+## Playlist Detail - menu contextuel d'une piste
+- `Lire maintenant`
+- `Ajouter a la file d'attente`
+- `Ajouter a une autre playlist`
+- `Voir l'artiste`
+- `Voir l'album`
+- `Retirer de cette playlist`
+- `Telecharger` ou `Supprimer le telechargement` selon l'etat local
+
+## Etats
+- vide
+- contenu charge
+- suppression avec confirmation
+- erreur de sync non bloquante
+
+
+---
+## docs/android/screens/player.md
+# Player Screen
+
+## Role
+Offrir le controle complet de la lecture en cours et rendre visible la relation entre piste courante, contexte source et priority queue.
+
+## Reference de layout
+- Voir `docs/android/screens/player-layout.md` pour le schema visuel de reference.
+
+## Structure generale
+- ecran plein hauteur
+- zone hero haute pour artwork et metadonnees
+- bloc de progression
+- rangee de controles transport
+- bloc d'actions secondaires
+- partie basse reservee au contexte source et a la `priority queue`
+
+## Zone hero
+- grande cover centree
+- titre de piste
+- artiste
+- album ou contexte secondaire
+- toucher artiste ou album peut ouvrir les pages detail si cette interaction est retenue
+
+## Progression
+- slider de lecture
+- temps ecoule a gauche
+- duree totale a droite
+
+## Controles transport
+- `Shuffle`
+- `Previous`
+- `Play/Pause`
+- `Next`
+- `Repeat`
+
+## Actions secondaires
+- `Like`
+- `Ajouter a une playlist`
+- `...` si une couche d'actions supplementaires est necessaire
+
+## Partie basse - contexte source
+- carte ou section rappelant la source actuelle
+- exemple : `Depuis la playlist X`
+- si aucun contexte riche n'existe, afficher `Lecture directe`
+
+## Partie basse - priority queue
+- section dediee et visible sans changer d'ecran
+- titre de section explicite
+- liste verticale des pistes en attente
+- `drag handle` visible
+- action de suppression visible sur les pistes en attente
+- la piste courante n'affiche pas d'action de suppression
+
+## Queue row dans Player
+- titre et artiste
+- indicateur d'ordre
+- `drag handle`
+- action de suppression si la piste est en attente
+
+## Etats
+- preparation
+- lecture
+- pause
+- buffering
+- erreur
+
+## Regles specifiques
+- `Next` privilegie toujours la `priority queue`
+- `Previous` suit la logique de redemarrage puis historique reel
+- le reorder n'affecte jamais le contexte source
+
+
+---
+## docs/android/screens/player-layout.md
+# Player Screen Layout
+
+## Objectif
+Visualiser une proposition de composition du `Player` afin de verifier que toutes les informations critiques tiennent sur un ecran mobile sans surcharger l'interface.
+
+## Hypothese de layout
+- la zone haute est reservee a l'identite de la piste
+- la zone centrale porte les controles critiques
+- la zone basse affiche le contexte source et une `priority queue` compacte
+- la `priority queue` est visible en apercu sur l'ecran principal, puis extensible par scroll dans la partie basse
+
+## Schema vertical
+
+```mermaid
+flowchart TD
+    A["Top Bar\nBack | Optional More"] --> B["Artwork Hero\nLarge square cover"]
+    B --> C["Track Meta\nTitle\nArtist\nAlbum or source meta"]
+    C --> D["Progress Block\nElapsed | Slider | Duration"]
+    D --> E["Transport Controls\nShuffle | Previous | Play/Pause | Next | Repeat"]
+    E --> F["Secondary Actions\nLike | Add to playlist | Optional more"]
+    F --> G["Source Context Card\nDepuis: Playlist X / Album Y / Lecture directe"]
+    G --> H["Priority Queue Header\nQueue (N) | Edit hint"]
+    H --> I["Queue Preview List\n1 to 3 visible rows\nDrag handle | Remove"]
+    I --> J["Bottom Safe Area"]
+```
+
+## Coupe mobile approximative
+
+```text
++--------------------------------------------------+
+| Back                                  Optional   |
+|                                                  |
+|                [ Large Artwork ]                 |
+|                                                  |
+|               Track Title                        |
+|               Artist Name                        |
+|               Album or Context                   |
+|                                                  |
+|  01:12      ----------------------      03:45    |
+|                                                  |
+| Shuffle   Prev      Play/Pause     Next  Repeat  |
+|                                                  |
+|        Like        Add to playlist      ...      |
+|                                                  |
+|  Depuis: Playlist Chill Nuit                      |
+|                                                  |
+|  Queue (3)                                       |
+|  [#1] Song A                     drag     remove |
+|  [#2] Song B                     drag     remove |
+|  [#3] Song C                     drag     remove |
+|                                                  |
++--------------------------------------------------+
+```
+
+## Regle de densite
+- l'ecran principal ne doit montrer que 1 a 3 lignes de queue simultanement
+- si la queue depasse cette taille, le reste se parcourt par scroll vertical dans la partie basse
+- la cover reste prioritaire visuellement sur les grands telephones
+- sur petits ecrans, la cover peut etre reduite avant de compresser la zone controles
+
+## Variante compacte recommandee
+- si la hauteur disponible est trop faible, reduire la taille de la cover
+- conserver toujours visibles :
+  - titre de piste
+  - slider
+  - `Previous`
+  - `Play/Pause`
+  - `Next`
+  - carte de contexte source
+  - au moins un apercu de la queue
+
+## Point de vigilance
+- si la queue devient trop longue, il faudra choisir entre :
+  - un scroll integre dans la partie basse
+  - une bottom sheet de queue plus detaillee
+- pour v1, la solution la plus simple reste une partie basse scrollable limitee a la queue
+
+
+---
+## docs/android/screens/artist.md
+# Artist Screen
+
+## Role
+Afficher un artiste et proposer les actions de lecture et d'exploration associees.
+
+## Structure generale
+- header hero artiste
+- bloc d'actions
+- section titres populaires
+- section albums
+
+## Header hero
+- image artiste large
+- nom de l'artiste
+- courte metadonnee secondaire si disponible
+
+## Actions principales
+- `Lire`
+- `Lancer un mix` si la fonction existe
+
+## Titres populaires
+- liste verticale de `TrackRow`
+- `Like` visible
+- `...` visible
+- toucher la ligne lance la lecture
+
+## Albums
+- rail horizontal de cartes album
+- toucher une carte ouvre `Album`
+
+## Etats
+- local only si l'artiste est connu depuis la bibliotheque
+- enrichi online si le reseau est disponible
+- erreur non bloquante si la source externe ne repond pas
+
+
+---
+## docs/android/screens/album.md
+# Album Screen
+
+## Role
+Afficher un album, ses metadonnees et la liste ordonnee de ses pistes.
+
+## Structure generale
+- header hero album
+- rangee d'actions principales
+- liste verticale des pistes
+
+## Header hero
+- grande cover album
+- titre album
+- artiste
+- informations secondaires comme annee ou nombre de pistes si connues
+
+## Actions principales
+- `Play`
+- `Shuffle`
+
+## Liste des pistes
+- ordre canonique de l'album
+- `TrackRow` standard
+- `Like` visible
+- `...` visible
+- toucher une ligne lance la lecture a cette position dans le contexte album
+
+## Etats
+- album local
+- album enrichi online
+- erreur si metadonnees indisponibles
+
+
+---
+## docs/android/screens/downloads.md
+# Downloads Screen
+
+## Role
+Suivre l'etat des traitements lies a la disponibilite locale des pistes.
+
+## Structure generale
+- header avec titre `Downloads`
+- sous-navigation par onglets ou filtres
+- liste verticale de jobs ou de pistes selon le mode retenu
+
+## Filtres
+- `En attente`
+- `En cours`
+- `Termines`
+- `Erreurs`
+
+## Ligne de download
+- titre principal
+- metadonnee secondaire
+- etat ou progression
+- action contextuelle a droite
+
+## Actions
+- `Reessayer`
+- `Annuler` pour un job en attente ou en cours si l'architecture le permet
+- `Ouvrir` ou `Lire` quand le contenu est disponible
+- ouvrir le detail de l'erreur
+
+## Etats
+- liste vide
+- progression en temps reel
+- erreur par job
+- succes avec acces direct a la piste
+
+
+---
+## docs/android/screens/settings.md
+# Settings Screen
+
+## Role
+Permettre la configuration de l'application sans complexifier les ecrans media.
+
+## Structure generale
+- liste verticale de sections
+- chaque section est presentee comme un groupe de preferences
+
+## Sections
+- `Compte et sync`
+- `Stockage local`
+- `Recherche`
+- `Qualite audio`
+- `Diagnostics`
+
+## Compte et sync
+- etat de connexion
+- bascule de sync si la fonction est active
+
+## Stockage local
+- informations sur le cache
+- action de nettoyage si necessaire
+
+## Recherche
+- autorisation ou non de la recherche online
+- politique reseau type `Wi-Fi uniquement` ou `Tout reseau`
+
+## Qualite audio
+- section reservee aux futures options si necessaire
+
+## Diagnostics
+- acces aux informations techniques utiles
+- acces possible aux journaux ou informations de version si exposees
+
+## Etats
+- local sans compte
+- connecte avec sync active
+- options futures desactivees mais documentees proprement
+
+
+---
+## docs/server/architecture.md
+# Server Architecture
+
+## Objectif
+Fournir une API et des jobs asynchrones pour la recherche, les metadonnees, la sync et les traitements lourds.
+
+## Blocs
+- FastAPI pour l'API HTTP
+- services applicatifs pour recherche, bibliotheque, playlists et downloads
+- adaptateurs providers
+- Supabase pour Postgres, Auth optionnelle et Storage
+- Qdrant pour les vecteurs
+- workers de jobs asynchrones
+
+## Flux
+- L'app Android interroge l'API pour recherche online, sync et etat des jobs.
+- Les services consultent Postgres pour les donnees transactionnelles.
+- Les requetes de recommandation interrogent Qdrant.
+- Les telechargements et preparations de flux sont delegues a des jobs.
+
+## Contraintes
+- garder des contrats JSON stables
+- isoler les providers externes
+- journaliser chaque job avec identifiant correlable
+
+
+---
+## docs/server/api-contract.md
+# API Contract
+
+## Objectif
+Definir le contrat HTTP de reference du backend AURA pour les capacites online, la sync cloud optionnelle et les jobs asynchrones.
+
+## Principe local-first
+- L'application Android reste pleinement fonctionnelle sans backend pour la bibliotheque locale, les playlists locales, la lecture et l'historique local.
+- Le backend enrichit l'experience avec la recherche online, les jobs et la sync cloud optionnelle.
+- La fusion des resultats locaux et online reste du ressort du client Android.
+
+## Familles d'API
+
+### API online publique
+- Utilisee sans compte pour la recherche enrichie et les pages detail online.
+- Aucune route publique ne doit etre necessaire pour lire une bibliotheque locale.
+
+### API sync cloud optionnelle
+- Utilisee seulement si l'utilisateur active un compte ou la synchronisation cloud.
+- Toutes les routes `/me/...` portent des donnees durables utilisateur.
+
+### API jobs et downloads
+- Utilisee quand le backend execute une tache asynchrone.
+- Le contrat reste generique tant que la source finale de telechargement n'est pas figee.
+
+## Enveloppe JSON canonique
+
+### Reponse de succes
+```json
+{
+  "data": {},
+  "error": null,
+  "meta": {}
+}
+```
+
+### Reponse d'erreur
+```json
+{
+  "data": null,
+  "error": {
+    "code": "not_found",
+    "message": "Requested resource was not found.",
+    "retryable": false,
+    "details": {}
+  },
+  "meta": {
+    "request_id": "req_123"
+  }
+}
+```
+
+## Regles transverses
+
+### Authentification
+- Les routes publiques n'exigent pas d'authentification.
+- Les routes `/me/...`, `/downloads` et `/jobs/{id}` exigent un bearer token valide.
+- L'absence de compte ne doit jamais empecher le fonctionnement local de l'application.
+
+### Identifiants
+- Tous les identifiants exposes par l'API sont des chaines opaques.
+- Un identifiant renvoye dans `data` doit pouvoir etre reutilise tel quel par le client.
+
+### Timestamps
+- Tous les timestamps HTTP sont en ISO 8601 UTC.
+- Les durees restent exprimees en millisecondes.
+
+### Pagination
+- Les collections paginees utilisent `limit` et `cursor`.
+- La reponse renvoie `meta.next_cursor` quand une page suivante existe.
+- Les valeurs par defaut et maximum sont precisees endpoint par endpoint.
+
+### Erreurs
+- Les codes d'erreur canoniques sont `invalid_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `provider_unavailable`, `rate_limited`, `job_failed`, `internal_error`.
+- Une erreur provider ne doit jamais etre decrite comme une erreur locale de bibliotheque.
+
+### Fallback provider
+- `GET /search` peut renvoyer un succes partiel avec `meta.partial_failure = true` si un provider externe echoue.
+- Les details techniques provider restent encapsules dans `error.details` ou `meta.provider_status`.
+
+## Objets de reponse canoniques
+
+### `TrackSummary`
+```json
+{
+  "id": "trk_aura_123",
+  "title": "The Giver",
+  "display_artist_name": "Chappell Roan",
+  "display_album_title": "Single",
+  "duration_ms": 202768,
+  "cover_uri": "https://...",
+  "is_explicit": false,
+  "is_liked": false,
+  "is_local_available": false,
+  "is_downloaded_by_aura": false
+}
+```
+
+### `ArtistSummary`
+```json
+{
+  "id": "art_aura_123",
+  "name": "Chappell Roan",
+  "picture_uri": "https://..."
+}
+```
+
+### `AlbumSummary`
+```json
+{
+  "id": "alb_aura_123",
+  "title": "Single",
+  "primary_artist_name": "Chappell Roan",
+  "cover_uri": "https://...",
+  "release_date": "2025-01-01",
+  "track_count": 1
+}
+```
+
+### `PlaylistSummary`
+```json
+{
+  "id": "pl_123",
+  "name": "Driving",
+  "cover_uri": "https://...",
+  "item_count": 18,
+  "is_pinned": false,
+  "updated_at": "2026-04-02T10:00:00Z"
+}
+```
+
+### `PlaybackSnapshot`
+```json
+{
+  "current_track_id": "trk_aura_123",
+  "playback_context_type": "playlist",
+  "playback_context_id": "pl_123",
+  "playback_context_index": 4,
+  "position_ms": 81234,
+  "shuffle_enabled": false,
+  "repeat_mode": "all",
+  "updated_at": "2026-04-02T10:00:00Z"
+}
+```
+
+## API online publique
+
+### `GET /health`
+- Usage : verifier que le backend est joignable.
+- Auth : non requise.
+- Query params : aucun.
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "status": "ok",
+  "service": "aura-api",
+  "time": "2026-04-02T10:00:00Z"
+}
+```
+- Erreurs attendues : aucune erreur metier.
+
+### `GET /search`
+- Usage : lancer une recherche online enrichie sur titres, artistes et albums.
+- Auth : non requise.
+- Query params :
+  - `q` requis, longueur minimale 3
+  - `limit_tracks` optionnel, defaut 10, max 25
+  - `limit_artists` optionnel, defaut 8, max 20
+  - `limit_albums` optionnel, defaut 8, max 20
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "query": "the giver",
+  "best_match": {
+    "kind": "track",
+    "item": {
+      "id": "trk_aura_123",
+      "title": "The Giver",
+      "display_artist_name": "Chappell Roan",
+      "display_album_title": "Single",
+      "duration_ms": 202768,
+      "cover_uri": "https://...",
+      "is_explicit": false,
+      "is_liked": false,
+      "is_local_available": false,
+      "is_downloaded_by_aura": false
+    }
+  },
+  "tracks": [],
+  "artists": [],
+  "albums": []
+}
+```
+- Reponse `meta` :
+```json
+{
+  "request_id": "req_123",
+  "partial_failure": false,
+  "provider_status": {
+    "deezer": "ok"
+  }
+}
+```
+- Erreurs attendues :
+  - `invalid_request` si `q` est absent ou trop court
+  - `provider_unavailable` seulement si aucune reponse exploitable ne peut etre produite
+- Regles :
+  - cette route ne renvoie que la partie online ou enrichie
+  - la fusion avec le local reste cote Android
+
+### `GET /artists/{id}`
+- Usage : recuperer la vue detail online d'un artiste deja resolu dans le modele AURA.
+- Auth : non requise.
+- Path params :
+  - `id` identifiant AURA artiste
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "id": "art_aura_123",
+  "name": "Chappell Roan",
+  "picture_uri": "https://...",
+  "summary": "Artist summary",
+  "top_tracks": [],
+  "albums": []
+}
+```
+- Erreurs attendues :
+  - `not_found`
+  - `provider_unavailable`
+
+### `GET /albums/{id}`
+- Usage : recuperer la vue detail online d'un album deja resolu dans le modele AURA.
+- Auth : non requise.
+- Path params :
+  - `id` identifiant AURA album
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "id": "alb_aura_123",
+  "title": "Single",
+  "primary_artist_name": "Chappell Roan",
+  "cover_uri": "https://...",
+  "release_date": "2025-01-01",
+  "track_count": 1,
+  "tracks": []
+}
+```
+- Erreurs attendues :
+  - `not_found`
+  - `provider_unavailable`
+
+## API sync cloud optionnelle
+
+### `GET /me/settings`
+- Usage : recuperer les preferences synchronisees utilisateur.
+- Auth : requise.
+- Query params : aucun.
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "sync_enabled": true,
+  "online_search_enabled": true,
+  "online_search_network_policy": "wifi_only",
+  "stats_sync_network_policy": "wifi_only",
+  "updated_at": "2026-04-02T10:00:00Z"
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+
+### `PATCH /me/settings`
+- Usage : modifier les preferences synchronisees utilisateur.
+- Auth : requise.
+- Body :
+```json
+{
+  "sync_enabled": true,
+  "online_search_enabled": true,
+  "online_search_network_policy": "wifi_only",
+  "stats_sync_network_policy": "wifi_only"
+}
+```
+- Reponse `data` : meme shape que `GET /me/settings`.
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+
+### `GET /me/playlists`
+- Usage : lister les playlists synchronisees de l'utilisateur.
+- Auth : requise.
+- Query params :
+  - `limit` optionnel, defaut 20, max 100
+  - `cursor` optionnel
+- Reponse `data` :
+```json
+{
+  "items": []
+}
+```
+- Reponse `meta` :
+```json
+{
+  "next_cursor": null
+}
+```
+- Les items utilisent la shape `PlaylistSummary`.
+
+### `POST /me/playlists`
+- Usage : creer une playlist synchronisee.
+- Auth : requise.
+- Body :
+```json
+{
+  "name": "Driving",
+  "is_pinned": false
+}
+```
+- Reponse `data` : `PlaylistSummary`
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+
+### `GET /me/playlists/{id}`
+- Usage : recuperer une playlist synchronisee avec ses items ordonnes.
+- Auth : requise.
+- Path params :
+  - `id` identifiant playlist
+- Reponse `data` :
+```json
+{
+  "id": "pl_123",
+  "name": "Driving",
+  "cover_uri": "https://...",
+  "item_count": 18,
+  "is_pinned": false,
+  "updated_at": "2026-04-02T10:00:00Z",
+  "items": [
+    {
+      "playlist_item_id": "pli_1",
+      "track": {
+        "id": "trk_aura_123",
+        "title": "The Giver",
+        "display_artist_name": "Chappell Roan",
+        "display_album_title": "Single",
+        "duration_ms": 202768,
+        "cover_uri": "https://...",
+        "is_explicit": false,
+        "is_liked": false,
+        "is_local_available": false,
+        "is_downloaded_by_aura": false
+      },
+      "position": 0,
+      "added_at": "2026-04-02T10:00:00Z"
+    }
+  ]
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+
+### `PATCH /me/playlists/{id}`
+- Usage : modifier le nom, l'etat epingle ou la cover d'une playlist synchronisee.
+- Auth : requise.
+- Body :
+```json
+{
+  "name": "Driving",
+  "is_pinned": true,
+  "cover_uri": "https://..."
+}
+```
+- Reponse `data` : `PlaylistSummary`
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+  - `not_found`
+
+### `DELETE /me/playlists/{id}`
+- Usage : supprimer une playlist synchronisee.
+- Auth : requise.
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "deleted": true,
+  "id": "pl_123"
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+
+### `POST /me/playlists/{id}/tracks`
+- Usage : ajouter une piste a une playlist synchronisee.
+- Auth : requise.
+- Body :
+```json
+{
+  "track_id": "trk_aura_123",
+  "position": 5,
+  "added_from_context_type": "album",
+  "added_from_context_id": "alb_aura_123"
+}
+```
+- Reponse `data` :
+```json
+{
+  "playlist_item_id": "pli_1",
+  "playlist_id": "pl_123",
+  "track_id": "trk_aura_123",
+  "position": 5
+}
+```
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+  - `not_found`
+
+### `PATCH /me/playlists/{id}/items/reorder`
+- Usage : reordonner les items d'une playlist synchronisee.
+- Auth : requise.
+- Body :
+```json
+{
+  "items": [
+    {
+      "playlist_item_id": "pli_1",
+      "position": 0
+    },
+    {
+      "playlist_item_id": "pli_2",
+      "position": 1
+    }
+  ]
+}
+```
+- Reponse `data` :
+```json
+{
+  "playlist_id": "pl_123",
+  "updated_at": "2026-04-02T10:00:00Z"
+}
+```
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+  - `not_found`
+  - `conflict`
+
+### `DELETE /me/playlists/{id}/tracks/{trackId}`
+- Usage : retirer une occurrence d'une piste d'une playlist synchronisee.
+- Auth : requise.
+- Path params :
+  - `id` identifiant playlist
+  - `trackId` identifiant piste
+- Query params :
+  - `playlist_item_id` optionnel mais recommande
+- Regle :
+  - si plusieurs occurrences du meme `trackId` existent et que `playlist_item_id` est absent, l'API renvoie `conflict`
+- Reponse `data` :
+```json
+{
+  "deleted": true,
+  "playlist_id": "pl_123",
+  "track_id": "trk_aura_123",
+  "playlist_item_id": "pli_1"
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+  - `conflict`
+
+### `PUT /me/tracks/{trackId}/like`
+- Usage : creer ou confirmer le like cloud d'une piste.
+- Auth : requise.
+- Body :
+```json
+{
+  "source_context_type": "search",
+  "source_context_id": "search_req_123"
+}
+```
+- Reponse `data` :
+```json
+{
+  "track_id": "trk_aura_123",
+  "is_liked": true,
+  "liked_at": "2026-04-02T10:00:00Z"
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+
+### `DELETE /me/tracks/{trackId}/like`
+- Usage : retirer le like cloud d'une piste.
+- Auth : requise.
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "track_id": "trk_aura_123",
+  "is_liked": false
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+
+### `GET /me/history`
+- Usage : recuperer l'historique d'ecoute synchronise.
+- Auth : requise.
+- Query params :
+  - `limit` optionnel, defaut 50, max 200
+  - `cursor` optionnel
+- Reponse `data` :
+```json
+{
+  "items": [
+    {
+      "id": "hist_1",
+      "track_id": "trk_aura_123",
+      "played_at": "2026-04-02T10:00:00Z",
+      "completion_percent": 92.4,
+      "was_skipped": false,
+      "source_context_type": "playlist",
+      "source_context_id": "pl_123"
+    }
+  ]
+}
+```
+- Reponse `meta` :
+```json
+{
+  "next_cursor": null
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+
+### `PUT /me/playback-snapshot`
+- Usage : enregistrer l'etat de reprise cloud du player.
+- Auth : requise.
+- Body :
+```json
+{
+  "current_track_id": "trk_aura_123",
+  "playback_context_type": "playlist",
+  "playback_context_id": "pl_123",
+  "playback_context_index": 4,
+  "position_ms": 81234,
+  "shuffle_enabled": false,
+  "repeat_mode": "all"
+}
+```
+- Reponse `data` : `PlaybackSnapshot`
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+
+### `GET /me/playback-snapshot`
+- Usage : recuperer l'etat de reprise cloud du player.
+- Auth : requise.
+- Query params : aucun.
+- Body : aucun.
+- Reponse `data` : `PlaybackSnapshot` ou `null` si aucun snapshot n'existe encore.
+- Erreurs attendues :
+  - `unauthorized`
+
+### `POST /me/stats/batch`
+- Usage : envoyer un lot de sessions, d'evenements et d'agregats d'ecoute.
+- Auth : requise.
+- Regle :
+  - le client n'appelle cette route que si la politique reseau autorise la sync stats, typiquement en Wi-Fi
+- Body :
+```json
+{
+  "sessions": [
+    {
+      "id": "sess_1",
+      "started_at": "2026-04-02T09:00:00Z",
+      "ended_at": "2026-04-02T09:40:00Z",
+      "source_type": "playlist",
+      "source_id": "pl_123",
+      "network_type": "wifi",
+      "total_listening_ms": 2400000
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_1",
+      "session_id": "sess_1",
+      "track_id": "trk_aura_123",
+      "event_type": "skip",
+      "occurred_at": "2026-04-02T09:05:00Z",
+      "position_start_ms": 0,
+      "position_end_ms": 45000,
+      "completion_percent": 22.1,
+      "skip_reason": "next",
+      "liked_during_playback": false
+    }
+  ],
+  "track_stats": [
+    {
+      "track_id": "trk_aura_123",
+      "period_type": "day",
+      "period_start": "2026-04-02",
+      "play_count": 3,
+      "skip_count": 1,
+      "complete_play_count": 2,
+      "last_played_at": "2026-04-02T09:30:00Z",
+      "total_listening_ms": 480000,
+      "average_completion_percent": 81.4,
+      "queue_add_count": 1,
+      "playlist_add_count": 0,
+      "is_liked": false
+    }
+  ]
+}
+```
+- Reponse `data` :
+```json
+{
+  "accepted": true,
+  "received_sessions": 1,
+  "received_events": 1,
+  "received_track_stats": 1
+}
+```
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+
+## API jobs et downloads
+
+### `GET /downloads`
+- Usage : lister les jobs de telechargement de l'utilisateur.
+- Auth : requise.
+- Query params :
+  - `status` optionnel
+  - `limit` optionnel, defaut 20, max 100
+  - `cursor` optionnel
+- Reponse `data` :
+```json
+{
+  "items": [
+    {
+      "id": "job_1",
+      "track_id": "trk_aura_123",
+      "provider_name": "backend",
+      "status": "running",
+      "progress_percent": 42.0,
+      "error_code": null,
+      "error_message": null,
+      "attempt_count": 1,
+      "created_at": "2026-04-02T10:00:00Z",
+      "updated_at": "2026-04-02T10:03:00Z"
+    }
+  ]
+}
+```
+- Reponse `meta` :
+```json
+{
+  "next_cursor": null
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+
+### `POST /downloads`
+- Usage : demander au backend de preparer ou lancer un telechargement pour une piste AURA.
+- Auth : requise.
+- Body :
+```json
+{
+  "track_id": "trk_aura_123",
+  "source_hint": {
+    "provider_name": "deezer",
+    "provider_track_id": "12345"
+  }
+}
+```
+- Regles :
+  - `source_hint` est optionnel
+  - le backend reste libre de choisir la meilleure strategie interne
+  - aucun flow de selection de source n'est fige dans ce contrat
+- Reponse `data` :
+```json
+{
+  "job_id": "job_1",
+  "track_id": "trk_aura_123",
+  "status": "queued"
+}
+```
+- Erreurs attendues :
+  - `invalid_request`
+  - `unauthorized`
+  - `not_found`
+  - `job_failed`
+
+### `POST /downloads/{id}/retry`
+- Usage : relancer un job de telechargement echoue ou annule.
+- Auth : requise.
+- Path params :
+  - `id` identifiant job
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "job_id": "job_1",
+  "status": "queued",
+  "attempt_count": 2
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+  - `conflict`
+
+### `GET /jobs/{id}`
+- Usage : consulter l'etat d'un job asynchrone user-scoped.
+- Auth : requise.
+- Path params :
+  - `id` identifiant job
+- Reponse `data` :
+```json
+{
+  "id": "job_1",
+  "kind": "download",
+  "status": "running",
+  "progress_percent": 42.0,
+  "result": null,
+  "error": null,
+  "created_at": "2026-04-02T10:00:00Z",
+  "updated_at": "2026-04-02T10:03:00Z"
+}
+```
+- Erreurs attendues :
+  - `unauthorized`
+  - `not_found`
+
+## Hors perimetre explicite de cette API
+- la bibliotheque locale issue de `MediaStore`
+- la fusion local + online dans `Search`
+- la `priority queue`
+- la pile de navigation
+- le niveau de scroll
+
+
+---
+## docs/server/api-sync-flows.md
+# API Sync Flows
+
+## Objectif
+Donner une vue des principaux flux entre l'application Android, l'API FastAPI, `Supabase / Postgres`, `Qdrant` et les workers de jobs.
+
+## Principes de lecture
+- Les flux ci-dessous decrivent uniquement les echanges online et sync.
+- Le mode local-first continue d'exister sans ces flux.
+- La fusion entre resultats locaux et online reste toujours cote Android.
+
+## Flux 1 - Recherche online enrichie
+```mermaid
+sequenceDiagram
+    participant Android as Android App
+    participant API as FastAPI
+    participant Provider as Provider Adapter
+    participant PG as Supabase/Postgres
+
+    Android->>API: GET /search?q=...
+    API->>Provider: Search tracks, artists, albums
+    Provider-->>API: Provider results
+    API->>PG: Upsert canonical entities and mappings if needed
+    PG-->>API: Canonical AURA ids and metadata
+    API-->>Android: best_match + tracks + artists + albums
+
+    Note over Android: Android merges online results with local results from Room and MediaStore.
+    Note over API,Provider: Provider failure may produce partial_failure without breaking local UX.
+```
+
+## Flux 2 - Lecture locale avec sync cloud optionnelle
+```mermaid
+sequenceDiagram
+    participant Android as Android App
+    participant Room as Room
+    participant API as FastAPI
+    participant PG as Supabase/Postgres
+
+    Android->>Room: Read local playlist, likes, snapshot, history
+    Room-->>Android: Local durable state
+    Android->>Android: Play locally with Media3
+
+    alt Sync enabled and auth available
+        Android->>API: PUT /me/playback-snapshot
+        API->>PG: Upsert playback snapshot
+        PG-->>API: Snapshot stored
+        API-->>Android: Snapshot acknowledged
+    else Local-only mode
+        Note over Android: No backend call is required.
+    end
+```
+
+## Flux 3 - Sync des playlists, likes et historique
+```mermaid
+flowchart LR
+    Android["Android App"] -->|"POST /me/playlists, PATCH /me/playlists/{id}, POST /me/playlists/{id}/tracks"| API["FastAPI"]
+    Android -->|"PUT /me/tracks/{trackId}/like"| API
+    Android -->|"GET /me/history"| API
+    Android -->|"POST /me/stats/batch"| API
+    API --> PG["Supabase / Postgres"]
+    PG --> API
+    API --> Android
+
+    SyncNote["Sync optionnelle : ces flux n'existent que si le compte cloud est actif."]:::note
+    Android -.-> SyncNote
+
+    classDef note fill:#f3f4f6,stroke:#9ca3af,color:#111827
+```
+
+## Flux 4 - Telechargement et job asynchrone
+```mermaid
+sequenceDiagram
+    participant Android as Android App
+    participant API as FastAPI
+    participant PG as Supabase/Postgres
+    participant Worker as Job Worker
+    participant Provider as Provider Adapter
+
+    Android->>API: POST /downloads
+    API->>PG: Create download job
+    PG-->>API: job_id
+    API-->>Android: job queued
+
+    Worker->>PG: Poll pending jobs
+    PG-->>Worker: queued job
+    Worker->>Provider: Resolve source and fetch asset or metadata
+    Provider-->>Worker: provider output
+    Worker->>PG: Update progress or final status
+
+    Android->>API: GET /jobs/{id}
+    API->>PG: Read job status
+    PG-->>API: current status
+    API-->>Android: queued, running, succeeded or failed
+
+    Note over API,Worker: The download contract stays generic. The backend chooses the internal strategy.
+```
+
+## Flux 5 - Recommandation et recherche vectorielle
+```mermaid
+sequenceDiagram
+    participant API as FastAPI
+    participant Q as Qdrant
+    participant PG as Supabase/Postgres
+
+    API->>Q: Vector similarity query
+    Q-->>API: track_id list + payload metadata
+    API->>PG: Read canonical track entities
+    PG-->>API: Track rows and mappings
+    API-->>API: Build AURA response objects
+
+    Note over Q: Qdrant stores vectors and payload metadata, not transactional truth.
+```
+
+## Limites explicites
+- Aucun flux n'encode la `priority queue`, car elle n'est pas persistee.
+- Aucun flux n'encode la navigation UI ou le niveau de scroll.
+- Le choix interne exact de source de telechargement reste volontairement opaque a ce stade.
+
+
+---
+## docs/server/jobs.md
+# Jobs Asynchrones
+
+## Types de jobs
+- telechargement audio futur
+- enrichissement de metadonnees
+- generation d'artefacts de pochettes ou caches
+- maintenance technique
+
+## Cycle de vie
+- `queued`
+- `running`
+- `succeeded`
+- `failed`
+- `cancelled`
+
+## Regles
+- Chaque job porte un identifiant stable.
+- Les progressions doivent etre lisibles depuis Android et via MCP.
+- Un echec doit exposer un code et un message diagnostic.
+
+## Integration produit
+- L'ecran `Downloads` consomme directement cet etat.
+- Les logs applicatifs lient chaque job a ses erreurs et a son provider source.
+
+
+---
+## docs/server/database-postgres.md
+# Postgres Schema
+
+## Objectif
+Definir le schema detaille de `Supabase/Postgres` pour les donnees transactionnelles et synchronisables d'AURA.
+
+## Relation avec le schema local
+- Voir `docs/android/room-schema.md` pour le schema `Room`.
+- Le cloud ne reproduit pas les tables purement locales ou l'etat UI.
+
+## Principes generaux
+- Postgres stocke les donnees durables synchronisables.
+- `MediaStore` n'est pas replique tel quel dans le cloud.
+- L'etat purement UI n'est pas synchronise.
+- Les `download_jobs` termines peuvent etre archives cote cloud meme s'ils sont purges du telephone.
+- Les statistiques sont synchronisees en Wi-Fi uniquement.
+
+## Tables
+
+### `profiles`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | meme identifiant que l'utilisateur auth si auth active |
+| `display_name` | `TEXT` | yes |  | nom utilisateur |
+| `avatar_uri` | `TEXT` | yes |  | avatar |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `user_settings`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `user_id` | `UUID` | no | PK FK -> `profiles.id` | utilisateur |
+| `sync_enabled` | `BOOLEAN` | no |  | sync active |
+| `online_search_enabled` | `BOOLEAN` | no |  | recherche online |
+| `online_search_network_policy` | `TEXT` | no |  | `wifi_only`, `any_network`, `disabled` |
+| `stats_sync_network_policy` | `TEXT` | no |  | `wifi_only` |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `artists`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | id AURA |
+| `name` | `TEXT` | no | INDEX | nom |
+| `normalized_name` | `TEXT` | no | INDEX | recherche |
+| `picture_uri` | `TEXT` | yes |  | image |
+| `summary` | `TEXT` | yes |  | resume |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `albums`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | id AURA |
+| `primary_artist_id` | `UUID` | yes | FK -> `artists.id` | artiste principal |
+| `title` | `TEXT` | no | INDEX | titre |
+| `normalized_title` | `TEXT` | no | INDEX | recherche |
+| `cover_uri` | `TEXT` | yes |  | cover |
+| `release_date` | `DATE` | yes |  | date ou annee connue |
+| `track_count` | `INTEGER` | yes |  | nombre de pistes |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `tracks`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | id AURA |
+| `primary_artist_id` | `UUID` | yes | FK -> `artists.id` | artiste principal |
+| `album_id` | `UUID` | yes | FK -> `albums.id` | album principal |
+| `title` | `TEXT` | no | INDEX | titre |
+| `normalized_title` | `TEXT` | no | INDEX | recherche |
+| `display_artist_name` | `TEXT` | no |  | affichage |
+| `display_album_title` | `TEXT` | yes |  | affichage |
+| `duration_ms` | `INTEGER` | yes |  | duree |
+| `cover_uri` | `TEXT` | yes |  | cover |
+| `is_explicit` | `BOOLEAN` | yes |  | explicite |
+| `popularity` | `INTEGER` | yes |  | score metadata |
+| `genres_json` | `JSONB` | yes |  | liste de genres |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `track_source_links`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | id mapping |
+| `track_id` | `UUID` | no | FK -> `tracks.id` | piste AURA |
+| `usage_type` | `TEXT` | no | INDEX | `search`, `stream`, `download`, `metadata` |
+| `provider_name` | `TEXT` | no | INDEX | nom provider |
+| `provider_track_id` | `TEXT` | no |  | id piste externe |
+| `provider_album_id` | `TEXT` | yes |  | id album externe |
+| `provider_artist_id` | `TEXT` | yes |  | id artiste externe |
+| `match_score` | `NUMERIC` | yes |  | score |
+| `is_active_for_usage` | `BOOLEAN` | no |  | actif |
+| `metadata_json` | `JSONB` | yes |  | payload source |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+Constraints:
+- `UNIQUE(track_id, usage_type, provider_name, provider_track_id)`
+
+### `playlists`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | playlist |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | proprietaire |
+| `name` | `TEXT` | no | INDEX | nom |
+| `cover_uri` | `TEXT` | yes |  | cover |
+| `is_pinned` | `BOOLEAN` | no |  | epingle |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `playlist_items`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | item |
+| `playlist_id` | `UUID` | no | FK -> `playlists.id` | playlist |
+| `track_id` | `UUID` | no | FK -> `tracks.id` | piste |
+| `position` | `INTEGER` | no | INDEX | ordre |
+| `added_at` | `TIMESTAMPTZ` | no |  | date ajout |
+| `added_from_context_type` | `TEXT` | yes |  | contexte |
+| `added_from_context_id` | `TEXT` | yes |  | contexte |
+
+Constraints:
+- `UNIQUE(playlist_id, position)`
+
+### `likes`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `user_id` | `UUID` | no | PK FK -> `profiles.id` | utilisateur |
+| `track_id` | `UUID` | no | PK FK -> `tracks.id` | piste |
+| `liked_at` | `TIMESTAMPTZ` | no |  | date |
+| `source_context_type` | `TEXT` | yes |  | contexte |
+| `source_context_id` | `TEXT` | yes |  | contexte |
+
+### `playback_snapshots`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `user_id` | `UUID` | no | PK FK -> `profiles.id` | utilisateur |
+| `current_track_id` | `UUID` | yes | FK -> `tracks.id` | piste courante |
+| `playback_context_type` | `TEXT` | yes |  | contexte |
+| `playback_context_id` | `TEXT` | yes |  | id contexte |
+| `playback_context_index` | `INTEGER` | yes |  | position |
+| `position_ms` | `INTEGER` | no |  | progression |
+| `shuffle_enabled` | `BOOLEAN` | no |  | shuffle |
+| `repeat_mode` | `TEXT` | no |  | repeat |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+
+### `history_items`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | item historique |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | utilisateur |
+| `track_id` | `UUID` | no | FK -> `tracks.id` | piste |
+| `listening_session_id` | `UUID` | yes | FK -> `listening_sessions.id` | session |
+| `played_at` | `TIMESTAMPTZ` | no | INDEX | date |
+| `completion_percent` | `NUMERIC` | yes |  | completion |
+| `was_skipped` | `BOOLEAN` | no |  | skip |
+| `source_context_type` | `TEXT` | yes |  | contexte |
+| `source_context_id` | `TEXT` | yes |  | contexte |
+
+### `download_jobs`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | job |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | utilisateur |
+| `track_id` | `UUID` | no | FK -> `tracks.id` | piste |
+| `provider_name` | `TEXT` | no |  | source |
+| `status` | `TEXT` | no | INDEX | etat |
+| `progress_percent` | `NUMERIC` | yes |  | progression |
+| `error_code` | `TEXT` | yes |  | code |
+| `error_message` | `TEXT` | yes |  | message |
+| `attempt_count` | `INTEGER` | no |  | tentatives |
+| `created_at` | `TIMESTAMPTZ` | no |  | creation |
+| `updated_at` | `TIMESTAMPTZ` | no |  | maj |
+| `archived_at` | `TIMESTAMPTZ` | yes |  | archive |
+
+### `listening_sessions`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | session |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | utilisateur |
+| `started_at` | `TIMESTAMPTZ` | no | INDEX | debut |
+| `ended_at` | `TIMESTAMPTZ` | yes |  | fin |
+| `source_type` | `TEXT` | yes |  | contexte |
+| `source_id` | `TEXT` | yes |  | contexte |
+| `device_type` | `TEXT` | yes |  | mobile, autre |
+| `network_type` | `TEXT` | yes |  | offline, wifi, cellular |
+| `total_listening_ms` | `INTEGER` | no |  | temps |
+
+### `playback_events`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | evenement |
+| `session_id` | `UUID` | no | FK -> `listening_sessions.id` | session |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | utilisateur |
+| `track_id` | `UUID` | no | FK -> `tracks.id` | piste |
+| `event_type` | `TEXT` | no | INDEX | `play`, `pause`, `resume`, `seek`, `complete`, `skip`, `like` |
+| `occurred_at` | `TIMESTAMPTZ` | no | INDEX | date |
+| `position_start_ms` | `INTEGER` | yes |  | position debut |
+| `position_end_ms` | `INTEGER` | yes |  | position fin |
+| `completion_percent` | `NUMERIC` | yes |  | completion |
+| `skip_reason` | `TEXT` | yes |  | `manual`, `next`, `error`, `autoplay` |
+| `liked_during_playback` | `BOOLEAN` | no |  | booleen |
+
+### `user_track_stats`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | agregat |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | utilisateur |
+| `track_id` | `UUID` | no | FK -> `tracks.id` | piste |
+| `period_type` | `TEXT` | no | INDEX | `day`, `week`, `month`, `all_time` |
+| `period_start` | `DATE` | no | INDEX | debut de periode |
+| `play_count` | `INTEGER` | no |  | lectures |
+| `skip_count` | `INTEGER` | no |  | skips |
+| `complete_play_count` | `INTEGER` | no |  | completes |
+| `last_played_at` | `TIMESTAMPTZ` | yes |  | derniere ecoute |
+| `total_listening_ms` | `INTEGER` | no |  | temps |
+| `average_completion_percent` | `NUMERIC` | yes |  | moyenne |
+| `queue_add_count` | `INTEGER` | no |  | ajouts queue |
+| `playlist_add_count` | `INTEGER` | no |  | ajouts playlist |
+| `is_liked` | `BOOLEAN` | no |  | etat derive |
+
+Constraints:
+- `UNIQUE(user_id, track_id, period_type, period_start)`
+
+### `recent_searches`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | PK | recherche |
+| `user_id` | `UUID` | no | FK -> `profiles.id` | utilisateur |
+| `query` | `TEXT` | no |  | requete |
+| `searched_at` | `TIMESTAMPTZ` | no | INDEX | date |
+
+Retention:
+- optionnelle
+- borne glissante de 10 recherches si active
+
+## Tables explicitement absentes
+- aucune replication brute de `MediaStore`
+- aucune table de pile de navigation
+- aucune table de niveau de scroll
+- aucune table de `priority_queue_items`
+
+## Politique de sync
+- tout le durable est synchronisable
+- les statistiques et leurs evenements ne montent que si le reseau autorise la sync en Wi-Fi
+- les jobs termines peuvent etre archives en cloud puis purges localement
+
+
+---
+## docs/server/postgres-relationships.md
+# Postgres Relationships
+
+## Objectif
+Donner une vue relationnelle des tables synchronisables cote `Supabase / Postgres`.
+
+## Principes de lecture
+- Ce diagramme couvre les donnees cloud durables exposees ou manipulees par le backend.
+- Le cloud ne replique pas `MediaStore`, la navigation UI, le scroll ni la `priority queue`.
+- Les donnees restent optionnelles a l'echelle produit : elles ne sont utiles que si la sync ou le compte cloud est actif.
+
+```mermaid
+erDiagram
+    PROFILES {
+      UUID id PK
+      TEXT display_name
+    }
+
+    USER_SETTINGS {
+      UUID user_id PK
+      BOOLEAN sync_enabled
+      TEXT online_search_network_policy
+    }
+
+    ARTISTS {
+      UUID id PK
+      TEXT name
+    }
+
+    ALBUMS {
+      UUID id PK
+      UUID primary_artist_id FK
+      TEXT title
+    }
+
+    TRACKS {
+      UUID id PK
+      UUID primary_artist_id FK
+      UUID album_id FK
+      TEXT title
+    }
+
+    TRACK_SOURCE_LINKS {
+      UUID id PK
+      UUID track_id FK
+      TEXT usage_type
+      TEXT provider_name
+    }
+
+    PLAYLISTS {
+      UUID id PK
+      UUID user_id FK
+      TEXT name
+    }
+
+    PLAYLIST_ITEMS {
+      UUID id PK
+      UUID playlist_id FK
+      UUID track_id FK
+      INTEGER position
+    }
+
+    LIKES {
+      UUID user_id PK
+      UUID track_id PK
+      TIMESTAMPTZ liked_at
+    }
+
+    PLAYBACK_SNAPSHOTS {
+      UUID user_id PK
+      UUID current_track_id FK
+      INTEGER position_ms
+    }
+
+    HISTORY_ITEMS {
+      UUID id PK
+      UUID user_id FK
+      UUID track_id FK
+      UUID listening_session_id FK
+    }
+
+    LISTENING_SESSIONS {
+      UUID id PK
+      UUID user_id FK
+      TIMESTAMPTZ started_at
+    }
+
+    PLAYBACK_EVENTS {
+      UUID id PK
+      UUID session_id FK
+      UUID user_id FK
+      UUID track_id FK
+      TEXT event_type
+    }
+
+    USER_TRACK_STATS {
+      UUID id PK
+      UUID user_id FK
+      UUID track_id FK
+      TEXT period_type
+      DATE period_start
+    }
+
+    DOWNLOAD_JOBS {
+      UUID id PK
+      UUID user_id FK
+      UUID track_id FK
+      TEXT status
+    }
+
+    RECENT_SEARCHES {
+      UUID id PK
+      UUID user_id FK
+      TEXT query
+    }
+
+    PROFILES ||--|| USER_SETTINGS : "owns settings"
+    PROFILES ||--o{ PLAYLISTS : "owns playlists"
+    PLAYLISTS ||--o{ PLAYLIST_ITEMS : "contains"
+    TRACKS ||--o{ PLAYLIST_ITEMS : "playlist member"
+    PROFILES ||--o{ LIKES : "likes"
+    TRACKS ||--o{ LIKES : "liked track"
+    PROFILES ||--|| PLAYBACK_SNAPSHOTS : "resume state"
+    TRACKS ||--o{ PLAYBACK_SNAPSHOTS : "current track"
+    PROFILES ||--o{ HISTORY_ITEMS : "listening history"
+    TRACKS ||--o{ HISTORY_ITEMS : "played track"
+    LISTENING_SESSIONS ||--o{ HISTORY_ITEMS : "session history"
+    PROFILES ||--o{ LISTENING_SESSIONS : "owns sessions"
+    LISTENING_SESSIONS ||--o{ PLAYBACK_EVENTS : "emits"
+    PROFILES ||--o{ PLAYBACK_EVENTS : "owns events"
+    TRACKS ||--o{ PLAYBACK_EVENTS : "event target"
+    PROFILES ||--o{ USER_TRACK_STATS : "owns aggregates"
+    TRACKS ||--o{ USER_TRACK_STATS : "aggregated track"
+    PROFILES ||--o{ DOWNLOAD_JOBS : "owns jobs"
+    TRACKS ||--o{ DOWNLOAD_JOBS : "download target"
+    PROFILES ||--o{ RECENT_SEARCHES : "optional history"
+    ARTISTS ||--o{ ALBUMS : "primary artist"
+    ARTISTS ||--o{ TRACKS : "primary artist"
+    ALBUMS ||--o{ TRACKS : "album"
+    TRACKS ||--o{ TRACK_SOURCE_LINKS : "provider mappings"
+```
+
+## Cardinalites importantes
+- `profiles` est la racine des donnees utilisateur synchronisables.
+- `user_settings` et `playback_snapshots` sont en relation 1:1 avec un profil.
+- `likes` est une table de jointure utilisateur <-> piste.
+- `user_track_stats` agrege une piste par utilisateur et par periode.
+- `recent_searches` reste optionnelle et bornee a une fenetre glissante.
+
+## Donnees explicitement absentes du cloud
+- aucune replication brute de `MediaStore`
+- aucune `priority queue`
+- aucune pile de navigation
+- aucun niveau de scroll
+
+
+---
+## docs/server/vector-search-qdrant.md
+# Vector Search And Qdrant
+
+## Role
+Qdrant stocke les vecteurs utilises pour les recommandations et recherches par similarite, ainsi qu'un payload de metadonnees associe a chaque vecteur.
+
+## Etat actuel connu
+- Le prototype dispose d'environ 2,2 millions de vecteurs populaires.
+- L'embedding courant vit dans un espace de 32 dimensions.
+- La similarite utilise le cosinus.
+- La recommandation prototype moyenne actuellement les vecteurs d'une playlist.
+
+## Payload de metadonnees associe au vecteur
+- Chaque point Qdrant peut embarquer un payload de metadonnees directement exploitable.
+- Exemple de payload actuel :
+
+```json
+{
+  "track_name": "The Giver",
+  "artist_name": "Chappell Roan",
+  "genres": "Inconnu",
+  "popularity": 89,
+  "duration_ms": 202768,
+  "explicit": false
+}
+```
+
+## Usage attendu du payload
+- aider a filtrer, scorer ou expliquer un resultat de recommandation
+- enrichir la transformation d'un resultat Qdrant vers une entite `Track`
+- eviter de dependre uniquement de l'identifiant du vecteur pour comprendre un resultat
+
+## Place dans v1
+- Le moteur vectoriel est mentionne structurellement dans la documentation.
+- Les details algorithmiques fins seront documentes plus tard quand les invariants seront stabilises.
+
+## Contraintes
+- Les identifiants pistes doivent etre alignes entre Qdrant et le domaine AURA.
+- Les reponses de reco doivent pouvoir etre transformees en objets `Track` exploitables par Android.
+- Le payload Qdrant ne remplace pas les tables transactionnelles de `Room` ou `Postgres`.
+
+
+---
+## docs/server/storage.md
+# Storage Strategy
+
+## Types d'objets
+- pochettes mises en cache
+- artefacts temporaires de telechargement
+- fichiers audio derives futurs
+- exports techniques ou journaux traces si necessaire
+
+## Principes
+- Le stockage long terme doit rester limite pour contenir les couts.
+- Les fichiers temporaires doivent etre supprimables sans casser les donnees transactionnelles.
+- Les references vers des objets binaires vivent en base, pas uniquement dans des conventions implicites.
+
+
+---
+## docs/server/providers/deezer.md
+# Deezer Provider
+
+## Role
+Fournisseur de recherche online v1 pour titres, artistes et albums.
+
+## Capacites documentees
+- rechercher des titres
+- rechercher des artistes
+- rechercher des albums
+- recuperer des metadonnees publiques utiles a l'exploration
+
+## Regles
+- Deezer est encapsule derriere un adaptateur.
+- Les objets renvoyes sont mappes vers le domaine interne.
+- Les erreurs, quotas et indisponibilites restent locales a l'adaptateur.
+
+## Limites
+- Deezer ne doit pas dicter le modele metier AURA.
+- Les actions futures de telechargement ou streaming dependront d'autres briques que de cette seule integration.
+
+
+---
+## docs/server/providers/streaming-bridge.md
+# Streaming Bridge Extension
+
+## Role
+Preparer un point d'extension pour un futur bridge de streaming ou Hi-Fi sans figer la v1 dessus.
+
+## Attentes
+- exposer des metadonnees et eventuellement des capacites de flux
+- reutiliser les entites et interfaces provider deja definies
+- rester remplacable et isole du coeur produit
+
+## Points de vigilance
+- dependances legales et contractuelles
+- fiabilite des sessions et authentifications
+- cout et maintenance
+
+## Regle documentaire
+Tant que cette brique n'est pas stable, elle reste documentee comme extension et non comme dependance centrale d'AURA.
+
+
+---
+## docs/server/security-and-secrets.md
+# Security And Secrets
+
+## Principes
+- aucun secret en dur
+- separation claire entre variables Android et serveur
+- moindre privilege pour toutes les integrations
+
+## Variables a prevoir
+- URL et cle publique Supabase
+- secrets serveur Supabase
+- URL Qdrant et jeton associe
+- cles provider externes si necessaires
+- configuration des workers et jobs
+
+## Regles
+- documenter toute variable dans un exemple dedie
+- masquer les secrets dans les logs et via MCP
+- segmenter les environnements local, staging personnel et production personnelle
+
+
+---
+## docs/mcp/overview.md
+# MCP Overview
+
+## Objectif
+Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uniquement du code statique.
+
+## Priorites
+- logs applicatifs
+- schemas de base de donnees
+- etat des jobs
+
+## Principes
+- exposition en lecture seule par defaut
+- noms de ressources stables
+- filtrage des secrets et donnees sensibles
+
+
+---
+## docs/mcp/resources.md
+# MCP Resources
+
+## Ressources minimales
+- `logs/app/latest`
+- `logs/jobs/latest`
+- `db/schema/postgres`
+- `db/schema/qdrant`
+- `jobs/active`
+- `jobs/history/{id}`
+
+## Format attendu
+- ressources texte ou JSON lisibles
+- timestamps explicites
+- identifiants de correlation pour relier logs et jobs
+
+## Contraintes
+- pas de secrets exposes
+- pas d'operation destructive depuis les ressources de lecture
+
+
+---
+## docs/mcp/use-cases.md
+# MCP Use Cases
+
+## Diagnostic d'un telechargement
+- lire `jobs/active`
+- ouvrir l'historique d'un job
+- consulter les logs lies a son identifiant
+
+## Verification d'un schema
+- lire `db/schema/postgres`
+- comparer les entites documentees avec les tables reelles
+
+## Diagnostic player indirect
+- verifier si des jobs ou providers echouent
+- verifier si des metadonnees attendues manquent
+
+
+---
+## docs/ops/logging-observability.md
+# Logging And Observability
+
+## Logs attendus
+- logs API
+- logs jobs
+- logs providers
+- logs de sync
+
+## Exigences
+- chaque entree importante contient un timestamp, un niveau et un correlation id
+- les erreurs player cote client doivent pouvoir etre rapprochees d'echecs provider cote serveur
+- les secrets doivent etre rediges
+
+## Usage
+- support au debug manuel
+- exposition selective via MCP
+
+
+---
+## docs/ops/env-vars.md
+# Environment Variables Inventory
+
+## Android
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `API_BASE_URL`
+
+## Serveur
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `DATABASE_URL`
+- `QDRANT_URL`
+- `QDRANT_API_KEY`
+- `DEEZER_API_BASE_URL`
+- `JOBS_BACKEND_URL`
+
+## Regles
+- toute nouvelle variable doit etre documentee ici et dans un fichier exemple
+- les valeurs reelles ne doivent jamais apparaitre dans le depot
