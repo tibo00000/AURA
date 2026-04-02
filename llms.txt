@@ -2,6 +2,7 @@ AURA Documentation Index
 
 Root
 - `AGENTS.md`: regles d'interaction, contraintes Android, secrets et politique de commit.
+- `BUILD.md`: suivi strict du chantier, statut des travaux code et journal horodate des changements de spec.
 - `docs/README.md`: carte de la documentation et ordre canonique de concatenation.
 - `docs/documentation/style-guide.md`: regles strictes de redaction, maintenance et coherence documentaire.
 
