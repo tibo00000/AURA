@@ -99,20 +99,21 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 38. `docs/server/architecture.md`
 39. `docs/server/api-contract.md`
 40. `docs/server/sync-conflict-resolution.md`
-41. `docs/server/api-sync-flows.md`
-42. `docs/server/jobs.md`
-43. `docs/server/database-postgres.md`
-44. `docs/server/postgres-relationships.md`
-45. `docs/server/vector-search-qdrant.md`
-46. `docs/server/storage.md`
-47. `docs/server/providers/deezer.md`
-48. `docs/server/providers/streaming-bridge.md`
-49. `docs/server/security-and-secrets.md`
-50. `docs/mcp/overview.md`
-51. `docs/mcp/resources.md`
-52. `docs/mcp/use-cases.md`
-53. `docs/ops/logging-observability.md`
-54. `docs/ops/env-vars.md`
+41. `docs/server/sync-batch-api.md`
+42. `docs/server/api-sync-flows.md`
+43. `docs/server/jobs.md`
+44. `docs/server/database-postgres.md`
+45. `docs/server/postgres-relationships.md`
+46. `docs/server/vector-search-qdrant.md`
+47. `docs/server/storage.md`
+48. `docs/server/providers/deezer.md`
+49. `docs/server/providers/streaming-bridge.md`
+50. `docs/server/security-and-secrets.md`
+51. `docs/mcp/overview.md`
+52. `docs/mcp/resources.md`
+53. `docs/mcp/use-cases.md`
+54. `docs/ops/logging-observability.md`
+55. `docs/ops/env-vars.md`
 
 ## Rythme de mise a jour
 - Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
@@ -168,6 +169,106 @@ Contraintes :
 - Aucun code applicatif Android ou backend n'est encore present dans le depot.
 - Le prochain objectif est d'utiliser ce fichier pour suivre l'implementation du code reel, brique par brique.
 
+## Trajectoire globale
+
+### Regles de priorisation
+- Toujours livrer d'abord ce qui rend l'application localement utilisable.
+- Toujours preferer une tranche verticale executable a une base trop abstraite.
+- Ne pas demarrer une phase si la phase precedente n'a pas produit un resultat testable.
+- Ne pas ouvrir simultanement trop de fronts. La priorite suit l'ordre des phases ci-dessous.
+- Les integrations cloud et les optimisations n'arrivent qu'apres un coeur local fiable.
+
+### Phase 1 - Fondations executables
+Objectif :
+- rendre possible le premier lancement des projets Android et backend
+
+Priorite :
+- `AND-001`
+- `SRV-001`
+- `INF-001`
+- `INF-002`
+
+Resultat attendu :
+- un projet Android demarre
+- un backend FastAPI demarre
+- la configuration locale est documentee et executable
+
+### Phase 2 - Coeur local Android
+Objectif :
+- rendre AURA utile sans backend
+
+Priorite :
+- `AND-002`
+- `AND-003`
+- `AND-004`
+- `AND-006`
+- `AND-007`
+
+Resultat attendu :
+- navigation fonctionnelle
+- persistance locale `Room` et lecture `MediaStore`
+- player local robuste
+- playlists locales utilisables
+- ecrans principaux navigables
+
+### Phase 3 - Recherche hybride et UX complete
+Objectif :
+- finaliser la couche produit visible cote Android
+
+Priorite :
+- `SRV-002`
+- `AND-005`
+
+Resultat attendu :
+- recherche online disponible cote backend
+- fusion local + online cote Android
+- parcours `Search`, `Artist` et `Album` exploitables de bout en bout
+
+### Phase 4 - Cloud sync durable
+Objectif :
+- synchroniser l'etat utilisateur durable entre appareils
+
+Priorite :
+- `SRV-004`
+- `SRV-003`
+- `SRV-007`
+
+Resultat attendu :
+- stockage cloud fonctionnel
+- routes resource-oriented `/me/...` disponibles
+- transport batch de sync `bootstrap`, `push-batch`, `pull-batch` implementable
+
+### Phase 5 - Jobs et downloads
+Objectif :
+- ajouter les traitements asynchrones sans casser le coeur local
+
+Priorite :
+- `SRV-006`
+- `AND-007`
+
+Resultat attendu :
+- infrastructure de jobs active
+- suivi des downloads cote app
+- contrat download generique branche de bout en bout
+
+### Phase 6 - Recherche vectorielle et enrichissements
+Objectif :
+- brancher les capacites de recommandation et d'enrichissement avance
+
+Priorite :
+- `SRV-005`
+
+Resultat attendu :
+- `Qdrant` interrogeable
+- mappings piste et payload vectoriel exploitables
+- socle pret pour des recommandations futures
+
+### Ce qu'il ne faut pas faire trop tot
+- ne pas commencer par la sync cloud avant le coeur local
+- ne pas commencer par `Qdrant` avant la recherche online et le modele cloud
+- ne pas figer le telechargement autour d'une source reelle tant que la strategie produit n'est pas arretee
+- ne pas ajouter d'etat UI ephemere dans les schemas de persistance
+
 ## Code Work Board
 
 ### Android
@@ -187,6 +288,7 @@ Contraintes :
 | SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | not_started | none | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | base HTTP et configuration |
 | SRV-002 | backend | Implementer les endpoints online publics `health`, `search`, `artist`, `album` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | online only |
 | SRV-003 | backend | Implementer les endpoints de sync cloud optionnelle `/me/...` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/database-postgres.md` | sync user-scoped |
+| SRV-007 | backend | Implementer les endpoints batch `bootstrap`, `push-batch`, `pull-batch` pour la sync | not_started | SRV-001, SRV-004 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md` | transport canonique de sync |
 | SRV-004 | backend | Implementer les tables et acces `Supabase / Postgres` | not_started | SRV-001 | `docs/server/database-postgres.md`, `docs/server/postgres-relationships.md` | modele cloud |
 | SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
 | SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | not_started | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | source de download encore opaque |
@@ -207,6 +309,8 @@ Contraintes :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 
 ## Journal des changements
+- 2026-04-02T18:53:54+02:00 | docs | `BUILD.md`, `llms-full.txt` | ajout de la trajectoire globale priorisee pour guider l'ordre d'implementation et eviter la dispersion.
+- 2026-04-02T18:50:43+02:00 | docs | `docs/server/sync-batch-api.md`, `docs/server/api-contract.md`, `docs/server/sync-conflict-resolution.md`, `docs/README.md`, `llms.txt`, `llms-full.txt`, `BUILD.md` | ajout des contrats API batch concrets pour bootstrap, push et pull de sync.
 - 2026-04-02T18:42:39+02:00 | docs | `docs/server/sync-conflict-resolution.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout de la strategie canonique de resolution des conflits de sync avec payloads exacts par entite.
 - 2026-04-02T18:35:05+02:00 | docs | `BUILD.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout du fichier de pilotage commun avec regles strictes, board de code et journal horodate.
 - 2026-04-02T18:20:00+02:00 | docs | `docs/server/api-sync-flows.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout des diagrammes de flux entre Android, API, Supabase, Qdrant et jobs.
@@ -2934,6 +3038,7 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 ### API sync cloud optionnelle
 - Utilisee seulement si l'utilisateur active un compte ou la synchronisation cloud.
 - Toutes les routes `/me/...` portent des donnees durables utilisateur.
+- Les routes resource-oriented de cette section coexistent avec une couche de transport batch de sync decrite dans `docs/server/sync-batch-api.md`.
 
 ### API jobs et downloads
 - Utilisee quand le backend execute une tache asynchrone.
@@ -3555,6 +3660,14 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   - `invalid_request`
   - `unauthorized`
 
+### Transport batch de sync
+- Les ressources `/me/...` restent l'API lisible et actionnable manuellement.
+- Le transport canonique pour un moteur de sync automatique est documente dans `docs/server/sync-batch-api.md`.
+- Les endpoints batch permettent :
+  - un bootstrap initial apres connexion ou reinstallation
+  - l'envoi idempotent d'operations issues de `sync_outbox`
+  - la recuperation des changements serveur depuis un token de sync
+
 ## API jobs et downloads
 
 ### `GET /downloads`
@@ -3681,6 +3794,7 @@ Definir la strategie canonique de synchronisation entre le client Android et le 
 
 ## Relation avec le contrat API
 - `docs/server/api-contract.md` decrit les endpoints REST lisibles par un humain.
+- `docs/server/sync-batch-api.md` decrit le transport HTTP batch concret de cette strategie.
 - Ce document decrit la couche de sync canonique qui peut etre transportee :
   - soit par les endpoints REST existants
   - soit par un endpoint batch futur
@@ -4144,6 +4258,352 @@ Strategie :
 - navigation UI
 - niveau de scroll
 - donnees provider brutes non promues au modele AURA
+
+
+---
+## docs/server/sync-batch-api.md
+# Sync Batch API
+
+## Objectif
+Definir les contrats HTTP batch concrets du moteur de synchronisation AURA entre Android et le cloud.
+
+## Positionnement
+- `docs/server/api-contract.md` reste le contrat REST general du backend.
+- `docs/server/sync-conflict-resolution.md` reste la source de verite des regles de conflit.
+- Ce document fixe le transport HTTP concret du moteur de sync automatique.
+
+## Principes generaux
+- Tous les endpoints de ce document exigent une authentification.
+- Tous les endpoints sont scopes a l'utilisateur authentifie.
+- Les operations de sync sont idempotentes.
+- La source de verite des mutations client est `sync_outbox`.
+- Les tokens de sync sont opaques et ne doivent jamais etre interpretes cote client.
+
+## Endpoints
+- `POST /me/sync/bootstrap`
+- `POST /me/sync/push-batch`
+- `POST /me/sync/pull-batch`
+
+## Enveloppe de reponse canonique
+```json
+{
+  "data": {},
+  "error": null,
+  "meta": {
+    "request_id": "req_123"
+  }
+}
+```
+
+## Types canoniques
+
+### `SyncToken`
+```json
+{
+  "value": "st_01JABCTOKEN",
+  "issued_at": "2026-04-02T18:50:43Z"
+}
+```
+
+### `SyncOperation`
+```json
+{
+  "operation_id": "op_01JABCXYZ",
+  "entity_type": "playlist",
+  "entity_id": "pl_123",
+  "operation_type": "update",
+  "device_id": "android_pixel_01",
+  "occurred_at": "2026-04-02T18:42:39+02:00",
+  "base_server_updated_at": "2026-04-02T16:30:00Z",
+  "payload": {}
+}
+```
+
+### `SyncOperationResult`
+```json
+{
+  "operation_id": "op_01JABCXYZ",
+  "entity_type": "playlist",
+  "entity_id": "pl_123",
+  "status": "merged",
+  "server_updated_at": "2026-04-02T16:43:10Z",
+  "resolved_entity": {},
+  "conflict": null
+}
+```
+
+### `ServerChange`
+```json
+{
+  "change_id": "chg_01JABC001",
+  "entity_type": "playlist",
+  "entity_id": "pl_123",
+  "change_type": "upsert",
+  "server_updated_at": "2026-04-02T16:43:10Z",
+  "payload": {}
+}
+```
+
+## `POST /me/sync/bootstrap`
+- Usage : hydrater un appareil apres connexion, reinstallation ou perte du token local.
+- Auth : requise.
+- Regle : cette route renvoie un snapshot restreint des donnees necessaires pour relancer l'experience utilisateur, sans exporter tout l'historique analytique.
+
+### Request body
+```json
+{
+  "device_id": "android_pixel_01",
+  "app_version": "0.1.0",
+  "capabilities": {
+    "supports_batch_push": true,
+    "supports_batch_pull": true
+  }
+}
+```
+
+### Response `data`
+```json
+{
+  "sync_token": {
+    "value": "st_01JABCTOKEN",
+    "issued_at": "2026-04-02T18:50:43Z"
+  },
+  "snapshot": {
+    "user_settings": {
+      "sync_enabled": true,
+      "online_search_enabled": true,
+      "online_search_network_policy": "wifi_only",
+      "stats_sync_network_policy": "wifi_only",
+      "updated_at": "2026-04-02T18:30:00Z"
+    },
+    "playlists": [],
+    "track_likes": [],
+    "playback_snapshot": null
+  }
+}
+```
+
+### Reponse `meta`
+```json
+{
+  "request_id": "req_boot_001",
+  "snapshot_version": "snap_01JABC"
+}
+```
+
+### Regles
+- Le snapshot contient :
+  - `user_settings`
+  - playlists et leurs items
+  - likes
+  - dernier `playback_snapshot`
+- Le snapshot n'inclut pas par defaut :
+  - `history_items`
+  - `listening_sessions`
+  - `playback_events`
+  - `user_track_stats`
+  - `download_jobs`
+- Ces jeux de donnees sont recuperes ensuite via `pull-batch`.
+
+### Erreurs attendues
+- `unauthorized`
+- `internal_error`
+
+## `POST /me/sync/push-batch`
+- Usage : envoyer un lot d'operations locales issues de `sync_outbox`.
+- Auth : requise.
+- Regles :
+  - les operations sont traitees dans l'ordre du tableau
+  - l'idempotence se fait par `operation_id`
+  - la requete n'est pas atomique au niveau du lot complet
+  - chaque operation recoit son resultat propre
+
+### Request body
+```json
+{
+  "device_id": "android_pixel_01",
+  "batch_id": "batch_push_001",
+  "sent_at": "2026-04-02T18:50:43+02:00",
+  "operations": [
+    {
+      "operation_id": "op_pl_001",
+      "entity_type": "playlist",
+      "entity_id": "pl_123",
+      "operation_type": "update",
+      "device_id": "android_pixel_01",
+      "occurred_at": "2026-04-02T18:42:39+02:00",
+      "base_server_updated_at": "2026-04-02T16:30:00Z",
+      "payload": {
+        "name": "Driving",
+        "is_pinned": true
+      }
+    }
+  ]
+}
+```
+
+### Response `data`
+```json
+{
+  "batch_id": "batch_push_001",
+  "results": [
+    {
+      "operation_id": "op_pl_001",
+      "entity_type": "playlist",
+      "entity_id": "pl_123",
+      "status": "applied",
+      "server_updated_at": "2026-04-02T16:50:45Z",
+      "resolved_entity": {
+        "id": "pl_123",
+        "name": "Driving",
+        "is_pinned": true,
+        "updated_at": "2026-04-02T16:50:45Z"
+      },
+      "conflict": null
+    }
+  ],
+  "next_pull_token": {
+    "value": "st_01JABCNEXT",
+    "issued_at": "2026-04-02T16:50:45Z"
+  }
+}
+```
+
+### Reponse `meta`
+```json
+{
+  "request_id": "req_push_001",
+  "received_operations": 1,
+  "processed_operations": 1
+}
+```
+
+### Contraintes
+- `operations` minimum : 1
+- `operations` maximum recommande : 500
+- `entity_type` doit appartenir a la liste canonique documentee dans `docs/server/sync-conflict-resolution.md`
+- `device_id` de l'operation doit correspondre au `device_id` du lot
+
+### Erreurs attendues
+- `invalid_request` si le lot est vide ou mal forme
+- `unauthorized`
+- `conflict` au niveau d'une operation individuelle, pas du lot entier
+
+## `POST /me/sync/pull-batch`
+- Usage : recuperer les changements serveur depuis un token de sync precedent.
+- Auth : requise.
+- Regles :
+  - le serveur renvoie uniquement des changements scopes a l'utilisateur
+  - le client applique ensuite les `ServerChange` dans son stockage local
+  - si le token est inconnu ou expire, le serveur demande un nouveau `bootstrap`
+
+### Request body
+```json
+{
+  "device_id": "android_pixel_01",
+  "since_token": "st_01JABCTOKEN",
+  "limit": 200,
+  "entity_types": [
+    "user_settings",
+    "playlist",
+    "playlist_item",
+    "track_like",
+    "playback_snapshot",
+    "history_item",
+    "listening_session",
+    "playback_event",
+    "user_track_stats",
+    "download_job"
+  ]
+}
+```
+
+### Response `data`
+```json
+{
+  "changes": [
+    {
+      "change_id": "chg_01JABC001",
+      "entity_type": "playlist",
+      "entity_id": "pl_123",
+      "change_type": "upsert",
+      "server_updated_at": "2026-04-02T16:50:45Z",
+      "payload": {
+        "id": "pl_123",
+        "name": "Driving",
+        "is_pinned": true,
+        "updated_at": "2026-04-02T16:50:45Z"
+      }
+    }
+  ],
+  "next_pull_token": {
+    "value": "st_01JABCPULL2",
+    "issued_at": "2026-04-02T16:51:00Z"
+  },
+  "has_more": false
+}
+```
+
+### Reponse `meta`
+```json
+{
+  "request_id": "req_pull_001",
+  "returned_changes": 1
+}
+```
+
+### `change_type` autorises
+- `upsert`
+- `delete`
+
+### Regles de payload cote pull
+- `playlist` et `playlist_item` renvoient la forme serveur resolue finale
+- `track_like` renvoie soit un `upsert` avec `is_liked: true`, soit un `delete`
+- `playback_snapshot` renvoie un `upsert` ou `delete`
+- `history_item`, `listening_session`, `playback_event` sont additifs et renvoyes en `upsert`
+- `user_track_stats` renvoie la version serveur autoritaire calculee
+- `download_job` renvoie l'etat serveur du job quand il change
+
+### Erreurs attendues
+- `invalid_request`
+- `unauthorized`
+- `conflict` si `since_token` est expire ou invalide
+
+### Reponse type si token invalide
+```json
+{
+  "data": null,
+  "error": {
+    "code": "conflict",
+    "message": "Sync token is invalid or expired. Bootstrap is required.",
+    "retryable": true,
+    "details": {
+      "reason": "stale_sync_token"
+    }
+  },
+  "meta": {
+    "request_id": "req_pull_001"
+  }
+}
+```
+
+## Ordre recommande de sync cote client
+1. `POST /me/sync/bootstrap` lors de la premiere connexion d'un appareil ou apres perte du token.
+2. `POST /me/sync/push-batch` pour vider `sync_outbox`.
+3. `POST /me/sync/pull-batch` pour recuperer les changements serveur.
+4. Mise a jour de `last_sync_at` et rotation du `next_pull_token`.
+
+## Regles de mise en oeuvre cote client
+- Le client ne supprime une entree `sync_outbox` qu'apres reception d'un resultat `applied`, `merged` ou `ignored_duplicate`.
+- Un resultat `conflict` laisse l'entree locale en echec fonctionnel jusqu'a resolution.
+- Les `download_job` ne sont jamais modifies localement via sync hors creation ou retry demande.
+- Les stats ne doivent etre poussees que si la politique reseau autorise la sync.
+
+## Hors perimetre
+- sync de la `priority queue`
+- sync de navigation UI
+- sync de niveau de scroll
+- replication brute de `MediaStore`
 
 
 ---

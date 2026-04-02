@@ -43,6 +43,106 @@ Contraintes :
 - Aucun code applicatif Android ou backend n'est encore present dans le depot.
 - Le prochain objectif est d'utiliser ce fichier pour suivre l'implementation du code reel, brique par brique.
 
+## Trajectoire globale
+
+### Regles de priorisation
+- Toujours livrer d'abord ce qui rend l'application localement utilisable.
+- Toujours preferer une tranche verticale executable a une base trop abstraite.
+- Ne pas demarrer une phase si la phase precedente n'a pas produit un resultat testable.
+- Ne pas ouvrir simultanement trop de fronts. La priorite suit l'ordre des phases ci-dessous.
+- Les integrations cloud et les optimisations n'arrivent qu'apres un coeur local fiable.
+
+### Phase 1 - Fondations executables
+Objectif :
+- rendre possible le premier lancement des projets Android et backend
+
+Priorite :
+- `AND-001`
+- `SRV-001`
+- `INF-001`
+- `INF-002`
+
+Resultat attendu :
+- un projet Android demarre
+- un backend FastAPI demarre
+- la configuration locale est documentee et executable
+
+### Phase 2 - Coeur local Android
+Objectif :
+- rendre AURA utile sans backend
+
+Priorite :
+- `AND-002`
+- `AND-003`
+- `AND-004`
+- `AND-006`
+- `AND-007`
+
+Resultat attendu :
+- navigation fonctionnelle
+- persistance locale `Room` et lecture `MediaStore`
+- player local robuste
+- playlists locales utilisables
+- ecrans principaux navigables
+
+### Phase 3 - Recherche hybride et UX complete
+Objectif :
+- finaliser la couche produit visible cote Android
+
+Priorite :
+- `SRV-002`
+- `AND-005`
+
+Resultat attendu :
+- recherche online disponible cote backend
+- fusion local + online cote Android
+- parcours `Search`, `Artist` et `Album` exploitables de bout en bout
+
+### Phase 4 - Cloud sync durable
+Objectif :
+- synchroniser l'etat utilisateur durable entre appareils
+
+Priorite :
+- `SRV-004`
+- `SRV-003`
+- `SRV-007`
+
+Resultat attendu :
+- stockage cloud fonctionnel
+- routes resource-oriented `/me/...` disponibles
+- transport batch de sync `bootstrap`, `push-batch`, `pull-batch` implementable
+
+### Phase 5 - Jobs et downloads
+Objectif :
+- ajouter les traitements asynchrones sans casser le coeur local
+
+Priorite :
+- `SRV-006`
+- `AND-007`
+
+Resultat attendu :
+- infrastructure de jobs active
+- suivi des downloads cote app
+- contrat download generique branche de bout en bout
+
+### Phase 6 - Recherche vectorielle et enrichissements
+Objectif :
+- brancher les capacites de recommandation et d'enrichissement avance
+
+Priorite :
+- `SRV-005`
+
+Resultat attendu :
+- `Qdrant` interrogeable
+- mappings piste et payload vectoriel exploitables
+- socle pret pour des recommandations futures
+
+### Ce qu'il ne faut pas faire trop tot
+- ne pas commencer par la sync cloud avant le coeur local
+- ne pas commencer par `Qdrant` avant la recherche online et le modele cloud
+- ne pas figer le telechargement autour d'une source reelle tant que la strategie produit n'est pas arretee
+- ne pas ajouter d'etat UI ephemere dans les schemas de persistance
+
 ## Code Work Board
 
 ### Android
@@ -62,6 +162,7 @@ Contraintes :
 | SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | not_started | none | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | base HTTP et configuration |
 | SRV-002 | backend | Implementer les endpoints online publics `health`, `search`, `artist`, `album` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | online only |
 | SRV-003 | backend | Implementer les endpoints de sync cloud optionnelle `/me/...` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/database-postgres.md` | sync user-scoped |
+| SRV-007 | backend | Implementer les endpoints batch `bootstrap`, `push-batch`, `pull-batch` pour la sync | not_started | SRV-001, SRV-004 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md` | transport canonique de sync |
 | SRV-004 | backend | Implementer les tables et acces `Supabase / Postgres` | not_started | SRV-001 | `docs/server/database-postgres.md`, `docs/server/postgres-relationships.md` | modele cloud |
 | SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
 | SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | not_started | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | source de download encore opaque |
@@ -82,6 +183,8 @@ Contraintes :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 
 ## Journal des changements
+- 2026-04-02T18:53:54+02:00 | docs | `BUILD.md`, `llms-full.txt` | ajout de la trajectoire globale priorisee pour guider l'ordre d'implementation et eviter la dispersion.
+- 2026-04-02T18:50:43+02:00 | docs | `docs/server/sync-batch-api.md`, `docs/server/api-contract.md`, `docs/server/sync-conflict-resolution.md`, `docs/README.md`, `llms.txt`, `llms-full.txt`, `BUILD.md` | ajout des contrats API batch concrets pour bootstrap, push et pull de sync.
 - 2026-04-02T18:42:39+02:00 | docs | `docs/server/sync-conflict-resolution.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout de la strategie canonique de resolution des conflits de sync avec payloads exacts par entite.
 - 2026-04-02T18:35:05+02:00 | docs | `BUILD.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout du fichier de pilotage commun avec regles strictes, board de code et journal horodate.
 - 2026-04-02T18:20:00+02:00 | docs | `docs/server/api-sync-flows.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout des diagrammes de flux entre Android, API, Supabase, Qdrant et jobs.

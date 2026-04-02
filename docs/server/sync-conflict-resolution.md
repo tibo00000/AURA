@@ -5,6 +5,7 @@ Definir la strategie canonique de synchronisation entre le client Android et le 
 
 ## Relation avec le contrat API
 - `docs/server/api-contract.md` decrit les endpoints REST lisibles par un humain.
+- `docs/server/sync-batch-api.md` decrit le transport HTTP batch concret de cette strategie.
 - Ce document decrit la couche de sync canonique qui peut etre transportee :
   - soit par les endpoints REST existants
   - soit par un endpoint batch futur

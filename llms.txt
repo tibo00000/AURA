@@ -55,6 +55,7 @@ Server
 - `docs/server/architecture.md`: architecture du backend.
 - `docs/server/api-contract.md`: contrat HTTP detaille pour l'online, la sync cloud optionnelle et les jobs.
 - `docs/server/sync-conflict-resolution.md`: strategie canonique de sync, payloads exacts et regles de resolution des conflits.
+- `docs/server/sync-batch-api.md`: contrats HTTP batch concrets pour bootstrap, push et pull de sync.
 - `docs/server/api-sync-flows.md`: diagrammes des flux entre Android, API, Supabase, Qdrant et jobs.
 - `docs/server/jobs.md`: cycle de vie des jobs.
 - `docs/server/database-postgres.md`: schema logique Postgres/Supabase et tables cloud candidates.

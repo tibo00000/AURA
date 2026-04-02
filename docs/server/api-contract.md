@@ -17,6 +17,7 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 ### API sync cloud optionnelle
 - Utilisee seulement si l'utilisateur active un compte ou la synchronisation cloud.
 - Toutes les routes `/me/...` portent des donnees durables utilisateur.
+- Les routes resource-oriented de cette section coexistent avec une couche de transport batch de sync decrite dans `docs/server/sync-batch-api.md`.
 
 ### API jobs et downloads
 - Utilisee quand le backend execute une tache asynchrone.
@@ -637,6 +638,14 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - Erreurs attendues :
   - `invalid_request`
   - `unauthorized`
+
+### Transport batch de sync
+- Les ressources `/me/...` restent l'API lisible et actionnable manuellement.
+- Le transport canonique pour un moteur de sync automatique est documente dans `docs/server/sync-batch-api.md`.
+- Les endpoints batch permettent :
+  - un bootstrap initial apres connexion ou reinstallation
+  - l'envoi idempotent d'operations issues de `sync_outbox`
+  - la recuperation des changements serveur depuis un token de sync
 
 ## API jobs et downloads
 
