@@ -1,9 +1,5 @@
-# AURA Documentation Full Context
-
-This file concatenates the canonical documentation set in the order defined by `docs/README.md`.
-
----
-## AGENTS.md
+﻿
+--- AGENTS.md ---
 # AGENTS.md - Aura Music Player
 
 ## Role And Identity
@@ -43,87 +39,7 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Utilise des messages de commit clairs et descriptifs.
 - Demande toujours l'autorisation avant un `git push`.
 
-
----
-## docs/README.md
-# AURA Documentation Map
-
-Ce dossier contient la source de verite documentaire du projet AURA.
-
-## Conventions
-- La documentation de reference vit en Markdown.
-- `llms.txt` est l'index semantique de haut niveau.
-- `llms-full.txt` est la concatenation canonique des documents ci-dessous.
-- Chaque fichier doit couvrir un seul sujet et annoncer explicitement ses dependances.
-- Les noms de fichiers doivent rester stables afin de limiter les changements dans l'index semantique.
-- Les regles de redaction et de maintenance sont definies dans `docs/documentation/style-guide.md`.
-
-## Ordre canonique de concatenation
-1. `AGENTS.md`
-2. `BUILD.md`
-3. `docs/adrs/001-machine-friendly-docs.md`
-4. `docs/adrs/002-android-native-client.md`
-5. `docs/adrs/003-backend-fastapi-supabase-qdrant.md`
-6. `docs/adrs/004-provider-adapter-strategy.md`
-7. `docs/adrs/005-mcp-bridge.md`
-8. `docs/documentation/style-guide.md`
-9. `docs/product/vision.md`
-10. `docs/product/navigation.md`
-11. `docs/product/user-flows.md`
-12. `docs/domain/entities.md`
-13. `docs/domain/data-relationships.md`
-14. `docs/domain/playback-model.md`
-15. `docs/domain/playback-user-flows.md`
-16. `docs/domain/provider-architecture.md`
-17. `docs/android/app-architecture.md`
-18. `docs/android/local-persistence.md`
-19. `docs/android/room-schema.md`
-20. `docs/android/room-relationships.md`
-21. `docs/android/navigation.md`
-22. `docs/android/ui/design-system.md`
-23. `docs/android/ui/components.md`
-24. `docs/android/ui/ui-performance.md`
-25. `docs/android/player/architecture.md`
-26. `docs/android/player/queue-rules.md`
-27. `docs/android/player/states-and-events.md`
-28. `docs/android/screens/home.md`
-29. `docs/android/screens/search.md`
-30. `docs/android/screens/library.md`
-31. `docs/android/screens/playlists.md`
-32. `docs/android/screens/player.md`
-33. `docs/android/screens/player-layout.md`
-34. `docs/android/screens/artist.md`
-35. `docs/android/screens/album.md`
-36. `docs/android/screens/downloads.md`
-37. `docs/android/screens/settings.md`
-38. `docs/server/architecture.md`
-39. `docs/server/api-contract.md`
-40. `docs/server/sync-conflict-resolution.md`
-41. `docs/server/sync-batch-api.md`
-42. `docs/server/api-sync-flows.md`
-43. `docs/server/jobs.md`
-44. `docs/server/database-postgres.md`
-45. `docs/server/postgres-relationships.md`
-46. `docs/server/vector-search-qdrant.md`
-47. `docs/server/storage.md`
-48. `docs/server/providers/deezer.md`
-49. `docs/server/providers/streaming-bridge.md`
-50. `docs/server/security-and-secrets.md`
-51. `docs/mcp/overview.md`
-52. `docs/mcp/resources.md`
-53. `docs/mcp/use-cases.md`
-54. `docs/ops/logging-observability.md`
-55. `docs/ops/env-vars.md`
-
-## Rythme de mise a jour
-- Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
-- Toute modification de structure impose une regeneration de `llms-full.txt`.
-- Les documents produit et domaine doivent etre valides avant de documenter une implementation detaillee.
-- Toute modification documentaire doit respecter `docs/documentation/style-guide.md`.
-
-
----
-## BUILD.md
+--- BUILD.md ---
 # BUILD
 
 ## Objectif
@@ -166,8 +82,7 @@ Contraintes :
 
 ## Etat global actuel
 - La base documentaire de reference est en place.
-- Aucun code applicatif Android ou backend n'est encore present dans le depot.
-- Le prochain objectif est d'utiliser ce fichier pour suivre l'implementation du code reel, brique par brique.
+- Le code applicatif Android ou backend a été commencé, se référer au code workboard pour l'état actuel.
 
 ## Trajectoire globale
 
@@ -275,12 +190,12 @@ Resultat attendu :
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
 | AND-001 | android | Initialiser le projet Android Kotlin avec structure de modules minimale | completed | none | `docs/adrs/002-android-native-client.md`, `docs/android/app-architecture.md` | squelette Compose, structure Gradle et wrapper poses |
-| AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | not_started | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | bottom navigation et player entrypoint |
-| AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | not_started | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | persistance locale canonique |
-| AND-004 | android | Implementer le moteur player Media3 et les regles de queue | not_started | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | la priority queue reste non persistante |
+| AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | completed | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | graphe principal, surfaces detail et mini-player shell poses |
+| AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | completed | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | base Room, import local MediaStore et settings par defaut poses |
+| AND-004 | android | Implementer le moteur player Media3 et les regles de queue | completed | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | priority queue en memoire, PlaybackService + QueueManager + Orchestrator + PlayerViewModel poses, ecran Player minimal fonctionnel |
 | AND-005 | android | Implementer l'ecran `Search` avec orchestration local + online | not_started | AND-002, AND-003 | `docs/android/screens/search.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md` | fusion faite cote Android |
 | AND-006 | android | Implementer la gestion des playlists locales et leur UI | not_started | AND-002, AND-003 | `docs/android/screens/playlists.md`, `docs/product/user-flows.md` | create, rename, delete, reorder |
-| AND-007 | android | Implementer les ecrans `Artist`, `Album`, `Home`, `Library`, `Downloads`, `Settings` | not_started | AND-002, AND-003 | `docs/android/screens/artist.md`, `docs/android/screens/album.md`, `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md` | detail des surfaces |
+| AND-007 | android | Implementer les ecrans `Artist`, `Album`, `Home`, `Library`, `Downloads`, `Settings`, `Player` complet | not_started | AND-002, AND-003, AND-004 | `docs/android/screens/artist.md`, `docs/android/screens/album.md`, `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md`, `docs/android/screens/player.md`, `docs/android/screens/player-layout.md` | detail des surfaces, ecran Player complet avec seek interactif, vue queue et layout avance |
 
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -309,6 +224,8 @@ Resultat attendu :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 
 ## Journal des changements
+- 2026-04-02T21:44:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/domain/player/*`, `android/app/src/main/java/com/aura/music/data/player/*`, `android/app/src/main/java/com/aura/music/service/PlaybackService.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/AuraApplication.kt`, `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/android/app-architecture.md`, `docs/android/navigation.md`, `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `BUILD.md` | implementation de AND-004 avec moteur Media3, QueueManager, PlaybackOrchestrator, PlaybackStateStore, PlayerViewModel et ecran Player minimal. Comblement de la dette documentaire AND-002 et AND-003 avec sections Code Mapping.
+- 2026-04-02T20:35:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/*`, `BUILD.md` | implementation de AND-002 et AND-003 avec navigation Compose, shell multi-ecrans, Room et integration MediaStore.
 - 2026-04-02T19:05:53+02:00 | code | `android/gradlew`, `android/gradlew.bat`, `android/gradle/wrapper/*`, `render.yaml`, `server/.env.example`, `server/app/config.py`, `infra/*`, `BUILD.md` | ajout du wrapper Gradle, du blueprint Render racine et de la configuration Qdrant avec cle API.
 - 2026-04-02T19:05:53+02:00 | code | `android/*`, `server/*`, `infra/*`, `.gitignore`, `BUILD.md` | creation du socle monorepo Android, FastAPI et infra avec premiere base executable.
 - 2026-04-02T18:53:54+02:00 | docs | `BUILD.md`, `llms-full.txt` | ajout de la trajectoire globale priorisee pour guider l'ordre d'implementation et eviter la dispersion.
@@ -319,9 +236,7 @@ Resultat attendu :
 - 2026-04-02T18:10:00+02:00 | docs | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-contract.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout des diagrammes ER et refonte du contrat API.
 - 2026-04-02T17:50:00+02:00 | docs | `docs/product/*`, `docs/domain/*`, `docs/android/*`, `docs/server/*`, `llms.txt`, `llms-full.txt` | base documentaire initiale consolidee et versionnee.
 
-
----
-## docs/adrs/001-machine-friendly-docs.md
+--- docs/adrs/001-machine-friendly-docs.md ---
 # ADR 001 - Machine-Friendly Documentation
 
 ## Statut
@@ -341,9 +256,7 @@ Le projet AURA veut une documentation exploitable directement par des agents IA 
 - Les liens internes doivent privilegier des chemins stables.
 - Toute nouvelle rubrique importante doit avoir un document dedie plutot qu'une annexe implicite.
 
-
----
-## docs/adrs/002-android-native-client.md
+--- docs/adrs/002-android-native-client.md ---
 # ADR 002 - Android Native Client
 
 ## Statut
@@ -363,9 +276,7 @@ AURA cible d'abord un usage personnel sur mobile avec fortes exigences sur la le
 - Les abstractions metier doivent rester suffisamment neutres pour autoriser plus tard un autre client.
 - Les composants UI, le player et la navigation sont documentes comme surfaces Android de reference.
 
-
----
-## docs/adrs/003-backend-fastapi-supabase-qdrant.md
+--- docs/adrs/003-backend-fastapi-supabase-qdrant.md ---
 # ADR 003 - Backend FastAPI, Supabase, Qdrant
 
 ## Statut
@@ -385,9 +296,7 @@ Le projet doit rester peu couteux, personnel et modulaire. Il a deja eu un proto
 - Le serveur doit separer clairement donnees transactionnelles, objets binaires et index vectoriels.
 - Les integrations externes sont encapsulees dans des adaptateurs de providers.
 
-
----
-## docs/adrs/004-provider-adapter-strategy.md
+--- docs/adrs/004-provider-adapter-strategy.md ---
 # ADR 004 - Provider Adapter Strategy
 
 ## Statut
@@ -406,9 +315,7 @@ AURA doit supporter une recherche en ligne des titres, artistes et albums, avec 
 - Le serveur peut changer de provider sans refaire la documentation produit.
 - Les limites juridiques, techniques et de quota d'un provider sont documentees dans son fichier dedie.
 
-
----
-## docs/adrs/005-mcp-bridge.md
+--- docs/adrs/005-mcp-bridge.md ---
 # ADR 005 - MCP Bridge
 
 ## Statut
@@ -427,9 +334,7 @@ Le projet veut qu'un agent IA puisse lire l'etat du systeme en temps reel sans c
 - La doc MCP complete la doc de code et ne la remplace pas.
 - Les secrets et donnees sensibles doivent etre filtres avant exposition.
 
-
----
-## docs/documentation/style-guide.md
+--- docs/documentation/style-guide.md ---
 # Documentation Style Guide
 
 ## Objectif
@@ -500,9 +405,7 @@ Definir des regles strictes pour que tout agent ou contributeur puisse mettre a 
 - Les termes utilises sont-ils coherents avec le reste du depot ?
 - Le fichier doit-il etre ajoute ou mis a jour dans `llms.txt` et `llms-full.txt` ?
 
-
----
-## docs/product/vision.md
+--- docs/product/vision.md ---
 # Vision Produit
 
 ## Mission
@@ -526,9 +429,7 @@ AURA est une application Android de lecture musicale orientee bibliotheque perso
 - Streaming universel complet.
 - Moteur de recommandation finement personnalise par session.
 
-
----
-## docs/product/navigation.md
+--- docs/product/navigation.md ---
 # Navigation Produit
 
 ## Navigation principale
@@ -556,9 +457,7 @@ AURA est une application Android de lecture musicale orientee bibliotheque perso
 - `Search` est la surface d'exploration locale et online.
 - `Library` concentre la collection personnelle et les entrees de gestion.
 
-
----
-## docs/product/user-flows.md
+--- docs/product/user-flows.md ---
 # User Flows Produit
 
 ## Format canonique
@@ -1014,9 +913,7 @@ Permettre a l'utilisateur de retirer une playlist devenue inutile.
 - La playlist disparait de la liste.
 - La suppression d'une playlist n'efface pas les pistes elles-memes de la bibliotheque.
 
-
----
-## docs/domain/entities.md
+--- docs/domain/entities.md ---
 # Entites Metier
 
 ## Track
@@ -1153,9 +1050,7 @@ Permettre a l'utilisateur de retirer une playlist devenue inutile.
 - `previewUrl`
 - `streamCapability`
 
-
----
-## docs/domain/data-relationships.md
+--- docs/domain/data-relationships.md ---
 # Domain Data Relationships
 
 ## Objectif
@@ -1237,9 +1132,7 @@ flowchart TB
 - la pile d'ecrans de navigation
 - le niveau de scroll d'un ecran
 
-
----
-## docs/domain/playback-model.md
+--- docs/domain/playback-model.md ---
 # Playback Model
 
 ## Objectif
@@ -1267,9 +1160,7 @@ Definir un modele de lecture robuste, explicite et testable afin d'eviter les bu
 - `repeat one` repete la piste courante.
 - `repeat all` repete le contexte source une fois la `priority queue` vide.
 
-
----
-## docs/domain/playback-user-flows.md
+--- docs/domain/playback-user-flows.md ---
 # Playback User Flows
 
 ## Play
@@ -1314,9 +1205,7 @@ Definir un modele de lecture robuste, explicite et testable afin d'eviter les bu
 - Regle : l'utilisateur peut reessayer, passer au titre suivant ou retirer le titre si l'erreur vient de la queue.
 - Regle : une erreur sur une piste de la `priority queue` ne doit pas corrompre le `playback context`.
 
-
----
-## docs/domain/provider-architecture.md
+--- docs/domain/provider-architecture.md ---
 # Provider Architecture
 
 ## But
@@ -1337,9 +1226,7 @@ Permettre a AURA de combiner local, recherche online, telechargement futur et st
 - Le telechargement futur utilisera les resultats de provider comme point d'entree, pas comme modele final de stockage.
 - En absence de reseau, seules les donnees locales et cachees restent visibles.
 
-
----
-## docs/android/app-architecture.md
+--- docs/android/app-architecture.md ---
 # Android App Architecture
 
 ## Couches
@@ -1374,9 +1261,14 @@ Permettre a AURA de combiner local, recherche online, telechargement futur et st
 - niveau de scroll
 - etats UI transitoires purement visuels
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/AuraApplication.kt` : point d'entree `Application`, initialise `AuraAppContainer`
+- `android/app/src/main/java/com/aura/music/MainActivity.kt` : activite hote Compose, appelle `AuraApp()`
+- `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt` : container DI manuel, fournit database, MediaStore et repository
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : shell applicatif Compose, navigation principale, mini-player shell, composants partages UI
+- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore
 
----
-## docs/android/local-persistence.md
+--- docs/android/local-persistence.md ---
 # Android Local Persistence
 
 ## Objectif
@@ -1653,9 +1545,14 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
 - repartition par contexte source comme playlist, album ou recherche
 - repartition par type de reseau si utile a l'analyse produit
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room pour toutes les tables (tracks, artists, albums, playlists, snapshots, settings, etc.)
+- `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les operations de base
+- `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : singleton Room database, version 1
+- `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore
+- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot
 
----
-## docs/android/room-schema.md
+--- docs/android/room-schema.md ---
 # Room Schema
 
 ## Objectif
@@ -1961,9 +1858,12 @@ Constraints:
 - `recent_searches` est limitee a 10 entrees
 - `download_jobs` termines sont purgeables localement apres archivage cloud
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room correspondant aux tables ci-dessus
+- `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les queries et upserts
+- `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : declaration de la base Room avec liste des entities et des DAOs
 
----
-## docs/android/room-relationships.md
+--- docs/android/room-relationships.md ---
 # Room Relationships
 
 ## Objectif
@@ -2110,9 +2010,7 @@ erDiagram
 - Une piste online entre dans `Room` quand elle devient utile a l'etat metier : lecture, like, ajout a playlist, cache detaille ou preparation de telechargement.
 - Une piste online issue d'une simple recherche non actionnee reste ephemere et ne cree pas d'ecriture `Room`.
 
-
----
-## docs/android/navigation.md
+--- docs/android/navigation.md ---
 # Android Navigation
 
 ## Graphe principal
@@ -2135,9 +2033,13 @@ erDiagram
 - Le retour depuis `Player` revient a l'ecran precedent sans perdre l'etat de scroll.
 - `PlaylistList` et `Downloads` partent de `Library`.
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : graphe de navigation Compose, routes, scaffold avec bottom bar et mini-player
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : ecran Home avec dashboard et liste de tracks recentes
+- `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : ecran Search avec recherche locale
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : ecrans Library, Playlists, PlaylistDetail, Artist, Album, Downloads, Settings, Player
 
----
-## docs/android/ui/design-system.md
+--- docs/android/ui/design-system.md ---
 # Systeme De Design Et Directives UI
 
 ## Objectif
@@ -2179,9 +2081,7 @@ Ce document definit les fondations visuelles d'AURA. Tout nouvel ecran Android d
 - Prevoir un bottom padding genereux dans chaque liste pour ne jamais masquer le dernier element sous le mini-player.
 - Garder des espacements constants entre header, barre de recherche, sections et listes.
 
-
----
-## docs/android/ui/components.md
+--- docs/android/ui/components.md ---
 # Composants UI Reutilisables
 
 ## Objectif
@@ -2238,9 +2138,7 @@ Les composants ci-dessous constituent la base Compose d'AURA. Tout composant exp
 - Role : etat vide descriptif pour playlists, downloads et recherche online hors ligne.
 - Contenu : titre, message, action primaire facultative.
 
-
----
-## docs/android/ui/ui-performance.md
+--- docs/android/ui/ui-performance.md ---
 # Optimisation Des Performances UI
 
 ## Objectif
@@ -2269,9 +2167,7 @@ Maintenir une interface Compose fluide avec un player persistant et plusieurs li
 - Le mini-player et la bottom bar imposent un padding bas explicite.
 - Les drag handles de queue ne doivent pas provoquer de recompositions globales.
 
-
----
-## docs/android/player/architecture.md
+--- docs/android/player/architecture.md ---
 # Player Architecture
 
 ## Objectif
@@ -2297,9 +2193,14 @@ Isoler la logique de lecture et de queue pour la rendre testable, persistante et
 - contenu de la priority queue
 - modes shuffle et repeat
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/service/PlaybackService.kt` : `MediaSessionService` Media3, initialise ExoPlayer et expose `MediaSession`
+- `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt` : orchestre play, pause, next, prev, seek ; utilise `QueueManager` et `PlaybackStateStore`
+- `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt` : gere `playback context`, `priority queue` et `history` en memoire
+- `android/app/src/main/java/com/aura/music/data/player/PlaybackStateStore.kt` : persiste le snapshot de reprise via `PlaybackSnapshotDao`
+- `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : transforme l'etat metier en etat ecran, met a jour la progression periodiquement
 
----
-## docs/android/player/queue-rules.md
+--- docs/android/player/queue-rules.md ---
 # Queue Rules
 
 ## Regle centrale
@@ -2328,9 +2229,11 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 - L'utilisateur peut reordonner la queue manuelle.
 - Le reorder n'a aucun effet sur le contexte source.
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt` : implementation des regles ci-dessus (next, prev, add, remove, reorder, shuffle, repeat)
+- `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : modeles `QueuedTrack`, `PlaybackContext`, `TrackSource`, `RepeatMode`
 
----
-## docs/android/player/states-and-events.md
+--- docs/android/player/states-and-events.md ---
 # Player States And Events
 
 ## Etats principaux
@@ -2377,9 +2280,11 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 - `PlaybackFailed` doit exposer une action de retry et permettre `next`.
 - `RemoveFromQueue` sur la piste courante est refuse par le domaine.
 
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : `PlaybackState` enum, `RepeatMode` enum, `PlayerUiState` data class
+- `android/app/src/main/java/com/aura/music/domain/player/PlayerEvent.kt` : sealed interface `PlayerEvent` avec tous les evenements utilisateur
 
----
-## docs/android/screens/home.md
+--- docs/android/screens/home.md ---
 # Home Screen
 
 ## Role
@@ -2434,9 +2339,7 @@ Point d'entree principal de l'application, centre sur la reprise d'ecoute et les
 - reprise seule si aucune recommandation n'est prete
 - erreur online non bloquante pour les suggestions enrichies
 
-
----
-## docs/android/screens/search.md
+--- docs/android/screens/search.md ---
 # Search Screen
 
 ## Role
@@ -2569,9 +2472,7 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - l'application privilegie local dans `Meilleur resultat` si la correspondance est forte
 - `Library` reste la surface de possession locale, `Search` reste la surface de recherche globale
 
-
----
-## docs/android/screens/library.md
+--- docs/android/screens/library.md ---
 # Library Screen
 
 ## Role
@@ -2621,9 +2522,7 @@ Centraliser la collection personnelle locale et les points d'entree de gestion.
 - MediaStore pour la presence des fichiers locaux
 - metadonnees cloud optionnelles
 
-
----
-## docs/android/screens/playlists.md
+--- docs/android/screens/playlists.md ---
 # Playlists Screens
 
 ## Role
@@ -2684,9 +2583,7 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - suppression avec confirmation
 - erreur de sync non bloquante
 
-
----
-## docs/android/screens/player.md
+--- docs/android/screens/player.md ---
 # Player Screen
 
 ## Role
@@ -2758,9 +2655,7 @@ Offrir le controle complet de la lecture en cours et rendre visible la relation 
 - `Previous` suit la logique de redemarrage puis historique reel
 - le reorder n'affecte jamais le contexte source
 
-
----
-## docs/android/screens/player-layout.md
+--- docs/android/screens/player-layout.md ---
 # Player Screen Layout
 
 ## Objectif
@@ -2838,9 +2733,7 @@ flowchart TD
   - une bottom sheet de queue plus detaillee
 - pour v1, la solution la plus simple reste une partie basse scrollable limitee a la queue
 
-
----
-## docs/android/screens/artist.md
+--- docs/android/screens/artist.md ---
 # Artist Screen
 
 ## Role
@@ -2876,9 +2769,7 @@ Afficher un artiste et proposer les actions de lecture et d'exploration associee
 - enrichi online si le reseau est disponible
 - erreur non bloquante si la source externe ne repond pas
 
-
----
-## docs/android/screens/album.md
+--- docs/android/screens/album.md ---
 # Album Screen
 
 ## Role
@@ -2911,9 +2802,7 @@ Afficher un album, ses metadonnees et la liste ordonnee de ses pistes.
 - album enrichi online
 - erreur si metadonnees indisponibles
 
-
----
-## docs/android/screens/downloads.md
+--- docs/android/screens/downloads.md ---
 # Downloads Screen
 
 ## Role
@@ -2948,9 +2837,7 @@ Suivre l'etat des traitements lies a la disponibilite locale des pistes.
 - erreur par job
 - succes avec acces direct a la piste
 
-
----
-## docs/android/screens/settings.md
+--- docs/android/screens/settings.md ---
 # Settings Screen
 
 ## Role
@@ -2991,9 +2878,7 @@ Permettre la configuration de l'application sans complexifier les ecrans media.
 - connecte avec sync active
 - options futures desactivees mais documentees proprement
 
-
----
-## docs/server/architecture.md
+--- docs/server/architecture.md ---
 # Server Architecture
 
 ## Objectif
@@ -3018,9 +2903,7 @@ Fournir une API et des jobs asynchrones pour la recherche, les metadonnees, la s
 - isoler les providers externes
 - journaliser chaque job avec identifiant correlable
 
-
----
-## docs/server/api-contract.md
+--- docs/server/api-contract.md ---
 # API Contract
 
 ## Objectif
@@ -3786,9 +3669,7 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - la pile de navigation
 - le niveau de scroll
 
-
----
-## docs/server/sync-conflict-resolution.md
+--- docs/server/sync-conflict-resolution.md ---
 # Sync Conflict Resolution
 
 ## Objectif
@@ -4261,9 +4142,7 @@ Strategie :
 - niveau de scroll
 - donnees provider brutes non promues au modele AURA
 
-
----
-## docs/server/sync-batch-api.md
+--- docs/server/sync-batch-api.md ---
 # Sync Batch API
 
 ## Objectif
@@ -4607,9 +4486,7 @@ Definir les contrats HTTP batch concrets du moteur de synchronisation AURA entre
 - sync de niveau de scroll
 - replication brute de `MediaStore`
 
-
----
-## docs/server/api-sync-flows.md
+--- docs/server/api-sync-flows.md ---
 # API Sync Flows
 
 ## Objectif
@@ -4727,9 +4604,7 @@ sequenceDiagram
 - Aucun flux n'encode la navigation UI ou le niveau de scroll.
 - Le choix interne exact de source de telechargement reste volontairement opaque a ce stade.
 
-
----
-## docs/server/jobs.md
+--- docs/server/jobs.md ---
 # Jobs Asynchrones
 
 ## Types de jobs
@@ -4754,9 +4629,7 @@ sequenceDiagram
 - L'ecran `Downloads` consomme directement cet etat.
 - Les logs applicatifs lient chaque job a ses erreurs et a son provider source.
 
-
----
-## docs/server/database-postgres.md
+--- docs/server/database-postgres.md ---
 # Postgres Schema
 
 ## Objectif
@@ -5019,9 +4892,7 @@ Retention:
 - les statistiques et leurs evenements ne montent que si le reseau autorise la sync en Wi-Fi
 - les jobs termines peuvent etre archives en cloud puis purges localement
 
-
----
-## docs/server/postgres-relationships.md
+--- docs/server/postgres-relationships.md ---
 # Postgres Relationships
 
 ## Objectif
@@ -5176,9 +5047,7 @@ erDiagram
 - aucune pile de navigation
 - aucun niveau de scroll
 
-
----
-## docs/server/vector-search-qdrant.md
+--- docs/server/vector-search-qdrant.md ---
 # Vector Search And Qdrant
 
 ## Role
@@ -5219,9 +5088,7 @@ Qdrant stocke les vecteurs utilises pour les recommandations et recherches par s
 - Les reponses de reco doivent pouvoir etre transformees en objets `Track` exploitables par Android.
 - Le payload Qdrant ne remplace pas les tables transactionnelles de `Room` ou `Postgres`.
 
-
----
-## docs/server/storage.md
+--- docs/server/storage.md ---
 # Storage Strategy
 
 ## Types d'objets
@@ -5235,9 +5102,7 @@ Qdrant stocke les vecteurs utilises pour les recommandations et recherches par s
 - Les fichiers temporaires doivent etre supprimables sans casser les donnees transactionnelles.
 - Les references vers des objets binaires vivent en base, pas uniquement dans des conventions implicites.
 
-
----
-## docs/server/providers/deezer.md
+--- docs/server/providers/deezer.md ---
 # Deezer Provider
 
 ## Role
@@ -5258,9 +5123,7 @@ Fournisseur de recherche online v1 pour titres, artistes et albums.
 - Deezer ne doit pas dicter le modele metier AURA.
 - Les actions futures de telechargement ou streaming dependront d'autres briques que de cette seule integration.
 
-
----
-## docs/server/providers/streaming-bridge.md
+--- docs/server/providers/streaming-bridge.md ---
 # Streaming Bridge Extension
 
 ## Role
@@ -5279,9 +5142,7 @@ Preparer un point d'extension pour un futur bridge de streaming ou Hi-Fi sans fi
 ## Regle documentaire
 Tant que cette brique n'est pas stable, elle reste documentee comme extension et non comme dependance centrale d'AURA.
 
-
----
-## docs/server/security-and-secrets.md
+--- docs/server/security-and-secrets.md ---
 # Security And Secrets
 
 ## Principes
@@ -5301,9 +5162,7 @@ Tant que cette brique n'est pas stable, elle reste documentee comme extension et
 - masquer les secrets dans les logs et via MCP
 - segmenter les environnements local, staging personnel et production personnelle
 
-
----
-## docs/mcp/overview.md
+--- docs/mcp/overview.md ---
 # MCP Overview
 
 ## Objectif
@@ -5319,9 +5178,7 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - noms de ressources stables
 - filtrage des secrets et donnees sensibles
 
-
----
-## docs/mcp/resources.md
+--- docs/mcp/resources.md ---
 # MCP Resources
 
 ## Ressources minimales
@@ -5341,9 +5198,7 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - pas de secrets exposes
 - pas d'operation destructive depuis les ressources de lecture
 
-
----
-## docs/mcp/use-cases.md
+--- docs/mcp/use-cases.md ---
 # MCP Use Cases
 
 ## Diagnostic d'un telechargement
@@ -5359,9 +5214,7 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - verifier si des jobs ou providers echouent
 - verifier si des metadonnees attendues manquent
 
-
----
-## docs/ops/logging-observability.md
+--- docs/ops/logging-observability.md ---
 # Logging And Observability
 
 ## Logs attendus
@@ -5379,9 +5232,7 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - support au debug manuel
 - exposition selective via MCP
 
-
----
-## docs/ops/env-vars.md
+--- docs/ops/env-vars.md ---
 # Environment Variables Inventory
 
 ## Android
@@ -5401,3 +5252,4 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 ## Regles
 - toute nouvelle variable doit etre documentee ici et dans un fichier exemple
 - les valeurs reelles ne doivent jamais apparaitre dans le depot
+

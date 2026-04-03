@@ -22,3 +22,10 @@ Isoler la logique de lecture et de queue pour la rendre testable, persistante et
 - contexte de lecture
 - contenu de la priority queue
 - modes shuffle et repeat
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/service/PlaybackService.kt` : `MediaSessionService` Media3, initialise ExoPlayer et expose `MediaSession`
+- `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt` : orchestre play, pause, next, prev, seek ; utilise `QueueManager` et `PlaybackStateStore`
+- `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt` : gere `playback context`, `priority queue` et `history` en memoire
+- `android/app/src/main/java/com/aura/music/data/player/PlaybackStateStore.kt` : persiste le snapshot de reprise via `PlaybackSnapshotDao`
+- `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : transforme l'etat metier en etat ecran, met a jour la progression periodiquement

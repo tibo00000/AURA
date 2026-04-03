@@ -35,7 +35,11 @@ class MediaStoreAudioDataSource(
         return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 
-    suspend fun getLocalAudioFiles(limit: Int = 40): List<LocalAudioFile> = withContext(Dispatchers.IO) {
+    companion object {
+        private const val MIN_DURATION_MS = 30_000L
+    }
+
+    suspend fun getLocalAudioFiles(): List<LocalAudioFile> = withContext(Dispatchers.IO) {
         if (!hasReadPermission()) {
             return@withContext emptyList()
         }
@@ -55,9 +59,9 @@ class MediaStoreAudioDataSource(
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= $MIN_DURATION_MS",
                 null,
-                "${MediaStore.Audio.Media.DATE_MODIFIED} DESC",
+                "${MediaStore.Audio.Media.TITLE} ASC",
             )?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
@@ -68,7 +72,7 @@ class MediaStoreAudioDataSource(
                 val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
                 val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
 
-                while (cursor.moveToNext() && size < limit) {
+                while (cursor.moveToNext()) {
                     val mediaStoreId = cursor.getLong(idColumn)
                     val contentUri: Uri = Uri.withAppendedPath(
                         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,

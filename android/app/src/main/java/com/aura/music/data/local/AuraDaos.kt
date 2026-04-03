@@ -57,6 +57,23 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.id = :trackId
+        LIMIT 1
+        """,
+    )
+    suspend fun getTrackById(trackId: String): TrackListRow?
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.title) LIKE '%' || lower(:query) || '%'
            OR lower(tracks.display_artist_name) LIKE '%' || lower(:query) || '%'
            OR lower(COALESCE(tracks.display_album_title, '')) LIKE '%' || lower(:query) || '%'

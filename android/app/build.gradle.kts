@@ -60,6 +60,7 @@ ksp {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
     val roomVersion = "2.6.1"
+    val media3Version = "1.4.1"
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -80,6 +81,9 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     ksp("androidx.room:room-compiler:$roomVersion")
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-session:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

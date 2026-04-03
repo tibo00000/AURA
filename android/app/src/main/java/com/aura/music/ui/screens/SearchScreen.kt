@@ -32,7 +32,7 @@ fun SearchScreen(
     repository: LocalLibraryRepository,
     refreshToken: Int,
     onRequestAudioPermission: () -> Unit,
-    onPlayTrack: (TrackListRow) -> Unit,
+    onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
@@ -96,12 +96,13 @@ fun SearchScreen(
                 if (query.trim().length >= 3) {
                     TrackList(
                         title = "Best local matches",
-                        tracks = localResults,
-                        onPlayTrack = {
+                        tracks = localResults.toList(),
+                        contextType = "search_results",
+                        onPlayTrackInList = { track, allTracks, contextType ->
                             scope.launch {
                                 repository.saveRecentSearch(query)
                             }
-                            onPlayTrack(it)
+                            onPlayTrackInList(track, allTracks, contextType)
                         },
                         onOpenArtist = onOpenArtist,
                         onOpenAlbum = onOpenAlbum,

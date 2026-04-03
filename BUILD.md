@@ -40,8 +40,7 @@ Contraintes :
 
 ## Etat global actuel
 - La base documentaire de reference est en place.
-- Aucun code applicatif Android ou backend n'est encore present dans le depot.
-- Le prochain objectif est d'utiliser ce fichier pour suivre l'implementation du code reel, brique par brique.
+- Le code applicatif Android ou backend a été commencé, se référer au code workboard pour l'état actuel.
 
 ## Trajectoire globale
 
@@ -151,10 +150,10 @@ Resultat attendu :
 | AND-001 | android | Initialiser le projet Android Kotlin avec structure de modules minimale | completed | none | `docs/adrs/002-android-native-client.md`, `docs/android/app-architecture.md` | squelette Compose, structure Gradle et wrapper poses |
 | AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | completed | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | graphe principal, surfaces detail et mini-player shell poses |
 | AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | completed | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | base Room, import local MediaStore et settings par defaut poses |
-| AND-004 | android | Implementer le moteur player Media3 et les regles de queue | not_started | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | la priority queue reste non persistante |
+| AND-004 | android | Implementer le moteur player Media3 et les regles de queue | completed | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | priority queue en memoire, PlaybackService + QueueManager + Orchestrator + PlayerViewModel poses, ecran Player minimal fonctionnel |
 | AND-005 | android | Implementer l'ecran `Search` avec orchestration local + online | not_started | AND-002, AND-003 | `docs/android/screens/search.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md` | fusion faite cote Android |
 | AND-006 | android | Implementer la gestion des playlists locales et leur UI | not_started | AND-002, AND-003 | `docs/android/screens/playlists.md`, `docs/product/user-flows.md` | create, rename, delete, reorder |
-| AND-007 | android | Implementer les ecrans `Artist`, `Album`, `Home`, `Library`, `Downloads`, `Settings` | not_started | AND-002, AND-003 | `docs/android/screens/artist.md`, `docs/android/screens/album.md`, `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md` | detail des surfaces |
+| AND-007 | android | Implementer les ecrans `Artist`, `Album`, `Home`, `Library`, `Downloads`, `Settings`, `Player` complet | not_started | AND-002, AND-003, AND-004 | `docs/android/screens/artist.md`, `docs/android/screens/album.md`, `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md`, `docs/android/screens/player.md`, `docs/android/screens/player-layout.md` | detail des surfaces, ecran Player complet avec seek interactif, vue queue et layout avance |
 
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -183,6 +182,8 @@ Resultat attendu :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 
 ## Journal des changements
+- 2026-04-03T12:28:00+02:00 | code, docs | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `docs/android/player/queue-rules.md` | resolution des bugs de lecture locale (flickering via suppression du SeekTo repetitif, correctif navigation playlist via passe explicite de toutes les listes UI au context, et retablissement resume complet du snapshot).
+- 2026-04-02T21:44:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/domain/player/*`, `android/app/src/main/java/com/aura/music/data/player/*`, `android/app/src/main/java/com/aura/music/service/PlaybackService.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/AuraApplication.kt`, `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/android/app-architecture.md`, `docs/android/navigation.md`, `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `BUILD.md` | implementation de AND-004 avec moteur Media3, QueueManager, PlaybackOrchestrator, PlaybackStateStore, PlayerViewModel et ecran Player minimal. Comblement de la dette documentaire AND-002 et AND-003 avec sections Code Mapping.
 - 2026-04-02T20:35:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/*`, `BUILD.md` | implementation de AND-002 et AND-003 avec navigation Compose, shell multi-ecrans, Room et integration MediaStore.
 - 2026-04-02T19:05:53+02:00 | code | `android/gradlew`, `android/gradlew.bat`, `android/gradle/wrapper/*`, `render.yaml`, `server/.env.example`, `server/app/config.py`, `infra/*`, `BUILD.md` | ajout du wrapper Gradle, du blueprint Render racine et de la configuration Qdrant avec cle API.
 - 2026-04-02T19:05:53+02:00 | code | `android/*`, `server/*`, `infra/*`, `.gitignore`, `BUILD.md` | creation du socle monorepo Android, FastAPI et infra avec premiere base executable.

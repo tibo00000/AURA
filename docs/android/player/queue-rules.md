@@ -8,6 +8,10 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 - Plusieurs ajouts successifs s'empilent dans l'ordre d'ajout.
 - Un doublon est autorise si l'utilisateur ajoute volontairement le meme titre plusieurs fois.
 
+## Contexte de lecture (Source)
+- Tout clic sur une piste depuis une liste (Home, Search, Playlist) doit fournir **l'integralite de la liste affichee** comme contexte de lecture (`contextTracks` et `startIndex`).
+- Il est strictement interdit de creer un contexte `single_track` si la piste fait partie d'une liste visible a l'ecran. Cela garantit que les actions "Next" et "Previous" fonctionnent intuitivement pour l'utilisateur.
+
 ## Next
 - Priorite a la `priority queue`.
 - Sinon avance dans le contexte source.
@@ -25,3 +29,7 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 ## Reorder
 - L'utilisateur peut reordonner la queue manuelle.
 - Le reorder n'a aucun effet sur le contexte source.
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt` : implementation des regles ci-dessus (next, prev, add, remove, reorder, shuffle, repeat)
+- `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : modeles `QueuedTrack`, `PlaybackContext`, `TrackSource`, `RepeatMode`

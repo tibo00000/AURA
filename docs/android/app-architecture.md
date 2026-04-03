@@ -31,3 +31,10 @@
 - pile d'ecrans de navigation
 - niveau de scroll
 - etats UI transitoires purement visuels
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/AuraApplication.kt` : point d'entree `Application`, initialise `AuraAppContainer`
+- `android/app/src/main/java/com/aura/music/MainActivity.kt` : activite hote Compose, appelle `AuraApp()`
+- `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt` : container DI manuel, fournit database, MediaStore et repository
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : shell applicatif Compose, navigation principale, mini-player shell, composants partages UI
+- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore

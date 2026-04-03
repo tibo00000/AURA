@@ -273,3 +273,18 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
 - nombre d'ecoutes abandonnees tres tot
 - repartition par contexte source comme playlist, album ou recherche
 - repartition par type de reseau si utile a l'analyse produit
+
+## Filtrage MediaStore
+
+La query MediaStore applique deux filtres :
+- `IS_MUSIC != 0` : exclut les sonneries, alarmes et notifications systeme
+- `DURATION >= 30000` : exclut les fichiers audio courts (vocaux WhatsApp, sons de notification) inferieurs a 30 secondes
+
+Aucune limite arbitraire n'est appliquee au nombre de fichiers retournes.
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room pour toutes les tables (tracks, artists, albums, playlists, snapshots, settings, etc.)
+- `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les operations de base
+- `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : singleton Room database, version 1
+- `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore, filtre duree >= 30s
+- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot, generation d'ID

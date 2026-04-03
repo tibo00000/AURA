@@ -43,3 +43,7 @@
 - `PlaybackEnded` doit demander au queue manager la prochaine piste.
 - `PlaybackFailed` doit exposer une action de retry et permettre `next`.
 - `RemoveFromQueue` sur la piste courante est refuse par le domaine.
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : `PlaybackState` enum, `RepeatMode` enum, `PlayerUiState` data class
+- `android/app/src/main/java/com/aura/music/domain/player/PlayerEvent.kt` : sealed interface `PlayerEvent` avec tous les evenements utilisateur

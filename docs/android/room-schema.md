@@ -21,6 +21,20 @@ Definir le schema detaille de `Room` pour AURA, avec les cles, les relations et 
   - lancement ou preparation d'un telechargement
 - Les resultats de recherche online non actionnes restent ephemeres tant qu'ils ne deviennent pas utiles a l'etat metier.
 
+## Convention des identifiants AURA
+
+Toutes les PK des tables d'entites metier sont des `TEXT` avec un format prefixe deterministe.
+
+| Entite | Format PK | Exemple |
+|---|---|---|
+| Track (local) | `track:local:{mediaStoreId}` | `track:local:42` |
+| Artist | `artist:{slug}` | `artist:daft-punk` |
+| Album | `album:{slug_artiste}:{slug_album}` | `album:daft-punk:discovery` |
+
+Le slug est produit par la fonction `normalize` : lowercase, remplacement des caracteres non-lettre/non-chiffre Unicode (`\p{L}\p{N}`) par des tirets, trim. Si le resultat est vide (nom compose uniquement de ponctuation), un hash SHA-256 tronque a 16 caracteres hexadecimaux sert de fallback deterministe.
+
+Les FK (`primary_artist_id`, `album_id`, `track_id`, etc.) referencent directement ces PK.
+
 ## Tables
 
 ### `artists`
@@ -302,3 +316,8 @@ Constraints:
 - toutes les donnees metier durables sont conservees localement
 - `recent_searches` est limitee a 10 entrees
 - `download_jobs` termines sont purgeables localement apres archivage cloud
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room correspondant aux tables ci-dessus
+- `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les queries et upserts
+- `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : declaration de la base Room avec liste des entities et des DAOs

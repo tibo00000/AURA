@@ -10,5 +10,11 @@ class AuraApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AuraAppContainer(this)
+        container.playbackOrchestrator.connect()
+    }
+
+    override fun onTerminate() {
+        container.playbackOrchestrator.disconnect()
+        super.onTerminate()
     }
 }

@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import java.util.UUID
 
 data class LibraryDashboardSummary(
     val hasAudioPermission: Boolean,
@@ -45,13 +44,13 @@ class LocalLibraryRepository(
         }
     }
 
-    suspend fun refreshLocalMediaIndex(limit: Int = 120): Int = withContext(Dispatchers.IO) {
+    suspend fun refreshLocalMediaIndex(): Int = withContext(Dispatchers.IO) {
         if (!mediaStoreAudioDataSource.hasReadPermission()) {
             return@withContext 0
         }
 
         val now = System.currentTimeMillis()
-        val mediaFiles = mediaStoreAudioDataSource.getLocalAudioFiles(limit)
+        val mediaFiles = mediaStoreAudioDataSource.getLocalAudioFiles()
         if (mediaFiles.isEmpty()) {
             return@withContext 0
         }
@@ -139,7 +138,7 @@ class LocalLibraryRepository(
         val snapshotDeferred = async { database.playbackSnapshotDao().getActiveSnapshot() }
         val mediaCountDeferred = async {
             if (hasPermission) {
-                mediaStoreAudioDataSource.getLocalAudioFiles(limit = 120).size
+                mediaStoreAudioDataSource.getLocalAudioFiles().size
             } else {
                 0
             }
@@ -157,6 +156,9 @@ class LocalLibraryRepository(
 
     suspend fun getRecentTracks(limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getRecentTracks(limit) }
+
+    suspend fun getTrackById(trackId: String): TrackListRow? =
+        withContext(Dispatchers.IO) { database.trackDao().getTrackById(trackId) }
 
     suspend fun searchLocalTracks(query: String, limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.IO) {
@@ -217,12 +219,20 @@ class LocalLibraryRepository(
         private fun albumIdOf(artistName: String, albumTitle: String): String =
             "album:${normalize(artistName)}:${normalize(albumTitle)}"
 
-        private fun normalize(value: String): String =
-            value
+        private fun normalize(value: String): String {
+            val slug = value
                 .trim()
                 .lowercase()
-                .replace(Regex("[^a-z0-9]+"), "-")
+                .replace(Regex("[^\\p{L}\\p{N}]+"), "-")
                 .trim('-')
-                .ifBlank { UUID.randomUUID().toString() }
+            if (slug.isNotBlank()) return slug
+            // Fallback deterministe : hash SHA-256 tronque pour les noms
+            // composes uniquement de ponctuation ou vides.
+            val bytes = value.trim().lowercase().toByteArray(Charsets.UTF_8)
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            val hex = digest.joinToString("") { "%02x".format(it) }
+            return hex.take(16).ifBlank { "unknown" }
+        }
     }
 }
+

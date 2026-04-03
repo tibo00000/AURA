@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
@@ -24,7 +23,7 @@ fun HomeScreen(
     repository: LocalLibraryRepository,
     refreshToken: Int,
     onRequestAudioPermission: () -> Unit,
-    onOpenPlayer: (TrackListRow) -> Unit,
+    onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
@@ -53,20 +52,11 @@ fun HomeScreen(
                 }
             }
             item {
-                Column {
-                    Button(
-                        onClick = { recentTracksState.value.firstOrNull()?.let(onOpenPlayer) },
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    ) {
-                        Text("Resume local playback shell")
-                    }
-                }
-            }
-            item {
                 TrackList(
                     title = "Recent local tracks",
                     tracks = recentTracksState.value,
-                    onPlayTrack = onOpenPlayer,
+                    contextType = "recent_tracks",
+                    onPlayTrackInList = onPlayTrackInList,
                     onOpenArtist = onOpenArtist,
                     onOpenAlbum = onOpenAlbum,
                 )
