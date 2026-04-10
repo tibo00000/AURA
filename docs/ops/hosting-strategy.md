@@ -11,6 +11,13 @@ Definir la strategie d'hebergement requise avant l'activation de la recherche on
 - La recherche online v1 reste backend only.
 - Le backend doit donc etre heberge sur une cible always-on avant `SRV-002` et `AND-005`.
 
+## Cible retenue actuelle
+- cible retenue : Contabo Cloud VPS 10
+- specification retenue : `4 vCPU`, `8 GB RAM`, `75 GB NVMe`
+- image recommandee : `Ubuntu 24.04 LTS`
+- deploiement initial : Docker sur le VPS
+- reverse proxy recommande ensuite : Caddy
+
 ## Options retenues
 
 ### Option A - Render sans spin-down
@@ -46,4 +53,7 @@ Definir la strategie d'hebergement requise avant l'activation de la recherche on
 ## Code Mapping
 - `render.yaml` : blueprint actuel Render
 - `infra/docker/server.Dockerfile` : image backend deployable
+- `infra/docker-compose.vps.yml` : deploiement rapide backend sur VPS
+- `infra/docker-compose.vps.caddy.yml` : ajout du reverse proxy TLS sur VPS
+- `infra/vps/README.md` : procedure de bootstrap et deploiement VPS
 - `server/app/config.py` : variables d'environnement utilisees par l'API

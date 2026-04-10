@@ -5,6 +5,7 @@
 ## What belongs here
 - Dockerfiles and local compose files
 - deployment notes and support files for platforms such as Render
+- VPS deployment notes and compose files
 - environment templates and hosting notes
 - scripts or helpers for local and remote environments
 
