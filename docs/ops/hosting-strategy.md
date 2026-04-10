@@ -17,6 +17,7 @@ Definir la strategie d'hebergement requise avant l'activation de la recherche on
 - image recommandee : `Ubuntu 24.04 LTS`
 - deploiement initial : Docker sur le VPS
 - reverse proxy recommande ensuite : Caddy
+- validation actuelle : deploiement initial confirme avec variables d'environnement posees et API joignable
 
 ## Options retenues
 

@@ -57,3 +57,8 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - contenu charge
 - suppression avec confirmation
 - erreur de sync non bloquante
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : liste playlists, detail playlist, dialogues create/rename/delete, ajout/retrait/reordonnancement local
+- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : CRUD playlists locales, items, ordre et lecture du contexte playlist
+- `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : requetes Room playlists et playlist_items

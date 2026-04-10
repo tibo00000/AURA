@@ -220,5 +220,28 @@ data class PlaylistListRow(
     val id: String,
     val name: String,
     @ColumnInfo(name = "is_pinned") val isPinned: Boolean,
+    @ColumnInfo(name = "item_count") val itemCount: Int,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+data class PlaylistDetailRow(
+    val id: String,
+    val name: String,
+    @ColumnInfo(name = "cover_uri") val coverUri: String?,
+    @ColumnInfo(name = "is_pinned") val isPinned: Boolean,
+    @ColumnInfo(name = "item_count") val itemCount: Int,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+data class PlaylistTrackRow(
+    @ColumnInfo(name = "playlist_item_id") val playlistItemId: String,
+    @ColumnInfo(name = "playlist_id") val playlistId: String,
+    @ColumnInfo(name = "track_id") val trackId: String,
+    val position: Int,
+    @ColumnInfo(name = "added_at") val addedAt: Long,
+    val title: String,
+    @ColumnInfo(name = "artist_name") val artistName: String,
+    @ColumnInfo(name = "album_title") val albumTitle: String?,
+    @ColumnInfo(name = "content_uri") val contentUri: String?,
+    @ColumnInfo(name = "duration_ms") val durationMs: Long?,
 )

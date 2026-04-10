@@ -39,7 +39,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,7 +73,6 @@ import com.aura.music.ui.screens.PlaylistsScreen
 import com.aura.music.ui.screens.SearchScreen
 import com.aura.music.ui.screens.SettingsScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
-import kotlinx.coroutines.launch
 
 private data class TopLevelDestination(
     val route: String,
@@ -100,8 +98,6 @@ fun AuraApp() {
         )
     }
     var permissionRefreshTick by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
-
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) {
@@ -188,6 +184,8 @@ fun AuraApp() {
             }
             composable(AuraRoute.PlaylistDetailPattern) { backStackEntry ->
                 PlaylistDetailScreen(
+                    repository = repository,
+                    playerViewModel = playerViewModel,
                     playlistId = backStackEntry.arguments?.getString(AuraRoute.PlaylistIdArg).orEmpty(),
                     onNavigateBack = { navController.popBackStack() },
                 )
@@ -437,7 +435,7 @@ fun TrackList(
                     headlineContent = { Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
                         Text(
-                            text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
+                            text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -476,7 +474,10 @@ fun PlaylistPreviewList(
             playlists.forEach { playlist ->
                 ListItem(
                     headlineContent = { Text(playlist.name) },
-                    supportingContent = { Text(if (playlist.isPinned) "Pinned playlist" else "Local playlist") },
+                    supportingContent = {
+                        val typeLabel = if (playlist.isPinned) "Pinned playlist" else "Local playlist"
+                        Text("$typeLabel | ${playlist.itemCount} track(s)")
+                    },
                     modifier = Modifier.clickable { onOpenPlaylist(playlist.id) },
                 )
             }
@@ -500,11 +501,11 @@ fun DashboardSummaryCard(
         ) {
             Text("Local-first shell ready", style = MaterialTheme.typography.titleLarge)
             Text(
-                text = "Room tracks: ${summary.roomTrackCount} • MediaStore: ${summary.mediaStoreTrackCount} • Playlists: ${summary.playlistCount}",
+                text = "Room tracks: ${summary.roomTrackCount} | MediaStore: ${summary.mediaStoreTrackCount} | Playlists: ${summary.playlistCount}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "Recent searches: ${summary.recentSearchCount} • Snapshot active: ${summary.activeSnapshot != null}",
+                text = "Recent searches: ${summary.recentSearchCount} | Snapshot active: ${summary.activeSnapshot != null}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (!summary.hasAudioPermission) {
