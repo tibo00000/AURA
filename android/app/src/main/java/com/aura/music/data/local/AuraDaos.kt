@@ -10,12 +10,103 @@ import androidx.room.Upsert
 interface ArtistDao {
     @Upsert
     suspend fun upsertArtists(items: List<ArtistEntity>)
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count
+        FROM artists
+        LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        GROUP BY artists.id
+        ORDER BY COUNT(DISTINCT tracks.id) DESC, artists.name ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getBrowseArtists(limit: Int): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            artists.summary AS summary
+        FROM artists
+        WHERE artists.id = :artistId
+        LIMIT 1
+        """,
+    )
+    suspend fun getArtistDetail(artistId: String): ArtistDetailRow?
 }
 
 @Dao
 interface AlbumDao {
     @Upsert
     suspend fun upsertAlbums(items: List<AlbumEntity>)
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        GROUP BY albums.id
+        ORDER BY albums.updated_at DESC, albums.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getBrowseAlbums(limit: Int): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        WHERE albums.primary_artist_id = :artistId
+        GROUP BY albums.id
+        ORDER BY albums.updated_at DESC, albums.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getAlbumsForArtist(artistId: String, limit: Int): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            albums.release_date AS release_date,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        WHERE albums.id = :albumId
+        GROUP BY albums.id
+        LIMIT 1
+        """,
+    )
+    suspend fun getAlbumDetail(albumId: String): AlbumDetailRow?
 }
 
 @Dao
@@ -33,11 +124,14 @@ interface TrackDao {
         """
         SELECT
             tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
             tracks.title AS title,
             tracks.display_artist_name AS artist_name,
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
-            tracks.duration_ms AS duration_ms
+            tracks.duration_ms AS duration_ms,
+            tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         ORDER BY tracks.updated_at DESC
@@ -50,11 +144,14 @@ interface TrackDao {
         """
         SELECT
             tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
             tracks.title AS title,
             tracks.display_artist_name AS artist_name,
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
-            tracks.duration_ms AS duration_ms
+            tracks.duration_ms AS duration_ms,
+            tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.id = :trackId
@@ -67,11 +164,14 @@ interface TrackDao {
         """
         SELECT
             tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
             tracks.title AS title,
             tracks.display_artist_name AS artist_name,
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
-            tracks.duration_ms AS duration_ms
+            tracks.duration_ms AS duration_ms,
+            tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.title) LIKE '%' || lower(:query) || '%'
@@ -82,6 +182,66 @@ interface TrackDao {
         """,
     )
     suspend fun searchTracks(query: String, limit: Int): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.is_liked AS is_liked
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
+        """,
+    )
+    suspend fun getAllTracks(): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.is_liked AS is_liked
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.primary_artist_id = :artistId
+        ORDER BY tracks.updated_at DESC, tracks.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getTracksForArtist(artistId: String, limit: Int): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.is_liked AS is_liked
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.album_id = :albumId
+        ORDER BY tracks.title ASC, tracks.updated_at DESC
+        """,
+    )
+    suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
 }
 
 @Dao
@@ -210,4 +370,16 @@ interface UserSettingsDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrReplace(entity: UserSettingsEntity)
+
+    @Query("UPDATE user_settings SET sync_enabled = :enabled WHERE id = 'default'")
+    suspend fun updateSyncEnabled(enabled: Boolean): Int
+
+    @Query("UPDATE user_settings SET online_search_enabled = :enabled WHERE id = 'default'")
+    suspend fun updateOnlineSearchEnabled(enabled: Boolean): Int
+
+    @Query("UPDATE user_settings SET online_search_network_policy = :policy WHERE id = 'default'")
+    suspend fun updateOnlineSearchNetworkPolicy(policy: String): Int
+
+    @Query("UPDATE user_settings SET stats_sync_network_policy = :policy WHERE id = 'default'")
+    suspend fun updateStatsSyncNetworkPolicy(policy: String): Int
 }

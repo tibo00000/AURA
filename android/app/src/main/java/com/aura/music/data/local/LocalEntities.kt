@@ -209,11 +209,14 @@ data class UserSettingsEntity(
 
 data class TrackListRow(
     val id: String,
+    @ColumnInfo(name = "artist_id") val artistId: String?,
+    @ColumnInfo(name = "album_id") val albumId: String?,
     val title: String,
     @ColumnInfo(name = "artist_name") val artistName: String,
     @ColumnInfo(name = "album_title") val albumTitle: String?,
     @ColumnInfo(name = "content_uri") val contentUri: String?,
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
+    @ColumnInfo(name = "is_liked") val isLiked: Boolean,
 )
 
 data class PlaylistListRow(
@@ -244,4 +247,38 @@ data class PlaylistTrackRow(
     @ColumnInfo(name = "album_title") val albumTitle: String?,
     @ColumnInfo(name = "content_uri") val contentUri: String?,
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
+)
+
+data class ArtistBrowseRow(
+    val id: String,
+    val name: String,
+    @ColumnInfo(name = "picture_uri") val pictureUri: String?,
+    @ColumnInfo(name = "track_count") val trackCount: Int,
+    @ColumnInfo(name = "album_count") val albumCount: Int,
+)
+
+data class ArtistDetailRow(
+    val id: String,
+    val name: String,
+    @ColumnInfo(name = "picture_uri") val pictureUri: String?,
+    val summary: String?,
+)
+
+data class AlbumBrowseRow(
+    val id: String,
+    val title: String,
+    @ColumnInfo(name = "artist_id") val artistId: String?,
+    @ColumnInfo(name = "artist_name") val artistName: String?,
+    @ColumnInfo(name = "cover_uri") val coverUri: String?,
+    @ColumnInfo(name = "track_count") val trackCount: Int?,
+)
+
+data class AlbumDetailRow(
+    val id: String,
+    val title: String,
+    @ColumnInfo(name = "artist_id") val artistId: String?,
+    @ColumnInfo(name = "artist_name") val artistName: String?,
+    @ColumnInfo(name = "cover_uri") val coverUri: String?,
+    @ColumnInfo(name = "release_date") val releaseDate: String?,
+    @ColumnInfo(name = "track_count") val trackCount: Int?,
 )

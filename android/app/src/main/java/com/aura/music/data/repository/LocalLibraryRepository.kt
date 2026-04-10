@@ -1,8 +1,12 @@
 package com.aura.music.data.repository
 
 import com.aura.music.data.local.AlbumEntity
+import com.aura.music.data.local.AlbumBrowseRow
+import com.aura.music.data.local.AlbumDetailRow
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.ArtistEntity
+import com.aura.music.data.local.ArtistBrowseRow
+import com.aura.music.data.local.ArtistDetailRow
 import com.aura.music.data.local.PlaybackSnapshotEntity
 import com.aura.music.data.local.PlaylistDetailRow
 import com.aura.music.data.local.PlaylistEntity
@@ -34,6 +38,17 @@ data class LibraryDashboardSummary(
 data class PlaylistDetail(
     val summary: PlaylistDetailRow,
     val tracks: List<PlaylistTrackRow>,
+)
+
+data class ArtistDetail(
+    val summary: ArtistDetailRow,
+    val topTracks: List<TrackListRow>,
+    val albums: List<AlbumBrowseRow>,
+)
+
+data class AlbumDetail(
+    val summary: AlbumDetailRow,
+    val tracks: List<TrackListRow>,
 )
 
 class LocalLibraryRepository(
@@ -168,6 +183,9 @@ class LocalLibraryRepository(
     suspend fun getRecentTracks(limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getRecentTracks(limit) }
 
+    suspend fun getAllTracks(): List<TrackListRow> =
+        withContext(Dispatchers.IO) { database.trackDao().getAllTracks() }
+
     suspend fun getTrackById(trackId: String): TrackListRow? =
         withContext(Dispatchers.IO) { database.trackDao().getTrackById(trackId) }
 
@@ -201,6 +219,33 @@ class LocalLibraryRepository(
 
     suspend fun getPlaylists(): List<PlaylistListRow> =
         withContext(Dispatchers.IO) { database.playlistDao().getPlaylists() }
+
+    suspend fun getBrowseArtists(limit: Int = 8): List<ArtistBrowseRow> =
+        withContext(Dispatchers.IO) { database.artistDao().getBrowseArtists(limit) }
+
+    suspend fun getBrowseAlbums(limit: Int = 8): List<AlbumBrowseRow> =
+        withContext(Dispatchers.IO) { database.albumDao().getBrowseAlbums(limit) }
+
+    suspend fun getArtistDetail(
+        artistId: String,
+        topTrackLimit: Int = 8,
+        albumLimit: Int = 12,
+    ): ArtistDetail? = withContext(Dispatchers.IO) {
+        val summary = database.artistDao().getArtistDetail(artistId) ?: return@withContext null
+        ArtistDetail(
+            summary = summary,
+            topTracks = database.trackDao().getTracksForArtist(artistId, topTrackLimit),
+            albums = database.albumDao().getAlbumsForArtist(artistId, albumLimit),
+        )
+    }
+
+    suspend fun getAlbumDetail(albumId: String): AlbumDetail? = withContext(Dispatchers.IO) {
+        val summary = database.albumDao().getAlbumDetail(albumId) ?: return@withContext null
+        AlbumDetail(
+            summary = summary,
+            tracks = database.trackDao().getTracksForAlbum(albumId),
+        )
+    }
 
     suspend fun getPlaylistDetail(playlistId: String): PlaylistDetail? =
         withContext(Dispatchers.IO) {
@@ -297,17 +342,39 @@ class LocalLibraryRepository(
             database.playlistDao().getPlaylistTracks(playlistId).map { row ->
                 TrackListRow(
                     id = row.trackId,
+                    artistId = null,
+                    albumId = null,
                     title = row.title,
                     artistName = row.artistName,
                     albumTitle = row.albumTitle,
                     contentUri = row.contentUri,
                     durationMs = row.durationMs,
+                    isLiked = false,
                 )
             }
         }
 
-    suspend fun getPlaylistCandidateTracks(limit: Int = 50): List<TrackListRow> =
-        withContext(Dispatchers.IO) { database.trackDao().getRecentTracks(limit) }
+    suspend fun getPlaylistCandidateTracks(): List<TrackListRow> =
+        withContext(Dispatchers.IO) { database.trackDao().getAllTracks() }
+
+    suspend fun getSettings(): UserSettingsEntity? =
+        withContext(Dispatchers.IO) { database.userSettingsDao().getSettings() }
+
+    suspend fun setSyncEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        database.userSettingsDao().updateSyncEnabled(enabled)
+    }
+
+    suspend fun setOnlineSearchEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        database.userSettingsDao().updateOnlineSearchEnabled(enabled)
+    }
+
+    suspend fun setOnlineSearchNetworkPolicy(policy: String) = withContext(Dispatchers.IO) {
+        database.userSettingsDao().updateOnlineSearchNetworkPolicy(policy)
+    }
+
+    suspend fun setStatsSyncNetworkPolicy(policy: String) = withContext(Dispatchers.IO) {
+        database.userSettingsDao().updateStatsSyncNetworkPolicy(policy)
+    }
 
     suspend fun seedPlaybackPreview(trackId: String, contextType: String = "single_track") =
         withContext(Dispatchers.IO) {

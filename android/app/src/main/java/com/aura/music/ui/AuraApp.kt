@@ -20,6 +20,8 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -138,7 +140,9 @@ fun AuraApp() {
         topDestinations = topDestinations,
         playerUiState = playerUiState,
         onMiniPlayerClick = { navController.navigate(AuraRoute.Player) },
+        onPrevious = { playerViewModel.onEvent(PlayerEvent.Previous) },
         onTogglePlayPause = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
+        onNext = { playerViewModel.onEvent(PlayerEvent.Next) },
     ) { innerPadding ->
         NavHost(
             navController = navController,
@@ -151,6 +155,9 @@ fun AuraApp() {
                     refreshToken = permissionRefreshTick,
                     onRequestAudioPermission = requestAudioPermission,
                     onPlayTrackInList = onPlayTrackInList,
+                    onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
+                    onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
+                    onOpenPlayer = { navController.navigate(AuraRoute.Player) },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
                 )
@@ -170,9 +177,13 @@ fun AuraApp() {
                     repository = repository,
                     refreshToken = permissionRefreshTick,
                     onRequestAudioPermission = requestAudioPermission,
+                    onPlayTrackInList = onPlayTrackInList,
+                    onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                     onOpenPlaylists = { navController.navigate(AuraRoute.Playlists) },
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                     onOpenSettings = { navController.navigate(AuraRoute.Settings) },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
                 )
             }
             composable(AuraRoute.Playlists) {
@@ -192,21 +203,30 @@ fun AuraApp() {
             }
             composable(AuraRoute.ArtistPattern) { backStackEntry ->
                 ArtistRouteScreen(
+                    repository = repository,
                     artistId = backStackEntry.arguments?.getString(AuraRoute.ArtistIdArg).orEmpty(),
                     onNavigateBack = { navController.popBackStack() },
+                    onPlayTrackInList = onPlayTrackInList,
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
                 )
             }
             composable(AuraRoute.AlbumPattern) { backStackEntry ->
                 AlbumRouteScreen(
+                    repository = repository,
                     albumId = backStackEntry.arguments?.getString(AuraRoute.AlbumIdArg).orEmpty(),
                     onNavigateBack = { navController.popBackStack() },
+                    onPlayTrackInList = onPlayTrackInList,
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
                 )
             }
             composable(AuraRoute.Downloads) {
                 DownloadsScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(AuraRoute.Settings) {
-                SettingsScreen(onNavigateBack = { navController.popBackStack() })
+                SettingsScreen(
+                    repository = repository,
+                    onNavigateBack = { navController.popBackStack() },
+                )
             }
             composable(AuraRoute.Player) {
                 PlayerScreen(
@@ -224,7 +244,9 @@ private fun AuraAppScaffold(
     topDestinations: List<TopLevelDestination>,
     playerUiState: PlayerUiState,
     onMiniPlayerClick: () -> Unit,
+    onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
+    onNext: () -> Unit,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -241,7 +263,9 @@ private fun AuraAppScaffold(
                         MiniPlayerCard(
                             playerUiState = playerUiState,
                             onClick = onMiniPlayerClick,
+                            onPrevious = onPrevious,
                             onTogglePlayPause = onTogglePlayPause,
+                            onNext = onNext,
                         )
                     }
                     if (isTopLevelRoute) {
@@ -276,7 +300,9 @@ private fun AuraAppScaffold(
 private fun MiniPlayerCard(
     playerUiState: PlayerUiState,
     onClick: () -> Unit,
+    onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
+    onNext: () -> Unit,
 ) {
     val track = playerUiState.currentTrack ?: return
 
@@ -309,6 +335,9 @@ private fun MiniPlayerCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            IconButton(onClick = onPrevious) {
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous")
+            }
             IconButton(onClick = onTogglePlayPause) {
                 val icon = if (playerUiState.playbackState == PlaybackState.Playing) {
                     Icons.Rounded.Pause
@@ -316,6 +345,9 @@ private fun MiniPlayerCard(
                     Icons.Rounded.PlayArrow
                 }
                 Icon(icon, contentDescription = "Toggle play/pause")
+            }
+            IconButton(onClick = onNext) {
+                Icon(Icons.Rounded.SkipNext, contentDescription = "Next")
             }
         }
     }
@@ -466,7 +498,7 @@ fun PlaylistPreviewList(
         )
         if (playlists.isEmpty()) {
             Text(
-                text = "No playlist persisted yet. This is expected before AND-006.",
+                text = "No local playlist yet. Create one from Library to build reusable listening contexts.",
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
