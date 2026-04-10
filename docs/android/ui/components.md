@@ -1,19 +1,38 @@
 # Composants UI Reutilisables
 
 ## Objectif
-Les composants ci-dessous constituent la base Compose d'AURA. Tout composant expose un `Modifier`.
+Definir les composants visuels et interactifs reutilisables qui doivent porter la DA d'AURA de facon coherente.
 
 ## MiniPlayer
 - Role : lecteur persistant au-dessus de la navigation basse.
-- Contenu : pochette, titre, artiste, boutons `previous`, `play/pause`, `next`.
-- Action : ouvre `PlayerScreen` au clic.
-- Etat : gere `loading`, `playing`, `paused`, `error`.
+- Structure :
+  - pochette compacte
+  - bloc titre + artiste
+  - controles `previous`, `play/pause`, `next`
+- Style :
+  - fond `ElevatedGraphite`
+  - bordure orange fine
+  - coins tres arrondis
+- Regles :
+  - visible sur toutes les surfaces principales si lecture active ou resumable
+  - ouvre `PlayerScreen` sur la zone principale
+  - les controles de transport restent secondaires par rapport a l'ouverture du Player
 
 ## TrackRow
-- Role : affichage standard d'une piste dans la bibliotheque, les playlists et la queue.
-- Gauche : pochette, titre, artiste.
-- Droite : `like`, `add to queue`, menu contextuel.
-- Variantes : standard, compact, currently playing.
+- Role : affichage standard d'une piste dans bibliotheque, playlists, historique, recherche locale et queue compacte.
+- Structure :
+  - gauche : cover
+  - centre : titre, artiste, album/context secondaire
+  - droite : `Like` visible si pertinent, puis menu `...`
+- Variantes :
+  - standard
+  - compact
+  - currently playing
+  - search-result online
+- Regles :
+  - le titre a toujours la priorite visuelle
+  - les metadonnees restent sur une seule ligne si possible
+  - les actions visibles restent limitees pour ne pas encombrer
 - Menu contextuel canonique :
   - `Lire maintenant`
   - `Ajouter a la file d'attente`
@@ -24,32 +43,107 @@ Les composants ci-dessous constituent la base Compose d'AURA. Tout composant exp
   - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
   - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
 
-## QueueRow
-- Role : ligne dediee a la `priority queue`.
-- Actions : drag handle, supprimer, ouvrir le menu contextuel.
-- Contrainte : la piste courante ne montre pas l'action supprimer.
+## PlayerQueueRow
+- Role : ligne dediee a la `priority queue` dans le Player.
+- Structure :
+  - indicateur d'ordre
+  - titre / artiste
+  - `drag handle`
+  - suppression visible si piste en attente
+- Regles :
+  - la piste courante ne montre pas d'action de suppression
+  - le reorder ne modifie jamais le contexte source
 
-## ActionButton
-- Role : bouton primaire pour creer une playlist, lancer un mix ou demarrer une action de fond.
-- Style : pilule, fond uni ou gradient.
+## AlbumCard
+- Role : carte de navigation album locale ou online.
+- Structure :
+  - grande cover
+  - titre
+  - artiste
+- Style :
+  - format carre ou quasi carre
+  - coins arrondis affirmes
+  - usage prefere en rail horizontal
 
-## BottomNavigationBar
-- Role : navigation `Home`, `Search`, `Library`.
-- Etat actif : texte et icone orange.
+## ArtistCard
+- Role : carte de navigation artiste.
+- Structure :
+  - image dominante
+  - nom artiste
+  - meta secondaire optionnelle
+- Style :
+  - impact visuel plus fort qu'un album
+  - image dominante pouvant etre ronde ou encadree selon le layout
 
-## SectionHeader
-- Role : separer les zones d'un scroll.
-- Variantes : standard, accent orange pour resultats de recherche.
+## PlaylistCard
+- Role : carte de navigation playlist.
+- Structure :
+  - cover ou mosaique
+  - nom
+  - metadonnee type nombre de pistes
+- Regles :
+  - doit etre lisible dans `Home`, `Library` et `Playlists`
+  - supporte les etats vide, normale et pinned
 
-## CategoryCard
-- Role : representer mixes, entrees de bibliotheque ou raccourcis.
-- Visuel : fond gradient, icone ou cover marquee.
+## PlayerHero
+- Role : bloc hero du full player.
+- Structure :
+  - artwork
+  - titre
+  - artiste
+  - album ou contexte
+- Regles :
+  - la cover reste l'element visuel dominant
+  - le hero ne doit pas etre noye dans des controles annexes
 
 ## SearchBar
-- Role : saisie uniforme sur toutes les pages de recherche.
-- Placeholder : `Rechercher...`
-- Etats : vide, saisie, loading, clear.
+- Role : saisie uniforme des recherches.
+- Structure :
+  - loupe gauche
+  - texte ou requete
+  - `X` a droite si non vide
+- Regles :
+  - forme pilule
+  - placeholder `Rechercher...`
+  - suggestions locales uniquement pendant la saisie
+
+## SegmentedTabs
+- Role : onglets locaux de `Search` et filtres de sections similaires.
+- Structure :
+  - onglets `Titres`, `Albums`, `Artistes`, `Playlists`
+- Regles :
+  - etat actif fortement visible
+  - etat inactif contrastant sans disparaitre
+  - nombre limite d'onglets visibles sans scrolling si possible
+
+## SectionHeader
+- Role : separer des zones dans un scroll vertical.
+- Variantes :
+  - standard
+  - accent orange
+  - avec action secondaire
+
+## HeroResumeCard
+- Role : carte de reprise sur `Home`.
+- Structure :
+  - cover ou visuel dominant
+  - contexte de reprise
+  - CTA `Reprendre`
+  - menu `...`
 
 ## EmptyStateCard
-- Role : etat vide descriptif pour playlists, downloads et recherche online hors ligne.
-- Contenu : titre, message, action primaire facultative.
+- Role : etat vide descriptif pour playlists, downloads, recherche offline et ecrans detail sans contenu.
+- Structure :
+  - titre
+  - message
+  - action primaire optionnelle
+- Regles :
+  - le ton reste calme et premium
+  - l'action principale reste explicite
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell, composants top-level a faire converger
+- `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`
+- `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : `SearchBar`, `SegmentedTabs`, variantes `TrackRow` Search
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `PlaylistCard`, `EmptyStateCard`, surfaces detail secondaires

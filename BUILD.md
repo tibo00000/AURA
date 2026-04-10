@@ -84,6 +84,19 @@ Resultat attendu :
 - playlists locales utilisables
 - ecrans principaux navigables
 
+### Phase 2.5 - Consolidation visuelle et hebergement
+Objectif :
+- figer la DA complete et l'hebergement always-on avant la recherche online
+
+Priorite :
+- `DOC-005`
+- `INF-003`
+
+Resultat attendu :
+- direction visuelle complete documentee
+- composants et compositions d'ecran figes
+- strategie d'hebergement backend online clarifiee avant `SRV-002` et `AND-005`
+
 ### Phase 3 - Recherche hybride et UX complete
 Objectif :
 - finaliser la couche produit visible cote Android
@@ -171,6 +184,7 @@ Resultat attendu :
 |---|---|---|---|---|---|---|
 | INF-001 | infra | Definir les variables d'environnement et fichiers d'exemple | completed | SRV-001 | `docs/ops/env-vars.md`, `docs/server/security-and-secrets.md` | `.env.example` backend et exemple Android ajoutes |
 | INF-002 | infra | Definir Docker et l'environnement local de dev backend | completed | SRV-001 | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | Dockerfile, compose local et blueprint Render racine ajoutes |
+| INF-003 | infra | Fixer une cible backend always-on avant la recherche online produit | not_started | INF-002 | `docs/ops/hosting-strategy.md`, `docs/server/architecture.md`, `docs/server/api-contract.md` | choisir Render sans spin-down ou VPS avant SRV-002 et AND-005 |
 | GOV-001 | docs | Maintenir la coherence entre code, specs et index machine-friendly | in_progress | none | `docs/README.md`, `docs/documentation/style-guide.md`, `llms.txt`, `llms-full.txt` | activite continue |
 
 ## Done Before Code
@@ -180,8 +194,10 @@ Resultat attendu :
 | DOC-002 | docs | Documenter produit, navigation, user flows et ecrans | completed | DOC-001 | `docs/product/*`, `docs/android/screens/*` | socle UX documente |
 | DOC-003 | docs | Documenter player, persistance, schemas et API | completed | DOC-001 | `docs/domain/*`, `docs/android/room-schema.md`, `docs/server/api-contract.md` | socle technique documente |
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
+| DOC-005 | docs | Consolider la DA complete et la strategie online backend-only | completed | DOC-002, DOC-003 | `docs/android/ui/*`, `docs/adrs/006-online-search-backend-only.md`, `docs/ops/hosting-strategy.md` | DA complete, backend-only search et hebergement always-on documentes |
 
 ## Journal des changements
+- 2026-04-10T12:00:00+02:00 | docs, decision | `docs/android/ui/design-system.md`, `docs/android/ui/components.md`, `docs/android/ui/component-states.md`, `docs/android/ui/screen-composition.md`, `docs/adrs/006-online-search-backend-only.md`, `docs/ops/hosting-strategy.md`, `docs/server/architecture.md`, `docs/server/api-contract.md`, `BUILD.md` | consolidation DA complete, validation backend-only pour la recherche online et ajout de la phase 2.5 de clarification hebergement.
 - 2026-04-03T12:28:00+02:00 | code, docs | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `docs/android/player/queue-rules.md` | resolution des bugs de lecture locale (flickering via suppression du SeekTo repetitif, correctif navigation playlist via passe explicite de toutes les listes UI au context, et retablissement resume complet du snapshot).
 - 2026-04-02T21:44:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/domain/player/*`, `android/app/src/main/java/com/aura/music/data/player/*`, `android/app/src/main/java/com/aura/music/service/PlaybackService.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/AuraApplication.kt`, `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/android/app-architecture.md`, `docs/android/navigation.md`, `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `BUILD.md` | implementation de AND-004 avec moteur Media3, QueueManager, PlaybackOrchestrator, PlaybackStateStore, PlayerViewModel et ecran Player minimal. Comblement de la dette documentaire AND-002 et AND-003 avec sections Code Mapping.
 - 2026-04-02T20:35:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/*`, `BUILD.md` | implementation de AND-002 et AND-003 avec navigation Compose, shell multi-ecrans, Room et integration MediaStore.

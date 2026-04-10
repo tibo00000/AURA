@@ -24,3 +24,10 @@
 - `Home` met en avant reprise, mixes, recents et entrees rapides.
 - `Search` est la surface d'exploration locale et online.
 - `Library` concentre la collection personnelle et les entrees de gestion.
+
+## Hierarchie visuelle
+- `Home`, `Player`, `Search` et `Playlists` portent la direction visuelle principale du produit.
+- `Library`, `Artist`, `Album`, `Downloads` et `Settings` restent de la meme famille visuelle avec une charge editoriale plus faible.
+- `Player` et `Home` utilisent les hero blocks les plus expressifs.
+- `Search` privilegie la clarte de lecture des resultats et des sections.
+- `Library` et `Settings` restent plus utilitaires sans casser le langage premium.

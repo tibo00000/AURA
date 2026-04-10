@@ -3,6 +3,11 @@
 ## Role
 Permettre une recherche unique orientee intention utilisateur, avec evaluation conjointe des resultats locaux et online si le reseau est autorise.
 
+## Source online
+- Les resultats online v1 proviennent exclusivement du backend AURA.
+- L'application Android ne doit pas appeler Deezer directement.
+- Le backend mappe les resultats provider vers le modele AURA avant retour client.
+
 ## Structure generale
 - ecran en scroll vertical unique
 - barre de recherche sticky en tete
@@ -16,7 +21,7 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - a partir de trois caracteres, l'application affiche des suggestions locales uniquement
 - les suggestions sont basees sur les donnees locales deja connues par l'application
 - la validation clavier ou l'action de recherche lance l'affichage complet des resultats
-- si le reseau est autorise et disponible, la recherche complete interroge local et online en parallele
+- si le reseau est autorise et disponible, la recherche complete interroge le local et le backend online en parallele
 
 ## Barre de recherche
 - largeur complete avec forme pilule

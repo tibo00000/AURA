@@ -21,3 +21,5 @@ Fournir une API et des jobs asynchrones pour la recherche, les metadonnees, la s
 - garder des contrats JSON stables
 - isoler les providers externes
 - journaliser chaque job avec identifiant correlable
+- garder la recherche online v1 derriere le backend AURA, sans appel direct provider depuis Android
+- rendre le backend always-on avant le branchement produit de la recherche online

@@ -7,12 +7,14 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - L'application Android reste pleinement fonctionnelle sans backend pour la bibliotheque locale, les playlists locales, la lecture et l'historique local.
 - Le backend enrichit l'experience avec la recherche online, les jobs et la sync cloud optionnelle.
 - La fusion des resultats locaux et online reste du ressort du client Android.
+- La recherche online v1 passe exclusivement par le backend AURA. Android ne doit pas appeler Deezer directement.
 
 ## Familles d'API
 
 ### API online publique
 - Utilisee sans compte pour la recherche enrichie et les pages detail online.
 - Aucune route publique ne doit etre necessaire pour lire une bibliotheque locale.
+- Ces routes exigent un backend always-on du point de vue produit pour eviter une latence de reveil dans `Search`.
 
 ### API sync cloud optionnelle
 - Utilisee seulement si l'utilisateur active un compte ou la synchronisation cloud.

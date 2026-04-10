@@ -17,3 +17,4 @@
 ## Regles
 - toute nouvelle variable doit etre documentee ici et dans un fichier exemple
 - les valeurs reelles ne doivent jamais apparaitre dans le depot
+- l'application Android doit toujours consommer une URL de backend abstraite comme `API_BASE_URL`, sans dependre directement d'un provider online

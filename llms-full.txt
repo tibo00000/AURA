@@ -1,5 +1,4 @@
-﻿
---- AGENTS.md ---
+# FILE: AGENTS.md
 # AGENTS.md - Aura Music Player
 
 ## Role And Identity
@@ -39,7 +38,8 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Utilise des messages de commit clairs et descriptifs.
 - Demande toujours l'autorisation avant un `git push`.
 
---- BUILD.md ---
+
+# FILE: BUILD.md
 # BUILD
 
 ## Objectif
@@ -125,6 +125,19 @@ Resultat attendu :
 - player local robuste
 - playlists locales utilisables
 - ecrans principaux navigables
+
+### Phase 2.5 - Consolidation visuelle et hebergement
+Objectif :
+- figer la DA complete et l'hebergement always-on avant la recherche online
+
+Priorite :
+- `DOC-005`
+- `INF-003`
+
+Resultat attendu :
+- direction visuelle complete documentee
+- composants et compositions d'ecran figes
+- strategie d'hebergement backend online clarifiee avant `SRV-002` et `AND-005`
 
 ### Phase 3 - Recherche hybride et UX complete
 Objectif :
@@ -213,6 +226,7 @@ Resultat attendu :
 |---|---|---|---|---|---|---|
 | INF-001 | infra | Definir les variables d'environnement et fichiers d'exemple | completed | SRV-001 | `docs/ops/env-vars.md`, `docs/server/security-and-secrets.md` | `.env.example` backend et exemple Android ajoutes |
 | INF-002 | infra | Definir Docker et l'environnement local de dev backend | completed | SRV-001 | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | Dockerfile, compose local et blueprint Render racine ajoutes |
+| INF-003 | infra | Fixer une cible backend always-on avant la recherche online produit | not_started | INF-002 | `docs/ops/hosting-strategy.md`, `docs/server/architecture.md`, `docs/server/api-contract.md` | choisir Render sans spin-down ou VPS avant SRV-002 et AND-005 |
 | GOV-001 | docs | Maintenir la coherence entre code, specs et index machine-friendly | in_progress | none | `docs/README.md`, `docs/documentation/style-guide.md`, `llms.txt`, `llms-full.txt` | activite continue |
 
 ## Done Before Code
@@ -222,8 +236,11 @@ Resultat attendu :
 | DOC-002 | docs | Documenter produit, navigation, user flows et ecrans | completed | DOC-001 | `docs/product/*`, `docs/android/screens/*` | socle UX documente |
 | DOC-003 | docs | Documenter player, persistance, schemas et API | completed | DOC-001 | `docs/domain/*`, `docs/android/room-schema.md`, `docs/server/api-contract.md` | socle technique documente |
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
+| DOC-005 | docs | Consolider la DA complete et la strategie online backend-only | completed | DOC-002, DOC-003 | `docs/android/ui/*`, `docs/adrs/006-online-search-backend-only.md`, `docs/ops/hosting-strategy.md` | DA complete, backend-only search et hebergement always-on documentes |
 
 ## Journal des changements
+- 2026-04-10T12:00:00+02:00 | docs, decision | `docs/android/ui/design-system.md`, `docs/android/ui/components.md`, `docs/android/ui/component-states.md`, `docs/android/ui/screen-composition.md`, `docs/adrs/006-online-search-backend-only.md`, `docs/ops/hosting-strategy.md`, `docs/server/architecture.md`, `docs/server/api-contract.md`, `BUILD.md` | consolidation DA complete, validation backend-only pour la recherche online et ajout de la phase 2.5 de clarification hebergement.
+- 2026-04-03T12:28:00+02:00 | code, docs | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `docs/android/player/queue-rules.md` | resolution des bugs de lecture locale (flickering via suppression du SeekTo repetitif, correctif navigation playlist via passe explicite de toutes les listes UI au context, et retablissement resume complet du snapshot).
 - 2026-04-02T21:44:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/domain/player/*`, `android/app/src/main/java/com/aura/music/data/player/*`, `android/app/src/main/java/com/aura/music/service/PlaybackService.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/AuraApplication.kt`, `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/android/app-architecture.md`, `docs/android/navigation.md`, `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `BUILD.md` | implementation de AND-004 avec moteur Media3, QueueManager, PlaybackOrchestrator, PlaybackStateStore, PlayerViewModel et ecran Player minimal. Comblement de la dette documentaire AND-002 et AND-003 avec sections Code Mapping.
 - 2026-04-02T20:35:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/aura/music/*`, `BUILD.md` | implementation de AND-002 et AND-003 avec navigation Compose, shell multi-ecrans, Room et integration MediaStore.
 - 2026-04-02T19:05:53+02:00 | code | `android/gradlew`, `android/gradlew.bat`, `android/gradle/wrapper/*`, `render.yaml`, `server/.env.example`, `server/app/config.py`, `infra/*`, `BUILD.md` | ajout du wrapper Gradle, du blueprint Render racine et de la configuration Qdrant avec cle API.
@@ -236,7 +253,8 @@ Resultat attendu :
 - 2026-04-02T18:10:00+02:00 | docs | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-contract.md`, `docs/README.md`, `llms.txt`, `llms-full.txt` | ajout des diagrammes ER et refonte du contrat API.
 - 2026-04-02T17:50:00+02:00 | docs | `docs/product/*`, `docs/domain/*`, `docs/android/*`, `docs/server/*`, `llms.txt`, `llms-full.txt` | base documentaire initiale consolidee et versionnee.
 
---- docs/adrs/001-machine-friendly-docs.md ---
+
+# FILE: docs/adrs/001-machine-friendly-docs.md
 # ADR 001 - Machine-Friendly Documentation
 
 ## Statut
@@ -256,7 +274,8 @@ Le projet AURA veut une documentation exploitable directement par des agents IA 
 - Les liens internes doivent privilegier des chemins stables.
 - Toute nouvelle rubrique importante doit avoir un document dedie plutot qu'une annexe implicite.
 
---- docs/adrs/002-android-native-client.md ---
+
+# FILE: docs/adrs/002-android-native-client.md
 # ADR 002 - Android Native Client
 
 ## Statut
@@ -276,7 +295,8 @@ AURA cible d'abord un usage personnel sur mobile avec fortes exigences sur la le
 - Les abstractions metier doivent rester suffisamment neutres pour autoriser plus tard un autre client.
 - Les composants UI, le player et la navigation sont documentes comme surfaces Android de reference.
 
---- docs/adrs/003-backend-fastapi-supabase-qdrant.md ---
+
+# FILE: docs/adrs/003-backend-fastapi-supabase-qdrant.md
 # ADR 003 - Backend FastAPI, Supabase, Qdrant
 
 ## Statut
@@ -296,7 +316,8 @@ Le projet doit rester peu couteux, personnel et modulaire. Il a deja eu un proto
 - Le serveur doit separer clairement donnees transactionnelles, objets binaires et index vectoriels.
 - Les integrations externes sont encapsulees dans des adaptateurs de providers.
 
---- docs/adrs/004-provider-adapter-strategy.md ---
+
+# FILE: docs/adrs/004-provider-adapter-strategy.md
 # ADR 004 - Provider Adapter Strategy
 
 ## Statut
@@ -315,7 +336,8 @@ AURA doit supporter une recherche en ligne des titres, artistes et albums, avec 
 - Le serveur peut changer de provider sans refaire la documentation produit.
 - Les limites juridiques, techniques et de quota d'un provider sont documentees dans son fichier dedie.
 
---- docs/adrs/005-mcp-bridge.md ---
+
+# FILE: docs/adrs/005-mcp-bridge.md
 # ADR 005 - MCP Bridge
 
 ## Statut
@@ -334,7 +356,43 @@ Le projet veut qu'un agent IA puisse lire l'etat du systeme en temps reel sans c
 - La doc MCP complete la doc de code et ne la remplace pas.
 - Les secrets et donnees sensibles doivent etre filtres avant exposition.
 
---- docs/documentation/style-guide.md ---
+
+# FILE: docs/adrs/006-online-search-backend-only.md
+# ADR 006 - Online Search Backend Only
+
+## Statut
+Accepte
+
+## Contexte
+La recherche online v1 d'AURA doit interroger Deezer tout en gardant un modele metier stable, un mapping centralise et une trajectoire compatible avec l'evolution future des providers.
+
+## Decision
+- L'application Android ne doit pas appeler Deezer directement pour la recherche online v1.
+- La recherche online v1 passe exclusivement par le backend AURA.
+- L'adaptateur Deezer reste encapsule cote serveur.
+- Le backend doit etre traite comme une brique always-on avant le branchement de `SRV-002` et `AND-005`.
+
+## Consequences
+- Android reste responsable :
+  - des suggestions locales pendant la saisie
+  - de la fusion local + online apres validation
+- Le backend reste responsable :
+  - de la recherche online only
+  - de l'adaptation provider Deezer
+  - du mapping vers le domaine AURA
+- Un backend sujet au spin-down est un blocage UX produit pour `Search`.
+
+## Alternatives ecartees
+- appels Deezer directs depuis Android
+  - couplage plus fort au provider
+  - logique provider dupliquee dans l'app
+  - plus de dette de securite et de mapping
+- fallback hybride backend puis Deezer direct
+  - disponibilite meilleure
+  - complexite d'architecture trop elevee pour v1
+
+
+# FILE: docs/documentation/style-guide.md
 # Documentation Style Guide
 
 ## Objectif
@@ -405,7 +463,8 @@ Definir des regles strictes pour que tout agent ou contributeur puisse mettre a 
 - Les termes utilises sont-ils coherents avec le reste du depot ?
 - Le fichier doit-il etre ajoute ou mis a jour dans `llms.txt` et `llms-full.txt` ?
 
---- docs/product/vision.md ---
+
+# FILE: docs/product/vision.md
 # Vision Produit
 
 ## Mission
@@ -429,7 +488,8 @@ AURA est une application Android de lecture musicale orientee bibliotheque perso
 - Streaming universel complet.
 - Moteur de recommandation finement personnalise par session.
 
---- docs/product/navigation.md ---
+
+# FILE: docs/product/navigation.md
 # Navigation Produit
 
 ## Navigation principale
@@ -457,7 +517,15 @@ AURA est une application Android de lecture musicale orientee bibliotheque perso
 - `Search` est la surface d'exploration locale et online.
 - `Library` concentre la collection personnelle et les entrees de gestion.
 
---- docs/product/user-flows.md ---
+## Hierarchie visuelle
+- `Home`, `Player`, `Search` et `Playlists` portent la direction visuelle principale du produit.
+- `Library`, `Artist`, `Album`, `Downloads` et `Settings` restent de la meme famille visuelle avec une charge editoriale plus faible.
+- `Player` et `Home` utilisent les hero blocks les plus expressifs.
+- `Search` privilegie la clarte de lecture des resultats et des sections.
+- `Library` et `Settings` restent plus utilitaires sans casser le langage premium.
+
+
+# FILE: docs/product/user-flows.md
 # User Flows Produit
 
 ## Format canonique
@@ -913,7 +981,8 @@ Permettre a l'utilisateur de retirer une playlist devenue inutile.
 - La playlist disparait de la liste.
 - La suppression d'une playlist n'efface pas les pistes elles-memes de la bibliotheque.
 
---- docs/domain/entities.md ---
+
+# FILE: docs/domain/entities.md
 # Entites Metier
 
 ## Track
@@ -1050,7 +1119,8 @@ Permettre a l'utilisateur de retirer une playlist devenue inutile.
 - `previewUrl`
 - `streamCapability`
 
---- docs/domain/data-relationships.md ---
+
+# FILE: docs/domain/data-relationships.md
 # Domain Data Relationships
 
 ## Objectif
@@ -1132,7 +1202,8 @@ flowchart TB
 - la pile d'ecrans de navigation
 - le niveau de scroll d'un ecran
 
---- docs/domain/playback-model.md ---
+
+# FILE: docs/domain/playback-model.md
 # Playback Model
 
 ## Objectif
@@ -1160,7 +1231,8 @@ Definir un modele de lecture robuste, explicite et testable afin d'eviter les bu
 - `repeat one` repete la piste courante.
 - `repeat all` repete le contexte source une fois la `priority queue` vide.
 
---- docs/domain/playback-user-flows.md ---
+
+# FILE: docs/domain/playback-user-flows.md
 # Playback User Flows
 
 ## Play
@@ -1205,7 +1277,8 @@ Definir un modele de lecture robuste, explicite et testable afin d'eviter les bu
 - Regle : l'utilisateur peut reessayer, passer au titre suivant ou retirer le titre si l'erreur vient de la queue.
 - Regle : une erreur sur une piste de la `priority queue` ne doit pas corrompre le `playback context`.
 
---- docs/domain/provider-architecture.md ---
+
+# FILE: docs/domain/provider-architecture.md
 # Provider Architecture
 
 ## But
@@ -1226,7 +1299,8 @@ Permettre a AURA de combiner local, recherche online, telechargement futur et st
 - Le telechargement futur utilisera les resultats de provider comme point d'entree, pas comme modele final de stockage.
 - En absence de reseau, seules les donnees locales et cachees restent visibles.
 
---- docs/android/app-architecture.md ---
+
+# FILE: docs/android/app-architecture.md
 # Android App Architecture
 
 ## Couches
@@ -1268,7 +1342,8 @@ Permettre a AURA de combiner local, recherche online, telechargement futur et st
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : shell applicatif Compose, navigation principale, mini-player shell, composants partages UI
 - `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore
 
---- docs/android/local-persistence.md ---
+
+# FILE: docs/android/local-persistence.md
 # Android Local Persistence
 
 ## Objectif
@@ -1545,14 +1620,23 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
 - repartition par contexte source comme playlist, album ou recherche
 - repartition par type de reseau si utile a l'analyse produit
 
+## Filtrage MediaStore
+
+La query MediaStore applique deux filtres :
+- `IS_MUSIC != 0` : exclut les sonneries, alarmes et notifications systeme
+- `DURATION >= 30000` : exclut les fichiers audio courts (vocaux WhatsApp, sons de notification) inferieurs a 30 secondes
+
+Aucune limite arbitraire n'est appliquee au nombre de fichiers retournes.
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room pour toutes les tables (tracks, artists, albums, playlists, snapshots, settings, etc.)
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les operations de base
 - `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : singleton Room database, version 1
-- `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore
-- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot
+- `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore, filtre duree >= 30s
+- `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot, generation d'ID
 
---- docs/android/room-schema.md ---
+
+# FILE: docs/android/room-schema.md
 # Room Schema
 
 ## Objectif
@@ -1575,6 +1659,20 @@ Definir le schema detaille de `Room` pour AURA, avec les cles, les relations et 
   - ouverture d'une page album ou artiste necessitant un cache detaille
   - lancement ou preparation d'un telechargement
 - Les resultats de recherche online non actionnes restent ephemeres tant qu'ils ne deviennent pas utiles a l'etat metier.
+
+## Convention des identifiants AURA
+
+Toutes les PK des tables d'entites metier sont des `TEXT` avec un format prefixe deterministe.
+
+| Entite | Format PK | Exemple |
+|---|---|---|
+| Track (local) | `track:local:{mediaStoreId}` | `track:local:42` |
+| Artist | `artist:{slug}` | `artist:daft-punk` |
+| Album | `album:{slug_artiste}:{slug_album}` | `album:daft-punk:discovery` |
+
+Le slug est produit par la fonction `normalize` : lowercase, remplacement des caracteres non-lettre/non-chiffre Unicode (`\p{L}\p{N}`) par des tirets, trim. Si le resultat est vide (nom compose uniquement de ponctuation), un hash SHA-256 tronque a 16 caracteres hexadecimaux sert de fallback deterministe.
+
+Les FK (`primary_artist_id`, `album_id`, `track_id`, etc.) referencent directement ces PK.
 
 ## Tables
 
@@ -1863,7 +1961,8 @@ Constraints:
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les queries et upserts
 - `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : declaration de la base Room avec liste des entities et des DAOs
 
---- docs/android/room-relationships.md ---
+
+# FILE: docs/android/room-relationships.md
 # Room Relationships
 
 ## Objectif
@@ -2010,7 +2109,8 @@ erDiagram
 - Une piste online entre dans `Room` quand elle devient utile a l'etat metier : lecture, like, ajout a playlist, cache detaille ou preparation de telechargement.
 - Une piste online issue d'une simple recherche non actionnee reste ephemere et ne cree pas d'ecriture `Room`.
 
---- docs/android/navigation.md ---
+
+# FILE: docs/android/navigation.md
 # Android Navigation
 
 ## Graphe principal
@@ -2039,65 +2139,224 @@ erDiagram
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : ecran Search avec recherche locale
 - `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : ecrans Library, Playlists, PlaylistDetail, Artist, Album, Downloads, Settings, Player
 
---- docs/android/ui/design-system.md ---
+
+# FILE: docs/android/ui/design-system.md
 # Systeme De Design Et Directives UI
 
 ## Objectif
-Ce document definit les fondations visuelles d'AURA. Tout nouvel ecran Android doit utiliser ces jetons afin de garder une interface coherente.
+Figer la direction visuelle complete d'AURA avant la poursuite des ecrans produits. Ce document sert de reference pour les tokens, la hierarchie visuelle, la densite et les regles d'adaptation mobile.
 
-## Palette sombre
-- `DeepBlack` : `#000000`
-- `OffBlack` : `#121212`
-- `DarkGraphite` : `#1E1E1E`
-- `TextPrimary` : `#FFFFFF`
-- `SteelGray` : `#B3B3B3`
+## Direction visuelle
+- AURA suit une interface sombre, dense mais lisible, avec une sensation premium et musicale.
+- Le contraste repose sur des fonds noirs profonds, des surfaces graphite et un accent orange chaud.
+- Les ecrans principaux doivent privilegier de grandes masses visuelles, des covers marquees et peu de chrome inutile.
+- Les ecrans de contenu doivent paraitre plus editoriaux que techniques.
 
-## Accents
-- `BlazeOrange` : `#FF6B00`
-- `AmberGlow` : `#FF9E00`
-- `LighterOrange` : `#FFB74D`
+## Palette canonique
+
+### Fonds
+- `DeepBlack`: `#050505`
+- `OffBlack`: `#101010`
+- `DarkGraphite`: `#1A1A1A`
+- `ElevatedGraphite`: `#232323`
+- `HairlineDark`: `#2F2F2F`
+
+### Texte
+- `TextPrimary`: `#FFFFFF`
+- `TextSecondary`: `#C2C2C2`
+- `TextMuted`: `#8F8F8F`
+- `TextOnAccent`: `#160A00`
+
+### Accent principal
+- `BlazeOrange`: `#FF6B00`
+- `AmberGlow`: `#FF9E00`
+- `LighterOrange`: `#FFB74D`
+- `BurntOrange`: `#DB5800`
+
+### Accents secondaires
+- `ElectricCyan`: `#00E0FF`
+- `DeepViolet`: `#792BEE`
+- `RoseSignal`: `#FF5E7A`
+
+### Couleurs semantiques
+- `Success`: `#00E676`
+- `Warning`: `#FFEA00`
+- `Error`: `#FF5252`
+- `Info`: `#59B8FF`
 
 ## Gradients
-- `PrimaryGradient` : `BlazeOrange` vers `AmberGlow`
-- `DiscoveryGradient` : `#792BEE` vers `#00E0FF`
-
-## Couleurs semantiques
-- `Error` : `#FF5252`
-- `Success` : `#00E676`
-- `Warning` : `#FFEA00`
+- `PrimaryGradient`: `BlazeOrange` vers `AmberGlow`
+- `DiscoveryGradient`: `DeepViolet` vers `ElectricCyan`
+- `EditorialGradient`: `#1C1C1C` vers `#0B0B0B`
+- Les gradients sont reserves aux cartes hero, CTA et categories editoriales.
 
 ## Typographie
-- Les grands headers sont en gras, tres visibles, contrastes sur fond sombre.
-- Les titres de section sont gras et compacts.
-- Les titres de pistes restent blancs, les metadonnees secondaires en gris.
+
+### Principe
+- Les titres doivent etre compacts, contrastes et tres lisibles sur fond sombre.
+- Les metadonnees restent plus discretes et ne doivent jamais concurrencer la piste ou la section principale.
+
+### Echelle recommandee
+- `Display`: usage exceptionnel pour hero Home ou Player, tres grand, gras
+- `HeadlineLarge`: titres hero de sections ou ecrans
+- `TitleLarge`: titres de cartes majeures, bloc reprise, meilleur resultat
+- `TitleMedium`: titres de section et lignes prioritaires
+- `BodyLarge`: piste principale, textes actionnables
+- `BodyMedium`: metadonnees de pistes, sous-textes
+- `LabelLarge`: boutons et onglets
+
+### Regles
+- Les titres de pistes restent en `TextPrimary`.
+- Les artistes, albums et informations de contexte restent en `TextSecondary`.
+- Les compteurs, aides et captions restent en `TextMuted`.
+- Les boutons a accent utilisent `TextOnAccent`.
 
 ## Formes
-- Boutons d'action et recherche : forme pilule.
-- Cartes et pochettes : rectangle ou carre a coins arrondis.
-- Avatars artistes : cercle parfait.
-- Mini-player : carte flottante tres arrondie avec bordure orange fine.
+- Rayon standard de surface: `20dp`
+- Rayon des cartes hero: `28dp`
+- Rayon des boutons pilule: `999dp`
+- Rayon des covers album et playlist: `20dp`
+- Rayon des mini-cards et chips: `16dp`
+- Les avatars artistes sont circulaires.
 
-## Regles d'espacement
-- Prevoir un bottom padding genereux dans chaque liste pour ne jamais masquer le dernier element sous le mini-player.
-- Garder des espacements constants entre header, barre de recherche, sections et listes.
+## Elevation et bordures
+- Les surfaces standards utilisent une separation subtile par contraste de fond, pas par ombre lourde.
+- Les surfaces elevees utilisent un fond `ElevatedGraphite`.
+- Les cartes critiques peuvent avoir une bordure de `1dp` en orange tres discret.
+- Le mini-player doit avoir une bordure orange fine et un fond sombre eleve.
 
---- docs/android/ui/components.md ---
+## Ombres et lumieres
+- Pas d'ombres Material generiques tres visibles.
+- Les effets d'accent se font par :
+  - contraste de fond
+  - bordures fines
+  - glow orange discret sous CTA ou hero selectionne
+- Le glow reste reserve aux composants prioritaires.
+
+## Espacement
+
+### Tokens
+- `SpaceXS`: `4dp`
+- `SpaceS`: `8dp`
+- `SpaceM`: `12dp`
+- `SpaceL`: `16dp`
+- `SpaceXL`: `20dp`
+- `Space2XL`: `24dp`
+- `Space3XL`: `32dp`
+
+### Regles
+- Conserver un rythme vertical constant entre header, hero, sections et listes.
+- Les rails horizontaux doivent garder un padding lateral stable.
+- Toute liste scrollable doit garder un bottom padding suffisant pour ne jamais etre masquee par le mini-player et la navigation basse.
+
+## Composants visuels critiques
+
+### Mini-player
+- Surface tres arrondie, flottante, fond `ElevatedGraphite`, bordure orange fine.
+- La pochette reste petite mais lisible.
+- Le titre est prioritaire sur l'artiste.
+- La zone tactile principale ouvre le Player.
+
+### Full player
+- Grande cover hero centree.
+- Progression, transport et contexte doivent rester visibles sans scrolling avant la queue.
+- La partie basse peut scroller pour la queue, pas la zone critique hero.
+
+### Hero cards
+- Utiliser une surface forte, soit image dominante, soit gradient editorial.
+- Les CTA principaux doivent etre immediatement visibles.
+- Le hero ne doit pas ressembler a une simple liste agrandie.
+
+### Cartes Album / Artist / Playlist
+- Les cartes d'exploration sont plus visuelles que textuelles.
+- Elles doivent pouvoir vivre en rails horizontaux.
+- Les cartes `Artist` utilisent une image dominante plus expressive.
+- Les cartes `Album` et `Playlist` utilisent des covers ou mosaiques franches.
+
+### TrackRow
+- Ligne sobre, lisible, dense.
+- La hierarchie est toujours :
+  - titre
+  - artiste / album
+  - actions
+- Les actions visibles doivent rester limitees pour ne pas surcharger.
+
+### Search tabs
+- Onglets pilule ou segmented control haut contraste.
+- L'etat actif est orange ou gradient chaud.
+- L'etat inactif reste sombre mais lisible.
+
+## Densite et responsive
+
+### Mobile compact
+- Reduire d'abord la taille des artworks avant de sacrifier les controles critiques.
+- Garder toujours visibles :
+  - titre principal
+  - slider player
+  - boutons `Previous`, `Play/Pause`, `Next`
+  - au moins un apercu de la queue dans le Player
+
+### Mobile standard
+- Favoriser des hero cards larges et des rails horizontaux respirants.
+- Le bas d'ecran doit rester reserve aux controles persistants.
+
+### Grand ecran
+- Ne pas etirer artificiellement les rows.
+- Preferer des largeurs de contenu bornees et des gutters plus grands.
+
+## Regles de coherence
+- `Home`, `Player`, `Search` et `Playlists` definissent le ton visuel du produit.
+- `Library`, `Artist`, `Album`, `Downloads` et `Settings` doivent rester de la meme famille sans surjouer les effets.
+- Les etats vides doivent etre calmes, explicites et jamais agressifs.
+- Les ecrans de gestion ne doivent pas casser le langage premium etabli par les ecrans musicaux.
+
+## Regles d'implementation
+- Toute nouvelle surface Android doit reprendre ces tokens avant d'inventer un style local.
+- Toute deviation importante doit etre documentee avant implementation.
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : shell visuel global, mini-player shell et structure top-level actuelle
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : premier point d'application des hero cards et de la hierarchie Home
+- `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : premier point d'application de la SearchBar, des tabs et des resultats mixtes
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : surfaces secondaires a realigner apres validation de la DA complete
+
+
+# FILE: docs/android/ui/components.md
 # Composants UI Reutilisables
 
 ## Objectif
-Les composants ci-dessous constituent la base Compose d'AURA. Tout composant expose un `Modifier`.
+Definir les composants visuels et interactifs reutilisables qui doivent porter la DA d'AURA de facon coherente.
 
 ## MiniPlayer
 - Role : lecteur persistant au-dessus de la navigation basse.
-- Contenu : pochette, titre, artiste, boutons `previous`, `play/pause`, `next`.
-- Action : ouvre `PlayerScreen` au clic.
-- Etat : gere `loading`, `playing`, `paused`, `error`.
+- Structure :
+  - pochette compacte
+  - bloc titre + artiste
+  - controles `previous`, `play/pause`, `next`
+- Style :
+  - fond `ElevatedGraphite`
+  - bordure orange fine
+  - coins tres arrondis
+- Regles :
+  - visible sur toutes les surfaces principales si lecture active ou resumable
+  - ouvre `PlayerScreen` sur la zone principale
+  - les controles de transport restent secondaires par rapport a l'ouverture du Player
 
 ## TrackRow
-- Role : affichage standard d'une piste dans la bibliotheque, les playlists et la queue.
-- Gauche : pochette, titre, artiste.
-- Droite : `like`, `add to queue`, menu contextuel.
-- Variantes : standard, compact, currently playing.
+- Role : affichage standard d'une piste dans bibliotheque, playlists, historique, recherche locale et queue compacte.
+- Structure :
+  - gauche : cover
+  - centre : titre, artiste, album/context secondaire
+  - droite : `Like` visible si pertinent, puis menu `...`
+- Variantes :
+  - standard
+  - compact
+  - currently playing
+  - search-result online
+- Regles :
+  - le titre a toujours la priorite visuelle
+  - les metadonnees restent sur une seule ligne si possible
+  - les actions visibles restent limitees pour ne pas encombrer
 - Menu contextuel canonique :
   - `Lire maintenant`
   - `Ajouter a la file d'attente`
@@ -2108,37 +2367,278 @@ Les composants ci-dessous constituent la base Compose d'AURA. Tout composant exp
   - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
   - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
 
-## QueueRow
-- Role : ligne dediee a la `priority queue`.
-- Actions : drag handle, supprimer, ouvrir le menu contextuel.
-- Contrainte : la piste courante ne montre pas l'action supprimer.
+## PlayerQueueRow
+- Role : ligne dediee a la `priority queue` dans le Player.
+- Structure :
+  - indicateur d'ordre
+  - titre / artiste
+  - `drag handle`
+  - suppression visible si piste en attente
+- Regles :
+  - la piste courante ne montre pas d'action de suppression
+  - le reorder ne modifie jamais le contexte source
 
-## ActionButton
-- Role : bouton primaire pour creer une playlist, lancer un mix ou demarrer une action de fond.
-- Style : pilule, fond uni ou gradient.
+## AlbumCard
+- Role : carte de navigation album locale ou online.
+- Structure :
+  - grande cover
+  - titre
+  - artiste
+- Style :
+  - format carre ou quasi carre
+  - coins arrondis affirmes
+  - usage prefere en rail horizontal
 
-## BottomNavigationBar
-- Role : navigation `Home`, `Search`, `Library`.
-- Etat actif : texte et icone orange.
+## ArtistCard
+- Role : carte de navigation artiste.
+- Structure :
+  - image dominante
+  - nom artiste
+  - meta secondaire optionnelle
+- Style :
+  - impact visuel plus fort qu'un album
+  - image dominante pouvant etre ronde ou encadree selon le layout
 
-## SectionHeader
-- Role : separer les zones d'un scroll.
-- Variantes : standard, accent orange pour resultats de recherche.
+## PlaylistCard
+- Role : carte de navigation playlist.
+- Structure :
+  - cover ou mosaique
+  - nom
+  - metadonnee type nombre de pistes
+- Regles :
+  - doit etre lisible dans `Home`, `Library` et `Playlists`
+  - supporte les etats vide, normale et pinned
 
-## CategoryCard
-- Role : representer mixes, entrees de bibliotheque ou raccourcis.
-- Visuel : fond gradient, icone ou cover marquee.
+## PlayerHero
+- Role : bloc hero du full player.
+- Structure :
+  - artwork
+  - titre
+  - artiste
+  - album ou contexte
+- Regles :
+  - la cover reste l'element visuel dominant
+  - le hero ne doit pas etre noye dans des controles annexes
 
 ## SearchBar
-- Role : saisie uniforme sur toutes les pages de recherche.
-- Placeholder : `Rechercher...`
-- Etats : vide, saisie, loading, clear.
+- Role : saisie uniforme des recherches.
+- Structure :
+  - loupe gauche
+  - texte ou requete
+  - `X` a droite si non vide
+- Regles :
+  - forme pilule
+  - placeholder `Rechercher...`
+  - suggestions locales uniquement pendant la saisie
+
+## SegmentedTabs
+- Role : onglets locaux de `Search` et filtres de sections similaires.
+- Structure :
+  - onglets `Titres`, `Albums`, `Artistes`, `Playlists`
+- Regles :
+  - etat actif fortement visible
+  - etat inactif contrastant sans disparaitre
+  - nombre limite d'onglets visibles sans scrolling si possible
+
+## SectionHeader
+- Role : separer des zones dans un scroll vertical.
+- Variantes :
+  - standard
+  - accent orange
+  - avec action secondaire
+
+## HeroResumeCard
+- Role : carte de reprise sur `Home`.
+- Structure :
+  - cover ou visuel dominant
+  - contexte de reprise
+  - CTA `Reprendre`
+  - menu `...`
 
 ## EmptyStateCard
-- Role : etat vide descriptif pour playlists, downloads et recherche online hors ligne.
-- Contenu : titre, message, action primaire facultative.
+- Role : etat vide descriptif pour playlists, downloads, recherche offline et ecrans detail sans contenu.
+- Structure :
+  - titre
+  - message
+  - action primaire optionnelle
+- Regles :
+  - le ton reste calme et premium
+  - l'action principale reste explicite
 
---- docs/android/ui/ui-performance.md ---
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell, composants top-level a faire converger
+- `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`
+- `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : `SearchBar`, `SegmentedTabs`, variantes `TrackRow` Search
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `PlaylistCard`, `EmptyStateCard`, surfaces detail secondaires
+
+
+# FILE: docs/android/ui/component-states.md
+# Etats Des Composants UI
+
+## Objectif
+Definir les etats visuels et interactifs minimaux que chaque composant critique doit supporter pour eviter les interpretations divergentes pendant l'implementation.
+
+## MiniPlayer
+- `loading`
+- `playing`
+- `paused`
+- `error`
+- `resumable_without_active_playback`
+
+## TrackRow
+- `idle`
+- `pressed`
+- `currently_playing`
+- `liked`
+- `downloaded`
+- `online_only`
+- `disabled`
+
+## PlayerQueueRow
+- `queued`
+- `dragging`
+- `current_track`
+- `removable`
+- `non_removable`
+
+## SearchBar
+- `empty_unfocused`
+- `focused_no_query`
+- `typing_local_suggestions`
+- `validated_loading`
+- `results_loaded`
+- `inline_online_error_non_blocking`
+
+## SegmentedTabs
+- `inactive`
+- `active`
+- `disabled`
+
+## AlbumCard / ArtistCard / PlaylistCard
+- `default`
+- `pressed`
+- `loading_placeholder`
+- `empty_cover_fallback`
+- `disabled`
+
+## HeroResumeCard
+- `no_resume_data`
+- `resume_ready`
+- `resume_with_context`
+- `resume_error_non_blocking`
+
+## EmptyStateCard
+- `pure_empty`
+- `empty_with_primary_action`
+- `empty_offline_constraint`
+- `empty_provider_failure_non_blocking`
+
+## PlayerHero
+- `loading_track`
+- `playing`
+- `paused`
+- `buffering`
+- `error`
+
+## Regles
+- Les etats `loading` utilisent des placeholders ou des skeletons calmes.
+- Les etats `error` n'annulent pas le langage visuel global.
+- Les etats `disabled` doivent rester lisibles sans paraitre casses.
+- Les etats `currently_playing` doivent etre reconnaissables immediatement sans utiliser seulement la couleur.
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : etats shell actuels du mini-player et des listes principales
+- `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : source des etats player
+- `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : etats de saisie, suggestions et recherche
+
+
+# FILE: docs/android/ui/screen-composition.md
+# Composition Des Ecrans
+
+## Objectif
+Figer la composition visuelle des ecrans Android avant l'implementation detaillee des surfaces finales.
+
+## Ecrans critiques
+
+### Home
+- header editorial compact
+- hero `Reprendre`
+- rail playlists recentes
+- rail mixes / recommandations si disponibles
+- acces rapide `Downloads`
+
+### Player
+- top bar compacte
+- `PlayerHero`
+- bloc progression
+- transport controls
+- actions secondaires
+- carte contexte source
+- preview de `priority queue`
+
+### Search
+- SearchBar sticky
+- suggestions locales pendant saisie
+- bloc `Meilleur resultat`
+- bandeau `Dans votre bibliotheque`
+- sections online sous le local
+
+### Playlists
+- liste avec CTA `Creer une playlist`
+- detail avec hero playlist
+- rang d'actions
+- liste de `TrackRow`
+
+## Ecrans secondaires
+
+### Library
+- header simple
+- groupes de navigation personnelle
+- acces playlists, downloads, settings
+- contenu plus sobre que `Home`
+
+### Artist
+- hero artiste
+- top tracks
+- albums
+- actions principales limitees
+
+### Album
+- hero album
+- metadata album
+- CTA `Play`
+- liste de pistes
+
+### Downloads
+- resume d'etat
+- groupes `En cours`, `Termines`, `En erreur`
+- retry clair
+
+### Settings
+- liste de preferences
+- sections reseau, sync, diagnostics
+- style utilitaire mais coherent
+
+## Regles de composition
+- un ecran critique a toujours un hero ou un bloc d'identite fort.
+- un ecran secondaire peut etre plus fonctionnel, mais garde la meme palette et les memes surfaces.
+- la navigation secondaire ne doit pas ecraser le contenu principal.
+- le mini-player ne doit jamais masquer la derniere action utile.
+
+## Responsive
+- les hero cards peuvent se compacter sur petits ecrans
+- les rails horizontaux gardent des largeurs fixes lisibles
+- la partie basse du Player reste prioritaire pour la queue sans cacher les controles
+
+## Code Mapping
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : composition `Home`
+- `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : composition `Search`
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `Library`, `Playlists` et surfaces secondaires
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : articulation entre composition ecran et shell global
+
+
+# FILE: docs/android/ui/ui-performance.md
 # Optimisation Des Performances UI
 
 ## Objectif
@@ -2167,7 +2667,8 @@ Maintenir une interface Compose fluide avec un player persistant et plusieurs li
 - Le mini-player et la bottom bar imposent un padding bas explicite.
 - Les drag handles de queue ne doivent pas provoquer de recompositions globales.
 
---- docs/android/player/architecture.md ---
+
+# FILE: docs/android/player/architecture.md
 # Player Architecture
 
 ## Objectif
@@ -2200,7 +2701,8 @@ Isoler la logique de lecture et de queue pour la rendre testable, persistante et
 - `android/app/src/main/java/com/aura/music/data/player/PlaybackStateStore.kt` : persiste le snapshot de reprise via `PlaybackSnapshotDao`
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : transforme l'etat metier en etat ecran, met a jour la progression periodiquement
 
---- docs/android/player/queue-rules.md ---
+
+# FILE: docs/android/player/queue-rules.md
 # Queue Rules
 
 ## Regle centrale
@@ -2210,6 +2712,10 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 - Un ajout manuel ne modifie pas l'ordre canonique de la playlist source.
 - Plusieurs ajouts successifs s'empilent dans l'ordre d'ajout.
 - Un doublon est autorise si l'utilisateur ajoute volontairement le meme titre plusieurs fois.
+
+## Contexte de lecture (Source)
+- Tout clic sur une piste depuis une liste (Home, Search, Playlist) doit fournir **l'integralite de la liste affichee** comme contexte de lecture (`contextTracks` et `startIndex`).
+- Il est strictement interdit de creer un contexte `single_track` si la piste fait partie d'une liste visible a l'ecran. Cela garantit que les actions "Next" et "Previous" fonctionnent intuitivement pour l'utilisateur.
 
 ## Next
 - Priorite a la `priority queue`.
@@ -2233,7 +2739,8 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 - `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt` : implementation des regles ci-dessus (next, prev, add, remove, reorder, shuffle, repeat)
 - `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : modeles `QueuedTrack`, `PlaybackContext`, `TrackSource`, `RepeatMode`
 
---- docs/android/player/states-and-events.md ---
+
+# FILE: docs/android/player/states-and-events.md
 # Player States And Events
 
 ## Etats principaux
@@ -2284,7 +2791,8 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 - `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : `PlaybackState` enum, `RepeatMode` enum, `PlayerUiState` data class
 - `android/app/src/main/java/com/aura/music/domain/player/PlayerEvent.kt` : sealed interface `PlayerEvent` avec tous les evenements utilisateur
 
---- docs/android/screens/home.md ---
+
+# FILE: docs/android/screens/home.md
 # Home Screen
 
 ## Role
@@ -2339,11 +2847,17 @@ Point d'entree principal de l'application, centre sur la reprise d'ecoute et les
 - reprise seule si aucune recommandation n'est prete
 - erreur online non bloquante pour les suggestions enrichies
 
---- docs/android/screens/search.md ---
+
+# FILE: docs/android/screens/search.md
 # Search Screen
 
 ## Role
 Permettre une recherche unique orientee intention utilisateur, avec evaluation conjointe des resultats locaux et online si le reseau est autorise.
+
+## Source online
+- Les resultats online v1 proviennent exclusivement du backend AURA.
+- L'application Android ne doit pas appeler Deezer directement.
+- Le backend mappe les resultats provider vers le modele AURA avant retour client.
 
 ## Structure generale
 - ecran en scroll vertical unique
@@ -2358,7 +2872,7 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - a partir de trois caracteres, l'application affiche des suggestions locales uniquement
 - les suggestions sont basees sur les donnees locales deja connues par l'application
 - la validation clavier ou l'action de recherche lance l'affichage complet des resultats
-- si le reseau est autorise et disponible, la recherche complete interroge local et online en parallele
+- si le reseau est autorise et disponible, la recherche complete interroge le local et le backend online en parallele
 
 ## Barre de recherche
 - largeur complete avec forme pilule
@@ -2472,7 +2986,8 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - l'application privilegie local dans `Meilleur resultat` si la correspondance est forte
 - `Library` reste la surface de possession locale, `Search` reste la surface de recherche globale
 
---- docs/android/screens/library.md ---
+
+# FILE: docs/android/screens/library.md
 # Library Screen
 
 ## Role
@@ -2522,7 +3037,8 @@ Centraliser la collection personnelle locale et les points d'entree de gestion.
 - MediaStore pour la presence des fichiers locaux
 - metadonnees cloud optionnelles
 
---- docs/android/screens/playlists.md ---
+
+# FILE: docs/android/screens/playlists.md
 # Playlists Screens
 
 ## Role
@@ -2583,7 +3099,8 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - suppression avec confirmation
 - erreur de sync non bloquante
 
---- docs/android/screens/player.md ---
+
+# FILE: docs/android/screens/player.md
 # Player Screen
 
 ## Role
@@ -2655,7 +3172,8 @@ Offrir le controle complet de la lecture en cours et rendre visible la relation 
 - `Previous` suit la logique de redemarrage puis historique reel
 - le reorder n'affecte jamais le contexte source
 
---- docs/android/screens/player-layout.md ---
+
+# FILE: docs/android/screens/player-layout.md
 # Player Screen Layout
 
 ## Objectif
@@ -2733,7 +3251,8 @@ flowchart TD
   - une bottom sheet de queue plus detaillee
 - pour v1, la solution la plus simple reste une partie basse scrollable limitee a la queue
 
---- docs/android/screens/artist.md ---
+
+# FILE: docs/android/screens/artist.md
 # Artist Screen
 
 ## Role
@@ -2769,7 +3288,8 @@ Afficher un artiste et proposer les actions de lecture et d'exploration associee
 - enrichi online si le reseau est disponible
 - erreur non bloquante si la source externe ne repond pas
 
---- docs/android/screens/album.md ---
+
+# FILE: docs/android/screens/album.md
 # Album Screen
 
 ## Role
@@ -2802,7 +3322,8 @@ Afficher un album, ses metadonnees et la liste ordonnee de ses pistes.
 - album enrichi online
 - erreur si metadonnees indisponibles
 
---- docs/android/screens/downloads.md ---
+
+# FILE: docs/android/screens/downloads.md
 # Downloads Screen
 
 ## Role
@@ -2837,7 +3358,8 @@ Suivre l'etat des traitements lies a la disponibilite locale des pistes.
 - erreur par job
 - succes avec acces direct a la piste
 
---- docs/android/screens/settings.md ---
+
+# FILE: docs/android/screens/settings.md
 # Settings Screen
 
 ## Role
@@ -2878,7 +3400,8 @@ Permettre la configuration de l'application sans complexifier les ecrans media.
 - connecte avec sync active
 - options futures desactivees mais documentees proprement
 
---- docs/server/architecture.md ---
+
+# FILE: docs/server/architecture.md
 # Server Architecture
 
 ## Objectif
@@ -2902,8 +3425,11 @@ Fournir une API et des jobs asynchrones pour la recherche, les metadonnees, la s
 - garder des contrats JSON stables
 - isoler les providers externes
 - journaliser chaque job avec identifiant correlable
+- garder la recherche online v1 derriere le backend AURA, sans appel direct provider depuis Android
+- rendre le backend always-on avant le branchement produit de la recherche online
 
---- docs/server/api-contract.md ---
+
+# FILE: docs/server/api-contract.md
 # API Contract
 
 ## Objectif
@@ -2913,12 +3439,14 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - L'application Android reste pleinement fonctionnelle sans backend pour la bibliotheque locale, les playlists locales, la lecture et l'historique local.
 - Le backend enrichit l'experience avec la recherche online, les jobs et la sync cloud optionnelle.
 - La fusion des resultats locaux et online reste du ressort du client Android.
+- La recherche online v1 passe exclusivement par le backend AURA. Android ne doit pas appeler Deezer directement.
 
 ## Familles d'API
 
 ### API online publique
 - Utilisee sans compte pour la recherche enrichie et les pages detail online.
 - Aucune route publique ne doit etre necessaire pour lire une bibliotheque locale.
+- Ces routes exigent un backend always-on du point de vue produit pour eviter une latence de reveil dans `Search`.
 
 ### API sync cloud optionnelle
 - Utilisee seulement si l'utilisateur active un compte ou la synchronisation cloud.
@@ -3669,7 +4197,8 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - la pile de navigation
 - le niveau de scroll
 
---- docs/server/sync-conflict-resolution.md ---
+
+# FILE: docs/server/sync-conflict-resolution.md
 # Sync Conflict Resolution
 
 ## Objectif
@@ -4142,7 +4671,8 @@ Strategie :
 - niveau de scroll
 - donnees provider brutes non promues au modele AURA
 
---- docs/server/sync-batch-api.md ---
+
+# FILE: docs/server/sync-batch-api.md
 # Sync Batch API
 
 ## Objectif
@@ -4486,7 +5016,8 @@ Definir les contrats HTTP batch concrets du moteur de synchronisation AURA entre
 - sync de niveau de scroll
 - replication brute de `MediaStore`
 
---- docs/server/api-sync-flows.md ---
+
+# FILE: docs/server/api-sync-flows.md
 # API Sync Flows
 
 ## Objectif
@@ -4604,7 +5135,8 @@ sequenceDiagram
 - Aucun flux n'encode la navigation UI ou le niveau de scroll.
 - Le choix interne exact de source de telechargement reste volontairement opaque a ce stade.
 
---- docs/server/jobs.md ---
+
+# FILE: docs/server/jobs.md
 # Jobs Asynchrones
 
 ## Types de jobs
@@ -4629,7 +5161,8 @@ sequenceDiagram
 - L'ecran `Downloads` consomme directement cet etat.
 - Les logs applicatifs lient chaque job a ses erreurs et a son provider source.
 
---- docs/server/database-postgres.md ---
+
+# FILE: docs/server/database-postgres.md
 # Postgres Schema
 
 ## Objectif
@@ -4892,7 +5425,8 @@ Retention:
 - les statistiques et leurs evenements ne montent que si le reseau autorise la sync en Wi-Fi
 - les jobs termines peuvent etre archives en cloud puis purges localement
 
---- docs/server/postgres-relationships.md ---
+
+# FILE: docs/server/postgres-relationships.md
 # Postgres Relationships
 
 ## Objectif
@@ -5047,7 +5581,8 @@ erDiagram
 - aucune pile de navigation
 - aucun niveau de scroll
 
---- docs/server/vector-search-qdrant.md ---
+
+# FILE: docs/server/vector-search-qdrant.md
 # Vector Search And Qdrant
 
 ## Role
@@ -5088,7 +5623,8 @@ Qdrant stocke les vecteurs utilises pour les recommandations et recherches par s
 - Les reponses de reco doivent pouvoir etre transformees en objets `Track` exploitables par Android.
 - Le payload Qdrant ne remplace pas les tables transactionnelles de `Room` ou `Postgres`.
 
---- docs/server/storage.md ---
+
+# FILE: docs/server/storage.md
 # Storage Strategy
 
 ## Types d'objets
@@ -5102,7 +5638,8 @@ Qdrant stocke les vecteurs utilises pour les recommandations et recherches par s
 - Les fichiers temporaires doivent etre supprimables sans casser les donnees transactionnelles.
 - Les references vers des objets binaires vivent en base, pas uniquement dans des conventions implicites.
 
---- docs/server/providers/deezer.md ---
+
+# FILE: docs/server/providers/deezer.md
 # Deezer Provider
 
 ## Role
@@ -5123,7 +5660,8 @@ Fournisseur de recherche online v1 pour titres, artistes et albums.
 - Deezer ne doit pas dicter le modele metier AURA.
 - Les actions futures de telechargement ou streaming dependront d'autres briques que de cette seule integration.
 
---- docs/server/providers/streaming-bridge.md ---
+
+# FILE: docs/server/providers/streaming-bridge.md
 # Streaming Bridge Extension
 
 ## Role
@@ -5142,7 +5680,8 @@ Preparer un point d'extension pour un futur bridge de streaming ou Hi-Fi sans fi
 ## Regle documentaire
 Tant que cette brique n'est pas stable, elle reste documentee comme extension et non comme dependance centrale d'AURA.
 
---- docs/server/security-and-secrets.md ---
+
+# FILE: docs/server/security-and-secrets.md
 # Security And Secrets
 
 ## Principes
@@ -5162,7 +5701,8 @@ Tant que cette brique n'est pas stable, elle reste documentee comme extension et
 - masquer les secrets dans les logs et via MCP
 - segmenter les environnements local, staging personnel et production personnelle
 
---- docs/mcp/overview.md ---
+
+# FILE: docs/mcp/overview.md
 # MCP Overview
 
 ## Objectif
@@ -5178,7 +5718,8 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - noms de ressources stables
 - filtrage des secrets et donnees sensibles
 
---- docs/mcp/resources.md ---
+
+# FILE: docs/mcp/resources.md
 # MCP Resources
 
 ## Ressources minimales
@@ -5198,7 +5739,8 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - pas de secrets exposes
 - pas d'operation destructive depuis les ressources de lecture
 
---- docs/mcp/use-cases.md ---
+
+# FILE: docs/mcp/use-cases.md
 # MCP Use Cases
 
 ## Diagnostic d'un telechargement
@@ -5214,7 +5756,8 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - verifier si des jobs ou providers echouent
 - verifier si des metadonnees attendues manquent
 
---- docs/ops/logging-observability.md ---
+
+# FILE: docs/ops/logging-observability.md
 # Logging And Observability
 
 ## Logs attendus
@@ -5232,7 +5775,8 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 - support au debug manuel
 - exposition selective via MCP
 
---- docs/ops/env-vars.md ---
+
+# FILE: docs/ops/env-vars.md
 # Environment Variables Inventory
 
 ## Android
@@ -5252,4 +5796,59 @@ Permettre a un agent IA de consulter l'etat vivant du systeme AURA sans lire uni
 ## Regles
 - toute nouvelle variable doit etre documentee ici et dans un fichier exemple
 - les valeurs reelles ne doivent jamais apparaitre dans le depot
+- l'application Android doit toujours consommer une URL de backend abstraite comme `API_BASE_URL`, sans dependre directement d'un provider online
+
+
+# FILE: docs/ops/hosting-strategy.md
+# Hosting Strategy
+
+## Objectif
+Definir la strategie d'hebergement requise avant l'activation de la recherche online v1.
+
+## Regle produit
+- `Search` online v1 depend d'un backend AURA joignable sans latence de reveil perceptible.
+- Un backend qui spin down et se reveille a la demande n'est pas acceptable pour la recherche online produit.
+
+## Decision d'architecture
+- La recherche online v1 reste backend only.
+- Le backend doit donc etre heberge sur une cible always-on avant `SRV-002` et `AND-005`.
+
+## Options retenues
+
+### Option A - Render sans spin-down
+- acceptable si le plan retenu garantit une disponibilite continue
+- permet de garder l'infra actuelle
+- pas de changement de contrat API
+
+### Option B - VPS / serveur dedie
+- option recommandee si :
+  - Render reste limite en RAM
+  - des jobs headless ou anti-bot reviennent dans le scope
+  - un controle plus fin du runtime devient necessaire
+- Hetzner est une cible plausible
+
+## Recommandation de capacite
+- pour une API seule : une machine modeste peut suffire
+- si des workers headless, anti-bot ou jobs lourds sont prevus, viser plutot `8 GB RAM` minimum
+
+## Elements a figer avant production
+- reverse proxy
+- TLS
+- variables d'environnement
+- strategie de deploiement Docker
+- logs
+- supervision minimale
+- sauvegardes et redemarrage
+
+## Regles
+- ne pas deplacer Deezer dans Android pour contourner un probleme de spin-down
+- ne pas changer les contrats API tant que l'hebergement ne change pas les capacites metier
+- garder l'application codee contre une URL de backend abstraite
+
+## Code Mapping
+- `render.yaml` : blueprint actuel Render
+- `infra/docker/server.Dockerfile` : image backend deployable
+- `server/app/config.py` : variables d'environnement utilisees par l'API
+
+
 

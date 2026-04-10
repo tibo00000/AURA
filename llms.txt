@@ -12,6 +12,7 @@ Architecture Decision Records
 - `docs/adrs/003-backend-fastapi-supabase-qdrant.md`: backend FastAPI, Supabase, Qdrant et jobs.
 - `docs/adrs/004-provider-adapter-strategy.md`: adaptateurs providers, Deezer v1 et evolution future.
 - `docs/adrs/005-mcp-bridge.md`: bridge MCP pour logs, schemas et jobs.
+- `docs/adrs/006-online-search-backend-only.md`: decision de garder la recherche online v1 exclusivement derriere le backend AURA.
 
 Documentation Governance
 - `docs/documentation/style-guide.md`: normes d'ecriture intemporelles et regles de mise a jour.
@@ -36,12 +37,14 @@ Android
 - `docs/android/navigation.md`: graphe de navigation Android.
 - `docs/android/ui/design-system.md`: design tokens et regles visuelles.
 - `docs/android/ui/components.md`: composants Compose reutilisables.
+- `docs/android/ui/component-states.md`: etats visuels et interactifs des composants critiques.
+- `docs/android/ui/screen-composition.md`: composition visuelle de reference des ecrans Android.
 - `docs/android/ui/ui-performance.md`: regles Compose et Media3 pour la fluidite.
 - `docs/android/player/architecture.md`: architecture du moteur de lecture.
 - `docs/android/player/queue-rules.md`: regles de queue prioritaire et reprise playlist.
 - `docs/android/player/states-and-events.md`: etats et evenements du player.
 - `docs/android/screens/home.md`: documentation de l'ecran Home.
-- `docs/android/screens/search.md`: recherche locale et online via Deezer.
+- `docs/android/screens/search.md`: recherche locale et online avec backend AURA pour la partie online.
 - `docs/android/screens/library.md`: bibliotheque utilisateur.
 - `docs/android/screens/playlists.md`: liste et detail des playlists.
 - `docs/android/screens/player.md`: surface player plein ecran.
@@ -72,3 +75,4 @@ MCP And Operations
 - `docs/mcp/use-cases.md`: cas d'usage diagnostic et inspection.
 - `docs/ops/logging-observability.md`: logs et correlation.
 - `docs/ops/env-vars.md`: inventaire des variables d'environnement.
+- `docs/ops/hosting-strategy.md`: strategie d'hebergement always-on avant la recherche online produit.

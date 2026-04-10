@@ -19,3 +19,4 @@
 - Application code must depend on abstract configuration, not on a hosting provider.
 - A service such as Render is an execution target, not a domain dependency.
 - The default Render blueprint lives at the repository root as `render.yaml` because Render expects that location by default.
+- Search provider logic must remain on the backend side even if the hosting target changes.
