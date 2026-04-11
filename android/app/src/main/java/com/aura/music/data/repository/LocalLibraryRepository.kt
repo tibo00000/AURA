@@ -226,6 +226,18 @@ class LocalLibraryRepository(
     suspend fun getBrowseAlbums(limit: Int = 8): List<AlbumBrowseRow> =
         withContext(Dispatchers.IO) { database.albumDao().getBrowseAlbums(limit) }
 
+    suspend fun searchLocalArtists(query: String, limit: Int = 8): List<ArtistBrowseRow> =
+        withContext(Dispatchers.IO) {
+            if (query.isBlank()) emptyList()
+            else database.artistDao().searchArtists(query.trim(), limit)
+        }
+
+    suspend fun searchLocalAlbums(query: String, limit: Int = 8): List<AlbumBrowseRow> =
+        withContext(Dispatchers.IO) {
+            if (query.isBlank()) emptyList()
+            else database.albumDao().searchAlbums(query.trim(), limit)
+        }
+
     suspend fun getArtistDetail(
         artistId: String,
         topTrackLimit: Int = 8,

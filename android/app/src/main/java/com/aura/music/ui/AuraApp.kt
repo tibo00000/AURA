@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,6 +79,7 @@ import com.aura.music.ui.screens.PlaylistsScreen
 import com.aura.music.ui.screens.SearchScreen
 import com.aura.music.ui.screens.SettingsScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
+import com.aura.music.ui.theme.*
 
 private data class TopLevelDestination(
     val route: String,
@@ -97,6 +102,7 @@ fun AuraApp() {
             TopLevelDestination(AuraRoute.Home, "Home", Icons.Rounded.Home),
             TopLevelDestination(AuraRoute.Search, "Search", Icons.Rounded.Search),
             TopLevelDestination(AuraRoute.Library, "Library", Icons.Rounded.LibraryMusic),
+            TopLevelDestination(AuraRoute.Settings, "Paramètres", Icons.Rounded.Settings)
         )
     }
     var permissionRefreshTick by remember { mutableIntStateOf(0) }
@@ -135,15 +141,16 @@ fun AuraApp() {
         navController.navigate(AuraRoute.Player)
     }
 
-    AuraAppScaffold(
-        navController = navController,
-        topDestinations = topDestinations,
-        playerUiState = playerUiState,
-        onMiniPlayerClick = { navController.navigate(AuraRoute.Player) },
-        onPrevious = { playerViewModel.onEvent(PlayerEvent.Previous) },
-        onTogglePlayPause = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
-        onNext = { playerViewModel.onEvent(PlayerEvent.Next) },
-    ) { innerPadding ->
+    AuraTheme {
+        AuraAppScaffold(
+            navController = navController,
+            topDestinations = topDestinations,
+            playerUiState = playerUiState,
+            onMiniPlayerClick = { navController.navigate(AuraRoute.Player) },
+            onPrevious = { playerViewModel.onEvent(PlayerEvent.Previous) },
+            onTogglePlayPause = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
+            onNext = { playerViewModel.onEvent(PlayerEvent.Next) },
+        ) { innerPadding ->
         NavHost(
             navController = navController,
             startDestination = AuraRoute.Home,
@@ -181,7 +188,6 @@ fun AuraApp() {
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                     onOpenPlaylists = { navController.navigate(AuraRoute.Playlists) },
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
-                    onOpenSettings = { navController.navigate(AuraRoute.Settings) },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
                 )
@@ -236,6 +242,7 @@ fun AuraApp() {
             }
         }
     }
+    }
 }
 
 @Composable
@@ -268,8 +275,10 @@ private fun AuraAppScaffold(
                             onNext = onNext,
                         )
                     }
-                    if (isTopLevelRoute) {
-                        NavigationBar {
+                        NavigationBar(
+                            containerColor = OffBlack,
+                            contentColor = TextSecondary
+                        ) {
                             topDestinations.forEach { destination ->
                                 NavigationBarItem(
                                     selected = currentRoute == destination.route,
@@ -284,8 +293,14 @@ private fun AuraAppScaffold(
                                     },
                                     icon = { Icon(destination.icon, contentDescription = destination.label) },
                                     label = { Text(destination.label) },
+                                    colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                        selectedIconColor = BlazeOrange,
+                                        selectedTextColor = BlazeOrange,
+                                        indicatorColor = Color.Transparent,
+                                        unselectedIconColor = TextSecondary,
+                                        unselectedTextColor = TextSecondary
+                                    )
                                 )
-                            }
                         }
                     }
                 }
@@ -378,21 +393,30 @@ object AuraRoute {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RouteScaffold(
-    title: String,
+    title: String? = null,
+    style: TextStyle? = null,
     onNavigateBack: (() -> Unit)? = null,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { if (title != null) Text(title, style = style ?: MaterialTheme.typography.titleLarge) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeepBlack,
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary,
+                    actionIconContentColor = TextPrimary
+                ),
                 navigationIcon = {
                     if (onNavigateBack != null) {
                         IconButton(onClick = onNavigateBack) {
-                            Text("Back")
+                            Text("Back", color = TextPrimary)
                         }
                     }
                 },
+                actions = actions
             )
         },
     ) { innerPadding ->
@@ -491,11 +515,6 @@ fun PlaylistPreviewList(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = "Playlists",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
         if (playlists.isEmpty()) {
             Text(
                 text = "No local playlist yet. Create one from Library to build reusable listening contexts.",

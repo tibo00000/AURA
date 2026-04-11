@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -52,6 +51,14 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.foundation.layout.PaddingValues
+import com.aura.music.ui.theme.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -104,7 +111,6 @@ fun LibraryScreen(
     onOpenPlaylist: (String) -> Unit,
     onOpenPlaylists: () -> Unit,
     onOpenDownloads: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
@@ -122,73 +128,131 @@ fun LibraryScreen(
     }
     var query by remember { mutableStateOf("") }
     val searchResults = remember { mutableStateListOf<TrackListRow>() }
+    val searchArtists = remember { mutableStateListOf<ArtistBrowseRow>() }
+    val searchAlbums = remember { mutableStateListOf<AlbumBrowseRow>() }
 
     LaunchedEffect(query, repository, refreshToken) {
         searchResults.clear()
+        searchArtists.clear()
+        searchAlbums.clear()
         if (query.trim().length >= 2) {
             searchResults += repository.searchLocalTracks(query, limit = 24)
+            searchArtists += repository.searchLocalArtists(query, limit = 8)
+            searchAlbums += repository.searchLocalAlbums(query, limit = 8)
         }
     }
 
-    RouteScaffold(title = "Library") {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
-                summaryState.value?.let {
-                    DashboardSummaryCard(
-                        summary = it,
-                        onRequestAudioPermission = onRequestAudioPermission,
-                    )
-                }
+    val isSearchActive = query.trim().length >= 2
+
+    RouteScaffold(
+        title = "Bibliothèque",
+        actions = {
+            IconButton(onClick = onOpenDownloads) {
+                Icon(Icons.Rounded.DownloadDone, contentDescription = "Téléchargements", tint = TextPrimary)
             }
+        }
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().background(DeepBlack),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            contentPadding = PaddingValues(vertical = 16.dp)
+        ) {
             item {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("Ta bibliotheque locale", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = "Cherche dans tes titres presents puis plonge dans artistes, albums et playlists.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Rechercher dans la bibliotheque") },
-                        singleLine = true,
-                    )
-                }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    placeholder = { Text("Rechercher dans vos musiques locales...", color = TextSecondary) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear", tint = TextSecondary)
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(999.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = ElevatedGraphite,
+                        unfocusedContainerColor = ElevatedGraphite,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    singleLine = true
+                )
             }
-            item {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CompactActionCard("Playlists", "${playlistsState.value.size} locales", Icons.Rounded.QueueMusic, onOpenPlaylists, Modifier.weight(1f))
-                    CompactActionCard("Downloads", "Suivi des jobs", Icons.Rounded.DownloadDone, onOpenDownloads, Modifier.weight(1f))
-                    CompactActionCard("Settings", "Recherche et sync", Icons.Rounded.Settings, onOpenSettings, Modifier.weight(1f))
-                }
-            }
-            if (query.trim().length >= 2) {
+
+            if (!isSearchActive) {
                 item {
-                    TrackList(
-                        title = "Resultats locaux",
-                        tracks = searchResults.toList(),
-                        contextType = "library_search",
-                        onPlayTrackInList = onPlayTrackInList,
-                        onOpenArtist = onOpenArtist,
-                        onOpenAlbum = onOpenAlbum,
-                    )
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, { }, Modifier.weight(1f))
+                            LibraryGridItem("Albums", "Parcourir", Icons.Rounded.Album, { }, Modifier.weight(1f))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, { }, Modifier.weight(1f))
+                            LibraryGridItem("Playlists", "${playlistsState.value.size} éléments", Icons.Rounded.QueueMusic, onOpenPlaylists, Modifier.weight(1f))
+                        }
+                    }
                 }
+                
+                if (playlistsState.value.isNotEmpty()) {
+                    item { 
+                        Text("Playlists récentes", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                    item { PlaylistPreviewList(playlists = playlistsState.value.take(4), onOpenPlaylist = onOpenPlaylist) }
+                }
+                
+                item { Spacer(modifier = Modifier.height(24.dp)) }
+
+            } else {
+                // Search State
+                if (searchArtists.isNotEmpty()) {
+                    item { Text("Artistes correspondants", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.padding(horizontal = 16.dp)) }
+                    item { BrowseArtistRail(artists = searchArtists.toList(), onOpenArtist = onOpenArtist) } 
+                }
+                if (searchResults.isNotEmpty()) {
+                    item {
+                        TrackList(
+                            title = "Titres correspondants",
+                            tracks = searchResults.toList(),
+                            contextType = "library_search",
+                            onPlayTrackInList = onPlayTrackInList,
+                            onOpenArtist = onOpenArtist,
+                            onOpenAlbum = onOpenAlbum,
+                        )
+                    }
+                }
+                if (searchAlbums.isNotEmpty()) {
+                    item { Text("Albums correspondants", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.padding(horizontal = 16.dp)) }
+                    item { BrowseAlbumRail(albums = searchAlbums.toList(), onOpenAlbum = onOpenAlbum) }
+                }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
             }
-            item { PlaylistPreviewList(playlists = playlistsState.value.take(4), onOpenPlaylist = onOpenPlaylist) }
-            item { SectionTitle("Artistes locaux", "Des portes d'entree rapides vers les surfaces artiste.") }
-            item { BrowseArtistRail(artists = artistsState.value, onOpenArtist = onOpenArtist) }
-            item { SectionTitle("Albums locaux", "Parcours direct des albums indexes depuis MediaStore.") }
-            item { BrowseAlbumRail(albums = albumsState.value, onOpenAlbum = onOpenAlbum) }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+fun LibraryGridItem(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = DarkGraphite)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(icon, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(28.dp))
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            }
         }
     }
 }
@@ -206,7 +270,7 @@ fun PlaylistsScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    RouteScaffold(title = "Playlists", onNavigateBack = onNavigateBack) {
+    RouteScaffold(title="Playlists", onNavigateBack = onNavigateBack) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -812,8 +876,9 @@ fun PlayerScreen(
                         onRemove = { index -> playerViewModel.onEvent(PlayerEvent.RemoveFromQueue(index)) },
                     )
                 }
-                if (uiState.playbackState == PlaybackState.Error && uiState.errorMessage != null) {
-                    item { DownloadStateCard(Icons.Rounded.ErrorOutline, "Erreur player", uiState.errorMessage) }
+                val errorMsg = uiState.errorMessage
+                if (uiState.playbackState == PlaybackState.Error && errorMsg != null) {
+                    item { DownloadStateCard(Icons.Rounded.ErrorOutline, "Erreur player", errorMsg) }
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }

@@ -14,7 +14,6 @@ Point d'entree principal de l'application, centre sur la reprise d'ecoute et les
 ## Header
 - titre de contexte type `Bonsoir` ou `Accueil`
 - sous-texte facultatif rappelant la derniere activite
-- action de navigation rapide vers `Settings` si un acces global est retenu
 
 ## Bloc reprise d'ecoute
 - carte hero large

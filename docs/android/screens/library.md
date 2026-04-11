@@ -8,7 +8,7 @@ Centraliser la collection personnelle locale et les points d'entree de gestion.
 - header avec titre `Library`
 - barre de recherche locale dediee
 - grille ou liste d'entrees principales
-- acces secondaires vers downloads et settings
+- acces secondaire vers downloads
 
 ## Barre de recherche locale
 - recherche orientee possession locale
@@ -28,14 +28,12 @@ Centraliser la collection personnelle locale et les points d'entree de gestion.
 
 ## Zones secondaires
 - acces a `Downloads`
-- acces a `Settings`
 - eventuelle zone compte et sync si cette information est importante au niveau bibliotheque
 
 ## Boutons et actions
 - saisir une recherche locale
 - ouvrir une entree principale
 - ouvrir `Downloads`
-- ouvrir `Settings`
 
 ## Etats
 - vide si aucune bibliotheque locale n'existe

@@ -35,6 +35,25 @@ interface ArtistDao {
             artists.id AS id,
             artists.name AS name,
             artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count
+        FROM artists
+        LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        WHERE lower(artists.name) LIKE '%' || lower(:query) || '%'
+        GROUP BY artists.id
+        ORDER BY COUNT(DISTINCT tracks.id) DESC, artists.name ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun searchArtists(query: String, limit: Int): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
             artists.summary AS summary
         FROM artists
         WHERE artists.id = :artistId
@@ -67,6 +86,27 @@ interface AlbumDao {
         """,
     )
     suspend fun getBrowseAlbums(limit: Int): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        WHERE lower(albums.title) LIKE '%' || lower(:query) || '%'
+           OR lower(artists.name) LIKE '%' || lower(:query) || '%'
+        GROUP BY albums.id
+        ORDER BY albums.updated_at DESC, albums.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun searchAlbums(query: String, limit: Int): List<AlbumBrowseRow>
 
     @Query(
         """
