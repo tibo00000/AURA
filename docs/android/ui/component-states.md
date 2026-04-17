@@ -41,6 +41,16 @@ Le menu contextuel du TrackRow varie selon son contexte d'utilisation :
 - Télécharger (si non-local)
 - Supprimer le téléchargement (si local)
 
+**Contexte Favoris (FavoritesScreen)**
+- Lire maintenant
+- Ajouter à la file d'attente
+- Ajouter à une playlist
+- Voir l'artiste
+- Voir l'album
+- Retirer des favoris (unlike)
+- Télécharger (si non-local)
+- Supprimer le téléchargement (si local)
+
 **Contexte Queue (PlayerScreen)**
 - Pas de menu contextuel (actions limitées à la suppression via drag-to-remove ou icon delete visible)
 

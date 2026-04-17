@@ -171,6 +171,7 @@ interface TrackDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -191,6 +192,7 @@ interface TrackDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -211,6 +213,7 @@ interface TrackDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -234,6 +237,7 @@ interface TrackDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -253,6 +257,7 @@ interface TrackDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -274,6 +279,7 @@ interface TrackDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -282,6 +288,27 @@ interface TrackDao {
         """,
     )
     suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked
+        FROM tracks
+        INNER JOIN track_likes ON track_likes.track_id = tracks.id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        ORDER BY track_likes.liked_at DESC
+        """,
+    )
+    suspend fun getLikedTracks(): List<TrackListRow>
 }
 
 @Dao
@@ -347,7 +374,8 @@ interface PlaylistDao {
             tracks.display_artist_name AS artist_name,
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
-            tracks.duration_ms AS duration_ms
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri
         FROM playlist_items
         INNER JOIN tracks ON tracks.id = playlist_items.track_id
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -401,6 +429,30 @@ interface RecentSearchDao {
         """,
     )
     suspend fun trimTo(limit: Int)
+}
+
+@Dao
+interface TrackLikeDao {
+    /**
+     * Insere ou remplace une ligne dans track_likes.
+     * Gouverne par : docs/android/room-schema.md — table track_likes.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLike(entity: TrackLikeEntity)
+
+    /**
+     * Supprime la ligne de like pour la piste donnee.
+     */
+    @Query("DELETE FROM track_likes WHERE track_id = :trackId")
+    suspend fun deleteLike(trackId: String)
+
+    /**
+     * Met a jour le booleen denormalise dans tracks.
+     * Gouverne par : docs/android/room-schema.md — regle : tracks.is_liked doit refleter
+     * l'existence ou non d'une ligne dans track_likes.
+     */
+    @Query("UPDATE tracks SET is_liked = :liked, updated_at = :updatedAt WHERE id = :trackId")
+    suspend fun setTrackIsLiked(trackId: String, liked: Boolean, updatedAt: Long)
 }
 
 @Dao

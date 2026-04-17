@@ -8,11 +8,11 @@ Définir l'architecture visuelle de l'écran Bibliothèque (`Library`), en s'ass
 ```mermaid
 flowchart TD
     A["Header\nTitleLarge (TextPrimary)\nDownloads Icon (Right)"] --> B["Local Search Bar\nRounded (999dp)\nBg: DarkGraphite | Icon: Search\n(State: Inactive)"]
-    B --> C["Grid: Entrées Principales\n2 colonnes\nTitres, Albums, Artistes, Playlists"]
+    B --> C["Grid: Entrées Principales\n2 colonnes\nTitres, Favoris, Artistes, Playlists"]
     C --> D["Section: Playlists récentes"]
     D --> E["Bottom Navigation Safe Area"]
 
-    B -.->|If Search is Typed| F["Local Search Results\nList of matching Tracks/Albums/Artists"]
+    B -..->|If Search is Typed| F["Local Search Results\nList of matching Tracks/Albums/Artists"]
 ```
 
 ## Coupe Mobile Approximative (État par défaut)
@@ -24,9 +24,9 @@ flowchart TD
 | ( ) Rechercher dans vos musiques locales...      |
 |                                                  |
 | +--------------------+  +--------------------+   |
-| | (Icon: Music)      |  | (Icon: Album)      |   |
-| | Titres             |  | Albums             |   |
-| | 425 éléments       |  | 42 éléments        |   |
+| | (Icon: Music)      |  | (Icon: Heart)      |   |
+| | Titres             |  | Favoris            |   |
+| | 425 éléments       |  | 12 éléments        |   |
 | +--------------------+  +--------------------+   |
 |                                                  |
 | +--------------------+  +--------------------+   |

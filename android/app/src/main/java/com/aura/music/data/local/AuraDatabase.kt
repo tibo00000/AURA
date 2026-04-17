@@ -25,6 +25,7 @@ abstract class AuraDatabase : RoomDatabase() {
     abstract fun artistDao(): ArtistDao
     abstract fun albumDao(): AlbumDao
     abstract fun trackDao(): TrackDao
+    abstract fun trackLikeDao(): TrackLikeDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun playbackSnapshotDao(): PlaybackSnapshotDao
     abstract fun recentSearchDao(): RecentSearchDao

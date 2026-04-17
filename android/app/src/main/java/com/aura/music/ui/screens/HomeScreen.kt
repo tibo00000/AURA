@@ -33,17 +33,6 @@ import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.theme.*
 
 @Composable
-fun PlaceholderCover(modifier: Modifier = Modifier, icon: ImageVector = Icons.Rounded.MusicNote, gradient: Brush? = null) {
-    Box(
-        modifier = modifier
-            .background(gradient ?: Brush.linearGradient(listOf(ElevatedGraphite, HairlineDark))),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
-    }
-}
-
-@Composable
 fun HomeScreen(
     repository: LocalLibraryRepository,
     refreshToken: Int,

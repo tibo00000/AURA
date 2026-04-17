@@ -17,7 +17,7 @@ Centraliser la collection personnelle locale et les points d'entree de gestion.
 
 ## Entrees principales
 - `Titres`
-- `Albums`
+- `Favoris`
 - `Artistes`
 - `Playlists`
 

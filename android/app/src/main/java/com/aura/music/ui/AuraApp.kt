@@ -73,6 +73,7 @@ import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.screens.AlbumRouteScreen
 import com.aura.music.ui.screens.DownloadsScreen
 import com.aura.music.ui.screens.HomeScreen
+import com.aura.music.ui.screens.FavoritesScreen
 import com.aura.music.ui.screens.LibraryScreen
 import com.aura.music.ui.screens.PlayerScreen
 import com.aura.music.ui.screens.PlaylistDetailScreenNew
@@ -188,6 +189,7 @@ fun AuraApp() {
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                     onOpenPlaylists = { navController.navigate(AuraRoute.Playlists) },
+                    onOpenFavorites = { navController.navigate(AuraRoute.Favorites) },
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
@@ -198,6 +200,15 @@ fun AuraApp() {
                     repository = repository,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
+                )
+            }
+            composable(AuraRoute.Favorites) {
+                FavoritesScreen(
+                    repository = repository,
+                    playerViewModel = playerViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
                 )
             }
             composable(AuraRoute.PlaylistDetailPattern) { backStackEntry ->
@@ -374,6 +385,7 @@ object AuraRoute {
     const val Search = "search"
     const val Library = "library"
     const val Playlists = "playlists"
+    const val Favorites = "favorites"
     const val Downloads = "downloads"
     const val Settings = "settings"
     const val Player = "player"

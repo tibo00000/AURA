@@ -15,6 +15,7 @@ import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.local.RecentSearchEntity
 import com.aura.music.data.local.TrackEntity
+import com.aura.music.data.local.TrackLikeEntity
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.local.UserSettingsEntity
@@ -103,7 +104,7 @@ class LocalLibraryRepository(
                     primaryArtistId = artistIdOf(media.artistName),
                     title = albumTitle,
                     normalizedTitle = normalize(albumTitle),
-                    coverUri = null,
+                    coverUri = media.coverUri,
                     releaseDate = null,
                     trackCount = null,
                     createdAt = now,
@@ -122,7 +123,7 @@ class LocalLibraryRepository(
                 displayArtistName = media.artistName,
                 displayAlbumTitle = media.albumTitle,
                 durationMs = media.durationMs,
-                coverUri = null,
+                coverUri = media.coverUri,
                 canonicalAudioSourceType = "local",
                 isLiked = false,
                 isDownloadedByAura = false,
@@ -188,6 +189,9 @@ class LocalLibraryRepository(
 
     suspend fun getTrackById(trackId: String): TrackListRow? =
         withContext(Dispatchers.IO) { database.trackDao().getTrackById(trackId) }
+
+    suspend fun getLikedTracks(): List<TrackListRow> =
+        withContext(Dispatchers.IO) { database.trackDao().getLikedTracks() }
 
     suspend fun searchLocalTracks(query: String, limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.IO) {
@@ -360,6 +364,7 @@ class LocalLibraryRepository(
                     artistName = row.artistName,
                     albumTitle = row.albumTitle,
                     contentUri = row.contentUri,
+                    coverUri = row.coverUri,
                     durationMs = row.durationMs,
                     isLiked = false,
                 )
@@ -386,6 +391,41 @@ class LocalLibraryRepository(
 
     suspend fun setStatsSyncNetworkPolicy(policy: String) = withContext(Dispatchers.IO) {
         database.userSettingsDao().updateStatsSyncNetworkPolicy(policy)
+    }
+
+    /**
+     * Bascule l'etat de like d'une piste de maniere atomique.
+     * La transaction garantit l'invaiant : tracks.is_liked reflete track_likes.
+     * Gouverne par : docs/android/room-schema.md, docs/android/local-persistence.md
+     *
+     * @param trackId identifiant AURA de la piste
+     * @param currentlyLiked etat connu au moment du toggle (optimise la lecture avant ecriture)
+     * @param contextType contexte source du like (optionnel)
+     * @param contextId identifiant du contexte source (optionnel)
+     */
+    suspend fun toggleLike(
+        trackId: String,
+        currentlyLiked: Boolean,
+        contextType: String? = null,
+        contextId: String? = null,
+    ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            if (currentlyLiked) {
+                database.trackLikeDao().deleteLike(trackId)
+                database.trackLikeDao().setTrackIsLiked(trackId, liked = false, updatedAt = now)
+            } else {
+                database.trackLikeDao().insertLike(
+                    TrackLikeEntity(
+                        trackId = trackId,
+                        likedAt = now,
+                        sourceContextType = contextType,
+                        sourceContextId = contextId,
+                    ),
+                )
+                database.trackLikeDao().setTrackIsLiked(trackId, liked = true, updatedAt = now)
+            }
+        }
     }
 
     suspend fun seedPlaybackPreview(trackId: String, contextType: String = "single_track") =

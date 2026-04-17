@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -37,6 +38,9 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -107,6 +111,7 @@ fun LibraryScreen(
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onOpenPlaylists: () -> Unit,
+    onOpenFavorites: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
@@ -120,8 +125,8 @@ fun LibraryScreen(
     val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository, refreshToken) {
         value = repository.getBrowseArtists(8)
     }
-    val albumsState = produceState(initialValue = emptyList<AlbumBrowseRow>(), repository, refreshToken) {
-        value = repository.getBrowseAlbums(8)
+    val favoritesCountState = produceState(initialValue = 0, repository, refreshToken) {
+        value = repository.getLikedTracks().size
     }
     var query by remember { mutableStateOf("") }
     val searchResults = remember { mutableStateListOf<TrackListRow>() }
@@ -191,7 +196,7 @@ fun LibraryScreen(
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, { }, Modifier.weight(1f))
-                            LibraryGridItem("Albums", "Parcourir", Icons.Rounded.Album, { }, Modifier.weight(1f))
+                            LibraryGridItem("Favoris", "${favoritesCountState.value} éléments", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, { }, Modifier.weight(1f))
@@ -230,6 +235,132 @@ fun LibraryScreen(
                 if (searchAlbums.isNotEmpty()) {
                     item { Text("Albums correspondants", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.padding(horizontal = 16.dp)) }
                     item { BrowseAlbumRail(albums = searchAlbums.toList(), onOpenAlbum = onOpenAlbum) }
+                }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+fun FavoritesScreen(
+    repository: LocalLibraryRepository,
+    playerViewModel: PlayerViewModel,
+    onNavigateBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick) {
+        value = repository.getLikedTracks()
+    }
+
+    RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack) {
+        if (tracksState.value.isEmpty()) {
+            EmptyStateSurface(
+                title = "Aucun favori",
+                message = "Appuie sur le cœur dans le player pour retrouver tes pistes ici.",
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp),
+            ) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .background(
+                                Brush.linearGradient(listOf(Color(0xFFFF6B00), Color(0xFF1A0A00))),
+                                RoundedCornerShape(24.dp),
+                            )
+                            .padding(20.dp),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(
+                                Icons.Rounded.Favorite,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp),
+                            )
+                            Text(
+                                "Favoris",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                            Text(
+                                "${tracksState.value.size} piste(s) aimée(s)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.75f),
+                            )
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = {
+                                val tracks = tracksState.value
+                                if (tracks.isNotEmpty()) {
+                                    playerViewModel.onEvent(
+                                        PlayerEvent.PlayTrack(
+                                            trackId = tracks.first().id,
+                                            contextType = "favorites",
+                                            contextId = "favorites",
+                                            contextTracks = tracks.map { it.toQueuedTrack() },
+                                            startIndex = 0,
+                                        ),
+                                    )
+                                }
+                            },
+                            enabled = tracksState.value.isNotEmpty(),
+                        ) { Text("Lire tout") }
+                        Button(
+                            onClick = {
+                                val tracks = tracksState.value.shuffled()
+                                if (tracks.isNotEmpty()) {
+                                    playerViewModel.onEvent(
+                                        PlayerEvent.PlayTrack(
+                                            trackId = tracks.first().id,
+                                            contextType = "favorites",
+                                            contextId = "favorites",
+                                            contextTracks = tracks.map { it.toQueuedTrack() },
+                                            startIndex = 0,
+                                        ),
+                                    )
+                                }
+                            },
+                            enabled = tracksState.value.isNotEmpty(),
+                        ) { Text("Aléatoire") }
+                    }
+                }
+                items(tracksState.value, key = { it.id }) { track ->
+                    val trackIndex = tracksState.value.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                    val contextTracks = tracksState.value.map { it.toQueuedTrack() }
+                    val playEvent = PlayerEvent.PlayTrack(
+                        trackId = track.id,
+                        contextType = "favorites",
+                        contextId = "favorites",
+                        contextTracks = contextTracks,
+                        startIndex = trackIndex,
+                    )
+                    SharedTrackRowItem(
+                        title = track.title,
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                        onClick = { playerViewModel.onEvent(playEvent) },
+                        coverUri = track.coverUri,
+                        trailingIcon = {
+                            // Menu contextuel Favoris — à implémenter (component-states.md)
+                            IconButton(onClick = { /* TODO: menu contextuel */ }, enabled = false) {
+                                Icon(Icons.Rounded.MoreVert, contentDescription = "Options", tint = TextSecondary)
+                            }
+                        },
+                    )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
@@ -765,6 +896,34 @@ fun PlayerScreen(
                         }
                     }
                 }
+                item {
+                    // Zone F — Actions secondaires
+                    // Gouverne par : docs/android/screens/player.md, docs/android/screens/player-layout.md
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleLike) }) {
+                            Icon(
+                                imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
+                                tint = if (uiState.isCurrentTrackLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
+                        IconButton(onClick = { /* v2 : ajouter a une playlist depuis le player */ }, enabled = false) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlaylistAdd,
+                                contentDescription = "Ajouter a une playlist",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
+                    }
+                }
                 item { SourceContextCard(uiState) }
                 item {
                     QueueSection(
@@ -1018,6 +1177,7 @@ fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
     albumTitle = albumTitle,
     contentUri = contentUri,
     durationMs = durationMs,
+    coverUri = coverUri,
     isLiked = false,
 )
 

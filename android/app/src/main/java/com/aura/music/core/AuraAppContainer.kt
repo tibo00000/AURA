@@ -38,6 +38,6 @@ class AuraAppContainer(context: Context) {
     }
 
     val playerViewModelFactory by lazy {
-        PlayerViewModel.Factory(playbackOrchestrator)
+        PlayerViewModel.Factory(playbackOrchestrator, localLibraryRepository)
     }
 }

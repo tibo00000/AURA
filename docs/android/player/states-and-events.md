@@ -30,6 +30,7 @@
 - `ReorderQueue`
 - `ToggleShuffle`
 - `CycleRepeatMode`
+- `ToggleLike`
 
 ## Evenements systeme
 - `AudioFocusLost`

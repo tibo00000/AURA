@@ -16,6 +16,8 @@ data class LocalAudioFile(
     val title: String,
     val artistName: String,
     val albumTitle: String?,
+    val albumId: Long?,
+    val coverUri: String?,
     val durationMs: Long?,
     val mimeType: String?,
     val fileSizeBytes: Long?,
@@ -49,6 +51,7 @@ class MediaStoreAudioDataSource(
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.SIZE,
@@ -67,6 +70,7 @@ class MediaStoreAudioDataSource(
                 val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
                 val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
                 val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
@@ -85,6 +89,8 @@ class MediaStoreAudioDataSource(
                             title = cursor.getString(titleColumn).orEmpty().ifBlank { "Unknown title" },
                             artistName = cursor.getString(artistColumn).orEmpty().ifBlank { "Unknown artist" },
                             albumTitle = cursor.getString(albumColumn)?.ifBlank { null },
+                            albumId = cursor.getLong(albumIdColumn).takeIf { it > 0L },
+                            coverUri = cursor.getLong(albumIdColumn).takeIf { it > 0L }?.let { "content://media/external/audio/albumart/$it" },
                             durationMs = cursor.getLong(durationColumn).takeIf { it > 0L },
                             mimeType = cursor.getString(mimeTypeColumn),
                             fileSizeBytes = cursor.getLong(sizeColumn).takeIf { it > 0L },

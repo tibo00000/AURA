@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -50,8 +49,6 @@ import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DeepBlack
-import com.aura.music.ui.theme.DarkGraphite
-import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
 import com.aura.music.ui.toQueuedTrack
@@ -251,51 +248,17 @@ private fun PlaylistTrackRowItem(
     track: PlaylistTrackRow,
     onPlayTrack: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(DarkGraphite)
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Like icon (placeholder)
-            IconButton(
-                onClick = { /* like action */ },
-            ) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = "Like", tint = TextSecondary)
-            }
-
-            // Track info
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    track.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    track.artistName ?: "Artiste inconnu",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                )
-            }
-
-            // Menu icon
-            IconButton(onClick = { /* context menu */ }) {
+    SharedTrackRowItem(
+        title = track.title,
+        subtitle = track.artistName ?: "Artiste inconnu",
+        onClick = onPlayTrack,
+        coverUri = track.coverUri,
+        trailingIcon = {
+            IconButton(onClick = { /* context menu v2 */ }) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = "Menu", tint = TextSecondary)
             }
-        }
-    }
+        },
+    )
 }
 
 private fun playPlaylist(

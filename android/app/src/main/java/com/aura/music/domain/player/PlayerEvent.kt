@@ -23,4 +23,5 @@ sealed interface PlayerEvent {
     data class ReorderQueue(val fromIndex: Int, val toIndex: Int) : PlayerEvent
     data object ToggleShuffle : PlayerEvent
     data object CycleRepeatMode : PlayerEvent
+    data object ToggleLike : PlayerEvent
 }

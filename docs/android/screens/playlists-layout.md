@@ -114,12 +114,12 @@ flowchart TD
 |              • Renommer                          |
 |              • Supprimer                         |
 |                                                  |
-| [Cover] Titre Track 1 - Artist    [like] [Menu]  |
-| [Cover] Titre Track 2 - Artist    [like] [Menu]  |
-| [Cover] Titre Track 3 - Artist    [like] [Menu]  |
-| [Cover] Titre Track 4 - Artist    [like] [Menu]  |
-| [Cover] Titre Track 5 - Artist    [like] [Menu]  |
-| [Cover] Titre Track 6 - Artist    [like] [Menu]  |
+| [Cover] Titre Track 1 - Artist           [Menu]  |
+| [Cover] Titre Track 2 - Artist           [Menu]  |
+| [Cover] Titre Track 3 - Artist           [Menu]  |
+| [Cover] Titre Track 4 - Artist           [Menu]  |
+| [Cover] Titre Track 5 - Artist           [Menu]  |
+| [Cover] Titre Track 6 - Artist           [Menu]  |
 |                                                  |
 |               [Mini-Player Floating]             |
 |                                                  |

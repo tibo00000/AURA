@@ -121,7 +121,17 @@ class PlaybackOrchestrator(
             is PlayerEvent.ReorderQueue -> handleReorderQueue(event.fromIndex, event.toIndex)
             is PlayerEvent.ToggleShuffle -> handleToggleShuffle()
             is PlayerEvent.CycleRepeatMode -> handleCycleRepeatMode()
+            // ToggleLike est traite dans PlayerViewModel (persistance Room, pas ExoPlayer)
+            is PlayerEvent.ToggleLike -> Unit
         }
+    }
+
+    /**
+     * Met a jour uniquement l'etat du like dans le uiState.
+     * Appele par PlayerViewModel apres relecture Room.
+     */
+    fun updateLikedState(liked: Boolean) {
+        _uiState.update { it.copy(isCurrentTrackLiked = liked) }
     }
 
     /**
@@ -280,8 +290,8 @@ class PlaybackOrchestrator(
             else -> PlaybackState.Preparing
         }
 
-        _uiState.update {
-            PlayerUiState(
+        _uiState.update { current ->
+            current.copy(
                 playbackState = playbackState,
                 currentTrack = queueState.currentTrack,
                 positionMs = ctrl?.currentPosition ?: 0L,
@@ -292,6 +302,8 @@ class PlaybackOrchestrator(
                 contextType = queueState.context?.type,
                 contextId = queueState.context?.id,
                 errorMessage = ctrl?.playerError?.localizedMessage,
+                // isCurrentTrackLiked est preserve et mis a jour via updateLikedState()
+                // pour eviter un reset a false a chaque sync de progression
             )
         }
     }

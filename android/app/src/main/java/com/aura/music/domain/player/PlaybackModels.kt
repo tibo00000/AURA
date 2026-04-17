@@ -76,4 +76,5 @@ data class PlayerUiState(
     val contextType: String? = null,
     val contextId: String? = null,
     val errorMessage: String? = null,
+    val isCurrentTrackLiked: Boolean = false,
 )

@@ -216,6 +216,7 @@ data class TrackListRow(
     @ColumnInfo(name = "album_title") val albumTitle: String?,
     @ColumnInfo(name = "content_uri") val contentUri: String?,
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
+    @ColumnInfo(name = "cover_uri") val coverUri: String?,
     @ColumnInfo(name = "is_liked") val isLiked: Boolean,
 )
 
@@ -247,6 +248,7 @@ data class PlaylistTrackRow(
     @ColumnInfo(name = "album_title") val albumTitle: String?,
     @ColumnInfo(name = "content_uri") val contentUri: String?,
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
+    @ColumnInfo(name = "cover_uri") val coverUri: String?,
 )
 
 data class ArtistBrowseRow(
