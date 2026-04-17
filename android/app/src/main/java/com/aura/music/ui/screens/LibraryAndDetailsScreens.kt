@@ -32,23 +32,21 @@ import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -83,7 +81,6 @@ import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.local.TrackListRow
-import com.aura.music.data.local.UserSettingsEntity
 import com.aura.music.data.repository.AlbumDetail
 import com.aura.music.data.repository.ArtistDetail
 import com.aura.music.data.repository.LibraryDashboardSummary
@@ -148,7 +145,7 @@ fun LibraryScreen(
         title = "Bibliothèque",
         actions = {
             IconButton(onClick = onOpenDownloads) {
-                Icon(Icons.Rounded.DownloadDone, contentDescription = "Téléchargements", tint = TextPrimary)
+                Icon(Icons.Rounded.Downloading, contentDescription = "Téléchargements", tint = TextPrimary)
             }
         }
     ) {
@@ -164,12 +161,12 @@ fun LibraryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
-                    placeholder = { Text("Rechercher dans vos musiques locales...", color = TextSecondary) },
+                    placeholder = { Text("Rechercher une de vos musiques...", color = TextSecondary) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
                             IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear", tint = TextSecondary)
+                                Icon(Icons.Rounded.Close, contentDescription = "Effacer la recherche", tint = TextSecondary)
                             }
                         }
                     },
@@ -295,7 +292,7 @@ fun PlaylistsScreen(
                     )
                     Button(onClick = { showCreateDialog = true }) {
                         Icon(Icons.Rounded.Add, contentDescription = null)
-                        Text("Create playlist", modifier = Modifier.padding(start = 8.dp))
+                        Text("Créer une playlist", modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }
@@ -305,8 +302,8 @@ fun PlaylistsScreen(
 
     if (showCreateDialog) {
         PlaylistNameDialog(
-            title = "Create playlist",
-            confirmLabel = "Create",
+            title = "Créer une playlist",
+            confirmLabel = "Créer",
             initialValue = "",
             onDismiss = { showCreateDialog = false },
             onConfirm = { name ->
@@ -374,25 +371,25 @@ fun PlaylistDetailScreen(
                                 playPlaylist(playerViewModel, detail.tracks.map { it.toTrackListRow() }, false, detail.summary.id)
                             },
                             enabled = detail.tracks.isNotEmpty(),
-                        ) { Text("Play") }
+                        ) { Text("Jouer") }
                         Button(
                             onClick = {
                                 playPlaylist(playerViewModel, detail.tracks.map { it.toTrackListRow() }, true, detail.summary.id)
                             },
                             enabled = detail.tracks.isNotEmpty(),
-                        ) { Text("Shuffle") }
-                        Button(onClick = { showAddTrackDialog = true }) { Text("Add track") }
+                        ) { Text("Aléatoire") }
+                        Button(onClick = { showAddTrackDialog = true }) { Text("Ajouter une piste") }
                     }
                 }
                 item {
                     Row(modifier = Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { showRenameDialog = true }) {
                             Icon(Icons.Rounded.Edit, contentDescription = null)
-                            Text("Rename", modifier = Modifier.padding(start = 8.dp))
+                            Text("Renommer", modifier = Modifier.padding(start = 8.dp))
                         }
                         Button(onClick = { showDeleteDialog = true }) {
                             Icon(Icons.Rounded.Delete, contentDescription = null)
-                            Text("Delete", modifier = Modifier.padding(start = 8.dp))
+                            Text("Supprimer", modifier = Modifier.padding(start = 8.dp))
                         }
                     }
                 }
@@ -447,8 +444,8 @@ fun PlaylistDetailScreen(
 
     if (showRenameDialog && detail != null) {
         PlaylistNameDialog(
-            title = "Rename playlist",
-            confirmLabel = "Save",
+            title = "Renommer la playlist",
+            confirmLabel = "Sauvegarder",
             initialValue = detail.summary.name,
             onDismiss = { showRenameDialog = false },
             onConfirm = { name ->
@@ -463,9 +460,9 @@ fun PlaylistDetailScreen(
 
     if (showDeleteDialog && detail != null) {
         ConfirmDialog(
-            title = "Delete playlist",
-            message = "Delete ${detail.summary.name}? This removes the playlist and its local ordering only.",
-            confirmLabel = "Delete",
+            title = "Supprimer la playlist",
+            message = "Supprimer ${detail.summary.name}? Cela supprime la playlist et son ordre local uniquement.",
+            confirmLabel = "Supprimer",
             onDismiss = { showDeleteDialog = false },
             onConfirm = {
                 scope.launch {
@@ -656,105 +653,6 @@ fun DownloadsScreen(onNavigateBack: () -> Unit) {
 }
 
 @Composable
-fun SettingsScreen(
-    repository: LocalLibraryRepository,
-    onNavigateBack: () -> Unit,
-) {
-    var refreshTick by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
-    val settingsState = produceState<UserSettingsEntity?>(initialValue = null, repository, refreshTick) {
-        repository.ensureDefaults()
-        value = repository.getSettings()
-    }
-    val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshTick) {
-        value = repository.getLibraryDashboardSummary()
-    }
-    val settings = settingsState.value
-
-    RouteScaffold(title = "Settings", onNavigateBack = onNavigateBack) {
-        if (settings == null) {
-            EmptyStateSurface("Settings indisponibles", "Le profil local n'est pas encore initialise.")
-            return@RouteScaffold
-        }
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item {
-                HeroIdentityCard(
-                    title = "Preferences AURA",
-                    subtitle = "Recherche online, sync future et diagnostic local.",
-                    gradient = Brush.linearGradient(listOf(Color(0xFF232323), Color(0xFF050505))),
-                )
-            }
-            item {
-                SettingsCard(title = "Compte et sync") {
-                    SettingToggleRow(
-                        title = "Sync cloud",
-                        subtitle = "Optionnelle. L'app reste utile sans backend cloud.",
-                        checked = settings.syncEnabled,
-                        onCheckedChange = { enabled ->
-                            scope.launch {
-                                repository.setSyncEnabled(enabled)
-                                refreshTick++
-                            }
-                        },
-                    )
-                    Divider()
-                    PolicyRow(
-                        title = "Sync stats",
-                        selected = settings.statsSyncNetworkPolicy,
-                        options = listOf("wifi_only", "any_network"),
-                        onSelect = { policy ->
-                            scope.launch {
-                                repository.setStatsSyncNetworkPolicy(policy)
-                                refreshTick++
-                            }
-                        },
-                    )
-                }
-            }
-            item {
-                SettingsCard(title = "Recherche") {
-                    SettingToggleRow(
-                        title = "Recherche online",
-                        subtitle = "Active la partie backend-only pour la recherche enrichie.",
-                        checked = settings.onlineSearchEnabled,
-                        onCheckedChange = { enabled ->
-                            scope.launch {
-                                repository.setOnlineSearchEnabled(enabled)
-                                refreshTick++
-                            }
-                        },
-                    )
-                    Divider()
-                    PolicyRow(
-                        title = "Politique reseau",
-                        selected = settings.onlineSearchNetworkPolicy,
-                        options = listOf("wifi_only", "any_network"),
-                        onSelect = { policy ->
-                            scope.launch {
-                                repository.setOnlineSearchNetworkPolicy(policy)
-                                refreshTick++
-                            }
-                        },
-                    )
-                }
-            }
-            item {
-                SettingsCard(title = "Diagnostics") {
-                    Text("Pistes indexees: ${summaryState.value?.roomTrackCount ?: 0}", style = MaterialTheme.typography.bodyMedium)
-                    Text("MediaStore detecte: ${summaryState.value?.mediaStoreTrackCount ?: 0}", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Snapshot actif: ${if (summaryState.value?.activeSnapshot != null) "oui" else "non"}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
-        }
-    }
-}
-
-@Composable
 fun PlayerScreen(
     playerViewModel: PlayerViewModel,
     onNavigateBack: () -> Unit,
@@ -841,27 +739,27 @@ fun PlayerScreen(
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleShuffle) }) {
                             Icon(
                                 Icons.Rounded.Shuffle,
-                                contentDescription = "Shuffle",
+                                contentDescription = "Lecture aleatoire",
                                 tint = if (uiState.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Previous) }) {
-                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
+                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Piste precedente", modifier = Modifier.size(36.dp))
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) }, modifier = Modifier.size(72.dp)) {
                             Icon(
                                 imageVector = if (uiState.playbackState == PlaybackState.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = "Toggle play/pause",
+                                contentDescription = "Lecture ou pause",
                                 modifier = Modifier.size(54.dp),
                             )
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Next) }) {
-                            Icon(Icons.Rounded.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))
+                            Icon(Icons.Rounded.SkipNext, contentDescription = "Piste suivante", modifier = Modifier.size(36.dp))
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.CycleRepeatMode) }) {
                             Icon(
                                 imageVector = if (uiState.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                                contentDescription = "Repeat",
+                                contentDescription = "Mode repetition",
                                 tint = if (uiState.repeatMode == RepeatMode.Off) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -903,14 +801,14 @@ private fun PlaylistTrackItem(
         },
         leadingContent = {
             IconButton(onClick = onPlay) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = "Play ${track.title}")
+                Icon(Icons.Rounded.PlayArrow, contentDescription = "Lire ${track.title}")
             }
         },
         trailingContent = {
             Row {
-                IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Rounded.ArrowUpward, contentDescription = "Move up") }
-                IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Rounded.ArrowDownward, contentDescription = "Move down") }
-                IconButton(onClick = onRemove) { Icon(Icons.Rounded.Delete, contentDescription = "Remove from playlist") }
+                IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Rounded.ArrowUpward, contentDescription = "Monter dans la playlist") }
+                IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Rounded.ArrowDownward, contentDescription = "Descendre dans la playlist") }
+                IconButton(onClick = onRemove) { Icon(Icons.Rounded.Delete, contentDescription = "Retirer de la playlist") }
             }
         },
         modifier = Modifier.clickable(onClick = onPlay),
@@ -918,7 +816,7 @@ private fun PlaylistTrackItem(
 }
 
 @Composable
-private fun PlaylistNameDialog(
+fun PlaylistNameDialog(
     title: String,
     confirmLabel: String,
     initialValue: String,
@@ -942,7 +840,7 @@ private fun PlaylistNameDialog(
 }
 
 @Composable
-private fun ConfirmDialog(
+fun ConfirmDialog(
     title: String,
     message: String,
     confirmLabel: String,
@@ -1018,212 +916,6 @@ private fun CompactActionCard(
     }
 }
 
-@Composable
-private fun BrowseArtistRail(
-    artists: List<ArtistBrowseRow>,
-    onOpenArtist: (String) -> Unit,
-) {
-    if (artists.isEmpty()) {
-        EmptyStateSurface("Pas encore d'artiste local", "AURA affichera ici les artistes issus de la bibliotheque indexee.", Modifier.padding(horizontal = 16.dp))
-        return
-    }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
-        items(artists, key = { it.id }) { artist ->
-            Card(
-                modifier = Modifier
-                    .size(width = 168.dp, height = 210.dp)
-                    .clickable { onOpenArtist(artist.id) },
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .background(Brush.linearGradient(listOf(Color(0xFF792BEE), Color(0xFF232323))), CircleShape),
-                    )
-                    Text(artist.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${artist.trackCount} piste(s) | ${artist.albumCount} album(s)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        item { Spacer(modifier = Modifier.size(16.dp)) }
-    }
-}
-
-@Composable
-private fun BrowseAlbumRail(
-    albums: List<AlbumBrowseRow>,
-    onOpenAlbum: (String) -> Unit,
-) {
-    if (albums.isEmpty()) {
-        EmptyStateSurface("Pas d'album local", "Les albums locaux indexes seront proposes ici.", Modifier.padding(horizontal = 16.dp))
-        return
-    }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
-        items(albums, key = { it.id }) { album ->
-            Card(
-                modifier = Modifier
-                    .size(width = 172.dp, height = 220.dp)
-                    .clickable { onOpenAlbum(album.id) },
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .background(Brush.linearGradient(listOf(Color(0xFFFF9E00), Color(0xFF1A1A1A))), RoundedCornerShape(20.dp)),
-                    )
-                    Text(album.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(album.artistName ?: "Artiste inconnu", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-        item { Spacer(modifier = Modifier.size(16.dp)) }
-    }
-}
-
-@Composable
-private fun SectionTitle(
-    title: String,
-    subtitle: String,
-) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun HeroIdentityCard(
-    title: String,
-    subtitle: String,
-    gradient: Brush,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(28.dp),
-    ) {
-        Column(modifier = Modifier.background(gradient).padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun DownloadStateCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    message: String,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Row(modifier = Modifier.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterRow(
-    values: List<String>,
-    selected: String,
-    onSelect: (String) -> Unit,
-) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 16.dp)) {
-        items(values, key = { it }) { value ->
-            Card(modifier = Modifier.clickable { onSelect(value) }, shape = RoundedCornerShape(999.dp)) {
-                Text(
-                    text = value,
-                    modifier = Modifier
-                        .background(if (value == selected) Color(0xFFFF6B00) else MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    color = if (value == selected) Color(0xFF160A00) else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-        item { Spacer(modifier = Modifier.size(16.dp)) }
-    }
-}
-
-@Composable
-private fun SettingsCard(
-    title: String,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Composable
-private fun PolicyRow(
-    title: String,
-    selected: String,
-    options: List<String>,
-    onSelect: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { option ->
-                val icon = if (option == "wifi_only") Icons.Rounded.Wifi else Icons.Rounded.Sync
-                Card(modifier = Modifier.clickable { onSelect(option) }, shape = RoundedCornerShape(999.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .background(if (selected == option) Color(0xFFFF6B00) else MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(icon, contentDescription = null, tint = if (selected == option) Color(0xFF160A00) else MaterialTheme.colorScheme.onSurface)
-                        Text(option.replace('_', ' '), color = if (selected == option) Color(0xFF160A00) else MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun SourceContextCard(uiState: PlayerUiState) {
@@ -1282,33 +974,14 @@ private fun QueueSection(
                         },
                         trailingContent = {
                             Row {
-                                IconButton(onClick = { onMoveUp(index) }, enabled = index > 0) { Icon(Icons.Rounded.ArrowUpward, contentDescription = "Move up") }
-                                IconButton(onClick = { onMoveDown(index) }, enabled = index < queue.lastIndex) { Icon(Icons.Rounded.ArrowDownward, contentDescription = "Move down") }
-                                IconButton(onClick = { onRemove(index) }) { Icon(Icons.Rounded.Delete, contentDescription = "Remove from queue") }
+                                IconButton(onClick = { onMoveUp(index) }, enabled = index > 0) { Icon(Icons.Rounded.ArrowUpward, contentDescription = "Monter dans la file") }
+                                IconButton(onClick = { onMoveDown(index) }, enabled = index < queue.lastIndex) { Icon(Icons.Rounded.ArrowDownward, contentDescription = "Descendre dans la file") }
+                                IconButton(onClick = { onRemove(index) }) { Icon(Icons.Rounded.Delete, contentDescription = "Retirer de la file") }
                             }
                         },
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun EmptyStateSurface(
-    title: String,
-    message: String,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1336,7 +1009,7 @@ private fun playPlaylist(
     )
 }
 
-private fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
+fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
     id = trackId,
     artistId = null,
     albumId = null,

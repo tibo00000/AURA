@@ -78,5 +78,7 @@ Figer la composition visuelle des ecrans Android avant l'implementation detaille
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : composition `Home`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : composition `Search`
-- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `Library`, `Playlists` et surfaces secondaires
+- `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt` : composition `Settings`
+- `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : blocs partages de composition (`HeroIdentityCard`, `EmptyStateSurface`, `SectionTitle`, `FilterRow`, rails de navigation artiste/album)
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `Library`, `Playlists`, `Downloads`, `Artist`, `Album`, `Player`
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : articulation entre composition ecran et shell global

@@ -38,3 +38,15 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Fais un commit apres chaque fonctionnalite ou bug resolu.
 - Utilise des messages de commit clairs et descriptifs.
 - Demande toujours l'autorisation avant un `git push`.
+
+## Checklist operationnelle (agent)
+- Lire d'abord `BUILD.md` et identifier les items impactes (ID, dependances, docs canoniques).
+- Implementer une tranche verticale testable sans ouvrir trop de fronts en parallele.
+- Ne pas lancer Gradle; laisser l'utilisateur compiler et fournir les erreurs exactes si besoin.
+- Respecter les conventions Kotlin/Compose (null safety API externe, StateFlow immuable en public, cles stables, `derivedStateOf` si utile).
+- Ne jamais exposer de secret en dur; maintenir `local.properties`/`.env` et synchroniser `.env_example` si variable modifiee.
+- Si une regle, un contrat ou un schema evolue, mettre a jour d'abord la doc canonique dans `docs/`.
+- Reporter chaque changement significatif dans le `Journal des changements` de `BUILD.md` avec timestamp ISO 8601.
+- Mettre a jour le statut des items (`not_started`, `in_progress`, `blocked`, `completed`, `cancelled`) sans supprimer d'historique.
+- Verifier la coherence code <-> docs avant de marquer un item `completed`.
+- Committer avec un message clair, puis demander l'autorisation avant tout `git push`.

@@ -19,6 +19,31 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `online_only`
 - `disabled`
 
+### TrackRow - Menu Contextuel par Contexte
+Le menu contextuel du TrackRow varie selon son contexte d'utilisation :
+
+**Contexte Standard (Recherche, Accueil, Historique)**
+- Lire maintenant
+- Ajouter à la file d'attente
+- Ajouter à une playlist
+- Voir l'artiste
+- Voir l'album
+- Télécharger (si non-local)
+- Supprimer le téléchargement (si local)
+
+**Contexte Playlist (PlaylistDetailScreen)**
+- Lire maintenant
+- Ajouter à la file d'attente
+- Ajouter à une autre playlist
+- Voir l'artiste
+- Voir l'album
+- Retirer de cette playlist
+- Télécharger (si non-local)
+- Supprimer le téléchargement (si local)
+
+**Contexte Queue (PlayerScreen)**
+- Pas de menu contextuel (actions limitées à la suppression via drag-to-remove ou icon delete visible)
+
 ## PlayerQueueRow
 - `queued`
 - `dragging`
@@ -45,6 +70,7 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `loading_placeholder`
 - `empty_cover_fallback`
 - `disabled`
+- Mapping code : `AlbumCard` et `ArtistCard` sont portes par les items internes de `BrowseAlbumRail` et `BrowseArtistRail` ; `PlaylistCard` reste porte par les surfaces playlists.
 
 ## HeroResumeCard
 - `no_resume_data`
@@ -57,6 +83,7 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `empty_with_primary_action`
 - `empty_offline_constraint`
 - `empty_provider_failure_non_blocking`
+- Mapping code : `EmptyStateSurface`.
 
 ## PlayerHero
 - `loading_track`
@@ -75,3 +102,4 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : etats shell actuels du mini-player et des listes principales
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : source des etats player
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : etats de saisie, suggestions et recherche
+- `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : etats visuels partages (`EmptyStateSurface`, `BrowseAlbumRail`, `BrowseArtistRail`, `SectionTitle`, `FilterRow`)

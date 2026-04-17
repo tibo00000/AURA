@@ -53,7 +53,7 @@ fun SearchScreen(
         }
     }
 
-    RouteScaffold(title = "Search") {
+    RouteScaffold(title = "Recherche") {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -61,9 +61,9 @@ fun SearchScreen(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    label = { Text("Search locally now, online later") },
+                    label = { Text("Rechercher localement, en ligne plus tard") },
                     supportingText = {
-                        Text("Type at least 3 characters for local suggestions. Full hybrid search will come with AND-005.")
+                        Text("Tapez au moins 3 caractères pour obtenir des suggestions locales. La recherche hybride complète arrivera avec AND-005.")
                     },
                     singleLine = true,
                 )
@@ -81,7 +81,7 @@ fun SearchScreen(
                     },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 ) {
-                    Text("Validate local search")
+                    Text("Valider la recherche locale")
                 }
             }
             item {
@@ -89,13 +89,13 @@ fun SearchScreen(
                     onClick = onRequestAudioPermission,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 ) {
-                    Text("Refresh MediaStore access")
+                    Text("Actualiser l'accès au MediaStore")
                 }
             }
             item {
                 if (query.trim().length >= 3) {
                     TrackList(
-                        title = "Best local matches",
+                        title = "Meilleurs résultats locaux",
                         tracks = localResults.toList(),
                         contextType = "search_results",
                         onPlayTrackInList = { track, allTracks, contextType ->

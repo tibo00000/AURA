@@ -3,6 +3,19 @@
 ## Objectif
 Definir les composants visuels et interactifs reutilisables qui doivent porter la DA d'AURA de facon coherente.
 
+## Composants partages d'ecrans
+- Les composants de support multi-ecrans sont centralises dans `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`.
+- Ce fichier porte les briques reutilisables suivantes : `HeroIdentityCard`, `EmptyStateSurface`, `DownloadStateCard`, `FilterRow`, `SectionTitle`, `BrowseArtistRail`, `BrowseAlbumRail`.
+- Les ecrans qui reutilisent ces briques les consomment directement depuis le package `com.aura.music.ui.screens`.
+- Toute evolution structurelle de ces composants se documente ici avant duplication dans un ecran specifique.
+
+## Lexique canonique et mapping code
+- `AlbumCard` : composant unitaire de carte album. Implementation actuelle via les items internes de `BrowseAlbumRail` dans `ScreenSharedComponents.kt`.
+- `ArtistCard` : composant unitaire de carte artiste. Implementation actuelle via les items internes de `BrowseArtistRail` dans `ScreenSharedComponents.kt`.
+- `SectionHeader` : composant de separation de section. Mapping code direct vers `SectionTitle`.
+- `EmptyStateCard` : composant d'etat vide. Mapping code direct vers `EmptyStateSurface`.
+- `SegmentedTabs` : composant de filtre segment ecran. Implementation actuelle via `FilterRow` quand l'usage est un filtre horizontal.
+
 ## MiniPlayer
 - Role : lecteur persistant au-dessus de la navigation basse.
 - Structure :
@@ -64,6 +77,7 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - format carre ou quasi carre
   - coins arrondis affirmes
   - usage prefere en rail horizontal
+- Mapping code : le pattern de rail est porte par `BrowseAlbumRail`, la carte unitaire est l'item visuel interne.
 
 ## ArtistCard
 - Role : carte de navigation artiste.
@@ -74,6 +88,7 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
 - Style :
   - impact visuel plus fort qu'un album
   - image dominante pouvant etre ronde ou encadree selon le layout
+- Mapping code : le pattern de rail est porte par `BrowseArtistRail`, la carte unitaire est l'item visuel interne.
 
 ## PlaylistCard
 - Role : carte de navigation playlist.
@@ -122,6 +137,7 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - standard
   - accent orange
   - avec action secondaire
+- Mapping code : `SectionTitle`.
 
 ## HeroResumeCard
 - Role : carte de reprise sur `Home`.
@@ -140,10 +156,13 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
 - Regles :
   - le ton reste calme et premium
   - l'action principale reste explicite
+- Mapping code : `EmptyStateSurface`.
 
 ## Code Mapping
-- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell, composants top-level a faire converger
+- `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
 - `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : `SearchBar`, `SegmentedTabs`, variantes `TrackRow` Search
-- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `PlaylistCard`, `EmptyStateCard`, surfaces detail secondaires
+- `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : `HeroIdentityCard`, `EmptyStateSurface`, `DownloadStateCard`, `FilterRow`, `SectionTitle`, `BrowseAlbumRail`, `BrowseArtistRail`
+- `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt` : composition de `SettingsCard` et usage de `HeroIdentityCard` + `EmptyStateSurface`
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `PlaylistCard`, `PlayerHero`, `PlayerQueueRow`, surfaces detail secondaires

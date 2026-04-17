@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Pause
@@ -74,8 +75,8 @@ import com.aura.music.ui.screens.DownloadsScreen
 import com.aura.music.ui.screens.HomeScreen
 import com.aura.music.ui.screens.LibraryScreen
 import com.aura.music.ui.screens.PlayerScreen
-import com.aura.music.ui.screens.PlaylistDetailScreen
-import com.aura.music.ui.screens.PlaylistsScreen
+import com.aura.music.ui.screens.PlaylistDetailScreenNew
+import com.aura.music.ui.screens.PlaylistsListScreen
 import com.aura.music.ui.screens.SearchScreen
 import com.aura.music.ui.screens.SettingsScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
@@ -99,9 +100,9 @@ fun AuraApp() {
 
     val topDestinations = remember {
         listOf(
-            TopLevelDestination(AuraRoute.Home, "Home", Icons.Rounded.Home),
-            TopLevelDestination(AuraRoute.Search, "Search", Icons.Rounded.Search),
-            TopLevelDestination(AuraRoute.Library, "Library", Icons.Rounded.LibraryMusic),
+            TopLevelDestination(AuraRoute.Home, "Accueil", Icons.Rounded.Home),
+            TopLevelDestination(AuraRoute.Search, "Recherche", Icons.Rounded.Search),
+            TopLevelDestination(AuraRoute.Library, "Bibliothèque", Icons.Rounded.LibraryMusic),
             TopLevelDestination(AuraRoute.Settings, "Paramètres", Icons.Rounded.Settings)
         )
     }
@@ -193,14 +194,14 @@ fun AuraApp() {
                 )
             }
             composable(AuraRoute.Playlists) {
-                PlaylistsScreen(
+                PlaylistsListScreen(
                     repository = repository,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                 )
             }
             composable(AuraRoute.PlaylistDetailPattern) { backStackEntry ->
-                PlaylistDetailScreen(
+                PlaylistDetailScreenNew(
                     repository = repository,
                     playerViewModel = playerViewModel,
                     playlistId = backStackEntry.arguments?.getString(AuraRoute.PlaylistIdArg).orEmpty(),
@@ -351,7 +352,7 @@ private fun MiniPlayerCard(
                 )
             }
             IconButton(onClick = onPrevious) {
-                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous")
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Piste precedente")
             }
             IconButton(onClick = onTogglePlayPause) {
                 val icon = if (playerUiState.playbackState == PlaybackState.Playing) {
@@ -359,10 +360,10 @@ private fun MiniPlayerCard(
                 } else {
                     Icons.Rounded.PlayArrow
                 }
-                Icon(icon, contentDescription = "Toggle play/pause")
+                Icon(icon, contentDescription = "Lecture ou pause")
             }
             IconButton(onClick = onNext) {
-                Icon(Icons.Rounded.SkipNext, contentDescription = "Next")
+                Icon(Icons.Rounded.SkipNext, contentDescription = "Piste suivante")
             }
         }
     }
@@ -412,7 +413,11 @@ fun RouteScaffold(
                 navigationIcon = {
                     if (onNavigateBack != null) {
                         IconButton(onClick = onNavigateBack) {
-                            Text("Back", color = TextPrimary)
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Retour",
+                                tint = TextPrimary,
+                            )
                         }
                     }
                 },
@@ -497,7 +502,7 @@ fun TrackList(
                         )
                     },
                     leadingContent = {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Play ${track.title}")
+                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Lire ${track.title}")
                     },
                     modifier = Modifier.clickable { onPlayTrackInList(track, tracks, contextType) },
                 )

@@ -175,4 +175,5 @@ Figer la direction visuelle complete d'AURA avant la poursuite des ecrans produi
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : shell visuel global, mini-player shell et structure top-level actuelle
 - `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : premier point d'application des hero cards et de la hierarchie Home
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : premier point d'application de la SearchBar, des tabs et des resultats mixtes
-- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : surfaces secondaires a realigner apres validation de la DA complete
+- `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : composants transverses (`HeroIdentityCard`, `EmptyStateSurface`, `FilterRow`, `SectionTitle`, `BrowseAlbumRail`, `BrowseArtistRail`)
+- `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : surfaces secondaires et composition detaillee des ecrans Library/Playlists/Details
