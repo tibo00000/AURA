@@ -18,10 +18,12 @@ flowchart TD
     C --> D["Progress Block\nElapsed | Slider | Duration"]
     D --> E["Transport Controls\nShuffle | Previous | Play/Pause | Next | Repeat"]
     E --> F["Secondary Actions\nLike | Add to playlist | Optional more"]
-    F --> G["Source Context Card\nDepuis: Playlist X / Album Y / Lecture directe"]
-    G --> H["Priority Queue Header\nQueue (N) | Edit hint"]
-    H --> I["Queue Preview List\n1 to 3 visible rows\nDrag handle | Remove"]
-    I --> J["Bottom Safe Area"]
+    F --> G["Source Context Card (Compact)\nDepuis: Playlist X / Album Y"]
+    G --> H["Priority Queue Header\nFile d'attente prioritaire (N)"]
+    H --> I["Queue Preview List\nremove | drag"]
+    I --> J["Main Queue Header\nÀ suivre (N)"]
+    J --> K["Main Queue List\nUpcoming tracks from source"]
+    K --> L["Bottom Safe Area"]
 ```
 
 ## Coupe mobile approximative
@@ -42,12 +44,16 @@ flowchart TD
 |                                                  |
 |        Like        Add to playlist      ...      |
 |                                                  |
-|  Depuis: Playlist Chill Nuit                      |
+| [ Depuis: Playlist Chill Nuit                  ] |
 |                                                  |
-|  Queue (3)                                       |
-|  [#1] Song A                     drag     remove |
-|  [#2] Song B                     drag     remove |
-|  [#3] Song C                     drag     remove |
+|  File d'attente prioritaire (3)                  |
+|  [#1] Song A                     remove     drag |
+|  [#2] Song B                     remove     drag |
+|  [#3] Song C                     remove     drag |
+|                                                  |
+|  À suivre (45)                                   |
+|  [Note] Song D                                   |
+|  [Note] Song E                                   |
 |                                                  |
 +--------------------------------------------------+
 ```

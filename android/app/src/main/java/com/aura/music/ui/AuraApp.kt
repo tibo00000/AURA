@@ -4,6 +4,8 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -246,7 +248,13 @@ fun AuraApp() {
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
-            composable(AuraRoute.Player) {
+            composable(
+                route = AuraRoute.Player,
+                enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, animationSpec = tween(300)) },
+                exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Down, animationSpec = tween(300)) },
+                popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, animationSpec = tween(300)) },
+                popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Down, animationSpec = tween(300)) }
+            ) {
                 PlayerScreen(
                     playerViewModel = playerViewModel,
                     onNavigateBack = { navController.popBackStack() },
@@ -595,6 +603,6 @@ fun TrackListRow.toQueuedTrack(): QueuedTrack = QueuedTrack(
     albumTitle = albumTitle,
     contentUri = contentUri,
     durationMs = durationMs,
-    coverUri = null,
+    coverUri = coverUri,
     source = TrackSource.CONTEXT,
 )

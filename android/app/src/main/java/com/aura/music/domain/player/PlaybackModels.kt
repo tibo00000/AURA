@@ -45,6 +45,7 @@ data class QueuedTrack(
     val durationMs: Long?,
     val coverUri: String?,
     val source: TrackSource,
+    val internalId: String = java.util.UUID.randomUUID().toString()
 )
 
 /**
@@ -73,6 +74,7 @@ data class PlayerUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.Off,
     val priorityQueue: List<QueuedTrack> = emptyList(),
+    val mainQueueTracks: List<QueuedTrack> = emptyList(),
     val contextType: String? = null,
     val contextId: String? = null,
     val errorMessage: String? = null,

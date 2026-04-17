@@ -119,6 +119,8 @@ class PlaybackOrchestrator(
             is PlayerEvent.AddToQueue -> handleAddToQueue(event.track)
             is PlayerEvent.RemoveFromQueue -> handleRemoveFromQueue(event.index)
             is PlayerEvent.ReorderQueue -> handleReorderQueue(event.fromIndex, event.toIndex)
+            is PlayerEvent.RemoveFromMainQueue -> handleRemoveFromMainQueue(event.internalId)
+            is PlayerEvent.ReorderMainQueue -> handleReorderMainQueue(event.fromInternalId, event.toInternalId)
             is PlayerEvent.ToggleShuffle -> handleToggleShuffle()
             is PlayerEvent.CycleRepeatMode -> handleCycleRepeatMode()
             // ToggleLike est traite dans PlayerViewModel (persistance Room, pas ExoPlayer)
@@ -238,6 +240,16 @@ class PlaybackOrchestrator(
         syncUiState()
     }
 
+    private fun handleRemoveFromMainQueue(internalId: String) {
+        queueManager.removeUpcomingContextTrack(internalId)
+        syncUiState()
+    }
+
+    private fun handleReorderMainQueue(fromInternalId: String, toInternalId: String) {
+        queueManager.reorderUpcomingContextTrack(fromInternalId, toInternalId)
+        syncUiState()
+    }
+
     private fun handleToggleShuffle() {
         queueManager.toggleShuffle()
         syncUiState()
@@ -299,6 +311,7 @@ class PlaybackOrchestrator(
                 shuffleEnabled = queueState.shuffleEnabled,
                 repeatMode = queueState.repeatMode,
                 priorityQueue = queueState.priorityQueue,
+                mainQueueTracks = queueManager.getUpcomingContextTracks(),
                 contextType = queueState.context?.type,
                 contextId = queueState.context?.id,
                 errorMessage = ctrl?.playerError?.localizedMessage,

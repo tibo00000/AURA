@@ -201,7 +201,10 @@ class QueueManager {
     fun addToQueue(track: QueuedTrack) {
         _state.update { current ->
             current.copy(
-                priorityQueue = current.priorityQueue + track.copy(source = TrackSource.PRIORITY),
+                priorityQueue = current.priorityQueue + track.copy(
+                    source = TrackSource.PRIORITY,
+                    internalId = java.util.UUID.randomUUID().toString()
+                ),
             )
         }
     }
@@ -275,6 +278,84 @@ class QueueManager {
      */
     fun restoreModes(shuffleEnabled: Boolean, repeatMode: RepeatMode) {
         _state.update { it.copy(shuffleEnabled = shuffleEnabled, repeatMode = repeatMode) }
+    }
+
+    /**
+     * Retourne la vraie liste des pistes à venir du contexte, en respectant le mode shuffle.
+     */
+    fun getUpcomingContextTracks(): List<QueuedTrack> {
+        val state = _state.value
+        val ctx = state.context ?: return emptyList()
+        val shuffled = state.shuffledContextIndices
+        return if (shuffled != null) {
+            val currentIndex = shuffled.indexOf(ctx.currentIndex)
+            if (currentIndex >= 0 && currentIndex < shuffled.lastIndex) {
+                 shuffled.drop(currentIndex + 1).map { ctx.tracks[it] }
+            } else emptyList()
+        } else {
+            ctx.tracks.drop((ctx.currentIndex + 1).coerceAtLeast(0))
+        }
+    }
+
+    /**
+     * Retire une piste de la liste "À suivre", modifiant le contexte effectif ou le shuffle partiel.
+     */
+    fun removeUpcomingContextTrack(internalId: String) {
+        _state.update { current ->
+            val ctx = current.context ?: return@update current
+            val trackIndex = ctx.tracks.indexOfFirst { it.internalId == internalId }
+            if (trackIndex == -1 || trackIndex == ctx.currentIndex) return@update current
+            
+            val newTracks = ctx.tracks.toMutableList().apply { removeAt(trackIndex) }
+            val newCurrentIndex = if (trackIndex < ctx.currentIndex) ctx.currentIndex - 1 else ctx.currentIndex
+            
+            val newShuffled = current.shuffledContextIndices?.mapNotNull {
+                if (it == trackIndex) null
+                else if (it > trackIndex) it - 1
+                else it
+            }
+            
+            current.copy(
+                context = ctx.copy(tracks = newTracks, currentIndex = newCurrentIndex),
+                shuffledContextIndices = newShuffled
+            )
+        }
+    }
+
+    /**
+     * Réordonne la liste "À suivre". Si le shuffle est activé, seul l'ordre mélangé est réassemblé. 
+     */
+    fun reorderUpcomingContextTrack(fromInternalId: String, toInternalId: String) {
+        _state.update { current ->
+            val ctx = current.context ?: return@update current
+            if (current.shuffledContextIndices != null) {
+                // Shuffle is ON
+                val newShuffled = current.shuffledContextIndices.toMutableList()
+                val fromArrayIdx = ctx.tracks.indexOfFirst { it.internalId == fromInternalId }
+                val toArrayIdx = ctx.tracks.indexOfFirst { it.internalId == toInternalId }
+                
+                val fromShufflePos = newShuffled.indexOf(fromArrayIdx)
+                val toShufflePos = newShuffled.indexOf(toArrayIdx)
+                if (fromShufflePos != -1 && toShufflePos != -1) {
+                    newShuffled.add(toShufflePos, newShuffled.removeAt(fromShufflePos))
+                    return@update current.copy(shuffledContextIndices = newShuffled)
+                }
+            } else {
+                // Shuffle is OFF
+                val trackIndexFrom = ctx.tracks.indexOfFirst { it.internalId == fromInternalId }
+                val trackIndexTo = ctx.tracks.indexOfFirst { it.internalId == toInternalId }
+                if (trackIndexFrom == -1 || trackIndexTo == -1) return@update current
+                
+                val newTracks = ctx.tracks.toMutableList()
+                newTracks.add(trackIndexTo, newTracks.removeAt(trackIndexFrom))
+                
+                val currentTrackId = ctx.tracks[ctx.currentIndex].internalId
+                val newCurrentIndex = newTracks.indexOfFirst { it.internalId == currentTrackId }
+                
+                return@update current.copy(context = ctx.copy(tracks = newTracks, currentIndex = newCurrentIndex))
+            }
+            current
+        }
     }
 
     private fun resolveNextContextIndex(state: QueueState): Int? {

@@ -21,6 +21,8 @@ sealed interface PlayerEvent {
     data class AddToQueue(val track: QueuedTrack) : PlayerEvent
     data class RemoveFromQueue(val index: Int) : PlayerEvent
     data class ReorderQueue(val fromIndex: Int, val toIndex: Int) : PlayerEvent
+    data class RemoveFromMainQueue(val internalId: String) : PlayerEvent
+    data class ReorderMainQueue(val fromInternalId: String, val toInternalId: String) : PlayerEvent
     data object ToggleShuffle : PlayerEvent
     data object CycleRepeatMode : PlayerEvent
     data object ToggleLike : PlayerEvent
