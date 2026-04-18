@@ -6,7 +6,7 @@ services:
     container_name: aura-api
     restart: unless-stopped
     env_file:
-      - server/.env
+      - ../server/.env
     ports:
       - "8000:8000"
     healthcheck:
