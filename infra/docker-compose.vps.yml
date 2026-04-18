@@ -1,7 +1,7 @@
 services:
   aura-api:
     build:
-      context: .
+      context: ..
       dockerfile: infra/docker/server.Dockerfile
     container_name: aura-api
     restart: unless-stopped
