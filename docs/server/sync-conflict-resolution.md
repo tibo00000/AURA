@@ -20,6 +20,8 @@ Definir la strategie canonique de synchronisation entre le client Android et le 
 - Les entites derivables sont recalculees cote serveur plutot que fusionnees aveuglement.
 - Les entites server-authoritative ne sont pas modifiees directement par le client.
 - Une reponse de sync doit toujours renvoyer un resultat explicite : `applied`, `merged`, `conflict` ou `ignored_duplicate`.
+- `entity_id` est toujours une chaine opaque ; le client ne doit jamais en deduire une structure metier.
+- Les IDs locaux derives de `MediaStore` ou des slugs Android ne doivent pas etre promus comme IDs cloud de catalogue sans mapping serveur explicite.
 
 ## Entites server-authoritative
 Le client ne doit pas envoyer de mutation directe pour :
@@ -30,6 +32,11 @@ Le client ne doit pas envoyer de mutation directe pour :
 - `download_jobs` une fois qu'un job est cree cote serveur
 
 Ces entites sont enrichies par les providers, les workers ou la couche serveur.
+
+Regles d'identite :
+- le client ne doit jamais inventer l'`entity_id` d'un `artist`, `album`, `track` ou `track_source_link` ;
+- les IDs de catalogue online utilises dans la sync proviennent du backend ;
+- le client peut en revanche generer des IDs opaques stables pour les entites user-scoped comme `playlist`, `playlist_item`, `history_item`, `listening_session` et `playback_event`.
 
 ## Enveloppe canonique de mutation
 ```json

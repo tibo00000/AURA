@@ -99,7 +99,7 @@ Resultat attendu :
 
 ### Phase 3 - Recherche hybride et UX complete
 Objectif :
-- finaliser la couche produit visible cote Android
+- finaliser la couche produit visible cote Android en verrouillant l'identite online et la fusion local + backend
 
 Priorite :
 - `SRV-002`
@@ -107,6 +107,7 @@ Priorite :
 
 Resultat attendu :
 - recherche online disponible cote backend
+- identifiants AURA backend opaques et politique de matching local/provider clarifies dans les contrats
 - fusion local + online cote Android
 - parcours `Search`, `Artist` et `Album` exploitables de bout en bout
 
@@ -121,6 +122,7 @@ Priorite :
 
 Resultat attendu :
 - stockage cloud fonctionnel
+- schema Postgres coherent avec des IDs AURA `TEXT` et UUID reserves au profil auth
 - routes resource-oriented `/me/...` disponibles
 - transport batch de sync `bootstrap`, `push-batch`, `pull-batch` implementable
 
@@ -154,6 +156,7 @@ Resultat attendu :
 - ne pas commencer par `Qdrant` avant la recherche online et le modele cloud
 - ne pas figer le telechargement autour d'une source reelle tant que la strategie produit n'est pas arretee
 - ne pas ajouter d'etat UI ephemere dans les schemas de persistance
+- ne pas reutiliser un ID local derive de `MediaStore` comme identifiant canonique backend sans mapping explicite
 
 ## Code Work Board
 
@@ -164,7 +167,7 @@ Resultat attendu :
 | AND-002 | android | Mettre en place la navigation Compose et le shell applicatif | completed | AND-001 | `docs/android/navigation.md`, `docs/product/navigation.md` | graphe principal, surfaces detail et mini-player shell poses |
 | AND-003 | android | Implementer la couche locale `Room` et l'integration `MediaStore` | completed | AND-001 | `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/android/room-relationships.md` | base Room, import local MediaStore et settings par defaut poses |
 | AND-004 | android | Implementer le moteur player Media3 et les regles de queue | completed | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | priority queue en memoire, PlaybackService + QueueManager + Orchestrator + PlayerViewModel poses, ecran Player minimal fonctionnel |
-| AND-005 | android | Implementer l'ecran `Search` avec orchestration local + online | not_started | AND-002, AND-003 | `docs/android/screens/search.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md` | fusion faite cote Android |
+| AND-005 | android | Implementer l'ecran `Search` avec orchestration local + online | not_started | AND-002, AND-003, SRV-002 | `docs/android/screens/search.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md` | ecran actuel encore local-only placeholder ; branchement hybride apres IDs backend et matching clarifies |
 | AND-006 | android | Implementer la gestion des playlists locales et leur UI | completed | AND-002, AND-003 | `docs/android/screens/playlists.md`, `docs/product/user-flows.md` | create, rename, delete, add local track, remove, reorder et lecture contexte playlist poses |
 | AND-007 | android | Implementer les ecrans `Artist`, `Album`, `Home`, `Library`, `Downloads`, `Settings`, `Player` complet et refonte UI Playlists | in_progress | AND-002, AND-003, AND-004 | `docs/android/screens/artist.md`, `docs/android/screens/album.md`, `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md`, `docs/android/screens/player.md`, `docs/android/screens/player-layout.md`, `docs/android/screens/playlists-layout.md` | surfaces Android enrichies avec design system, verification Gradle laissee a l'utilisateur selon AGENTS.md |
 | AND-008 | android | Coder le Theme.kt (police Outfit, Couleurs) et l'appliquer au shell, Home et Library | completed | DOC-006 | `docs/android/screens/home-layout.md`, `docs/android/screens/library-layout.md`, `docs/android/ui/design-system.md` | Theme.kt, Color.kt, Type.kt poses avec police Outfit. Applique a AuraApp (NavBar 4 onglets), HomeScreen et LibraryScreen. RouteScaffold enrichi (actions, style). Recherche locale filtree artistes/albums ajoutee. |
@@ -173,10 +176,10 @@ Resultat attendu :
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
 | SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | completed | none | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | base HTTP, config et `/health` poses |
-| SRV-002 | backend | Implementer les endpoints online publics `health`, `search`, `artist`, `album` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | online only |
+| SRV-002 | backend | Implementer les endpoints online publics `health`, `search`, `artist`, `album` | not_started | SRV-001, DOC-007 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md`, `docs/server/database-postgres.md` | commencer par l'enveloppe JSON canonique, les IDs backend opaques et le mapping provider |
 | SRV-003 | backend | Implementer les endpoints de sync cloud optionnelle `/me/...` | not_started | SRV-001 | `docs/server/api-contract.md`, `docs/server/database-postgres.md` | sync user-scoped |
 | SRV-007 | backend | Implementer les endpoints batch `bootstrap`, `push-batch`, `pull-batch` pour la sync | not_started | SRV-001, SRV-004 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md` | transport canonique de sync |
-| SRV-004 | backend | Implementer les tables et acces `Supabase / Postgres` | not_started | SRV-001 | `docs/server/database-postgres.md`, `docs/server/postgres-relationships.md` | modele cloud |
+| SRV-004 | backend | Implementer les tables et acces `Supabase / Postgres` | not_started | SRV-001, DOC-007 | `docs/server/database-postgres.md`, `docs/server/postgres-relationships.md` | modele cloud avec IDs AURA en `TEXT`; UUID reserves a `profiles` et `user_id` |
 | SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
 | SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | not_started | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | source de download encore opaque |
 
@@ -197,8 +200,10 @@ Resultat attendu :
 | DOC-004 | docs | Ajouter les diagrammes ER et les flux API orientes sync | completed | DOC-003 | `docs/domain/data-relationships.md`, `docs/android/room-relationships.md`, `docs/server/postgres-relationships.md`, `docs/server/api-sync-flows.md` | vues transverses disponibles |
 | DOC-005 | docs | Consolider la DA complete et la strategie online backend-only | completed | DOC-002, DOC-003 | `docs/android/ui/*`, `docs/adrs/006-online-search-backend-only.md`, `docs/ops/hosting-strategy.md` | DA complete, backend-only search et hebergement always-on documentes |
 | DOC-006 | docs | Generer et valider les schemas de layouts (-layout.md) ecran par ecran | in_progress | DOC-005 | `docs/android/screens/*-layout.md` | home-layout et library-layout valides et implementes. Reste : search, player, downloads, artist, album |
+| DOC-007 | docs | Fixer la strategie d'identite entre `MediaStore`, IDs AURA backend et mappings provider | completed | DOC-003 | `docs/domain/entities.md`, `docs/android/room-schema.md`, `docs/server/api-contract.md`, `docs/server/database-postgres.md`, `docs/server/sync-conflict-resolution.md` | IDs API opaques en `TEXT`, IDs locaux non promus au cloud, matching via mappings |
 
 ## Journal des changements
+- 2026-04-18T17:38:42+02:00 | docs, schema, decision | `docs/domain/entities.md`, `docs/android/room-schema.md`, `docs/server/api-contract.md`, `docs/server/database-postgres.md`, `docs/server/sync-conflict-resolution.md`, `BUILD.md` | clarification de la strategie d'identite AURA : IDs backend opaques en `TEXT`, IDs locaux `MediaStore` gardes cote Android, matching local/online via mappings avant implementation de `SRV-002` et `SRV-004`.
 - 2026-04-18T15:30:00+02:00 | code, docs | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `docs/android/screens/album-layout.md`, `docs/android/ui/component-states.md`, `BUILD.md` | AND-007 milestone : refactorisation complete du menu contextuel TrackRow avec variantes par contexte (standard/playlist/favorites), artiste cliquable dans AlbumScreen, test button recherche avec album reel au lieu d'ID fictif, suppression bouton Artist et titre Tracklist.
 - 2026-04-17T22:59:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlayerEvent.kt`, `docs/android/screens/player-layout.md`, `BUILD.md` | AND-007 milestones : intégration de burnoutcrew.composereorderable pour supporter le drag and drop complet et indépendant sur la Priority Queue locale et la Main Queue (À suivre). Résolution des bugs de duplication d'ID internes et décalage d'offset lié à "spacedBy".
 - 2026-04-17T20:15:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt`, `docs/android/screens/favorites-layout.md`, `docs/android/screens/playlists-layout.md`, `BUILD.md` | AND-007 milestones : implémentation de la vue Favoris (layout canonique et listage depuis la database). Refonte du design des listes de lecture TrackRow pour intégrer les covers d'album en remplacement de l'icône statique Play/Favorite, grâce à l'apport de `io.coil-kt:coil-compose` et à l'extraction de l'URI d'album de l'API MediaStore interne.

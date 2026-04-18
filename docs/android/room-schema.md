@@ -35,6 +35,12 @@ Le slug est produit par la fonction `normalize` : lowercase, remplacement des ca
 
 Les FK (`primary_artist_id`, `album_id`, `track_id`, etc.) referencent directement ces PK.
 
+Regles importantes :
+- ces conventions s'appliquent au catalogue local stocke dans `Room` a partir de `MediaStore` et des actions locales utilisateur ;
+- elles garantissent une stabilite locale raisonnable sur un appareil, mais ne definissent pas a elles seules l'identite cloud d'une entite online ;
+- le client ne doit jamais supposer qu'un `track:local:*`, `artist:*` ou `album:*` local correspond directement a un identifiant backend ;
+- la reconciliation local <-> online se fait par matching sur les metadonnees puis par persistance de mappings dedies, en priorite via `track_source_links`.
+
 ## Tables
 
 ### `artists`

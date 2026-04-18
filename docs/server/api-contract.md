@@ -62,6 +62,10 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 ### Identifiants
 - Tous les identifiants exposes par l'API sont des chaines opaques.
 - Un identifiant renvoye dans `data` doit pouvoir etre reutilise tel quel par le client.
+- Les routes online publiques renvoient des identifiants AURA backend pour `tracks`, `albums` et `artists`, et non des identifiants provider natifs.
+- Les identifiants derives de `MediaStore` (`track:local:*`) ou des slugs `Room` locaux ne doivent pas etre envoyes aux routes online publiques comme s'ils etaient canoniques cote backend.
+- La fusion entre un resultat online et une entite deja presente localement se fait par matching de metadonnees et mappings persistants, pas par egalite d'ID.
+- Les identifiants provider (`provider_track_id`, `provider_album_id`, `provider_artist_id`) restent encapsules derriere le backend ou les tables de mapping.
 
 ### Timestamps
 - Tous les timestamps HTTP sont en ISO 8601 UTC.
@@ -211,12 +215,14 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - Regles :
   - cette route ne renvoie que la partie online ou enrichie
   - la fusion avec le local reste cote Android
+  - les `id` renvoyes dans `best_match`, `tracks`, `artists` et `albums` sont des identifiants backend a reutiliser pour les routes online suivantes
+  - cette route ne tente pas d'exposer ni de normaliser les identifiants `MediaStore` du device
 
 ### `GET /artists/{id}`
 - Usage : recuperer la vue detail online d'un artiste deja resolu dans le modele AURA.
 - Auth : non requise.
 - Path params :
-  - `id` identifiant AURA artiste
+  - `id` identifiant AURA backend d'artiste, typiquement recu depuis `GET /search`
 - Body : aucun.
 - Reponse `data` :
 ```json
@@ -232,12 +238,14 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - Erreurs attendues :
   - `not_found`
   - `provider_unavailable`
+- Regle :
+  - cette route n'accepte pas un identifiant `artist:{slug}` local Android comme preuve d'identite online sans mapping backend prealable
 
 ### `GET /albums/{id}`
 - Usage : recuperer la vue detail online d'un album deja resolu dans le modele AURA.
 - Auth : non requise.
 - Path params :
-  - `id` identifiant AURA album
+  - `id` identifiant AURA backend d'album, typiquement recu depuis `GET /search`
 - Body : aucun.
 - Reponse `data` :
 ```json
@@ -254,6 +262,8 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - Erreurs attendues :
   - `not_found`
   - `provider_unavailable`
+- Regle :
+  - cette route n'accepte pas un identifiant `album:{slug_artiste}:{slug_album}` local Android comme preuve d'identite online sans mapping backend prealable
 
 ## API sync cloud optionnelle
 

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
+    deezer_api_base_url: str = "https://api.deezer.com"
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(
