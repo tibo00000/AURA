@@ -197,10 +197,13 @@ fun PlaylistDetailScreenNew(
                     items(detail.tracks, key = { it.playlistItemId }) { track ->
                         PlaylistTrackRowItem(
                             track = track,
+                            playlistId = detail.summary.id,
+                            repository = repository,
                             onPlayTrack = {
                                 val tracks = detail.tracks.map { it.toTrackListRow() }
                                 playPlaylist(playerViewModel, tracks, false, detail.summary.id, track.trackId)
                             },
+                            onRefresh = { refreshTick++ },
                         )
                     }
                 }
@@ -246,19 +249,35 @@ fun PlaylistDetailScreenNew(
 @Composable
 private fun PlaylistTrackRowItem(
     track: PlaylistTrackRow,
+    playlistId: String,
+    repository: LocalLibraryRepository,
     onPlayTrack: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "Artiste inconnu",
         onClick = onPlayTrack,
         coverUri = track.coverUri,
-        trailingIcon = {
-            IconButton(onClick = { /* context menu v2 */ }) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "Menu", tint = TextSecondary)
+        contextType = "playlist",
+        onRemoveFromPlaylist = {
+            scope.launch {
+                repository.removeTrackFromPlaylist(playlistId, track.playlistItemId)
+                onRefresh()
             }
         },
+        onAddToPlaylist = {
+            showAddToPlaylistDialog = true
+        },
     )
+
+    if (showAddToPlaylistDialog) {
+        // TODO: Implémenter le dialog pour ajouter à une autre playlist
+        showAddToPlaylistDialog = false
+    }
 }
 
 private fun playPlaylist(

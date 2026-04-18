@@ -263,6 +263,14 @@ class LocalLibraryRepository(
         )
     }
 
+    suspend fun getTracksForAlbumByText(albumTitle: String, artistName: String): List<TrackListRow> = withContext(Dispatchers.IO) {
+        database.trackDao().getTracksForAlbumByText(albumTitle, artistName)
+    }
+
+    suspend fun getAlbumByTitleAndArtist(title: String, artistName: String): AlbumBrowseRow? = withContext(Dispatchers.IO) {
+        database.albumDao().getAlbumByTitleAndArtist(title, artistName)
+    }
+
     suspend fun getPlaylistDetail(playlistId: String): PlaylistDetail? =
         withContext(Dispatchers.IO) {
             val summary = database.playlistDao().getPlaylistDetail(playlistId) ?: return@withContext null

@@ -147,6 +147,24 @@ interface AlbumDao {
         """,
     )
     suspend fun getAlbumDetail(albumId: String): AlbumDetailRow?
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        WHERE lower(albums.title) = lower(:title) AND lower(artists.name) = lower(:artistName)
+        GROUP BY albums.id
+        LIMIT 1
+        """
+    )
+    suspend fun getAlbumByTitleAndArtist(title: String, artistName: String): AlbumBrowseRow?
 }
 
 @Dao
@@ -288,6 +306,28 @@ interface TrackDao {
         """,
     )
     suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE lower(tracks.display_album_title) = lower(:albumTitle)
+          AND lower(tracks.display_artist_name) = lower(:artistName)
+        ORDER BY tracks.title ASC, tracks.updated_at DESC
+        """
+    )
+    suspend fun getTracksForAlbumByText(albumTitle: String, artistName: String): List<TrackListRow>
 
     @Query(
         """

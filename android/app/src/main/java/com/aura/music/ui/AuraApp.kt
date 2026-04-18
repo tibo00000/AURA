@@ -494,16 +494,21 @@ fun TrackList(
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    showCover: Boolean = true,
+    onAddTrackToPlaylist: ((TrackListRow) -> Unit)? = null,
+    onLikeTrack: ((TrackListRow) -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        if (title.isNotBlank()) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         if (tracks.isEmpty()) {
             Text(
                 text = "No local tracks found yet.",
@@ -512,19 +517,14 @@ fun TrackList(
             )
         } else {
             tracks.forEach { track ->
-                ListItem(
-                    headlineContent = { Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = {
-                        Text(
-                            text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    leadingContent = {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Lire ${track.title}")
-                    },
-                    modifier = Modifier.clickable { onPlayTrackInList(track, tracks, contextType) },
+                com.aura.music.ui.screens.SharedTrackRowItem(
+                    title = track.title,
+                    subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                    coverUri = track.coverUri,
+                    showCover = showCover,
+                    onClick = { onPlayTrackInList(track, tracks, contextType) },
+                    onAddToPlaylist = onAddTrackToPlaylist?.let { { it(track) } },
+                    onLike = onLikeTrack?.let { { it(track) } },
                 )
             }
         }

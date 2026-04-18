@@ -19,40 +19,84 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `online_only`
 - `disabled`
 
-### TrackRow - Menu Contextuel par Contexte
-Le menu contextuel du TrackRow varie selon son contexte d'utilisation :
+### TrackRow - Architecture du Menu Contextuel
+Le menu contextuel du `TrackRow` est géré via le paramètre `contextType` de `SharedTrackRowItem`. **Aucun `trailingIcon` custom ne doit être passé** - laisser le menu contextuel par défaut gérer tous les cas.
 
-**Contexte Standard (Recherche, Accueil, Historique)**
-- Lire maintenant
-- Ajouter à la file d'attente
-- Ajouter à une playlist
-- Voir l'artiste
-- Voir l'album
-- Télécharger (si non-local)
-- Supprimer le téléchargement (si local)
+**Paramètres de SharedTrackRowItem** :
+```kotlin
+fun SharedTrackRowItem(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    contextType: String = "standard",  // "album", "playlist", "favorites", "standard"
+    onAddToPlaylist: (() -> Unit)? = null,
+    onLike: (() -> Unit)? = null,
+    onUnlike: (() -> Unit)? = null,
+    onRemoveFromPlaylist: (() -> Unit)? = null,
+    onMore: (() -> Unit)? = null,
+    // ... autres paramètres
+)
+```
 
-**Contexte Playlist (PlaylistDetailScreen)**
-- Lire maintenant
-- Ajouter à la file d'attente
-- Ajouter à une autre playlist
-- Voir l'artiste
-- Voir l'album
-- Retirer de cette playlist
-- Télécharger (si non-local)
-- Supprimer le téléchargement (si local)
+### Contextes et Actions Correspondantes
 
-**Contexte Favoris (FavoritesScreen)**
-- Lire maintenant
-- Ajouter à la file d'attente
-- Ajouter à une playlist
-- Voir l'artiste
-- Voir l'album
-- Retirer des favoris (unlike)
-- Télécharger (si non-local)
-- Supprimer le téléchargement (si local)
+**Contexte Standard** (`contextType = "standard"` ou défaut)
+- Utilisé par : Search, Home, Album, Library
+- Actions affichées :
+  - "Ajouter à une playlist" (si `onAddToPlaylist` fourni)
+  - "Ajouter aux favoris" (si `onLike` fourni)
+  - "Plus" (si `onMore` fourni)
 
-**Contexte Queue (PlayerScreen)**
-- Pas de menu contextuel (actions limitées à la suppression via drag-to-remove ou icon delete visible)
+```kotlin
+SharedTrackRowItem(
+    title = track.title,
+    subtitle = track.artistName,
+    onClick = { playTrack() },
+    contextType = "standard",
+    onAddToPlaylist = { /* ... */ },
+    onLike = { /* ... */ },
+)
+```
+
+**Contexte Playlist** (`contextType = "playlist"`)
+- Utilisé par : PlaylistDetailScreen
+- Actions affichées :
+  - "Retirer de cette playlist" (si `onRemoveFromPlaylist` fourni)
+  - "Ajouter à une autre playlist" (si `onAddToPlaylist` fourni)
+
+```kotlin
+SharedTrackRowItem(
+    title = track.title,
+    subtitle = track.artistName,
+    onClick = { playTrack() },
+    contextType = "playlist",
+    onRemoveFromPlaylist = { repository.removeTrackFromPlaylist(...) },
+    onAddToPlaylist = { /* ouvrir dialog */ },
+)
+```
+
+**Contexte Favoris** (`contextType = "favorites"`)
+- Utilisé par : FavoritesScreen
+- Actions affichées :
+  - "Retirer des favoris" (si `onUnlike` fourni)
+  - "Ajouter à une playlist" (si `onAddToPlaylist` fourni)
+
+```kotlin
+SharedTrackRowItem(
+    title = track.title,
+    subtitle = track.artistName,
+    onClick = { playTrack() },
+    contextType = "favorites",
+    onUnlike = { repository.unlikeTrack(...) },
+    onAddToPlaylist = { /* ... */ },
+)
+```
+
+### Règles d'Implémentation
+1. **Ne jamais passer `trailingIcon`** - laisser le menu par défaut gérer tous les cas
+2. **Toujours fournir `contextType`** pour que le menu affiche les actions appropriées
+3. **Passer les callbacks correspondant au contexte** - le menu ne les affiche que s'ils sont non-null
+4. **Code Mapping** : `SharedTrackRowItem` dans `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`
 
 ## PlayerQueueRow
 - `queued`
@@ -112,4 +156,5 @@ Le menu contextuel du TrackRow varie selon son contexte d'utilisation :
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : etats shell actuels du mini-player et des listes principales
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : source des etats player
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : etats de saisie, suggestions et recherche
-- `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : etats visuels partages (`EmptyStateSurface`, `BrowseAlbumRail`, `BrowseArtistRail`, `SectionTitle`, `FilterRow`)
+- `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : etats visuels partages (`EmptyStateSurface`, `BrowseAlbumRail`, `BrowseArtistRail`, `SectionTitle`, `FilterRow`, `SharedTrackRowItem` avec menus contextuels)
+- `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt` : implémentation du contexte playlist avec menu "Retirer de playlist"

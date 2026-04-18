@@ -74,12 +74,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
@@ -709,15 +712,70 @@ fun AlbumRouteScreen(
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                HeroIdentityCard(
-                    title = album.summary.title,
-                    subtitle = listOfNotNull(
-                        album.summary.artistName,
-                        album.summary.trackCount?.let { "$it piste(s)" },
-                        album.summary.releaseDate,
-                    ).joinToString(" | "),
-                    gradient = Brush.linearGradient(listOf(Color(0xFF00E0FF), Color(0xFF101010))),
-                )
+                // Hero Cover
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (album.summary.coverUri != null) {
+                        AsyncImage(
+                            model = album.summary.coverUri,
+                            contentDescription = "Cover for ${album.summary.title}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(280.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(280.dp)
+                                .background(
+                                    Brush.linearGradient(listOf(Color(0xFF00E0FF), Color(0xFF101010))),
+                                    RoundedCornerShape(24.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.MusicNote, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.White.copy(alpha = 0.5f))
+                        }
+                    }
+                    
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = album.summary.title,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+                        // Nom de l'artiste cliquable
+                        if (album.summary.artistId != null && album.summary.artistName != null) {
+                            Text(
+                                text = album.summary.artistName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .clickable { onOpenArtist(album.summary.artistId) }
+                                    .padding(4.dp)
+                            )
+                        } else {
+                            Text(
+                                text = album.summary.artistName ?: "Unknown Artist",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = listOfNotNull(
+                                album.summary.trackCount?.let { "$it piste(s)" },
+                                album.summary.releaseDate,
+                            ).joinToString(" • "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
             item {
                 Row(modifier = Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -735,19 +793,17 @@ fun AlbumRouteScreen(
                         },
                         enabled = album.tracks.isNotEmpty(),
                     ) { Text("Shuffle") }
-                    if (album.summary.artistId != null) {
-                        Button(onClick = { onOpenArtist(album.summary.artistId) }) { Text("Artist") }
-                    }
                 }
             }
             item {
                 TrackList(
-                    title = "Tracklist",
+                    title = "",
                     tracks = album.tracks,
                     contextType = "album",
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenArtist = onOpenArtist,
                     onOpenAlbum = { },
+                    showCover = false,
                 )
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }

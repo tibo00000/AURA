@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -40,6 +41,12 @@ fun SearchScreen(
     val recentQueries = remember { mutableStateListOf<String>() }
     val localResults = remember { mutableStateListOf<TrackListRow>() }
     val scope = rememberCoroutineScope()
+
+    // Récupérer le premier album pour le bouton de test
+    val firstAlbumState = produceState<String?>(initialValue = null, repository) {
+        val albums = repository.getBrowseAlbums(limit = 1)
+        value = albums.firstOrNull()?.id
+    }
 
     LaunchedEffect(repository, refreshToken) {
         recentQueries.clear()
@@ -82,6 +89,25 @@ fun SearchScreen(
                     modifier = Modifier.padding(horizontal = 16.dp),
                 ) {
                     Text("Valider la recherche locale")
+                }
+            }
+            item {
+                val firstAlbumId = firstAlbumState.value
+                Button(
+                    onClick = {
+                        if (firstAlbumId != null) {
+                            onOpenAlbum(firstAlbumId)
+                        }
+                    },
+                    enabled = firstAlbumId != null,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                ) {
+                    Text(
+                        if (firstAlbumId != null)
+                            "Ouvrir l'écran Album (Bouton Test)"
+                        else
+                            "Aucun album disponible"
+                    )
                 }
             }
             item {
