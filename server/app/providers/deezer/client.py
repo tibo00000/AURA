@@ -128,6 +128,36 @@ class DeezerClient:
         except httpx.NetworkError as e:
             raise DeezerNetworkError(f"Deezer network error: {e}") from e
 
+    async def get_artist_albums(
+        self,
+        artist_id: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get albums for artist from Deezer.
+
+        Args:
+            artist_id: Deezer artist ID
+            limit: Maximum results
+
+        Returns:
+            List of album objects
+
+        Raises:
+            DeezerError subclasses
+        """
+        url = f"{self.base_url}/artist/{artist_id}/albums"
+        params = {"limit": limit}
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, params=params, timeout=self.timeout)
+                data = self._handle_response(resp)
+                return data.get("data", [])
+        except httpx.TimeoutException as e:
+            raise DeezerTimeout(f"Deezer get artist albums timeout: {e}") from e
+        except httpx.NetworkError as e:
+            raise DeezerNetworkError(f"Deezer network error: {e}") from e
+
     async def get_album(self, album_id: str) -> Dict[str, Any]:
         """
         Get album details from Deezer.

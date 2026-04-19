@@ -1,29 +1,26 @@
-"""
-Album endpoints for AURA API.
+"""Album endpoints for AURA API."""
 
-GET /albums/{id}
-"""
-
-from fastapi import APIRouter, HTTPException, Path
 from typing import Optional
 
-from ...schemas.responses import ResponseEnvelope, AlbumDetailsResponse, AlbumResponse, TrackResponse, ArtistResponse, ErrorDetails
-from ...services.album_service import AlbumService
-from ...services.exceptions import NotFound, ProviderUnavailable
+from fastapi import APIRouter, Path
+from fastapi.responses import JSONResponse
+
+from ...config import get_settings
+from ...core.aura_id_codec import build_aura_id
 from ...providers.deezer.adapter import DeezerAdapter
 from ...providers.deezer.client import DeezerClient
-from ...config import get_settings
+from ...schemas.responses import AlbumDetailsResponse, ErrorDetails, ResponseEnvelope, TrackSummaryResponse
+from ...services.album_service import AlbumService
+from ...services.exceptions import NotFound, ProviderUnavailable
 
 router = APIRouter(tags=["albums"], prefix="/albums")
 
-# Initialize services
 _client: Optional[DeezerClient] = None
 _adapter: Optional[DeezerAdapter] = None
 _album_service: Optional[AlbumService] = None
 
 
 def _get_album_service() -> AlbumService:
-    """Lazy-load album service (dependency injection)."""
     global _album_service, _adapter, _client
     if _album_service is None:
         settings = get_settings()
@@ -33,57 +30,54 @@ def _get_album_service() -> AlbumService:
     return _album_service
 
 
+def _to_track_summary(track) -> TrackSummaryResponse:
+    return TrackSummaryResponse(
+        id=build_aura_id("track", track.provider_name, track.provider_id),
+        title=track.display_title,
+        display_artist_name=track.artist.display_name if track.artist else "Unknown Artist",
+        display_album_title=track.album.display_title if track.album else None,
+        duration_ms=track.duration_ms,
+        cover_uri=(track.album.metadata.get("cover_medium") or track.album.metadata.get("cover")) if track.album else None,
+        is_explicit=bool(track.metadata.get("explicit_lyrics")) if track.metadata.get("explicit_lyrics") is not None else None,
+    )
+
+
 @router.get("/{id}", response_model=ResponseEnvelope[AlbumDetailsResponse])
 async def get_album(
-    id: str = Path(..., description="AURA or provider album ID"),
-) -> ResponseEnvelope[AlbumDetailsResponse]:
-    """
-    Get album details and tracks.
-    
-    Path parameters:
-    - id: Album ID (AURA or provider ID)
-    """
+    id: str = Path(..., description="AURA album ID from GET /search"),
+) -> ResponseEnvelope[AlbumDetailsResponse] | JSONResponse:
     try:
         service = _get_album_service()
         album, tracks = await service.get_album_details(id)
-        
-        # Transform to response schemas
-        track_responses = [
-            TrackResponse(
-                id=t.provider_id,
-                title=t.display_title,
-                album=AlbumResponse(
-                    id=t.album.provider_id,
-                    title=t.album.display_title,
-                ) if t.album else None,
-                artist=ArtistResponse(
-                    id=t.artist.provider_id,
-                    name=t.artist.display_name,
-                ) if t.artist else None,
-                duration_ms=t.duration_ms,
-            )
-            for t in tracks
-        ]
-        
-        album_response = AlbumResponse(
-            id=album.provider_id,
+
+        track_count = album.metadata.get("nb_tracks")
+        if track_count is not None:
+            try:
+                track_count = int(track_count)
+            except (TypeError, ValueError):
+                track_count = None
+
+        response = AlbumDetailsResponse(
+            id=build_aura_id("album", album.provider_name, album.provider_id),
             title=album.display_title,
-            artist=ArtistResponse(
-                id=album.artist.provider_id,
-                name=album.artist.display_name,
-            ) if album.artist else None,
+            primary_artist_name=album.artist.display_name if album.artist else "Unknown Artist",
+            cover_uri=album.metadata.get("cover_medium") or album.metadata.get("cover"),
+            release_date=album.metadata.get("release_date"),
+            track_count=track_count if track_count is not None else len(tracks),
+            tracks=[_to_track_summary(track) for track in tracks],
         )
-        
-        details_response = AlbumDetailsResponse(
-            album=album_response,
-            tracks=track_responses,
+        return ResponseEnvelope(data=response)
+    except NotFound as exc:
+        return JSONResponse(
+            status_code=404,
+            content=ResponseEnvelope(
+                error=ErrorDetails(code="not_found", message=str(exc), retryable=False),
+            ).model_dump(mode="json"),
         )
-        
-        return ResponseEnvelope(data=details_response)
-    
-    except NotFound as e:
-        error = ErrorDetails(code="not_found", message=str(e), retryable=False)
-        raise HTTPException(status_code=404, detail={"error": error})
-    except ProviderUnavailable as e:
-        error = ErrorDetails(code="provider_unavailable", message=str(e), retryable=True)
-        raise HTTPException(status_code=503, detail={"error": error})
+    except ProviderUnavailable as exc:
+        return JSONResponse(
+            status_code=503,
+            content=ResponseEnvelope(
+                error=ErrorDetails(code="provider_unavailable", message=str(exc), retryable=True),
+            ).model_dump(mode="json"),
+        )

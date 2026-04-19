@@ -91,7 +91,7 @@ class DeezerAdapter:
 
         return result
 
-    async def get_artist(self, artist_id: str) -> tuple[ProviderArtist, List[ProviderTrack]]:
+    async def get_artist(self, artist_id: str) -> tuple[ProviderArtist, List[ProviderTrack], List[ProviderAlbum]]:
         """
         Get artist details and top tracks.
         
@@ -107,6 +107,7 @@ class DeezerAdapter:
         try:
             artist_data = await self.client.get_artist(artist_id)
             top_tracks_data = await self.client.get_artist_top_tracks(artist_id)
+            albums_data = await self.client.get_artist_albums(artist_id)
         except DeezerError as e:
             logger.error(f"Deezer get artist error: {e}")
             raise
@@ -121,7 +122,16 @@ class DeezerAdapter:
                 logger.warning(f"Failed to parse track: {e}")
                 continue
 
-        return artist, tracks
+        albums = []
+        for album_data in albums_data:
+            try:
+                album = self._parse_album(album_data)
+                albums.append(album)
+            except Exception as e:
+                logger.warning(f"Failed to parse album: {e}")
+                continue
+
+        return artist, tracks, albums
 
     async def get_album(self, album_id: str) -> tuple[ProviderAlbum, List[ProviderTrack]]:
         """

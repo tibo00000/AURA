@@ -9,7 +9,7 @@ This maintains consistency across all endpoints and enables standardized
 error handling on clients.
 """
 
-from typing import TypeVar, Generic, Optional, Dict, Any, List
+from typing import TypeVar, Generic, Optional, Dict, Any, List, Literal, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -21,6 +21,7 @@ class Meta(BaseModel):
     request_id: Optional[str] = None
     timestamp: Optional[datetime] = None
     partial_failure: bool = False
+    provider_status: Optional[Dict[str, str]] = None
 
 
 class ErrorDetails(BaseModel):
@@ -63,46 +64,68 @@ class HealthResponse(BaseModel):
     time: datetime                              # ISO 8601 UTC
 
 
-class ArtistResponse(BaseModel):
-    """Response for an artist in search or detail."""
-    id: str                                     # AURA artist ID
+class ArtistSummaryResponse(BaseModel):
+    """Canonical summary for an artist."""
+    id: str
     name: str
-    provider_references: Optional[Dict[str, Any]] = None
+    picture_uri: Optional[str] = None
 
 
-class AlbumResponse(BaseModel):
-    """Response for an album in search or detail."""
-    id: str                                     # AURA album ID
+class AlbumSummaryResponse(BaseModel):
+    """Canonical summary for an album."""
+    id: str
     title: str
-    artist: Optional[ArtistResponse] = None
-    provider_references: Optional[Dict[str, Any]] = None
+    primary_artist_name: str
+    cover_uri: Optional[str] = None
+    release_date: Optional[str] = None
+    track_count: Optional[int] = None
 
 
-class TrackResponse(BaseModel):
-    """Response for a track in search or detail."""
-    id: str                                     # AURA track ID
+class TrackSummaryResponse(BaseModel):
+    """Canonical summary for a track."""
+    id: str
     title: str
-    album: Optional[AlbumResponse] = None
-    artist: Optional[ArtistResponse] = None
+    display_artist_name: str
+    display_album_title: Optional[str] = None
     duration_ms: Optional[int] = None
-    provider_references: Optional[Dict[str, Any]] = None
+    cover_uri: Optional[str] = None
+    is_explicit: Optional[bool] = None
+    is_liked: bool = False
+    is_local_available: bool = False
+    is_downloaded_by_aura: bool = False
+
+
+class SearchBestMatchResponse(BaseModel):
+    """Best match payload for GET /search."""
+    kind: Literal["track", "artist", "album"]
+    item: Union[TrackSummaryResponse, ArtistSummaryResponse, AlbumSummaryResponse]
 
 
 class SearchResponse(BaseModel):
     """Response for GET /search endpoint."""
-    best_match: Optional[TrackResponse] = None
-    tracks: List[TrackResponse] = Field(default_factory=list)
-    artists: List[ArtistResponse] = Field(default_factory=list)
-    albums: List[AlbumResponse] = Field(default_factory=list)
+    query: str
+    best_match: Optional[SearchBestMatchResponse] = None
+    tracks: List[TrackSummaryResponse] = Field(default_factory=list)
+    artists: List[ArtistSummaryResponse] = Field(default_factory=list)
+    albums: List[AlbumSummaryResponse] = Field(default_factory=list)
 
 
 class ArtistDetailsResponse(BaseModel):
     """Response for GET /artists/{id} endpoint."""
-    artist: ArtistResponse
-    top_tracks: List[TrackResponse] = Field(default_factory=list)
+    id: str
+    name: str
+    picture_uri: Optional[str] = None
+    summary: Optional[str] = None
+    top_tracks: List[TrackSummaryResponse] = Field(default_factory=list)
+    albums: List[AlbumSummaryResponse] = Field(default_factory=list)
 
 
 class AlbumDetailsResponse(BaseModel):
     """Response for GET /albums/{id} endpoint."""
-    album: AlbumResponse
-    tracks: List[TrackResponse] = Field(default_factory=list)
+    id: str
+    title: str
+    primary_artist_name: str
+    cover_uri: Optional[str] = None
+    release_date: Optional[str] = None
+    track_count: Optional[int] = None
+    tracks: List[TrackSummaryResponse] = Field(default_factory=list)
