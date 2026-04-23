@@ -66,6 +66,7 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - Les identifiants derives de `MediaStore` (`track:local:*`) ou des slugs `Room` locaux ne doivent pas etre envoyes aux routes online publiques comme s'ils etaient canoniques cote backend.
 - La fusion entre un resultat online et une entite deja presente localement se fait par matching de metadonnees et mappings persistants, pas par egalite d'ID.
 - Les identifiants provider (`provider_track_id`, `provider_album_id`, `provider_artist_id`) restent encapsules derriere le backend ou les tables de mapping.
+- Avant `SRV-004`, le backend peut utiliser un codec opaque stateless resolu cote serveur pour chaîner `/search` vers `/artists/{id}` et `/albums/{id}`, tant que le client traite toujours ces IDs comme opaques.
 
 ### Timestamps
 - Tous les timestamps HTTP sont en ISO 8601 UTC.

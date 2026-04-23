@@ -401,6 +401,24 @@ fun SharedTrackRowItem(
                                     )
                                 }
                             }
+                            "search_online" -> {
+                                // Contexte Recherche Online (pas de like, seulement playlist)
+                                if (onAddToPlaylist != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Ajouter à une playlist") },
+                                        onClick = {
+                                            onAddToPlaylist()
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Rounded.PlaylistAdd,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
                             else -> {
                                 // Contexte Standard (Album, Search, Home, etc.)
                                 if (onAddToPlaylist != null) {

@@ -37,6 +37,17 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - toucher une suggestion remplit la requete et lance la recherche complete
 - pas de suggestions online a ce stade
 
+## Recherches récentes
+- affichees uniquement quand:
+  - la barre est vide (query = "")
+  - pas de suggestions affichees (query < 3 chars)
+  - pas de recherche en cours
+- liste verticale de requetes historiques
+- chaque ligne clickable affiche icone loupe + texte de requete
+- limite a 10 entrees (fenetre glissante, plus recent seulement)
+- stockage local uniquement (Room database, `recent_searches` table)
+- toucher une recherche recente remplit la requete et lance la recherche complete
+
 ## Bloc Meilleur resultat
 - grande carte hero occupant toute la largeur utile
 - hauteur visuellement marquee pour dominer le haut de page
@@ -123,14 +134,18 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
 
 ## Etats
-- vide avant saisie
-- suggestions locales uniquement pendant la saisie
-- resultats complets apres validation
+- vide avant saisie avec affichage des recherches recentes si disponibles
+- suggestions locales uniquement pendant la saisie (3+ chars)
+- recherches recentes cachees quand suggestions ou resultats actifs
+- resultats complets apres validation (keyboard submit ou bouton recherche)
 - local uniquement si le reseau n'est pas autorise ou indisponible
-- erreur online non bloquante si le provider echoue
+- erreur online non bloquante si le provider echoue (local results persistent)
 - aucun resultat si ni local ni online ne correspondent
 
-## Regles
+## Comportement du curseur
+- le curseur textfield est positionne a la fin du texte saisi
+- apres selection d'une suggestion ou recherche recente, le curseur reste a la fin
+- cette behavior permet l'edition rapide de la requete selectionnee
 - `Search` ne distingue pas explicitement recherche locale et recherche online dans l'intention utilisateur
 - l'application privilegie local dans `Meilleur resultat` si la correspondance est forte
 - `Library` reste la surface de possession locale, `Search` reste la surface de recherche globale
