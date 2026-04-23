@@ -20,30 +20,30 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `disabled`
 
 ### TrackRow - Architecture du Menu Contextuel
-Le menu contextuel du `TrackRow` est géré via le paramètre `contextType` de `SharedTrackRowItem`. **Aucun `trailingIcon` custom ne doit être passé** - laisser le menu contextuel par défaut gérer tous les cas.
+Le menu contextuel du `TrackRow` est gere via le parametre `contextType` de `SharedTrackRowItem`. **Aucun `trailingIcon` custom ne doit etre passe** ; laisser le menu contextuel par defaut gerer les cas documentes.
 
-**Paramètres de SharedTrackRowItem** :
+**Parametres de SharedTrackRowItem** :
 ```kotlin
 fun SharedTrackRowItem(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
-    contextType: String = "standard",  // "album", "playlist", "favorites", "standard"
+    contextType: String = "standard",  // "album", "playlist", "favorites", "search_online", "standard"
     onAddToPlaylist: (() -> Unit)? = null,
     onLike: (() -> Unit)? = null,
     onUnlike: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
-    // ... autres paramètres
+    // ... autres parametres
 )
 ```
 
 ### Contextes et Actions Correspondantes
 
-**Contexte Standard** (`contextType = "standard"` ou défaut)
-- Utilisé par : Search, Home, Album, Library
-- Actions affichées :
-  - "Ajouter à une playlist" (si `onAddToPlaylist` fourni)
+**Contexte Standard** (`contextType = "standard"` ou defaut)
+- Utilise par : Search, Home, Album, Library
+- Actions affichees :
+  - "Ajouter a une playlist" (si `onAddToPlaylist` fourni)
   - "Ajouter aux favoris" (si `onLike` fourni)
   - "Plus" (si `onMore` fourni)
 
@@ -59,10 +59,10 @@ SharedTrackRowItem(
 ```
 
 **Contexte Playlist** (`contextType = "playlist"`)
-- Utilisé par : PlaylistDetailScreen
-- Actions affichées :
+- Utilise par : PlaylistDetailScreen
+- Actions affichees :
   - "Retirer de cette playlist" (si `onRemoveFromPlaylist` fourni)
-  - "Ajouter à une autre playlist" (si `onAddToPlaylist` fourni)
+  - "Ajouter a une autre playlist" (si `onAddToPlaylist` fourni)
 
 ```kotlin
 SharedTrackRowItem(
@@ -76,10 +76,10 @@ SharedTrackRowItem(
 ```
 
 **Contexte Favoris** (`contextType = "favorites"`)
-- Utilisé par : FavoritesScreen
-- Actions affichées :
+- Utilise par : FavoritesScreen
+- Actions affichees :
   - "Retirer des favoris" (si `onUnlike` fourni)
-  - "Ajouter à une playlist" (si `onAddToPlaylist` fourni)
+  - "Ajouter a une playlist" (si `onAddToPlaylist` fourni)
 
 ```kotlin
 SharedTrackRowItem(
@@ -92,10 +92,17 @@ SharedTrackRowItem(
 )
 ```
 
-### Règles d'Implémentation
-1. **Ne jamais passer `trailingIcon`** - laisser le menu par défaut gérer tous les cas
-2. **Toujours fournir `contextType`** pour que le menu affiche les actions appropriées
-3. **Passer les callbacks correspondant au contexte** - le menu ne les affiche que s'ils sont non-null
+**Contexte Recherche Online** (`contextType = "search_online"`)
+- Utilise par : SearchScreen, onglet `En ligne`
+- Actions affichees :
+  - "Ajouter a une playlist" (si `onAddToPlaylist` fourni)
+- Remarque :
+  - ce contexte ne montre pas l'action favoris tant que la piste n'est pas encore une entite locale stable
+
+### Regles d'Implementation
+1. **Ne jamais passer `trailingIcon`** ; laisser le menu par defaut gerer les cas documentes.
+2. **Toujours fournir `contextType`** pour que le menu affiche les actions appropriees.
+3. **Passer les callbacks correspondant au contexte** ; le menu ne les affiche que s'ils sont non-null.
 4. **Code Mapping** : `SharedTrackRowItem` dans `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`
 
 ## PlayerQueueRow
@@ -157,4 +164,4 @@ SharedTrackRowItem(
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : source des etats player
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : etats de saisie, suggestions et recherche
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : etats visuels partages (`EmptyStateSurface`, `BrowseAlbumRail`, `BrowseArtistRail`, `SectionTitle`, `FilterRow`, `SharedTrackRowItem` avec menus contextuels)
-- `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt` : implémentation du contexte playlist avec menu "Retirer de playlist"
+- `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt` : implementation du contexte playlist avec menu "Retirer de playlist"

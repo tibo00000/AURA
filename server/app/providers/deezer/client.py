@@ -44,7 +44,7 @@ class DeezerClient:
     async def search(
         self,
         query: str,
-        types: Optional[List[str]] = None,
+        resource_type: str = "track",
         limit: int = 100,
     ) -> Dict[str, Any]:
         """
@@ -52,7 +52,7 @@ class DeezerClient:
         
         Args:
             query: Search query string
-            types: List of resource types to search (default: track, artist, album)
+            resource_type: Resource type to search (`track`, `artist`, or `album`)
             limit: Maximum results per type
             
         Returns:
@@ -61,10 +61,15 @@ class DeezerClient:
         Raises:
             DeezerError subclasses
         """
-        if types is None:
-            types = ["track", "artist", "album"]
+        normalized_resource_type = resource_type.strip().lower()
+        if normalized_resource_type not in {"track", "artist", "album"}:
+            raise ValueError(f"Unsupported Deezer search resource type: {resource_type}")
 
-        url = f"{self.base_url}/search"
+        url = (
+            f"{self.base_url}/search"
+            if normalized_resource_type == "track"
+            else f"{self.base_url}/search/{normalized_resource_type}"
+        )
         params = {
             "q": query,
             "limit": limit,

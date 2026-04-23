@@ -8,6 +8,7 @@ Handles:
 - Error mapping to service-level exceptions
 """
 
+import asyncio
 import logging
 from typing import List, Optional, Dict, Any
 from .client import DeezerClient
@@ -65,29 +66,50 @@ class DeezerAdapter:
         Raises:
             Raises domain exceptions (not DeezerError directly)
         """
+        result = SearchResult()
+
         try:
-            deezer_response = await self.client.search(query, limit=max(limit_tracks, limit_artists, limit_albums))
+            tracks_response, artists_response, albums_response = await asyncio.gather(
+                self.client.search(query, resource_type="track", limit=limit_tracks),
+                self.client.search(query, resource_type="artist", limit=limit_artists),
+                self.client.search(query, resource_type="album", limit=limit_albums),
+            )
         except DeezerNotFound:
             # No results is not an error
-            return SearchResult()
+            return result
         except DeezerError as e:
             logger.error(f"Deezer search error: {e}")
             raise
 
-        # Parse response
-        result = SearchResult()
+        for track_data in tracks_response.get("data", [])[:limit_tracks]:
+            try:
+                provider_track = self._parse_track(track_data)
+                result.tracks.append(provider_track)
+                if result.best_match is None:
+                    result.best_match = provider_track
+            except Exception as e:
+                logger.warning(f"Failed to parse track: {e}")
+                continue
 
-        # Extract tracks
-        if "data" in deezer_response:
-            for track_data in deezer_response["data"][:limit_tracks]:
-                try:
-                    provider_track = self._parse_track(track_data)
-                    result.tracks.append(provider_track)
-                    if result.best_match is None:
-                        result.best_match = provider_track
-                except Exception as e:
-                    logger.warning(f"Failed to parse track: {e}")
-                    continue
+        for artist_data in artists_response.get("data", [])[:limit_artists]:
+            try:
+                provider_artist = self._parse_artist(artist_data)
+                result.artists.append(provider_artist)
+                if result.best_match is None:
+                    result.best_match = provider_artist
+            except Exception as e:
+                logger.warning(f"Failed to parse artist: {e}")
+                continue
+
+        for album_data in albums_response.get("data", [])[:limit_albums]:
+            try:
+                provider_album = self._parse_album(album_data)
+                result.albums.append(provider_album)
+                if result.best_match is None:
+                    result.best_match = provider_album
+            except Exception as e:
+                logger.warning(f"Failed to parse album: {e}")
+                continue
 
         return result
 

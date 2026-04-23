@@ -6,7 +6,7 @@ They are used across services and adapters to maintain consistency.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 
 
@@ -128,7 +128,7 @@ class ProviderTrack:
 @dataclass
 class SearchResult:
     """Result from a search operation."""
-    best_match: Optional[ProviderTrack] = None
+    best_match: Optional[Union[ProviderTrack, ProviderArtist, ProviderAlbum]] = None
     tracks: List[ProviderTrack] = field(default_factory=list)
     artists: List[ProviderArtist] = field(default_factory=list)
     albums: List[ProviderAlbum] = field(default_factory=list)

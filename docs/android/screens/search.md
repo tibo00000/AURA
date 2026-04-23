@@ -13,8 +13,8 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - barre de recherche sticky en tete
 - zone de suggestions locales sous la barre pendant la saisie
 - bloc `Meilleur resultat`
-- bandeau `Dans votre bibliotheque`
-- sections online sous le bloc local
+- navigation par onglets `Bibliotheque` / `En ligne` sous le hero
+- contenu local et contenu online se consultent par onglet, sans melange simultane dans le meme viewport
 
 ## Comportement de saisie
 - aucune proposition avant trois caracteres saisis
@@ -76,19 +76,17 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 ## Dans votre bibliotheque
 - section locale toujours prioritaire quand des resultats pertinents existent
 - en-tete avec titre de section
-- sous-navigation par onglets
+- l'onglet racine `Bibliotheque` expose directement les familles locales
 
 ## Onglets locaux
 - `Titres`
 - `Albums`
 - `Artistes`
-- `Playlists`
 
 ## Contenu de l'onglet local
 - `Titres` : liste verticale de `TrackRow`
 - `Albums` : rail horizontal de cartes album
 - `Artistes` : rail horizontal de cartes artiste
-- `Playlists` : rail horizontal de cartes playlist
 
 ## Resultats locaux - pistes
 - `TrackRow` classique
@@ -107,6 +105,7 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 
 ## Sections online
 - affichees uniquement si le reseau est autorise et disponible
+- visibles dans l'onglet racine `En ligne`
 - ordre :
   - `En ligne - Titres`
   - `En ligne - Artistes`
@@ -138,6 +137,7 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - suggestions locales uniquement pendant la saisie (3+ chars)
 - recherches recentes cachees quand suggestions ou resultats actifs
 - resultats complets apres validation (keyboard submit ou bouton recherche)
+- l'onglet `Bibliotheque` est l'onglet par defaut apres affichage des resultats
 - local uniquement si le reseau n'est pas autorise ou indisponible
 - erreur online non bloquante si le provider echoue (local results persistent)
 - aucun resultat si ni local ni online ne correspondent

@@ -12,16 +12,16 @@
 
 #### Item 2: SearchBarInput
 - **Type**: `OutlinedTextField`
-- **Shape**: Pill-shaped (RoundedCornerShape(999.dp))
+- **Shape**: Pill-shaped (`RoundedCornerShape(999.dp)`)
 - **Height**: 56.dp
 - **Width**: fillMaxWidth
 - **Placeholder**: "Rechercher..."
-- **Leading Icon**: Icons.Rounded.Search (20.dp)
-- **Trailing Icon**: Icons.Rounded.Close (20.dp, visible only if query non-empty)
+- **Leading Icon**: `Icons.Rounded.Search` (20.dp)
+- **Trailing Icon**: `Icons.Rounded.Close` (20.dp, visible only if query non-empty)
 - **Features**:
   - Single line
-  - ImeAction.Search (keyboard submit)
-  - TextFieldValue with cursor positioning (cursor always at end of text)
+  - `ImeAction.Search` (keyboard submit)
+  - `TextFieldValue` with cursor positioning (cursor always at end of text)
   - Keyboard hidden on submit
 
 #### Item 3: LocalSuggestionsSection (Conditional)
@@ -35,19 +35,19 @@
 - **Cursor Position**: Set to end of text after selection
 
 #### Item 4: RecentSearchesSection (Conditional)
-- **Show When**: 
+- **Show When**:
   - No active search (`!isSearchComplete`)
   - No suggestions dropdown (`!shouldShowSuggestions`)
   - Recent queries exist (`recentQueries.isNotEmpty()`)
 - **Content**: List of recent search queries
-- **Display**: Each query as clickable Card with Search icon + text
+- **Display**: Each query as clickable card with Search icon + text
 - **Limit**: 10 most recent queries
 - **Interaction**: Clicking a recent query fills search field and triggers search
 
 #### Item 5: Loading Indicator (Conditional)
 - **Show When**: `isLoadingFullSearch == true`
 - **Type**: `CircularProgressIndicator`
-- **Position**: Centered in Box with 32.dp padding
+- **Position**: Centered in `Box` with 32.dp padding
 
 #### Item 6: Error Banner (Conditional)
 - **Show When**: `errorMessage != null`
@@ -58,104 +58,108 @@
 #### Item 7: BestMatchSection (Conditional - Part of Results)
 - **Show When**: `isSearchComplete` AND `bestMatch != null`
 - **Type**: Column with label + hero card
-- **Label**: "Meilleur résultat"
+- **Label**: "Meilleur resultat"
 - **Hero Card Variants**:
 
 ##### BestMatchSection.OnlineTrack
 - **Component**: `HeroTrackCard`
 - **Layout**: Row with image left + content right
   - Image: 80.dp square, rounded 8.dp
-  - Content column: title (titleSmall, bold) + artist (bodySmall)
-- **Click Behavior**: `onPlayTrack()` callback (saves recent search)
-- **Colors**: Gradient (ElevatedGraphite → HairlineDark)
+  - Content column: title (`titleSmall`, bold) + artist (`bodySmall`)
+- **Click Behavior**: `onPlayTrack()` callback
+- **Colors**: Gradient (`ElevatedGraphite` -> `HairlineDark`)
 
 ##### BestMatchSection.OnlineArtist
 - **Component**: `HeroArtistCard`
 - **Layout**: Column with center-aligned content
   - Image: 120.dp circle
-  - Name: headlineSmall, bold, white
-- **Click Behavior**: `onOpenArtist(id)` callback (clickable card)
-- **Colors**: Gradient (#792BEE → HairlineDark)
+  - Name: `headlineSmall`, bold, white
+- **Click Behavior**: `onOpenArtist(id)` callback
+- **Colors**: Gradient (`#792BEE` -> `HairlineDark`)
 
 ##### BestMatchSection.OnlineAlbum
 - **Component**: `HeroAlbumCard`
 - **Layout**: Column
-  - Image: fullWidth, aspectRatio 1:1, rounded 12.dp
-  - Title: headlineSmall, bold, white
-  - Artist: bodySmall, white 80% opacity
-- **Click Behavior**: `onOpenAlbum(id)` callback (clickable card)
-- **Colors**: Gradient (#FF9E00 → HairlineDark)
+  - Image: full width, aspect ratio 1:1, rounded 12.dp
+  - Title: `headlineSmall`, bold, white
+  - Artist: `bodySmall`, white 80% opacity
+- **Click Behavior**: `onOpenAlbum(id)` callback
+- **Colors**: Gradient (`#FF9E00` -> `HairlineDark`)
 
 ##### BestMatchSection.LocalTrack
 - **Component**: `HeroLocalTrackCard`
-- **Layout**: Row with image left + content right (same as online track)
-- **Data**: Uses `TrackListRow` (local entity)
-- **Colors**: Gradient (ElevatedGraphite → HairlineDark)
+- **Layout**: Row with image left + content right
+- **Data**: `TrackListRow`
 
 ##### BestMatchSection.LocalArtist
 - **Component**: `HeroLocalArtistCard`
-- **Layout**: Column with center-aligned content (same as online artist)
-- **Data**: Uses `ArtistBrowseRow` (local entity)
-- **Colors**: Gradient (#792BEE → HairlineDark)
-- **Interaction**: Clickable, calls `onOpenArtist(id)`
+- **Layout**: Column with center-aligned content
+- **Data**: `ArtistBrowseRow`
+- **Interaction**: `onOpenArtist(id)`
 
 ##### BestMatchSection.LocalAlbum
 - **Component**: `HeroLocalAlbumCard`
-- **Layout**: Column (same as online album)
-- **Data**: Uses `AlbumBrowseRow` (local entity)
-- **Colors**: Gradient (#FF9E00 → HairlineDark)
-- **Interaction**: Clickable, calls `onOpenAlbum(id)`
+- **Layout**: Column
+- **Data**: `AlbumBrowseRow`
+- **Interaction**: `onOpenAlbum(id)`
 
-#### Item 8: LocalLibrarySection (Conditional - Part of Results)
-- **Show When**: `isSearchComplete` AND (localTracks OR localArtists OR localAlbums non-empty)
-- **Header**: "Dans votre bibliothèque" + "Résultats locaux"
+#### Item 8: SearchModeTabs (Conditional - Part of Results)
+- **Show When**: `isSearchComplete`
+- **Type**: `TabRow`
+- **Tabs**:
+  - `Bibliotheque`
+  - `En ligne`
+- **Default Selection**: `Bibliotheque`
+- **Behavior**: The hero remains shared; the selected tab controls the content rendered below
+
+#### Item 9: LocalLibrarySection (Conditional - Part of Results)
+- **Show When**: `isSearchComplete` AND tab `Bibliotheque` active AND at least one local family is non-empty
+- **Header**: "Dans votre bibliotheque" + "Resultats locaux"
 - **Layout**: Column with sections
 
 ##### LocalLibrarySection.Tracks
-- **Label**: "Titres" (labelMedium, bold)
-- **Content**: Up to 5 `SharedTrackRowItem` composables
+- **Label**: "Titres"
+- **Content**: Up to 5 `SharedTrackRowItem`
 - **Data**: `List<TrackListRow>`
-- **Click**: Triggers `onPlayTrack(track, allTracks)` and saves recent search
+- **Click**: Triggers `onPlayTrack(track, allTracks)`
 
 ##### LocalLibrarySection.Artists
-- **Label**: "Artiste" (labelMedium, bold) - **ADDED**
-- **Content**: `BrowseArtistRail` (horizontal scroll)
+- **Label**: "Artistes"
+- **Content**: `BrowseArtistRail`
 - **Data**: `List<ArtistBrowseRow>`
-- **Click**: Triggers `onOpenArtist(id)`
+- **Click**: `onOpenArtist(id)`
 
 ##### LocalLibrarySection.Albums
-- **Label**: "Album" (labelMedium, bold) - **ADDED**
-- **Content**: `BrowseAlbumRail` (horizontal scroll)
+- **Label**: "Albums"
+- **Content**: `BrowseAlbumRail`
 - **Data**: `List<AlbumBrowseRow>`
-- **Click**: Triggers `onOpenAlbum(id)`
+- **Click**: `onOpenAlbum(id)`
 
-#### Item 9: OnlineTracksSection (Conditional - Part of Results)
-- **Show When**: `isSearchComplete` AND `onlineTracks.isNotEmpty()`
-- **Header**: "En ligne - Titres" + "Résultats du backend AURA"
-- **Content**: Up to 5 cards, each showing:
-  - Cover image (40.dp, rounded 6.dp)
-  - Title + artist in column
-- **Interaction**: Click saves recent search and plays track
-- **Data**: `List<TrackSummary>` from API response
+#### Item 10: OnlineTracksSection (Conditional - Part of Results)
+- **Show When**: `isSearchComplete` AND tab `En ligne` active AND `onlineTracks.isNotEmpty()`
+- **Header**: "En ligne - Titres" + "Resultats du backend AURA"
+- **Content**: Up to 5 cards showing cover, title, artist
+- **Interaction**: Click plays track
+- **Data**: `List<TrackSummary>`
 
-#### Item 10: OnlineArtistsSection (Conditional - Part of Results)
-- **Show When**: `isSearchComplete` AND `onlineArtists.isNotEmpty()`
+#### Item 11: OnlineArtistsSection (Conditional - Part of Results)
+- **Show When**: `isSearchComplete` AND tab `En ligne` active AND `onlineArtists.isNotEmpty()`
 - **Header**: "En ligne - Artistes"
 - **Content**: Horizontal rail of artist cards
 - **Click**: `onOpenArtist(id)`
 
-#### Item 11: OnlineAlbumsSection (Conditional - Part of Results)
-- **Show When**: `isSearchComplete` AND `onlineAlbums.isNotEmpty()`
+#### Item 12: OnlineAlbumsSection (Conditional - Part of Results)
+- **Show When**: `isSearchComplete` AND tab `En ligne` active AND `onlineAlbums.isNotEmpty()`
 - **Header**: "En ligne - Albums"
 - **Content**: Horizontal rail of album cards
 - **Click**: `onOpenAlbum(id)`
 
-#### Item 12: Empty State (Conditional - Part of Results)
+#### Item 13: Empty State (Conditional - Part of Results)
 - **Show When**: `isSearchComplete` AND all result lists are empty
 - **Type**: `EmptyStateSurface`
-- **Text**: "Aucun résultat" + "Essayez une autre recherche"
+- **Text**: "Aucun resultat" + "Essayez une autre recherche"
 
-#### Item 13: Bottom Spacer
+#### Item 14: Bottom Spacer
 - **Height**: 24.dp
 
 ---
@@ -199,8 +203,8 @@ data class SearchUiState(
 - Save current query to recent searches (10-entry bounded window)
 - Launch full hybrid search (local + online parallel)
 - Show loading indicator
-- On completion: Display BestMatch + LocalLibrary + Online sections
-- On error: Keep local results visible, show error banner
+- On completion: display BestMatch + TabRow (`Bibliotheque` by default) + active tab content
+- On error: keep local results visible, show error banner
 
 ### 5. Clear
 - Reset query to empty
@@ -217,24 +221,3 @@ data class SearchUiState(
 - Touch targets min 48.dp
 - Keyboard navigation fully supported
 - Screen reader friendly composable structure
-
----
-
-## Performance Considerations
-
-- `LocalSuggestionsSection`: Lazy load from local DB
-- `RecentSearchesSection`: Pre-loaded on ViewModel init
-- `BestMatchSection`: Determine type at DAO query time (not runtime parsing)
-- `OnlineTracksSection`: Limit to 5 displayed items (lazy load if scroll)
-- Images: Async loading via Coil with placeholder
-
----
-
-## Future Enhancements
-
-- Pagination for online results (pagination cursor in API meta)
-- Saved searches vs recent searches distinction
-- Search history analytics
-- Personalized suggestions based on user preferences
-- Voice search input
-- Search filters (release date, explicit, etc.)

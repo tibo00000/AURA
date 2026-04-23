@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from ...config import get_settings
 from ...core.aura_id_codec import build_aura_id
+from ...domain.models import ProviderAlbum, ProviderArtist, ProviderTrack
 from ...providers.deezer.adapter import DeezerAdapter
 from ...providers.deezer.client import DeezerClient
 from ...schemas.responses import (
@@ -80,6 +81,16 @@ def _to_track_summary(track) -> TrackSummaryResponse:
     )
 
 
+def _to_best_match_response(best_match) -> SearchBestMatchResponse | None:
+    if isinstance(best_match, ProviderTrack):
+        return SearchBestMatchResponse(kind="track", item=_to_track_summary(best_match))
+    if isinstance(best_match, ProviderArtist):
+        return SearchBestMatchResponse(kind="artist", item=_to_artist_summary(best_match))
+    if isinstance(best_match, ProviderAlbum):
+        return SearchBestMatchResponse(kind="album", item=_to_album_summary(best_match))
+    return None
+
+
 @router.get("/search", response_model=ResponseEnvelope[SearchResponse])
 async def search(
     q: str = Query(..., min_length=3, description="Search query"),
@@ -93,9 +104,7 @@ async def search(
 
         response = SearchResponse(
             query=q.strip(),
-            best_match=SearchBestMatchResponse(kind="track", item=_to_track_summary(result.best_match))
-            if result.best_match
-            else None,
+            best_match=_to_best_match_response(result.best_match),
             tracks=[_to_track_summary(track) for track in result.tracks],
             artists=[_to_artist_summary(artist) for artist in result.artists],
             albums=[_to_album_summary(album) for album in result.albums],
