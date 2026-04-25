@@ -129,3 +129,32 @@ class AlbumDetailsResponse(BaseModel):
     release_date: Optional[str] = None
     track_count: Optional[int] = None
     tracks: List[TrackSummaryResponse] = Field(default_factory=list)
+
+
+# Resolve Responses (SRV-008)
+
+class ResolvedArtistData(BaseModel):
+    id: str
+    name: str
+    picture_uri: Optional[str] = None
+
+
+class ResolveArtistResponseData(BaseModel):
+    resolved: bool
+    match_confidence: float
+    artist: Optional[ResolvedArtistData] = None
+
+
+class ResolvedAlbumData(BaseModel):
+    id: str
+    title: str
+    primary_artist_name: str
+    cover_uri: Optional[str] = None
+    release_date: Optional[str] = None
+    track_count: Optional[int] = None
+
+
+class ResolveAlbumResponseData(BaseModel):
+    resolved: bool
+    match_confidence: float
+    album: Optional[ResolvedAlbumData] = None

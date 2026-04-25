@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from ...config import get_settings
 from ...providers.deezer.adapter import DeezerAdapter
 from ...providers.deezer.client import DeezerClient
-from ...schemas.responses import ErrorDetails, ResponseEnvelope
+from ...schemas.responses import ErrorDetails, ResponseEnvelope, ResolveArtistResponseData, ResolveAlbumResponseData
 from ...services.resolve_service import ResolveService
 from ...services.exceptions import ProviderUnavailable
 
@@ -36,7 +36,7 @@ def _get_resolve_service() -> ResolveService:
 @router.get("/artist")
 async def resolve_artist(
     name: str = Query(..., description="Artist name to resolve"),
-) -> ResponseEnvelope | JSONResponse:
+) -> ResponseEnvelope[ResolveArtistResponseData] | JSONResponse:
     """
     Resolve a local artist name to an opaque AURA backend ID + enrichment metadata.
 
@@ -70,7 +70,7 @@ async def resolve_artist(
 async def resolve_album(
     title: str = Query(..., description="Album title to resolve"),
     artist_name: Optional[str] = Query(None, description="Artist name hint (strongly recommended)"),
-) -> ResponseEnvelope | JSONResponse:
+) -> ResponseEnvelope[ResolveAlbumResponseData] | JSONResponse:
     """
     Resolve a local album title to an opaque AURA backend ID + enrichment metadata.
 
