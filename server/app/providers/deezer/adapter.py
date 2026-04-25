@@ -10,6 +10,7 @@ Handles:
 
 import asyncio
 import logging
+import re
 from typing import List, Optional, Dict, Any
 from .client import DeezerClient
 from .exceptions import (
@@ -43,6 +44,79 @@ class DeezerAdapter:
             client: DeezerClient instance for API communication
         """
         self.client = client
+
+    @staticmethod
+    def _normalize_search_text(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        return re.sub(r"\s+", " ", value.strip().lower())
+
+    @classmethod
+    def _score_text_match(cls, query: str, candidate: Optional[str]) -> int:
+        normalized_query = cls._normalize_search_text(query)
+        normalized_candidate = cls._normalize_search_text(candidate)
+
+        if not normalized_query or not normalized_candidate:
+            return 0
+        if normalized_candidate == normalized_query:
+            return 100
+        if normalized_candidate.startswith(normalized_query):
+            return 85
+        if normalized_query in normalized_candidate:
+            return 72
+
+        query_tokens = set(normalized_query.split(" "))
+        candidate_tokens = set(normalized_candidate.split(" "))
+        common_tokens = query_tokens & candidate_tokens
+        if not common_tokens:
+            return 0
+
+        return min(60, 28 + len(common_tokens) * 12)
+
+    @classmethod
+    def _score_artist_candidate(cls, query: str, artist: ProviderArtist) -> int:
+        return cls._score_text_match(query, artist.display_name)
+
+    @classmethod
+    def _score_album_candidate(cls, query: str, album: ProviderAlbum) -> int:
+        score = cls._score_text_match(query, album.display_title)
+        if album.artist is not None:
+            score += cls._score_text_match(query, album.artist.display_name) // 5
+        return score
+
+    @classmethod
+    def _score_track_candidate(cls, query: str, track: ProviderTrack) -> int:
+        score = cls._score_text_match(query, track.display_title)
+        if track.artist is not None:
+            score += cls._score_text_match(query, track.artist.display_name) // 4
+        if track.album is not None:
+            score += cls._score_text_match(query, track.album.display_title) // 5
+        return score
+
+    @classmethod
+    def _pick_best_match(cls, query: str, result: SearchResult):
+        best_score = -1
+        best_candidate = None
+
+        for artist in result.artists:
+            score = cls._score_artist_candidate(query, artist)
+            if score > best_score:
+                best_score = score
+                best_candidate = artist
+
+        for album in result.albums:
+            score = cls._score_album_candidate(query, album)
+            if score > best_score:
+                best_score = score
+                best_candidate = album
+
+        for track in result.tracks:
+            score = cls._score_track_candidate(query, track)
+            if score > best_score:
+                best_score = score
+                best_candidate = track
+
+        return best_candidate
 
     async def search(
         self,
@@ -105,12 +179,11 @@ class DeezerAdapter:
             try:
                 provider_album = self._parse_album(album_data)
                 result.albums.append(provider_album)
-                if result.best_match is None:
-                    result.best_match = provider_album
             except Exception as e:
                 logger.warning(f"Failed to parse album: {e}")
                 continue
 
+        result.best_match = self._pick_best_match(query, result)
         return result
 
     async def get_artist(self, artist_id: str) -> tuple[ProviderArtist, List[ProviderTrack], List[ProviderAlbum]]:
