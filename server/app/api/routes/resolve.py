@@ -33,7 +33,7 @@ def _get_resolve_service() -> ResolveService:
     return _resolve_service
 
 
-@router.get("/artist")
+@router.get("/artist", response_model=ResponseEnvelope[ResolveArtistResponseData])
 async def resolve_artist(
     name: str = Query(..., description="Artist name to resolve"),
 ) -> ResponseEnvelope[ResolveArtistResponseData] | JSONResponse:
@@ -66,7 +66,7 @@ async def resolve_artist(
         )
 
 
-@router.get("/album")
+@router.get("/album", response_model=ResponseEnvelope[ResolveAlbumResponseData])
 async def resolve_album(
     title: str = Query(..., description="Album title to resolve"),
     artist_name: Optional[str] = Query(None, description="Artist name hint (strongly recommended)"),
