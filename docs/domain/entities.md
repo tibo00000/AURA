@@ -15,6 +15,8 @@
 - `albumTitle`
 - `durationMs`
 - `coverUri`
+- `artworkOrigin`
+- `artworkLastResolvedAt`
 - `localAudioUri`
 - `providerTrackId`
 - `isDownloaded`
@@ -26,6 +28,8 @@
 - `title`
 - `artistId`
 - `coverUri`
+- `artworkOrigin`
+- `artworkLastResolvedAt`
 - `releaseDate`
 - `trackCount`
 - `providerAlbumId`
@@ -34,6 +38,8 @@
 - `id`
 - `name`
 - `pictureUri`
+- `artworkOrigin`
+- `artworkLastResolvedAt`
 - `providerArtistId`
 - `summary`
 

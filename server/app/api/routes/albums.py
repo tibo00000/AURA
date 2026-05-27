@@ -30,6 +30,13 @@ def _get_album_service() -> AlbumService:
     return _album_service
 
 
+def _normalize_release_type(value) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"album", "single", "ep", "compilation"}:
+        return normalized
+    return "unknown"
+
+
 def _to_track_summary(track) -> TrackSummaryResponse:
     return TrackSummaryResponse(
         id=build_aura_id("track", track.provider_name, track.provider_id),
@@ -64,6 +71,7 @@ async def get_album(
             cover_uri=album.metadata.get("cover_medium") or album.metadata.get("cover"),
             release_date=album.metadata.get("release_date"),
             track_count=track_count if track_count is not None else len(tracks),
+            release_type=_normalize_release_type(album.metadata.get("record_type")),
             tracks=[_to_track_summary(track) for track in tracks],
         )
         return ResponseEnvelope(data=response)

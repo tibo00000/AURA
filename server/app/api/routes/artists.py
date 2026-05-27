@@ -36,6 +36,13 @@ def _get_artist_service() -> ArtistService:
     return _artist_service
 
 
+def _normalize_release_type(value) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"album", "single", "ep", "compilation"}:
+        return normalized
+    return "unknown"
+
+
 def _to_album_summary(album) -> AlbumSummaryResponse:
     track_count = album.metadata.get("nb_tracks")
     if track_count is not None:
@@ -51,6 +58,7 @@ def _to_album_summary(album) -> AlbumSummaryResponse:
         cover_uri=album.metadata.get("cover_medium") or album.metadata.get("cover"),
         release_date=album.metadata.get("release_date"),
         track_count=track_count,
+        release_type=_normalize_release_type(album.metadata.get("record_type")),
     )
 
 

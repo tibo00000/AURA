@@ -120,7 +120,8 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   "primary_artist_name": "Chappell Roan",
   "cover_uri": "https://...",
   "release_date": "2025-01-01",
-  "track_count": 1
+  "track_count": 1,
+  "release_type": "single"
 }
 ```
 
@@ -214,10 +215,62 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   - `invalid_request` si `q` est absent ou trop court
   - `provider_unavailable` seulement si aucune reponse exploitable ne peut etre produite
 - Regles :
+  - `best_match` represente le meilleur candidat online connu du backend au moment de la reponse
+  - le backend doit choisir `best_match` parmi `tracks`, `artists` et `albums` selon la meilleure correspondance textuelle avec `q`, sans favoriser systematiquement les pistes
+  - Android reste libre de remplacer ce `best_match` par un hero local plus pertinent apres fusion avec la bibliotheque locale
   - cette route ne renvoie que la partie online ou enrichie
   - la fusion avec le local reste cote Android
   - les `id` renvoyes dans `best_match`, `tracks`, `artists` et `albums` sont des identifiants backend a reutiliser pour les routes online suivantes
   - cette route ne tente pas d'exposer ni de normaliser les identifiants `MediaStore` du device
+
+### `GET /resolve/artist`
+- Usage : resoudre un artiste local ou textuel vers un identifiant backend et des metadonnees minimales d'enrichissement.
+- Auth : non requise.
+- Query params :
+  - `name` requis
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "resolved": true,
+  "match_confidence": 0.93,
+  "artist": {
+    "id": "art_aura_123",
+    "name": "Daft Punk",
+    "picture_uri": "https://..."
+  }
+}
+```
+- Regles :
+  - cette route sert a enrichir une entite locale sans supposer qu'elle possede deja un ID backend
+  - Android persiste ensuite le resultat dans `Room` et peut ouvrir `/artists/{id}` si necessaire
+
+### `GET /resolve/album`
+- Usage : resoudre un album local ou textuel vers un identifiant backend et des metadonnees minimales d'enrichissement.
+- Auth : non requise.
+- Query params :
+  - `title` requis
+  - `artist_name` optionnel mais fortement recommande
+- Body : aucun.
+- Reponse `data` :
+```json
+{
+  "resolved": true,
+  "match_confidence": 0.91,
+  "album": {
+    "id": "alb_aura_123",
+    "title": "Discovery",
+    "primary_artist_name": "Daft Punk",
+    "cover_uri": "https://...",
+    "release_date": "2001-03-12",
+    "track_count": 14,
+    "release_type": "album"
+  }
+}
+```
+- Regles :
+  - cette route sert a enrichir une entite locale sans supposer qu'elle possede deja un ID backend
+  - Android persiste ensuite le resultat dans `Room` et peut ouvrir `/albums/{id}` si necessaire
 
 ### `GET /artists/{id}`
 - Usage : recuperer la vue detail online d'un artiste deja resolu dans le modele AURA.
@@ -236,6 +289,9 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   "albums": []
 }
 ```
+- Regles :
+  - ce payload doit contenir au minimum les champs necessaires au hero online `Artist`
+  - si une information hero critique n'est pas connue, la route renvoie `null` explicitement plutot qu'une structure implicite
 - Erreurs attendues :
   - `not_found`
   - `provider_unavailable`
@@ -257,9 +313,13 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   "cover_uri": "https://...",
   "release_date": "2025-01-01",
   "track_count": 1,
+  "release_type": "single",
   "tracks": []
 }
 ```
+- Regles :
+  - ce payload doit contenir au minimum les champs necessaires au hero online `Album`
+  - si une information hero critique n'est pas connue, la route renvoie `null` explicitement plutot qu'une structure implicite
 - Erreurs attendues :
   - `not_found`
   - `provider_unavailable`

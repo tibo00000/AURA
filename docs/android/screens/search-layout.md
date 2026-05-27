@@ -59,6 +59,10 @@
 - **Show When**: `isSearchComplete` AND `bestMatch != null`
 - **Type**: Column with label + hero card
 - **Label**: "Meilleur resultat"
+- **Selection Policy**:
+  - Android computes the final hero candidate after local + online fusion
+  - local strong matches outrank online candidates
+  - the backend `best_match` is treated as an online hint, not as the final UI authority
 - **Hero Card Variants**:
 
 ##### BestMatchSection.OnlineTrack

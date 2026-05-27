@@ -53,6 +53,15 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - hauteur visuellement marquee pour dominer le haut de page
 - contenu adapte au type retenu
 
+## Politique de selection de `Meilleur resultat`
+- Android reste l'arbitre final du hero affiche
+- le `best_match` renvoye par `GET /search` est un indice online, pas une verite absolue pour l'UI
+- si une correspondance locale forte existe, elle doit passer avant l'online
+- une correspondance locale forte signifie un match exact ou tres proche sur le libelle principal de la piste, de l'artiste ou de l'album
+- a pertinence equivalente, le local gagne sur l'online
+- l'online gagne uniquement si aucun candidat local n'obtient un score comparable
+- cote backend, `best_match` doit etre choisi parmi `tracks`, `artists` et `albums` selon la meilleure correspondance textuelle avec la requete, pas selon un type privilegie par defaut
+
 ## Meilleur resultat - piste
 - grande cover a gauche ou en fond selon le design final
 - titre, artiste, album
@@ -102,6 +111,17 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - scroll horizontal
 - artiste : image dominante + nom
 - album : cover dominante + titre + artiste
+
+## Enrichissement d'image des resultats locaux
+- un resultat local garde toujours la priorite d'affichage, meme si son image manque encore
+- si `picture_uri` ou `cover_uri` manque sur une entite locale visible dans `Search`, Android peut tenter un enrichissement metadata en arriere-plan
+- cet enrichissement n'est autorise que si `Recherche online` est activee et si `online_search_network_policy` autorise le reseau courant
+- l'enrichissement ecrit le resultat dans `Room` pour reutilisation ulterieure ; l'image ne doit pas rester seulement en memoire
+- au retour d'un detail `Artist` ou `Album`, l'ecran Search rafraichit les resultats locaux affiches afin de reprendre les images deja persistees dans `Room`
+- l'onglet racine selectionne (`Bibliotheque` ou `En ligne`) est conserve pendant l'aller-retour vers un detail
+- les suggestions locales pendant la saisie ne doivent jamais declencher cet enrichissement
+- la recherche complete peut enrichir seulement les elements visibles ou imminents pour eviter le spam reseau
+- en cas d'echec reseau ou d'absence de correspondance fiable, l'application garde le placeholder local sans bloquer l'UX
 
 ## Sections online
 - affichees uniquement si le reseau est autorise et disponible

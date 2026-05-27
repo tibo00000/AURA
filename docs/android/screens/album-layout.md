@@ -1,77 +1,45 @@
 # Album Screen Layout
 
 ## Objectif
-Définir l'architecture visuelle de l'écran Album (`AlbumScreen`), en s'assurant du respect strict des tokens DA (DarkTheme, typography Outfit, formes arrondies) et de l'intégration avec le reste du projet. L'écran liste toutes les pistes appartenant à un même album et en offre le point d'entrée pour la lecture canonique (contexte d'album).
+Definir un layout canonique pour `Album` en distinguant les variantes locales et online, avec une hero cover qui peut etre enrichie apres ouverture quand l'album est d'abord connu localement sans image.
 
-## AlbumScreen - Schéma Vertical
+## Architecture verticale
+- bouton retour
+- hero album
+- barre d'actions
+- liste verticale des pistes
 
-```mermaid
-flowchart TD
-    A["Header Hero\nGrande cover (Gradient de fond)\nNom de l'Album\nNom de l'Artiste CLIQUABLE\nNombre de pistes + Année\n"] --> B["Action Bar\nPlay | Shuffle\n"]
-    B --> C["LazyColumn: Track Rows\nKey: mediaId\nEach Row: Cover + TrackInfo + Menu Contextuel\n"]
-    C --> D["TouchArea:\nTrackRow lance la lecture (Contexte Album)\nMenu: Ajouter à playlist | Favoris | Plus\n"]
-    D --> E["Bottom Navigation Safe Area"]
-```
+## Hero local
+- grande cover carree ou placeholder graphique si `albums.cover_uri` manque
+- titre album
+- artiste cliquable
+- metadonnees locales : nombre de pistes connues, annee si disponible, mention `Dans votre bibliotheque`
+- mise a jour reactive si une cover ou une date de sortie est enrichie ensuite
 
-## AlbumScreen - Coupe Mobile (État par défaut)
+## Hero online
+- cover distante prioritaire
+- titre album
+- artiste principal
+- metadonnees online : date de sortie, nombre de pistes, source online
 
-```text
-+--------------------------------------------------+
-| [Retour Flèche]                                  |
-|                                                  |
-|              [ Grande Cover ]                    |
-|              [    Carrée    ]                    |
-|                                                  |
-|              Discovery (LP)                      |
-|              Daft Punk (cliquable)               |
-|              14 pistes • 2001                    |
-|                                                  |
-|  [ (>) Play ]    [ (x) Shuffle ]                |
-|                                                  |
-| +----------------------------------------------+ |
-| | [Cover] One More Time              4:27 (⋮) | |
-| +----------------------------------------------+ |
-|                                                  |
-| +----------------------------------------------+ |
-| | [Cover] Aerodynamic                3:32 (⋮) | |
-| +----------------------------------------------+ |
-|                                                  |
-| +----------------------------------------------+ |
-| | [Cover] Digital Love               5:01 (⋮) | |
-| +----------------------------------------------+ |
-|                                                  |
-|               [Mini-Player Floating]             |
-|                                                  |
-+--------------------------------------------------+
-|   Home   |   Search   | (o) Library | Settings   |
-+--------------------------------------------------+
-```
+## Differences de comportement
+- album local : ouverture immediate depuis `Room`, sans attente reseau
+- album online : depend du payload backend detail
+- album hybride : tracklist locale + hero enrichi quand un mapping backend est connu
 
-## Composants & États
+## Actions
+- `Play`
+- `Shuffle`
 
-### Header Hero
-- Grande jaquette de l'album avec gradient de secours
-- Centré avec paddings
+## Liste des pistes
+- `TrackRow` standard
+- ordre canonique local si l'album est local-only
+- ordre backend si l'album est online ou si une version canonique enrichie est disponible
 
-### Album Info
-- **Titre** : Nom de l'album (bold, headlineMedium)
-- **Artiste** : Cliquable (bleu/primary) → navigue vers ArtistScreen
-- **Métadonnées** : Nombre de pistes + année de sortie
-
-### Action Bar
-- **Play** : Lance la lecture depuis la première piste (contexte album)
-- **Shuffle** : Lance la lecture mélangée
-
-### TrackRow avec Menu Contextuel
-- Affiche la cover de chaque piste
-- Clique simple : Lance la piste (contexte album)
-- Menu ⋮ (DropdownMenu) :
-  - "Ajouter à une playlist"
-  - "Ajouter aux favoris"
-  - "Plus" (extensible)
-
-## Navigation
-- Retour : Rétro-navigation vers l'appelant (Library, Search, etc.)
-- Clic sur nom d'artiste : Navigue vers ArtistScreen
-- Clic sur une piste : Déclenche le player avec le plein contexte de l'album (`startIndex` = index de la piste cliquée)
-- Menu ⋮ : Actions contextuelles sur chaque piste
+## Etats
+- `loading_local`
+- `local_ready_without_cover`
+- `local_ready_with_cover`
+- `hybrid_enriching`
+- `online_ready`
+- `online_error_non_blocking`

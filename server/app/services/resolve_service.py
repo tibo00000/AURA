@@ -57,6 +57,13 @@ def _score_text(query: str, candidate: Optional[str]) -> float:
     return min(0.60, 0.28 + len(common) * 0.12)
 
 
+def _normalize_release_type(value: Optional[str]) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"album", "single", "ep", "compilation"}:
+        return normalized
+    return "unknown"
+
+
 # ---------------------------------------------------------------------------
 # ResolveService
 # ---------------------------------------------------------------------------
@@ -208,5 +215,6 @@ class ResolveService:
                 "cover_uri": cover_uri,
                 "release_date": release_date,
                 "track_count": track_count,
+                "release_type": _normalize_release_type(best_candidate.get("record_type")),
             },
         }

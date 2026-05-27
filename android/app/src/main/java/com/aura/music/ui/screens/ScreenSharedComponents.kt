@@ -77,27 +77,14 @@ fun BrowseArtistRail(
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
         items(artists, key = { it.id }) { artist ->
-            Card(
-                modifier = Modifier
-                    .size(width = 168.dp, height = 210.dp)
-                    .clickable { onOpenArtist(artist.id) },
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .background(Brush.linearGradient(listOf(Color(0xFF792BEE), Color(0xFF232323))), CircleShape),
-                    )
-                    Text(artist.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${artist.trackCount} piste(s) | ${artist.albumCount} album(s)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            SharedRailCard(
+                title = artist.name,
+                subtitle = "${artist.trackCount} piste(s) | ${artist.albumCount} album(s)",
+                imageUri = artist.pictureUri,
+                gradientStartColor = Color(0xFF792BEE),
+                imageShape = CircleShape,
+                onClick = { onOpenArtist(artist.id) }
+            )
         }
         item { Spacer(modifier = Modifier.size(16.dp)) }
     }
@@ -114,29 +101,14 @@ fun BrowseAlbumRail(
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
         items(albums, key = { it.id }) { album ->
-            Card(
-                modifier = Modifier
-                    .size(width = 172.dp, height = 220.dp)
-                    .clickable { onOpenAlbum(album.id) },
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .background(Brush.linearGradient(listOf(Color(0xFFFF9E00), Color(0xFF1A1A1A))), RoundedCornerShape(20.dp)),
-                    )
-                    Text(album.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        album.artistName ?: "Artiste inconnu",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            SharedRailCard(
+                title = album.title,
+                subtitle = album.artistName ?: "Artiste inconnu",
+                imageUri = album.coverUri,
+                gradientStartColor = Color(0xFFFF9E00),
+                imageShape = RoundedCornerShape(20.dp),
+                onClick = { onOpenAlbum(album.id) }
+            )
         }
         item { Spacer(modifier = Modifier.size(16.dp)) }
     }
@@ -150,6 +122,65 @@ fun SectionTitle(
     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun SharedRailCard(
+    title: String,
+    subtitle: String,
+    imageUri: String?,
+    gradientStartColor: Color,
+    imageShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(20.dp),
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .size(width = 168.dp, height = 236.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (imageUri != null) {
+                coil.compose.AsyncImage(
+                    model = imageUri,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(imageShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .background(
+                            Brush.linearGradient(listOf(gradientStartColor, com.aura.music.ui.theme.HairlineDark)),
+                            imageShape
+                        )
+                )
+            }
+            Column {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 

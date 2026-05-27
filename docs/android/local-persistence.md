@@ -33,6 +33,7 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
 ## Donnees qui doivent vivre dans Room
 - identifiant canonique AURA d'une piste
 - relation entre une piste AURA et une entree MediaStore
+- relation entre une entite locale `Artist` ou `Album` et une resolution backend si elle existe
 - playlists et ordre des pistes
 - likes et preferes utilisateur
 - contexte de lecture, queue prioritaire et snapshot de reprise
@@ -41,6 +42,18 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
 - recherches recentes
 - statistiques d'ecoute
 - mappings provider et metadonnees enrichies
+
+## Persistance des images et metadonnees enrichies
+- `tracks.cover_uri`, `albums.cover_uri` et `artists.picture_uri` stockent les meilleures URIs connues, locales ou distantes
+- une image resolue via backend ou provider doit etre ecrite dans `Room` pour etre reutilisable hors cycle de rendu
+- les colonnes d'origine et de date d'enrichissement servent a eviter des tentatives reseau inutiles
+- l'absence d'image ne doit pas empecher l'ouverture d'un detail local
+- un enrichissement distant ne doit jamais ecraser une image locale de meilleure qualite sans regle explicite
+
+## Gouvernance reseau des enrichissements
+- les enrichissements metadata et images declenches depuis Android sont soumis aux reglages `online_search_enabled` et `online_search_network_policy`
+- les suggestions de saisie et les recherches purement locales restent offline-only
+- les enrichissements doivent etre deduplices et limites aux entites visibles ou explicitement ouvertes
 
 ## Principe de retention locale
 - Par defaut, les donnees metier et utilisateur doivent etre conservees.
@@ -89,6 +102,29 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
   - `provider_match_score`
   - `is_primary_mapping`
 
+### `artist_source_links`
+- role : lien entre un artiste local et une resolution backend ou provider
+- champs principaux :
+  - `id`
+  - `artist_id`
+  - `usage_type`
+  - `provider_name`
+  - `provider_artist_id`
+  - `match_score`
+  - `metadata_json`
+
+### `album_source_links`
+- role : lien entre un album local et une resolution backend ou provider
+- champs principaux :
+  - `id`
+  - `album_id`
+  - `usage_type`
+  - `provider_name`
+  - `provider_album_id`
+  - `provider_artist_id`
+  - `match_score`
+  - `metadata_json`
+
 ### `artists`
 - role : entite artiste locale enrichie
 - champs principaux :
@@ -110,6 +146,13 @@ Definir quelles donnees sont observees via `MediaStore`, lesquelles sont persist
   - `track_count`
   - `created_at`
   - `updated_at`
+
+### `user_settings`
+- role : preferences normatives de reseau et de sync pour les appels Android
+- champs principaux :
+  - `online_search_enabled`
+  - `online_search_network_policy`
+  - `stats_sync_network_policy`
 
 ### `playlists`
 - role : playlist utilisateur

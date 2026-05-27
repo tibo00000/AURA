@@ -169,7 +169,7 @@ fun LibraryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
-                    placeholder = { Text("Rechercher une de vos musiques...", color = TextSecondary) },
+                    placeholder = { Text("Rechercher...", color = TextSecondary) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {

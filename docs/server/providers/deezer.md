@@ -8,6 +8,7 @@ Fournisseur de recherche online v1 pour titres, artistes et albums.
 - rechercher des artistes
 - rechercher des albums
 - recuperer des metadonnees publiques utiles a l'exploration
+- aider a resoudre un artiste ou un album local vers une entite backend exploitable pour enrichissement
 
 ## Regles
 - Deezer est encapsule derriere un adaptateur.

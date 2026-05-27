@@ -1,9 +1,11 @@
 package com.aura.music.data.repository
 
+import android.content.Context
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.network.AuraApiService
+import com.aura.music.data.network.NetworkPolicyChecker
 import com.aura.music.data.network.SearchResponseData
 import com.aura.music.data.network.BestMatch
 import com.aura.music.data.network.TrackSummary
@@ -42,62 +44,86 @@ sealed class BestMatchResult {
     data class OnlineAlbum(val album: AlbumSummary, val id: String) : BestMatchResult()
 }
 
+private data class ScoredBestMatch(
+    val result: BestMatchResult,
+    val score: Int
+)
+
 /**
  * SearchRepository manages hybrid search combining local library with online results.
- * - Local search is fast and always available
- * - Online search is optional and handled gracefully on error
- * - Fusion of results is done on the Android side
+ *
+ * AND-009 rules:
+ * - Local search is fast and always available, never blocked.
+ * - Online search is gated by NetworkPolicyChecker.isAllowed().
+ * - getLocalSuggestions() never calls the backend (invoked during typing).
  */
 class SearchRepository(
     private val localLibraryRepository: LocalLibraryRepository,
     private val auraApiService: AuraApiService,
+    private val enrichmentRepository: EnrichmentRepository? = null,
 ) {
 
     /**
      * Perform a hybrid search combining local and online results.
-     * 
+     *
      * Flow:
      * 1. Launch local search immediately (fast, always available)
-     * 2. Launch online search in parallel (optional, non-blocking on error)
+     * 2. Check network policy; launch online search only if allowed (AND-009)
      * 3. Return combined results with best match
-     * 
-     * @param query Search query (should be >= 3 characters per product spec)
-     * @return HybridSearchResult with local and online results
+     *
+     * @param query              Search query (should be >= 3 characters)
+     * @param onlineSearchEnabled Value from user_settings.online_search_enabled
+     * @param networkPolicy       Value from user_settings.online_search_network_policy
+     * @param context             Application context for network check; null = offline mode
      */
-    suspend fun hybridSearch(query: String): HybridSearchResult = withContext(Dispatchers.IO) {
+    suspend fun hybridSearch(
+        query: String,
+        onlineSearchEnabled: Boolean = true,
+        networkPolicy: String = "wifi_only",
+        context: Context? = null,
+    ): HybridSearchResult = withContext(Dispatchers.IO) {
         coroutineScope {
-            // Launch local search
+            // Launch local search — always, unconditionally
             val localTracksAsync = async { localLibraryRepository.searchLocalTracks(query) }
             val localArtistsAsync = async { localLibraryRepository.searchLocalArtists(query) }
             val localAlbumsAsync = async { localLibraryRepository.searchLocalAlbums(query) }
 
-            // Launch online search in parallel (non-blocking)
-            val onlineSearchAsync = async {
-                runCatching {
-                    auraApiService.search(
-                        query = query,
-                        limitTracks = 10,
-                        limitArtists = 8,
-                        limitAlbums = 8
+            // AND-009: check network policy before any backend call
+            val networkAllowed = context != null &&
+                    NetworkPolicyChecker.isAllowed(
+                        onlineSearchEnabled = onlineSearchEnabled,
+                        policy = networkPolicy,
+                        context = context,
                     )
+
+            val onlineSearchAsync = if (networkAllowed) {
+                async {
+                    runCatching {
+                        auraApiService.search(
+                            query = query,
+                            limitTracks = 10,
+                            limitArtists = 8,
+                            limitAlbums = 8
+                        )
+                    }
                 }
-            }
+            } else null
 
             // Await all results
             val localTracks = localTracksAsync.await()
             val localArtists = localArtistsAsync.await()
             val localAlbums = localAlbumsAsync.await()
-            val onlineResult = onlineSearchAsync.await()
-            
-            val onlineData = onlineResult.getOrNull()?.data
-            val onlineError = onlineResult.exceptionOrNull()?.let { 
-                "Recherche en ligne indisponible."
+            val onlineResult = onlineSearchAsync?.await()
+
+            val onlineData = onlineResult?.getOrNull()?.data
+            val onlineError = when {
+                !networkAllowed -> null // settings block: silent, not an error
+                onlineResult?.isFailure == true -> "Recherche en ligne indisponible."
+                else -> null
             }
 
-            // Determine best match (prefer local if strong match)
             val bestMatch = determineBestMatch(query, localTracks, localArtists, localAlbums, onlineData)
 
-            // Construct result
             HybridSearchResult(
                 query = query,
                 bestMatch = bestMatch,
@@ -114,7 +140,7 @@ class SearchRepository(
 
     /**
      * Get local suggestions only (for display during typing with 3+ characters).
-     * This is fast and doesn't call the backend.
+     * AND-009: This NEVER calls the backend.
      */
     suspend fun getLocalSuggestions(query: String): HybridSearchResult = withContext(Dispatchers.IO) {
         coroutineScope {
@@ -134,76 +160,165 @@ class SearchRepository(
 
     /**
      * Determine the best match from local and online results.
-     * 
+     *
      * Priority:
-     * 1. Local track with exact title match
-     * 2. Online best match if available
-     * 3. First local track
-     * 4. First local artist
-     * 5. First local album
-     * 6. None
+     * 1. Local track with exact title match (scored highest)
+     * 2. Online best match if available (score + 8 bonus)
+     * 3. All other candidates ranked by score
      */
-    private suspend fun determineBestMatch(
+    private fun determineBestMatch(
         query: String,
         localTracks: List<TrackListRow>,
         localArtists: List<ArtistBrowseRow>,
         localAlbums: List<AlbumBrowseRow>,
         onlineData: SearchResponseData?
     ): BestMatchResult? {
-        // Try exact local track match
-        val exactTrackMatch = localTracks.find {
-            it.title.equals(query, ignoreCase = true)
-        }
-        if (exactTrackMatch != null) {
-            return BestMatchResult.LocalTrack(exactTrackMatch)
+        val scoredCandidates = mutableListOf<ScoredBestMatch>()
+
+        localTracks.forEach { track ->
+            scoredCandidates += ScoredBestMatch(
+                result = BestMatchResult.LocalTrack(track),
+                score = scoreLocalTrack(query, track)
+            )
         }
 
-        // Try online best match
-        if (onlineData?.bestMatch != null) {
-            val bestMatch = onlineData.bestMatch
-            return when (bestMatch.kind) {
-                "track" -> {
-                    val trackModel = bestMatch.item as? TrackSummary
-                    if (trackModel != null) BestMatchResult.OnlineTrack(trackModel, trackModel.id) else null
-                }
-                "artist" -> {
-                    val artistModel = bestMatch.item as? ArtistSummary
-                    if (artistModel != null) BestMatchResult.OnlineArtist(artistModel, artistModel.id) else null
-                }
-                "album" -> {
-                    val albumModel = bestMatch.item as? AlbumSummary
-                    if (albumModel != null) BestMatchResult.OnlineAlbum(albumModel, albumModel.id) else null
-                }
-                else -> null
-            }
+        localArtists.forEach { artist ->
+            scoredCandidates += ScoredBestMatch(
+                result = BestMatchResult.LocalArtist(artist),
+                score = scoreLocalArtist(query, artist)
+            )
         }
 
-        // Fallback to first online track from the search results
-        if (onlineData?.tracks?.isNotEmpty() == true) {
-            val track = onlineData.tracks.first()
-            return BestMatchResult.OnlineTrack(track, track.id)
+        localAlbums.forEach { album ->
+            scoredCandidates += ScoredBestMatch(
+                result = BestMatchResult.LocalAlbum(album),
+                score = scoreLocalAlbum(query, album)
+            )
         }
 
-        // Fallback to first online artist
-        if (onlineData?.artists?.isNotEmpty() == true) {
-            val artist = onlineData.artists.first()
-            return BestMatchResult.OnlineArtist(artist, artist.id)
+        val onlineBestMatch = onlineData?.bestMatch?.toBestMatchResult()
+        if (onlineBestMatch != null) {
+            scoredCandidates += ScoredBestMatch(
+                result = onlineBestMatch,
+                score = scoreBestMatchResult(query, onlineBestMatch) + 8
+            )
         }
 
-        // Fallback to first online album
-        if (onlineData?.albums?.isNotEmpty() == true) {
-            val album = onlineData.albums.first()
-            return BestMatchResult.OnlineAlbum(album, album.id)
+        onlineData?.tracks?.forEach { track ->
+            scoredCandidates += ScoredBestMatch(
+                result = BestMatchResult.OnlineTrack(track, track.id),
+                score = scoreOnlineTrack(query, track)
+            )
         }
 
-        // Fallback to first local result
-        return when {
-            localTracks.isNotEmpty() -> BestMatchResult.LocalTrack(localTracks.first())
-            localArtists.isNotEmpty() -> BestMatchResult.LocalArtist(localArtists.first())
-            localAlbums.isNotEmpty() -> BestMatchResult.LocalAlbum(localAlbums.first())
-            else -> null
+        onlineData?.artists?.forEach { artist ->
+            scoredCandidates += ScoredBestMatch(
+                result = BestMatchResult.OnlineArtist(artist, artist.id),
+                score = scoreOnlineArtist(query, artist)
+            )
         }
+
+        onlineData?.albums?.forEach { album ->
+            scoredCandidates += ScoredBestMatch(
+                result = BestMatchResult.OnlineAlbum(album, album.id),
+                score = scoreOnlineAlbum(query, album)
+            )
+        }
+
+        return scoredCandidates
+            .filter { it.score > 0 }
+            .maxByOrNull { it.score }
+            ?.result
     }
+
+    private fun BestMatch.toBestMatchResult(): BestMatchResult? = when (kind) {
+        "track" -> (item as? TrackSummary)?.let { BestMatchResult.OnlineTrack(it, it.id) }
+        "artist" -> (item as? ArtistSummary)?.let { BestMatchResult.OnlineArtist(it, it.id) }
+        "album" -> (item as? AlbumSummary)?.let { BestMatchResult.OnlineAlbum(it, it.id) }
+        else -> null
+    }
+
+    private fun scoreBestMatchResult(query: String, result: BestMatchResult): Int = when (result) {
+        is BestMatchResult.LocalTrack -> scoreLocalTrack(query, result.track)
+        is BestMatchResult.LocalArtist -> scoreLocalArtist(query, result.artist)
+        is BestMatchResult.LocalAlbum -> scoreLocalAlbum(query, result.album)
+        is BestMatchResult.OnlineTrack -> scoreOnlineTrack(query, result.track)
+        is BestMatchResult.OnlineArtist -> scoreOnlineArtist(query, result.artist)
+        is BestMatchResult.OnlineAlbum -> scoreOnlineAlbum(query, result.album)
+    }
+
+    private fun scoreLocalTrack(query: String, track: TrackListRow): Int =
+        20 + scoreTrack(query, title = track.title, artistName = track.artistName, albumTitle = track.albumTitle)
+
+    private fun scoreLocalArtist(query: String, artist: ArtistBrowseRow): Int =
+        20 + scoreArtist(query, artist.name)
+
+    private fun scoreLocalAlbum(query: String, album: AlbumBrowseRow): Int =
+        20 + scoreAlbum(query, album.title, album.artistName)
+
+    private fun scoreOnlineTrack(query: String, track: TrackSummary): Int =
+        scoreTrack(query, title = track.title, artistName = track.displayArtistName, albumTitle = track.displayAlbumTitle)
+
+    private fun scoreOnlineArtist(query: String, artist: ArtistSummary): Int =
+        scoreArtist(query, artist.name)
+
+    private fun scoreOnlineAlbum(query: String, album: AlbumSummary): Int =
+        scoreAlbum(query, album.title, album.primaryArtistName)
+
+    private fun scoreTrack(query: String, title: String, artistName: String?, albumTitle: String?): Int {
+        val titleScore = scoreTextMatch(query, title)
+        val artistScore = scoreTextMatch(query, artistName)
+        val albumScore = scoreTextMatch(query, albumTitle)
+        return titleScore + (artistScore / 4) + (albumScore / 5)
+    }
+
+    private fun scoreArtist(query: String, name: String): Int =
+        scoreTextMatch(query, name)
+
+    private fun scoreAlbum(query: String, title: String, artistName: String?): Int {
+        val titleScore = scoreTextMatch(query, title)
+        val artistScore = scoreTextMatch(query, artistName)
+        return titleScore + (artistScore / 5)
+    }
+
+    private fun scoreTextMatch(query: String, candidate: String?): Int {
+        val normalizedQuery = normalizeSearchText(query)
+        val normalizedCandidate = normalizeSearchText(candidate)
+
+        if (normalizedQuery.isEmpty() || normalizedCandidate.isEmpty()) {
+            return 0
+        }
+        if (normalizedCandidate == normalizedQuery) {
+            return 100
+        }
+        if (normalizedCandidate.startsWith(normalizedQuery)) {
+            return 85
+        }
+        if (normalizedCandidate.contains(normalizedQuery)) {
+            return 72
+        }
+
+        val queryTokens = normalizedQuery.split(" ").filter { it.isNotBlank() }.toSet()
+        val candidateTokens = normalizedCandidate.split(" ").filter { it.isNotBlank() }.toSet()
+        val commonTokens = queryTokens intersect candidateTokens
+        if (commonTokens.isEmpty()) {
+            return 0
+        }
+
+        return minOf(60, 28 + commonTokens.size * 12)
+    }
+
+    private fun normalizeSearchText(value: String?): String =
+        value
+            ?.trim()
+            ?.lowercase()
+            ?.replace(Regex("\\s+"), " ")
+            .orEmpty()
+
+    /**
+     * Get user settings.
+     */
+    suspend fun getSettings() = localLibraryRepository.getSettings()
 
     /**
      * Get recent search queries.

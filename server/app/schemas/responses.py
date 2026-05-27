@@ -79,6 +79,7 @@ class AlbumSummaryResponse(BaseModel):
     cover_uri: Optional[str] = None
     release_date: Optional[str] = None
     track_count: Optional[int] = None
+    release_type: Optional[Literal["album", "single", "ep", "compilation", "unknown"]] = None
 
 
 class TrackSummaryResponse(BaseModel):
@@ -128,6 +129,7 @@ class AlbumDetailsResponse(BaseModel):
     cover_uri: Optional[str] = None
     release_date: Optional[str] = None
     track_count: Optional[int] = None
+    release_type: Optional[Literal["album", "single", "ep", "compilation", "unknown"]] = None
     tracks: List[TrackSummaryResponse] = Field(default_factory=list)
 
 
@@ -152,6 +154,7 @@ class ResolvedAlbumData(BaseModel):
     cover_uri: Optional[str] = None
     release_date: Optional[str] = None
     track_count: Optional[int] = None
+    release_type: Optional[Literal["album", "single", "ep", "compilation", "unknown"]] = None
 
 
 class ResolveAlbumResponseData(BaseModel):

@@ -51,6 +51,8 @@ Regles importantes :
 | `name` | `TEXT` | no | INDEX | nom affiche |
 | `normalized_name` | `TEXT` | no | INDEX | nom normalise pour recherche |
 | `picture_uri` | `TEXT` | yes |  | image locale ou distante |
+| `artwork_origin` | `TEXT` | yes |  | `mediastore`, `backend_remote`, `provider_remote`, `unknown` |
+| `artwork_last_resolved_at` | `INTEGER` | yes |  | dernier enrichissement image |
 | `summary` | `TEXT` | yes |  | resume enrichi |
 | `created_at` | `INTEGER` | no |  | epoch ms |
 | `updated_at` | `INTEGER` | no |  | epoch ms |
@@ -67,6 +69,8 @@ Constraints:
 | `title` | `TEXT` | no | INDEX | titre album |
 | `normalized_title` | `TEXT` | no | INDEX | titre normalise |
 | `cover_uri` | `TEXT` | yes |  | cover locale ou distante |
+| `artwork_origin` | `TEXT` | yes |  | `mediastore`, `backend_remote`, `provider_remote`, `unknown` |
+| `artwork_last_resolved_at` | `INTEGER` | yes |  | dernier enrichissement image |
 | `release_date` | `TEXT` | yes |  | ISO date ou annee |
 | `track_count` | `INTEGER` | yes |  | nombre de pistes |
 | `created_at` | `INTEGER` | no |  | epoch ms |
@@ -88,6 +92,8 @@ Indexes:
 | `display_album_title` | `TEXT` | yes |  | chaine affichee |
 | `duration_ms` | `INTEGER` | yes |  | duree connue |
 | `cover_uri` | `TEXT` | yes |  | image locale ou distante |
+| `artwork_origin` | `TEXT` | yes |  | `mediastore`, `backend_remote`, `provider_remote`, `unknown` |
+| `artwork_last_resolved_at` | `INTEGER` | yes |  | dernier enrichissement image |
 | `canonical_audio_source_type` | `TEXT` | no |  | `local`, `downloaded`, `stream`, `cloud_only` |
 | `is_liked` | `INTEGER` | no |  | booleen denormalise |
 | `is_downloaded_by_aura` | `INTEGER` | no |  | booleen denormalise |
@@ -135,6 +141,43 @@ Indexes:
 
 Constraints:
 - `UNIQUE(track_id, usage_type, provider_name, provider_track_id)`
+
+### `artist_source_links`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant local |
+| `artist_id` | `TEXT` | no | FK -> `artists.id` | artiste local AURA |
+| `usage_type` | `TEXT` | no | INDEX | `search`, `metadata`, `detail` |
+| `provider_name` | `TEXT` | no | INDEX | `aura_backend`, `deezer`, autre |
+| `provider_artist_id` | `TEXT` | no |  | id externe ou backend |
+| `match_score` | `REAL` | yes |  | score de correspondance |
+| `is_active_for_usage` | `INTEGER` | no |  | booleen |
+| `metadata_json` | `TEXT` | yes |  | payload de resolution utile |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Constraints:
+- `UNIQUE(artist_id, usage_type, provider_name, provider_artist_id)`
+
+### `album_source_links`
+
+| Column | Type | Null | Key | Notes |
+|---|---|---|---|---|
+| `id` | `TEXT` | no | PK | identifiant local |
+| `album_id` | `TEXT` | no | FK -> `albums.id` | album local AURA |
+| `usage_type` | `TEXT` | no | INDEX | `search`, `metadata`, `detail` |
+| `provider_name` | `TEXT` | no | INDEX | `aura_backend`, `deezer`, autre |
+| `provider_album_id` | `TEXT` | no |  | id externe ou backend |
+| `provider_artist_id` | `TEXT` | yes |  | artiste externe associe |
+| `match_score` | `REAL` | yes |  | score de correspondance |
+| `is_active_for_usage` | `INTEGER` | no |  | booleen |
+| `metadata_json` | `TEXT` | yes |  | payload de resolution utile |
+| `created_at` | `INTEGER` | no |  | epoch ms |
+| `updated_at` | `INTEGER` | no |  | epoch ms |
+
+Constraints:
+- `UNIQUE(album_id, usage_type, provider_name, provider_album_id)`
 
 ### `track_likes`
 
@@ -298,6 +341,10 @@ Constraints:
 | `online_search_network_policy` | `TEXT` | no |  | `wifi_only`, `any_network`, `disabled` |
 | `stats_sync_network_policy` | `TEXT` | no |  | `wifi_only` par defaut |
 | `last_sync_at` | `INTEGER` | yes |  | date de sync |
+
+Rules:
+- `online_search_enabled = false` bloque tous les appels backend optionnels initiees par Android pour la recherche, la resolution metadata et l'enrichissement d'images
+- `online_search_network_policy` s'applique a `Search`, `Artist`, `Album` et a tout enrichissement metadata lance depuis une surface Android
 
 ### `sync_outbox`
 

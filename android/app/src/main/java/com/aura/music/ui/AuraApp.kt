@@ -73,9 +73,13 @@ import com.aura.music.domain.player.QueuedTrack
 import com.aura.music.domain.player.TrackSource
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.screens.AlbumRouteScreen
+import com.aura.music.ui.screens.AlbumDetailViewModel
+import com.aura.music.ui.screens.ArtistDetailViewModel
 import com.aura.music.ui.screens.DownloadsScreen
 import com.aura.music.ui.screens.HomeScreen
 import com.aura.music.ui.screens.FavoritesScreen
+import com.aura.music.ui.screens.HybridAlbumScreen
+import com.aura.music.ui.screens.HybridArtistScreen
 import com.aura.music.ui.screens.LibraryScreen
 import com.aura.music.ui.screens.PlayerScreen
 import com.aura.music.ui.screens.PlaylistDetailScreenNew
@@ -222,18 +226,44 @@ fun AuraApp() {
                 )
             }
             composable(AuraRoute.ArtistPattern) { backStackEntry ->
-                ArtistRouteScreen(
-                    repository = repository,
-                    artistId = backStackEntry.arguments?.getString(AuraRoute.ArtistIdArg).orEmpty(),
+                val artistId = backStackEntry.arguments?.getString(AuraRoute.ArtistIdArg).orEmpty()
+                val ctx = LocalContext.current
+                val enrichmentRepo = (ctx.applicationContext as com.aura.music.AuraApplication)
+                    .container.enrichmentRepository
+                val vm: ArtistDetailViewModel = viewModel(
+                    key = "artist_$artistId",
+                    factory = ArtistDetailViewModel.Factory(
+                        artistId = artistId,
+                        localRepo = repository,
+                        apiService = (ctx.applicationContext as com.aura.music.AuraApplication).container.auraApiService,
+                        enrichmentRepo = enrichmentRepo,
+                        appContext = ctx.applicationContext,
+                    )
+                )
+                HybridArtistScreen(
+                    viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
                 )
             }
             composable(AuraRoute.AlbumPattern) { backStackEntry ->
-                AlbumRouteScreen(
-                    repository = repository,
-                    albumId = backStackEntry.arguments?.getString(AuraRoute.AlbumIdArg).orEmpty(),
+                val albumId = backStackEntry.arguments?.getString(AuraRoute.AlbumIdArg).orEmpty()
+                val ctx = LocalContext.current
+                val enrichmentRepo = (ctx.applicationContext as com.aura.music.AuraApplication)
+                    .container.enrichmentRepository
+                val vm: AlbumDetailViewModel = viewModel(
+                    key = "album_$albumId",
+                    factory = AlbumDetailViewModel.Factory(
+                        albumId = albumId,
+                        localRepo = repository,
+                        apiService = (ctx.applicationContext as com.aura.music.AuraApplication).container.auraApiService,
+                        enrichmentRepo = enrichmentRepo,
+                        appContext = ctx.applicationContext,
+                    )
+                )
+                HybridAlbumScreen(
+                    viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },

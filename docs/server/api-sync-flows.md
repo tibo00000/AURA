@@ -49,6 +49,29 @@ sequenceDiagram
     end
 ```
 
+## Flux 2b - Enrichissement metadata d'une entite locale
+```mermaid
+sequenceDiagram
+    participant Android as Android App
+    participant Room as Room
+    participant API as FastAPI
+    participant Provider as Provider Adapter
+
+    Android->>Room: Read local artist/album missing artwork
+    Room-->>Android: Local entity without image
+
+    alt Settings allow backend access
+        Android->>API: GET /resolve/artist or GET /resolve/album
+        API->>Provider: Resolve metadata candidate
+        Provider-->>API: Match candidate + artwork metadata
+        API-->>Android: Opaque backend id + minimal artwork payload
+        Android->>Room: Persist picture_uri / cover_uri + source link mapping
+        Room-->>Android: Local cache updated
+    else Settings block backend access
+        Note over Android: Keep local placeholder, no network call.
+    end
+```
+
 ## Flux 3 - Sync des playlists, likes et historique
 ```mermaid
 flowchart LR

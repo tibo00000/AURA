@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
  */
 data class SearchUiState(
     val query: String = "",
+    val selectedTab: Int = 0,
     val isLoadingFullSearch: Boolean = false,
     val currentFullSearchResult: HybridSearchResult? = null,
     val localSuggestions: HybridSearchResult? = null, // Used during typing (3+ chars)
@@ -53,7 +54,9 @@ data class SearchUiState(
  * Manages query state, local suggestions, and hybrid search orchestration.
  */
 class SearchViewModel(
-    private val searchRepository: SearchRepository
+    private val searchRepository: SearchRepository,
+    private val enrichmentRepository: com.aura.music.data.repository.EnrichmentRepository,
+    private val appContext: android.content.Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -99,6 +102,10 @@ class SearchViewModel(
         }
     }
 
+    fun selectTab(index: Int) {
+        _uiState.update { it.copy(selectedTab = index) }
+    }
+
     /**
      * Clear the search query and reset state.
      */
@@ -128,6 +135,32 @@ class SearchViewModel(
         }
 
         loadHybridSearch(query)
+    }
+
+    fun refreshDisplayedLocalResults() {
+        val state = _uiState.value
+        val query = state.currentFullSearchResult?.query ?: return
+        if (query.length < 3) return
+
+        viewModelScope.launch {
+            try {
+                val refreshedLocal = withContext(Dispatchers.IO) {
+                    searchRepository.getLocalSuggestions(query)
+                }
+                _uiState.update { current ->
+                    val currentResult = current.currentFullSearchResult ?: return@update current
+                    current.copy(
+                        currentFullSearchResult = currentResult.copy(
+                            localTracks = refreshedLocal.localTracks,
+                            localArtists = refreshedLocal.localArtists,
+                            localAlbums = refreshedLocal.localAlbums,
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                // Keep the current result; refresh is opportunistic after returning from detail screens.
+            }
+        }
     }
 
     /**
@@ -160,8 +193,17 @@ class SearchViewModel(
 
         viewModelScope.launch {
             try {
+                val settings = withContext(Dispatchers.IO) { searchRepository.getSettings() }
+                val onlineSearchEnabled = settings?.onlineSearchEnabled ?: true
+                val networkPolicy = settings?.onlineSearchNetworkPolicy ?: "wifi_only"
+
                 val result = withContext(Dispatchers.IO) {
-                    searchRepository.hybridSearch(query)
+                    searchRepository.hybridSearch(
+                        query = query,
+                        onlineSearchEnabled = onlineSearchEnabled,
+                        networkPolicy = networkPolicy,
+                        context = appContext
+                    )
                 }
                 // Persist the query and refresh the recents list
                 withContext(Dispatchers.IO) {
@@ -175,6 +217,32 @@ class SearchViewModel(
                         isLoadingFullSearch = false,
                         errorMessage = result.onlineError // surface online error non-bloquant
                     )
+                }
+
+                // If best match is local and lacks an image, enrich it in the background
+                val bm = result.bestMatch
+                if (bm is BestMatchResult.LocalArtist && bm.artist.pictureUri == null) {
+                    val enrichedUri = withContext(Dispatchers.IO) {
+                        enrichmentRepository.enrichArtistArtwork(bm.artist.id, bm.artist.name)
+                    }
+                    if (enrichedUri != null) {
+                        val updatedArtist = bm.artist.copy(pictureUri = enrichedUri)
+                        val updatedBm = BestMatchResult.LocalArtist(updatedArtist)
+                        _uiState.update { state ->
+                            state.copy(currentFullSearchResult = state.currentFullSearchResult?.copy(bestMatch = updatedBm))
+                        }
+                    }
+                } else if (bm is BestMatchResult.LocalAlbum && bm.album.coverUri == null && bm.album.title != null) {
+                    val enrichedUri = withContext(Dispatchers.IO) {
+                        enrichmentRepository.enrichAlbumArtwork(bm.album.id, bm.album.title, bm.album.artistName ?: "")
+                    }
+                    if (enrichedUri != null) {
+                        val updatedAlbum = bm.album.copy(coverUri = enrichedUri)
+                        val updatedBm = BestMatchResult.LocalAlbum(updatedAlbum)
+                        _uiState.update { state ->
+                            state.copy(currentFullSearchResult = state.currentFullSearchResult?.copy(bestMatch = updatedBm))
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update {
@@ -251,10 +319,12 @@ class SearchViewModel(
  * Factory for creating SearchViewModel instances.
  */
 class SearchViewModelFactory(
-    private val searchRepository: SearchRepository
+    private val searchRepository: SearchRepository,
+    private val enrichmentRepository: com.aura.music.data.repository.EnrichmentRepository,
+    private val appContext: android.content.Context
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return SearchViewModel(searchRepository) as T
+        return SearchViewModel(searchRepository, enrichmentRepository, appContext) as T
     }
 }

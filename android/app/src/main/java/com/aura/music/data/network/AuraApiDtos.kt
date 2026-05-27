@@ -124,7 +124,9 @@ data class AlbumSummary(
     @Json(name = "release_date")
     val releaseDate: String? = null,
     @Json(name = "track_count")
-    val trackCount: Int? = null
+    val trackCount: Int? = null,
+    @Json(name = "release_type")
+    val releaseType: String? = null
 )
 
 // Detail responses for /artists/{id} and /albums/{id}
@@ -158,6 +160,44 @@ data class AlbumDetailResponseData(
     val releaseDate: String? = null,
     @Json(name = "track_count")
     val trackCount: Int? = null,
+    @Json(name = "release_type")
+    val releaseType: String? = null,
     @Json(name = "tracks")
     val tracks: List<TrackSummary> = emptyList()
+)
+
+// ---------------------------------------------------------------------------
+// Resolve responses for /resolve/artist and /resolve/album (SRV-008)
+// ---------------------------------------------------------------------------
+
+@JsonClass(generateAdapter = true)
+data class ResolvedArtistData(
+    @Json(name = "id") val id: String,
+    @Json(name = "name") val name: String,
+    @Json(name = "picture_uri") val pictureUri: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ResolveArtistResponseData(
+    @Json(name = "resolved") val resolved: Boolean,
+    @Json(name = "match_confidence") val matchConfidence: Double,
+    @Json(name = "artist") val artist: ResolvedArtistData?,
+)
+
+@JsonClass(generateAdapter = true)
+data class ResolvedAlbumData(
+    @Json(name = "id") val id: String,
+    @Json(name = "title") val title: String,
+    @Json(name = "primary_artist_name") val primaryArtistName: String,
+    @Json(name = "cover_uri") val coverUri: String? = null,
+    @Json(name = "release_date") val releaseDate: String? = null,
+    @Json(name = "track_count") val trackCount: Int? = null,
+    @Json(name = "release_type") val releaseType: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ResolveAlbumResponseData(
+    @Json(name = "resolved") val resolved: Boolean,
+    @Json(name = "match_confidence") val matchConfidence: Double,
+    @Json(name = "album") val album: ResolvedAlbumData?,
 )

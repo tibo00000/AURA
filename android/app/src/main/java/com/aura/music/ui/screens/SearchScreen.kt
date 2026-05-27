@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,12 +34,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +54,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import coil.compose.AsyncImage
@@ -63,16 +65,12 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.ArtistSummary
 import com.aura.music.data.network.AlbumSummary
 import com.aura.music.data.network.TrackSummary
-import com.aura.music.data.repository.BestMatchResult
 import com.aura.music.data.repository.LocalLibraryRepository
-import com.aura.music.data.repository.SearchRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.search.SearchViewModel
 import com.aura.music.ui.search.SearchViewModelFactory
-import com.aura.music.ui.screens.EmptyStateSurface
 import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.HairlineDark
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,18 +83,30 @@ fun SearchScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
-    val auraApiService = application.container.auraApiService
-    val searchRepository = SearchRepository(repository, auraApiService)
+    val searchRepository = application.container.searchRepository
+    val enrichmentRepository = application.container.enrichmentRepository
     
     val viewModel: SearchViewModel = viewModel(
-        factory = SearchViewModelFactory(searchRepository)
+        factory = SearchViewModelFactory(searchRepository, enrichmentRepository, application)
     )
     
     val uiState by viewModel.uiState.collectAsState()
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Bibliothèque, 1 = En ligne
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(refreshToken) {
         // Any permission refresh can be handled here if needed
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshDisplayedLocalResults()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     RouteScaffold(title = "Recherche") {
@@ -175,59 +185,29 @@ fun SearchScreen(
             if (uiState.isSearchComplete && uiState.displayResult != null) {
                 val result = uiState.displayResult!!
 
-                // Best match
-                if (result.bestMatch != null) {
-                    item {
-                        BestMatchSection(
-                            bestMatch = result.bestMatch,
-                            onPlayTrack = { track ->
-                                onPlayTrackInList(
-                                    TrackListRow(
-                                        id = track.id,
-                                        artistId = null,
-                                        albumId = null,
-                                        title = track.title,
-                                        artistName = track.displayArtistName,
-                                        albumTitle = track.displayAlbumTitle,
-                                        contentUri = null,
-                                        durationMs = track.durationMs.toLong(),
-                                        coverUri = track.coverUri,
-                                        isLiked = track.isLiked
-                                    ),
-                                    emptyList(),
-                                    "search_best_match"
-                                )
-                            },
-                            onOpenArtist = onOpenArtist,
-                            onOpenAlbum = onOpenAlbum,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
-                }
-
                 // Tab navigation
                 item {
                     TabRow(
-                        selectedTabIndex = selectedTab,
+                        selectedTabIndex = uiState.selectedTab,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         androidx.compose.material3.Tab(
-                            selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
+                            selected = uiState.selectedTab == 0,
+                            onClick = { viewModel.selectTab(0) },
                             text = { Text("Bibliothèque") }
                         )
                         androidx.compose.material3.Tab(
-                            selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
+                            selected = uiState.selectedTab == 1,
+                            onClick = { viewModel.selectTab(1) },
                             text = { Text("En ligne") }
                         )
                     }
                 }
 
                 // Local library tab content
-                if (selectedTab == 0) {
+                if (uiState.selectedTab == 0) {
                     if (result.localTracks.isNotEmpty() || result.localArtists.isNotEmpty() || result.localAlbums.isNotEmpty()) {
                         item {
                             LocalLibrarySearchTab(
@@ -258,7 +238,7 @@ fun SearchScreen(
                 }
 
                 // Online tab content
-                if (selectedTab == 1) {
+                if (uiState.selectedTab == 1) {
                     if (result.onlineTracks.isNotEmpty() || result.onlineArtists.isNotEmpty() || result.onlineAlbums.isNotEmpty()) {
                         item {
                             OnlineSearchTab(
@@ -423,33 +403,14 @@ private fun OnlineSearchTab(
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
                     items(artists.take(6), key = { it.id }) { artist ->
-                        Card(
-                            modifier = Modifier
-                                .size(width = 168.dp, height = 210.dp)
-                                .clickable { onOpenArtist(artist.id) },
-                            shape = RoundedCornerShape(24.dp),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f)
-                                        .background(
-                                            Brush.linearGradient(listOf(Color(0xFF792BEE), HairlineDark)),
-                                            CircleShape
-                                        ),
-                                )
-                                Text(
-                                    artist.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        SharedRailCard(
+                            title = artist.name,
+                            subtitle = "Artiste en ligne",
+                            imageUri = artist.pictureUri,
+                            gradientStartColor = Color(0xFF792BEE),
+                            imageShape = CircleShape,
+                            onClick = { onOpenArtist(artist.id) },
+                        )
                     }
                 }
             }
@@ -469,40 +430,14 @@ private fun OnlineSearchTab(
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
                     items(albums.take(6), key = { it.id }) { album ->
-                        Card(
-                            modifier = Modifier
-                                .size(width = 172.dp, height = 220.dp)
-                                .clickable { onOpenAlbum(album.id) },
-                            shape = RoundedCornerShape(24.dp),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f)
-                                        .background(
-                                            Brush.linearGradient(listOf(Color(0xFFFF9E00), HairlineDark)),
-                                            RoundedCornerShape(20.dp)
-                                        ),
-                                )
-                                Text(
-                                    album.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    album.primaryArtistName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
+                        SharedRailCard(
+                            title = album.title,
+                            subtitle = album.primaryArtistName,
+                            imageUri = album.coverUri,
+                            gradientStartColor = Color(0xFFFF9E00),
+                            imageShape = RoundedCornerShape(20.dp),
+                            onClick = { onOpenAlbum(album.id) },
+                        )
                     }
                 }
             }
@@ -696,180 +631,6 @@ private fun LocalSuggestionsSection(
     }
 }
 
-/**
- * Best match hero card.
- */
-@Composable
-private fun BestMatchSection(
-    bestMatch: BestMatchResult,
-    onPlayTrack: (TrackSummary) -> Unit,
-    onOpenArtist: (String) -> Unit,
-    onOpenAlbum: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "Meilleur résultat",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        when (bestMatch) {
-            is BestMatchResult.OnlineTrack -> {
-                HeroTrackCard(
-                    track = bestMatch.track,
-                    onPlay = { onPlayTrack(bestMatch.track) }
-                )
-            }
-            is BestMatchResult.OnlineArtist -> {
-                HeroArtistCard(
-                    artist = bestMatch.artist,
-                    onOpen = { onOpenArtist(bestMatch.artist.id) }
-                )
-            }
-            is BestMatchResult.OnlineAlbum -> {
-                HeroAlbumCard(
-                    album = bestMatch.album,
-                    onOpen = { onOpenAlbum(bestMatch.album.id) }
-                )
-            }
-            is BestMatchResult.LocalTrack -> {
-                HeroLocalTrackCard(
-                    track = bestMatch.track,
-                    onPlay = { }
-                )
-            }
-            is BestMatchResult.LocalArtist -> {
-                HeroLocalArtistCard(
-                    artist = bestMatch.artist,
-                    onOpen = { onOpenArtist(bestMatch.artist.id) }
-                )
-            }
-            is BestMatchResult.LocalAlbum -> {
-                HeroLocalAlbumCard(
-                    album = bestMatch.album,
-                    onOpen = { onOpenAlbum(bestMatch.album.id) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HeroTrackCard(track: TrackSummary, onPlay: () -> Unit) {
-    androidx.compose.material3.Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(ElevatedGraphite, HairlineDark)))
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (track.coverUri != null) {
-                coil.compose.AsyncImage(
-                    model = track.coverUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                )
-            } else {
-                PlaceholderCover(modifier = Modifier.size(80.dp))
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    track.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    track.displayArtistName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            IconButton(onClick = onPlay) {
-                Icon(Icons.Rounded.Search, contentDescription = "Lire", modifier = Modifier.size(24.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun HeroArtistCard(artist: ArtistSummary, onOpen: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpen() },
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFF792BEE), HairlineDark)))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                artist.name,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Text("Artiste", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun HeroAlbumCard(album: AlbumSummary, onOpen: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpen() },
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFFFF9E00), HairlineDark)))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                album.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                album.primaryArtistName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (album.trackCount != null) {
-                Text(
-                    "${album.trackCount} piste(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
 
 /**
  * Local library section with tabs.
@@ -1015,33 +776,14 @@ private fun OnlineArtistsSection(
             modifier = Modifier.padding(start = 0.dp)
         ) {
             items(artists.take(6), key = { it.id }) { artist ->
-                androidx.compose.material3.Card(
-                    modifier = Modifier
-                        .size(width = 168.dp, height = 210.dp)
-                        .clickable { onOpenArtist(artist.id) },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .background(
-                                    Brush.linearGradient(listOf(Color(0xFF792BEE), HairlineDark)),
-                                    androidx.compose.foundation.shape.CircleShape
-                                ),
-                        )
-                        Text(
-                            artist.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
+                com.aura.music.ui.screens.SharedRailCard(
+                    title = artist.name,
+                    subtitle = "Artiste",
+                    imageUri = artist.pictureUri,
+                    gradientStartColor = Color(0xFF792BEE),
+                    imageShape = CircleShape,
+                    onClick = { onOpenArtist(artist.id) }
+                )
             }
             item { Spacer(modifier = Modifier.size(16.dp)) }
         }
@@ -1068,49 +810,21 @@ private fun OnlineAlbumsSection(
             modifier = Modifier.padding(start = 0.dp)
         ) {
             items(albums.take(6), key = { it.id }) { album ->
-                androidx.compose.material3.Card(
-                    modifier = Modifier
-                        .size(width = 172.dp, height = 220.dp)
-                        .clickable { onOpenAlbum(album.id) },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .background(
-                                    Brush.linearGradient(listOf(Color(0xFFFF9E00), HairlineDark)),
-                                    androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-                                ),
-                        )
-                        Text(
-                            album.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            album.primaryArtistName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+                com.aura.music.ui.screens.SharedRailCard(
+                    title = album.title,
+                    subtitle = album.primaryArtistName,
+                    imageUri = album.coverUri,
+                    gradientStartColor = Color(0xFFFF9E00),
+                    imageShape = RoundedCornerShape(20.dp),
+                    onClick = { onOpenAlbum(album.id) }
+                )
             }
             item { Spacer(modifier = Modifier.size(16.dp)) }
         }
     }
 }
 
-/**
- * Hero card for local tracks.
- */
+
 @Composable
 private fun HeroLocalTrackCard(track: TrackListRow, onPlay: () -> Unit) {
     Card(
@@ -1159,108 +873,7 @@ private fun HeroLocalTrackCard(track: TrackListRow, onPlay: () -> Unit) {
     }
 }
 
-/**
- * Hero card for local artists.
- */
-@Composable
-private fun HeroLocalArtistCard(
-    artist: com.aura.music.data.local.ArtistBrowseRow,
-    onOpen: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpen() },
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFF792BEE), HairlineDark)))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (artist.pictureUri != null) {
-                AsyncImage(
-                    model = artist.pictureUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(CircleShape)
-                        .background(Color.Gray),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("No Image", color = Color.White)
-                }
-            }
 
-            Text(
-                artist.name,
-                style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-        }
-    }
-}
-
-/**
- * Hero card for local albums.
- */
-@Composable
-private fun HeroLocalAlbumCard(
-    album: com.aura.music.data.local.AlbumBrowseRow,
-    onOpen: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpen() },
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFFFF9E00), HairlineDark)))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (album.coverUri != null) {
-                AsyncImage(
-                    model = album.coverUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentScale = ContentScale.Crop
-                )
-            }
-
-            Text(
-                album.title?: "Unknown",
-                style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                album.artistName?: "Unknown",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.8f)
-            )
-        }
-    }
-}
 
 /**
  * Recent searches section.

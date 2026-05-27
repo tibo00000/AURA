@@ -61,6 +61,34 @@ interface ArtistDao {
         """,
     )
     suspend fun getArtistDetail(artistId: String): ArtistDetailRow?
+
+    /**
+     * Met à jour l'image et l'origine d'un artiste lors d'un enrichissement backend.
+     * Ne touche pas les autres colonnes pour éviter d'écraser des données locales.
+     */
+    @Query(
+        """
+        UPDATE artists
+        SET picture_uri = :pictureUri,
+            artwork_origin = :artworkOrigin,
+            artwork_last_resolved_at = :resolvedAt,
+            updated_at = :updatedAt
+        WHERE id = :artistId
+        """
+    )
+    suspend fun updateArtwork(
+        artistId: String,
+        pictureUri: String,
+        artworkOrigin: String,
+        resolvedAt: Long,
+        updatedAt: Long,
+    )
+
+    /**
+     * Lit l'horodatage du dernier enrichissement pour déduplication.
+     */
+    @Query("SELECT artwork_last_resolved_at FROM artists WHERE id = :artistId LIMIT 1")
+    suspend fun getArtworkLastResolvedAt(artistId: String): Long?
 }
 
 @Dao
@@ -165,6 +193,33 @@ interface AlbumDao {
         """
     )
     suspend fun getAlbumByTitleAndArtist(title: String, artistName: String): AlbumBrowseRow?
+
+    /**
+     * Met à jour la cover et l'origine d'un album lors d'un enrichissement backend.
+     */
+    @Query(
+        """
+        UPDATE albums
+        SET cover_uri = :coverUri,
+            artwork_origin = :artworkOrigin,
+            artwork_last_resolved_at = :resolvedAt,
+            updated_at = :updatedAt
+        WHERE id = :albumId
+        """
+    )
+    suspend fun updateArtwork(
+        albumId: String,
+        coverUri: String,
+        artworkOrigin: String,
+        resolvedAt: Long,
+        updatedAt: Long,
+    )
+
+    /**
+     * Lit l'horodatage du dernier enrichissement pour déduplication.
+     */
+    @Query("SELECT artwork_last_resolved_at FROM albums WHERE id = :albumId LIMIT 1")
+    suspend fun getArtworkLastResolvedAt(albumId: String): Long?
 }
 
 @Dao
@@ -514,4 +569,58 @@ interface UserSettingsDao {
 
     @Query("UPDATE user_settings SET stats_sync_network_policy = :policy WHERE id = 'default'")
     suspend fun updateStatsSyncNetworkPolicy(policy: String): Int
+}
+
+// ---------------------------------------------------------------------------
+// Source link DAOs (AND-009 / AND-010)
+// ---------------------------------------------------------------------------
+
+@Dao
+interface ArtistSourceLinkDao {
+    /**
+     * Insère ou met à jour un lien de résolution artiste.
+     * Governé par : docs/android/room-schema.md — UNIQUE(artist_id, usage_type, provider_name, provider_artist_id)
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ArtistSourceLinkEntity)
+
+    /**
+     * Retourne le lien actif pour un artiste, utilisé pour récupérer l'ID backend mémorisé.
+     */
+    @Query(
+        """
+        SELECT * FROM artist_source_links
+        WHERE artist_id = :artistId
+          AND usage_type = :usageType
+          AND is_active_for_usage = 1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getActiveLink(artistId: String, usageType: String): ArtistSourceLinkEntity?
+}
+
+@Dao
+interface AlbumSourceLinkDao {
+    /**
+     * Insère ou met à jour un lien de résolution album.
+     * Governé par : docs/android/room-schema.md — UNIQUE(album_id, usage_type, provider_name, provider_album_id)
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AlbumSourceLinkEntity)
+
+    /**
+     * Retourne le lien actif pour un album, utilisé pour récupérer l'ID backend mémorisé.
+     */
+    @Query(
+        """
+        SELECT * FROM album_source_links
+        WHERE album_id = :albumId
+          AND usage_type = :usageType
+          AND is_active_for_usage = 1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getActiveLink(albumId: String, usageType: String): AlbumSourceLinkEntity?
 }

@@ -15,6 +15,8 @@ data class ArtistEntity(
     val name: String,
     @ColumnInfo(name = "normalized_name") val normalizedName: String,
     @ColumnInfo(name = "picture_uri") val pictureUri: String? = null,
+    @ColumnInfo(name = "artwork_origin") val artworkOrigin: String? = null,
+    @ColumnInfo(name = "artwork_last_resolved_at") val artworkLastResolvedAt: Long? = null,
     val summary: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
@@ -38,6 +40,8 @@ data class AlbumEntity(
     val title: String,
     @ColumnInfo(name = "normalized_title") val normalizedTitle: String,
     @ColumnInfo(name = "cover_uri") val coverUri: String? = null,
+    @ColumnInfo(name = "artwork_origin") val artworkOrigin: String? = null,
+    @ColumnInfo(name = "artwork_last_resolved_at") val artworkLastResolvedAt: Long? = null,
     @ColumnInfo(name = "release_date") val releaseDate: String? = null,
     @ColumnInfo(name = "track_count") val trackCount: Int? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
@@ -283,4 +287,87 @@ data class AlbumDetailRow(
     @ColumnInfo(name = "cover_uri") val coverUri: String?,
     @ColumnInfo(name = "release_date") val releaseDate: String?,
     @ColumnInfo(name = "track_count") val trackCount: Int?,
+)
+
+// ---------------------------------------------------------------------------
+// Source link tables (SRV-008 / AND-009)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lien entre un artiste local Room et une résolution backend ou provider.
+ * Permet à Android de mémoriser l'ID opaque AURA backend et les métadonnées
+ * enrichies (picture_uri) sans supprimer ni écraser l'entité locale.
+ *
+ * Governé par : docs/android/room-schema.md — table artist_source_links
+ */
+@Entity(
+    tableName = "artist_source_links",
+    foreignKeys = [
+        ForeignKey(
+            entity = ArtistEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["artist_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["artist_id"]),
+        Index(value = ["usage_type"]),
+        Index(value = ["provider_name"]),
+    ],
+)
+data class ArtistSourceLinkEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "artist_id") val artistId: String,
+    /** 'search', 'metadata', 'detail' */
+    @ColumnInfo(name = "usage_type") val usageType: String,
+    /** 'aura_backend', 'deezer', etc. */
+    @ColumnInfo(name = "provider_name") val providerName: String,
+    /** Opaque AURA backend artist ID (e.g. art_XXXX) */
+    @ColumnInfo(name = "provider_artist_id") val providerArtistId: String,
+    @ColumnInfo(name = "match_score") val matchScore: Double? = null,
+    @ColumnInfo(name = "is_active_for_usage") val isActiveForUsage: Boolean = true,
+    @ColumnInfo(name = "metadata_json") val metadataJson: String? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
+ * Lien entre un album local Room et une résolution backend ou provider.
+ * Permet à Android de mémoriser l'ID opaque AURA backend et les métadonnées
+ * enrichies (cover_uri) sans supprimer ni écraser l'entité locale.
+ *
+ * Governé par : docs/android/room-schema.md — table album_source_links
+ */
+@Entity(
+    tableName = "album_source_links",
+    foreignKeys = [
+        ForeignKey(
+            entity = AlbumEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["album_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["album_id"]),
+        Index(value = ["usage_type"]),
+        Index(value = ["provider_name"]),
+    ],
+)
+data class AlbumSourceLinkEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "album_id") val albumId: String,
+    /** 'search', 'metadata', 'detail' */
+    @ColumnInfo(name = "usage_type") val usageType: String,
+    /** 'aura_backend', 'deezer', etc. */
+    @ColumnInfo(name = "provider_name") val providerName: String,
+    /** Opaque AURA backend album ID (e.g. alb_XXXX) */
+    @ColumnInfo(name = "provider_album_id") val providerAlbumId: String,
+    @ColumnInfo(name = "provider_artist_id") val providerArtistId: String? = null,
+    @ColumnInfo(name = "match_score") val matchScore: Double? = null,
+    @ColumnInfo(name = "is_active_for_usage") val isActiveForUsage: Boolean = true,
+    @ColumnInfo(name = "metadata_json") val metadataJson: String? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )

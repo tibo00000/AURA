@@ -37,8 +37,9 @@ Permettre a l'utilisateur de saisir une requete unique et d'obtenir les resultat
 7. L'application lance la recherche locale complete.
 8. Si le reseau est autorise et disponible, l'application lance aussi la recherche online complete.
 9. L'ecran affiche un bloc `Meilleur resultat`.
-10. L'ecran affiche ensuite `Dans votre bibliotheque` si des correspondances locales existent.
-11. L'ecran affiche ensuite les sections `En ligne - Titres`, `En ligne - Artistes` et `En ligne - Albums` si elles sont disponibles.
+10. L'application arbitre ce hero en privilegiant une correspondance locale forte si elle existe.
+11. L'ecran affiche ensuite les resultats de l'onglet `Bibliotheque` ou `En ligne` selon l'onglet actif.
+12. Si une entite locale visible manque d'image, l'application peut lancer un enrichissement metadata en arriere-plan seulement si les reglages reseau l'autorisent.
 
 ### Boutons et actions
 - toucher la barre de recherche
@@ -59,8 +60,9 @@ Permettre a l'utilisateur de saisir une requete unique et d'obtenir les resultat
 
 ### Resultat attendu
 - L'utilisateur voit en haut le resultat juge le plus pertinent.
-- Si une piste locale correspond fortement, elle est privilegiee dans `Meilleur resultat`.
-- Les resultats locaux apparaissent avant les sections online lorsqu'ils sont pertinents.
+- Si une piste, un artiste ou un album local correspond fortement, ce resultat local est privilegie dans `Meilleur resultat`.
+- Le `best_match` backend aide a classer l'online mais ne doit pas forcer un hero online quand le local est plus pertinent.
+- Une image resolue pour une entite locale est persistee pour les recherches suivantes.
 
 ### Postconditions
 - La requete courante reste visible tant que l'utilisateur ne la vide pas.
@@ -84,6 +86,7 @@ Permettre une recherche utile meme sans reseau ou quand la recherche online est 
 3. L'ecran affiche `Meilleur resultat` si un resultat local est pertinent.
 4. L'ecran affiche `Dans votre bibliotheque`.
 5. Les sections online ne sont pas affichees.
+6. Aucun enrichissement reseau d'image ou de metadata ne doit etre tente.
 
 ### Boutons et actions
 - saisir du texte
@@ -156,7 +159,8 @@ Permettre a l'utilisateur de naviguer vers l'artiste associe a une piste.
 2. L'utilisateur appuie sur `Voir l'artiste`.
 3. L'application resout l'identifiant artiste.
 4. L'application ouvre `Artist`.
-5. L'ecran charge les informations locales puis les enrichissements online si disponibles.
+5. Si l'artiste est local, l'ecran charge d'abord `Room` puis tente un enrichissement online uniquement si les reglages l'autorisent.
+6. Si l'artiste est online, l'ecran consomme directement le payload detail backend.
 
 ### Resultat attendu
 - La page artiste s'ouvre sur le bon artiste, sans lancer la lecture automatiquement.
@@ -177,7 +181,8 @@ Permettre a l'utilisateur de naviguer vers l'album associe a une piste.
 2. L'utilisateur appuie sur `Voir l'album`.
 3. L'application resout l'identifiant album.
 4. L'application ouvre `Album`.
-5. L'ecran charge la liste ordonnee des pistes et les metadonnees de l'album.
+5. Si l'album est local, l'ecran charge d'abord `Room` puis tente un enrichissement online uniquement si les reglages l'autorisent.
+6. Si l'album est online, l'ecran consomme directement le payload detail backend.
 
 ### Resultat attendu
 - La page album s'ouvre sur le bon album, sans modifier la lecture en cours.
