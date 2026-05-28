@@ -189,7 +189,7 @@ Resultat attendu :
 | SRV-007 | backend | Implementer les endpoints batch `bootstrap`, `push-batch`, `pull-batch` pour la sync | not_started | SRV-001, SRV-004 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md` | transport canonique de sync |
 | SRV-004 | backend | Implementer les tables et acces `Supabase / Postgres` | not_started | SRV-001, DOC-007 | `docs/server/database-postgres.md`, `docs/server/postgres-relationships.md` | modele cloud avec IDs AURA en `TEXT`; UUID reserves a `profiles` et `user_id` |
 | SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
-| SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | not_started | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | source de download encore opaque |
+| SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | in_progress | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | Faisabilite yt-dlp validee sur VPS (Deno + IPv6 + POT + cookies) |
 | SRV-008 | backend | Exposer la resolution metadata pour entites locales et completer les payloads detail `artist` / `album` | completed | SRV-002 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | `GET /resolve/artist` et `GET /resolve/album` implementes via `resolve_service.py` + `routes/resolve.py`, score textuel [0,1], ID AURA opaque retourne |
 
 ### Infrastructure et gouvernance
@@ -244,8 +244,17 @@ Resultat attendu :
 - Distinguer clairement les heroes locaux, online et hybrides selon les layouts canoniques.
 - Utiliser `artist_source_links` et `album_source_links` pour memoriser les resolutions backend associees aux entites locales.
 
+## Handoff cible SRV-006
+- Concevoir et implémenter le système de jobs asynchrones dans le backend (avec téléchargement temporairement simulé/stub).
+- La persistance des jobs se fera dans PostgreSQL (via Supabase ou SQLAlchemy, selon SRV-004).
+- Implémenter les routes d'API canoniques : `POST /downloads` (crée le job asynchrone), `GET /downloads` (liste les jobs), `POST /downloads/{id}/retry`, et `GET /jobs/{id}`.
+- Toutes les routes de téléchargement requièrent une authentification par Bearer token.
+- Gestion des cookies YouTube : l'utilisateur pourra soumettre ses cookies Netscape via un endpoint sécurisé `POST /admin/cookies` (protégé par un secret admin) pour mettre à jour le fichier `cookies.txt` partagé, ou via une variable d'environnement/paramètre utilisateur.
+
 ## Journal des changements
+- 2026-05-29T00:35:00+02:00 | code, docs, api | `server/app/services/download_test_service.py`, `server/app/api/routes/test_download.py`, `infra/docker-compose.vps.yml`, `infra/docker/server.Dockerfile`, `BUILD.md` | SRV-006 : validation de la faisabilité du téléchargement yt-dlp sur le VPS Contabo avec intégration de Deno, routage IPv6, PO Token provider (jim60105/bgutil-pot) et cookies Netscape. Fusion sur master.
 - 2026-05-28T01:32:14+02:00 | code, docs, ui | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `docs/android/screens/artist-layout.md`, `docs/android/screens/search.md`, `BUILD.md` | AND-011 : page artiste online sans degrade, sorties online triees et separees albums/singles, actions artiste retirees, titre top bar artiste masque et retour Search conservant l'onglet avec refresh local.
+
 - 2026-05-28T01:42:30+02:00 | code, docs, api | `server/app/schemas/responses.py`, `server/app/api/routes/search.py`, `server/app/api/routes/artists.py`, `server/app/api/routes/albums.py`, `server/app/services/resolve_service.py`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `docs/server/api-contract.md`, `docs/android/screens/artist-layout.md`, `docs/android/screens/album.md`, `BUILD.md` | AND-011 : ajout de `release_type` aux payloads album backend/Android et separation Albums/Singles basee sur cette donnee canonique avec fallback visuel sur `track_count`.
 - 2026-05-28T01:05:42+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | AND-011 : correction des cartes artiste/album local et online avec hauteur suffisante pour les metadonnees et affichage des images online depuis `pictureUri` / `coverUri`.
 - 2026-04-30T00:00:00+02:00 | code, ui, refactor | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | AND-011 (Affinage UI) : Suppression totale de la section "Meilleur résultat" (Best Match) de l'écran de recherche, ainsi que du composant `SharedHeroCard`, suite à des problèmes de layout insolubles à court terme (images non affichées pour l'online, sous-textes coupés). Simplification de l'affichage en gardant uniquement les rails (listes horizontales).
