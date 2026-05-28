@@ -9,16 +9,26 @@ services:
       - ../server/.env
     environment:
       - DOWNLOADS_DIR=/app/downloads
+      - POT_PROVIDER_URL=http://pot-provider:4416/token
     ports:
       - "8000:8000"
     volumes:
       - aura-downloads:/app/downloads
+    depends_on:
+      - pot-provider
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  pot-provider:
+    image: ghcr.io/bembed/bgutil-ytdlp-pot-provider-rs:latest
+    container_name: pot-provider
+    restart: always
+    ports:
+      - "4416:4416"
 
 volumes:
   aura-downloads:

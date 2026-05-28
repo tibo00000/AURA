@@ -61,8 +61,11 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
     - no_check_certificates: avoid cert issues on some VPS
     - socket_timeout: prevent hanging forever
     - retries: be resilient to transient failures
-    - extract_flat: false — we need the actual audio
+    - force_ipv6: YouTube blocking is less strict on IPv6 subnets
+    - extractor_args: Configure PO Token Provider to bypass bot checks
     """
+    pot_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416/token")
+    
     return {
         # Output
         "outtmpl": str(output_dir / f"{download_id}.%(ext)s"),
@@ -71,21 +74,21 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
         # Format selection: best audio, prefer formats that don't need re-encoding
         "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
 
-        # Post-processing: extract audio and convert to mp3
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            },
-        ],
-
         # Network resilience for VPS
         "geo_bypass": True,
-        "nocheckcertificate": False,
+        "nocheckcertificate": True,  # True to bypass potential VPS ssl cert issues
         "socket_timeout": 30,
         "retries": 3,
         "fragment_retries": 3,
+        
+        # Bypassing VPS anti-bot blocks (IPv6 + PO Token)
+        "force_ipv6": True,
+        "extractor_args": {
+            "youtube": {
+                "po_token": [f"web+{pot_url}"],
+                "client": ["web_safari"],  # Safari emulation to avoid DRM and blocks
+            }
+        },
 
         # Search: use ytsearch1 to get the first result
         "default_search": "ytsearch1",
@@ -97,7 +100,7 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
         # Don't download playlists
         "noplaylist": True,
 
-        # Embed metadata
+        # Embed metadata & thumbnail
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
