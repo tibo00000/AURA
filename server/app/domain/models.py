@@ -132,3 +132,37 @@ class SearchResult:
     tracks: List[ProviderTrack] = field(default_factory=list)
     artists: List[ProviderArtist] = field(default_factory=list)
     albums: List[ProviderAlbum] = field(default_factory=list)
+
+
+@dataclass
+class DownloadJob:
+    """Internal representation of a download job."""
+    id: str                                     # AURA ID (job_{ulid})
+    user_id: str                                # UUID string
+    track_id: str                               # AURA track ID (trk_{ulid})
+    provider_name: str                          # e.g., "backend", "youtube"
+    status: str                                 # "queued", "running", "succeeded", "failed", "cancelled"
+    progress_percent: float = 0.0
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    attempt_count: int = 1
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "track_id": self.track_id,
+            "provider_name": self.provider_name,
+            "status": self.status,
+            "progress_percent": self.progress_percent,
+            "error_code": self.error_code,
+            "error_message": self.error_message,
+            "attempt_count": self.attempt_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+        }
+
