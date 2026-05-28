@@ -166,3 +166,54 @@ async def upload_cookies(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.get(
+    "/downloads/{job_id}/file",
+)
+async def serve_downloaded_file(
+    job_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Fetch the physical downloaded audio file (MP3).
+
+    Accessible only after the corresponding job is in 'succeeded' state.
+    """
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    
+    try:
+        job = download_service.get_job(user_id=current_user.id, job_id=job_id)
+        
+        if job.status != "succeeded":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Download job is not succeeded: status={job.status}",
+            )
+            
+        expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
+        if not expected_file.exists():
+            # Fallback checks
+            matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
+            non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
+            if non_thumb:
+                expected_file = non_thumb[0]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Audio file not found on disk",
+                )
+                
+        return FileResponse(
+            path=str(expected_file),
+            media_type="audio/mpeg",
+            filename=f"{job_id}.mp3",
+        )
+        
+    except NotFound as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
