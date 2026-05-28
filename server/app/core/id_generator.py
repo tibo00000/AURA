@@ -44,3 +44,9 @@ def generate_playlist_id() -> str:
 def generate_link_id() -> str:
     """Generate a mapping link ID."""
     return f"link_{ULID()}"
+
+
+def generate_id(prefix: str) -> str:
+    """Generate an AURA ID with an arbitrary prefix."""
+    return f"{prefix}_{ULID()}"
+
