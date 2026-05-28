@@ -24,11 +24,12 @@ services:
       start_period: 15s
 
   pot-provider:
-    image: ghcr.io/bembed/bgutil-ytdlp-pot-provider-rs:latest
+    image: ghcr.io/jim60105/bgutil-pot:latest
     container_name: pot-provider
     restart: always
     ports:
       - "4416:4416"
+
 
 volumes:
   aura-downloads:

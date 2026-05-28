@@ -14,8 +14,9 @@ services:
       - pot-provider
 
   pot-provider:
-    image: ghcr.io/bembed/bgutil-ytdlp-pot-provider-rs:latest
+    image: ghcr.io/jim60105/bgutil-pot:latest
     container_name: pot-provider-local
     restart: always
     ports:
       - "4416:4416"
+
