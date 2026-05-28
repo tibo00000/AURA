@@ -66,7 +66,7 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
     """
     pot_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416/token")
     
-    return {
+    opts = {
         # Output
         "outtmpl": str(output_dir / f"{download_id}.%(ext)s"),
         "final_ext": "mp3",
@@ -117,6 +117,16 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
         ],
         "writethumbnail": True,
     }
+
+    # Dynamically inject cookies if user uploaded a cookies.txt in their downloads folder
+    cookies_file = output_dir / "cookies.txt"
+    if cookies_file.exists():
+        logger.info("Using uploaded cookie file: %s", cookies_file)
+        opts["cookiefile"] = str(cookies_file)
+    else:
+        logger.debug("No cookies.txt found at %s. Proceeding without cookies.", cookies_file)
+
+    return opts
 
 
 async def download_audio(query: str, download_id: str) -> DownloadResult:

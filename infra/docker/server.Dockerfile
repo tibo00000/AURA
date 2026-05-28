@@ -3,10 +3,17 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# ffmpeg is required by yt-dlp for audio extraction and conversion
+# ffmpeg is required by yt-dlp for audio extraction and conversion.
+# curl and unzip are needed to install Deno (the JS runtime required by yt-dlp to bypass bot-checks).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg curl unzip && \
+    curl -fsSL https://deno.land/install.sh | sh && \
+    apt-get purge -y --auto-remove curl unzip && \
     rm -rf /var/lib/apt/lists/*
+
+# Add Deno to PATH
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 WORKDIR /app
 
