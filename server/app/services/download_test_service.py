@@ -90,8 +90,12 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
             }
         },
 
+        # Enable downloading JS solvers for Deno from GitHub
+        "remote_components": ["ejs:github"],
+
         # Search: use ytsearch1 to get the first result
         "default_search": "ytsearch1",
+
 
         # Quiet output (we capture via hooks)
         "quiet": True,
