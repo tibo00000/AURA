@@ -14,6 +14,7 @@ import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.DownloadRequestDto
 import com.aura.music.data.network.CookieUploadRequestDto
 import com.aura.music.data.network.DownloadJobListResponseData
+import com.aura.music.data.network.ResolveDownloadRequestDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -363,6 +364,39 @@ class DownloadRepository(
     }
 
     /**
+     * Resolve a pending download job by choosing one of the YouTube Music candidates.
+     * Calls the backend resolve route, updates Room to "queued", and restarts polling.
+     */
+    suspend fun resolveJob(jobId: String, videoId: String, userToken: String) = withContext(Dispatchers.IO) {
+        try {
+            Log.i(TAG, "Resolving job $jobId with videoId $videoId...")
+            val response = apiService.resolveDownload(
+                token = userToken,
+                jobId = jobId,
+                request = ResolveDownloadRequestDto(videoId = videoId)
+            )
+            val createData = response.data
+            if (createData != null) {
+                // Update local Room entity
+                val job = database.downloadJobDao().getJobById(jobId)
+                if (job != null) {
+                    val updatedJob = job.copy(
+                        status = createData.status,
+                        progressPercent = 0f,
+                        errorCode = null,
+                        errorMessage = null,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    database.downloadJobDao().upsert(updatedJob)
+                    Log.d(TAG, "Local job $jobId reset to ${createData.status} after resolution")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resolving job $jobId", e)
+        }
+    }
+
+    /**
      * Expose jobs reactive Flow from Room by status
      */
     fun getJobsByStatus(status: String): Flow<List<DownloadJobEntity>> {
@@ -404,6 +438,19 @@ class DownloadRepository(
             emit(Result.failure(e))
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Fetch candidates for a specific job from the backend.
+     */
+    suspend fun getCandidatesForJob(jobId: String, userToken: String): List<com.aura.music.data.network.YtmCandidateDto>? = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getJobStatus(userToken, jobId)
+            return@withContext response.data?.candidates
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching candidates for job $jobId", e)
+            return@withContext null
+        }
+    }
 
     private fun normalize(value: String): String {
         val slug = value

@@ -43,13 +43,16 @@ class DownloadsViewModel(
     private val _isSyncing = MutableStateFlow(false)
     private val _errorMessage = MutableStateFlow<String?>(null)
 
+    private val _candidates = MutableStateFlow<Map<String, List<com.aura.music.data.network.YtmCandidateDto>>>(emptyMap())
+    val candidates = _candidates.asStateFlow()
+
     val uiState: StateFlow<DownloadsUiState> = combine(
         _selectedTab,
         downloadRepository.getAllJobsWithTrack(),
         _isSyncing,
         _errorMessage
     ) { tab, allJobs, isSyncing, errorMsg ->
-        val queued = allJobs.filter { it.status == "queued" }
+        val queued = allJobs.filter { it.status == "queued" || it.status == "requires_resolution" }
         val running = allJobs.filter { it.status == "running" }
         val succeeded = allJobs.filter { it.status == "succeeded" }
         val failed = allJobs.filter { it.status == "failed" || it.status == "cancelled" }
@@ -76,6 +79,31 @@ class DownloadsViewModel(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = DownloadsUiState()
     )
+
+    fun loadCandidatesForJob(jobId: String) {
+        viewModelScope.launch {
+            val jobCandidates = downloadRepository.getCandidatesForJob(jobId, userToken)
+            if (jobCandidates != null) {
+                _candidates.value = _candidates.value.toMutableMap().apply {
+                    put(jobId, jobCandidates)
+                }
+            }
+        }
+    }
+
+    fun resolveJob(jobId: String, videoId: String) {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                downloadRepository.resolveJob(jobId, videoId, userToken)
+                _candidates.value = _candidates.value.toMutableMap().apply {
+                    remove(jobId)
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Impossible de résoudre le téléchargement."
+            }
+        }
+    }
 
     init {
         // Automatically sync active states and spin up polling loop

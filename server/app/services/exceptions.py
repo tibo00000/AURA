@@ -29,3 +29,10 @@ class BadRequest(ServiceError):
 class PartialFailure(ServiceError):
     """Operation succeeded partially."""
     pass
+
+
+class RequiresResolutionException(ServiceError):
+    """Fuzzy match score is too low, requiring user choice among YTM candidates."""
+    def __init__(self, candidates: list):
+        self.candidates = candidates
+        super().__init__("Download requires user resolution of YTM candidates")

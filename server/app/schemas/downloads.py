@@ -25,7 +25,17 @@ class DownloadCreateResponse(BaseModel):
     """Immediate response after submitting a download job."""
     job_id: str
     track_id: str
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+
+
+class YtmCandidate(BaseModel):
+    """YouTube Music candidate suggestion for user choice."""
+    video_id: str
+    title: str
+    artist: str
+    album: Optional[str] = None
+    duration: Optional[str] = None
+    cover_uri: Optional[str] = None
 
 
 class DownloadJobResponse(BaseModel):
@@ -33,7 +43,7 @@ class DownloadJobResponse(BaseModel):
     id: str
     track_id: str
     provider_name: str
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
     progress_percent: float = 0.0
     error_code: Optional[str] = None
     error_message: Optional[str] = None
@@ -58,12 +68,18 @@ class JobStatusResponse(BaseModel):
     """Generic async job status representation for GET /jobs/{id}."""
     id: str
     kind: Literal["download", "enrichment", "maintenance"]
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
     progress_percent: float = 0.0
     result: Optional[dict] = None
     error: Optional[dict] = None  # Contains code and message keys
+    candidates: Optional[List[YtmCandidate]] = None
     created_at: datetime
     updated_at: datetime
+
+
+class ResolveDownloadRequest(BaseModel):
+    """Request schema to resolve a pending download with a specific video ID."""
+    video_id: str = Field(..., description="The YTM video ID selected by the user")
 
 
 class CookieUploadRequest(BaseModel):

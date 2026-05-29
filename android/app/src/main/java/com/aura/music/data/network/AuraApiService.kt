@@ -108,6 +108,17 @@ interface AuraApiService {
     ): AuraResponse<DownloadCreateResponseData>
 
     /**
+     * POST /downloads/{job_id}/resolve
+     * Resolve a pending download job by choosing one of the YouTube Music candidates.
+     */
+    @POST("/downloads/{job_id}/resolve")
+    suspend fun resolveDownload(
+        @Header("Authorization") token: String,
+        @Path("job_id") jobId: String,
+        @Body request: ResolveDownloadRequestDto
+    ): AuraResponse<DownloadCreateResponseData>
+
+    /**
      * GET /jobs/{job_id}
      * Get the status of an asynchronous job (such as a track download).
      */

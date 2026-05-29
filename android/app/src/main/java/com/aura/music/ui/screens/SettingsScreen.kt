@@ -45,6 +45,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.flow.collect
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
 fun SettingsScreen(
@@ -54,6 +61,13 @@ fun SettingsScreen(
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    var cookiesText by remember { mutableStateOf("") }
+    var isUploading by remember { mutableStateOf(false) }
+    var uploadStatus by remember { mutableStateOf<String?>(null) }
+    var isSuccess by remember { mutableStateOf<Boolean?>(null) }
+    var showYouTubeLogin by remember { mutableStateOf(false) }
+
     val settingsState = produceState<UserSettingsEntity?>(initialValue = null, repository, refreshTick) {
         repository.ensureDefaults()
         value = repository.getSettings()
@@ -132,15 +146,33 @@ fun SettingsScreen(
                 }
             }
             item {
-                var cookiesText by remember { mutableStateOf("") }
-                var isUploading by remember { mutableStateOf(false) }
-                var uploadStatus by remember { mutableStateOf<String?>(null) }
-                var isSuccess by remember { mutableStateOf<Boolean?>(null) }
-
                 SettingsCard(title = "Contournement YouTube (Cookies)") {
                     Text(
-                        "Collez vos cookies au format Netscape (obtenus via une extension d'export de cookies comme 'Get cookies.txt') pour permettre au serveur d'extraire les vidéos YouTube sans blocage.",
+                        "Pour contourner les blocages YouTube, connectez-vous directement via la WebView sécurisée de l'application ou collez vos cookies Netscape manuellement.",
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { showYouTubeLogin = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE50914), // YouTube Red
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text("Se connecter à YouTube (WebView)")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        "Ou coller manuellement les cookies Netscape :",
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -204,6 +236,34 @@ fun SettingsScreen(
                     ) {
                         Text(if (isUploading) "Téléversement..." else "Mettre à jour les cookies")
                     }
+                }
+
+                if (showYouTubeLogin) {
+                    YouTubeLoginDialog(
+                        onCookiesExtracted = { netscapeCookies ->
+                            showYouTubeLogin = false
+                            isUploading = true
+                            uploadStatus = "Envoi des cookies WebView..."
+                            isSuccess = null
+                            scope.launch {
+                                downloadRepository.uploadCookies(netscapeCookies, "Bearer test_user_token")
+                                    .collect { result ->
+                                        isUploading = false
+                                        result.fold(
+                                            onSuccess = {
+                                                uploadStatus = "Cookies WebView mis à jour avec succès !"
+                                                isSuccess = true
+                                            },
+                                            onFailure = { error ->
+                                                uploadStatus = "Erreur WebView: ${error.localizedMessage}"
+                                                isSuccess = false
+                                            }
+                                        )
+                                    }
+                            }
+                        },
+                        onDismiss = { showYouTubeLogin = false }
+                    )
                 }
             }
             item {
@@ -286,4 +346,119 @@ private fun PolicyRow(
             }
         }
     }
+}
+
+@Composable
+fun YouTubeLoginDialog(
+    onCookiesExtracted: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Connexion YouTube",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Fermer",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Connectez-vous à votre compte YouTube. Les cookies de session seront extraits automatiquement et envoyés de manière sécurisée au serveur pour contourner les restrictions.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+
+                // WebView Container
+                androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { context ->
+                        android.webkit.WebView(context).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                useWideViewPort = true
+                                loadWithOverviewMode = true
+                                userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                            }
+                            webViewClient = object : android.webkit.WebViewClient() {
+                                override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                    super.onPageFinished(view, url)
+                                    val cookieManager = android.webkit.CookieManager.getInstance()
+                                    val cookiesString = cookieManager.getCookie("https://www.youtube.com")
+                                    if (cookiesString != null) {
+                                        if (cookiesString.contains("SID=") && cookiesString.contains("HSID=")) {
+                                            val netscapeCookies = convertToNetscape(cookiesString)
+                                            onCookiesExtracted(netscapeCookies)
+                                        }
+                                    }
+                                }
+                            }
+                            loadUrl("https://www.youtube.com")
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+fun convertToNetscape(cookiesString: String): String {
+    val builder = java.lang.StringBuilder()
+    builder.append("# Netscape HTTP Cookie File\n")
+    builder.append("# This file is generated by AURA Music Player WebView\n\n")
+    
+    val cookies = cookiesString.split(";")
+    for (cookie in cookies) {
+        val trimmed = cookie.trim()
+        if (trimmed.isEmpty()) continue
+        
+        val parts = trimmed.split("=", limit = 2)
+        if (parts.size == 2) {
+            val name = parts[0].trim()
+            val value = parts[1].trim()
+            builder.append(".youtube.com\tTRUE\t/\tTRUE\t2147483647\t$name\t$value\n")
+        }
+    }
+    return builder.toString()
 }

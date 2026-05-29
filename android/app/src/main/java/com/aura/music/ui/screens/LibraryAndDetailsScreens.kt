@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -819,6 +820,7 @@ fun DownloadsScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var activeResolveJobId by remember { mutableStateOf<String?>(null) }
 
     val filterLabels = listOf(
         "En attente (${uiState.queuedCount})",
@@ -932,6 +934,10 @@ fun DownloadsScreen(
                         DownloadJobRow(
                             job = job,
                             onRetry = { viewModel.retryDownload(job.jobId) },
+                            onResolve = {
+                                viewModel.loadCandidatesForJob(job.jobId)
+                                activeResolveJobId = job.jobId
+                            },
                             onPlay = {
                                 val trackRow = TrackListRow(
                                     id = job.trackId,
@@ -961,12 +967,21 @@ fun DownloadsScreen(
             }
         }
     }
+
+    if (activeResolveJobId != null) {
+        YtmProposalsDialog(
+            jobId = activeResolveJobId!!,
+            viewModel = viewModel,
+            onDismiss = { activeResolveJobId = null }
+        )
+    }
 }
 
 @Composable
 private fun DownloadJobRow(
     job: com.aura.music.data.local.DownloadJobRowModel,
     onRetry: () -> Unit,
+    onResolve: () -> Unit,
     onPlay: () -> Unit
 ) {
     androidx.compose.material3.Card(
@@ -1050,6 +1065,15 @@ private fun DownloadJobRow(
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
+                    "requires_resolution" -> {
+                        Text(
+                            text = "Choix de version requis",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BlazeOrange,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                     "failed" -> {
                         Text(
                             text = "Erreur : ${job.errorMessage ?: "Inconnue"}",
@@ -1079,6 +1103,24 @@ private fun DownloadJobRow(
                             imageVector = Icons.Rounded.Refresh,
                             contentDescription = "Réessayer",
                             tint = BlazeOrange
+                        )
+                    }
+                }
+                "requires_resolution" -> {
+                    androidx.compose.material3.Button(
+                        onClick = onResolve,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = BlazeOrange,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            text = "Choisir",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -1269,5 +1311,154 @@ fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
     coverUri = coverUri,
     isLiked = false,
 )
+
+@Composable
+fun YtmProposalsDialog(
+    jobId: String,
+    viewModel: com.aura.music.ui.downloads.DownloadsViewModel,
+    onDismiss: () -> Unit
+) {
+    val candidatesMap by viewModel.candidates.collectAsState()
+    val candidates = candidatesMap[jobId]
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f),
+            shape = RoundedCornerShape(16.dp),
+            color = androidx.compose.ui.graphics.Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Text(
+                    text = "Choisir la version",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "Plusieurs correspondances ont été trouvées. Veuillez sélectionner la version correcte à télécharger.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+
+                if (candidates == null) {
+                    // Loading State
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(color = BlazeOrange)
+                    }
+                } else if (candidates.isEmpty()) {
+                    // Empty State
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "Aucune proposition trouvée.", color = TextSecondary)
+                    }
+                } else {
+                    // Candidates List
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(candidates) { candidate ->
+                            androidx.compose.material3.Card(
+                                onClick = {
+                                    viewModel.resolveJob(jobId, candidate.videoId)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = androidx.compose.material3.CardDefaults.cardColors(
+                                    containerColor = androidx.compose.ui.graphics.Color(0xFF2A2A2A)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // Thumbnail cover
+                                    if (candidate.coverUri != null) {
+                                        AsyncImage(
+                                            model = candidate.coverUri,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                        )
+                                    } else {
+                                        PlaceholderCover(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                        )
+                                    }
+
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            text = candidate.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = candidate.artist + (candidate.album?.let { " • $it" } ?: ""),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    if (candidate.duration != null) {
+                                        Text(
+                                            text = candidate.duration,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Action Footer
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                        Text(text = "Annuler", color = BlazeOrange)
+                    }
+                }
+            }
+        }
+    }
+}
 
 

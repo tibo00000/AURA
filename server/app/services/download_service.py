@@ -20,7 +20,7 @@ from app.core.aura_id_codec import parse_aura_id
 from app.core.id_generator import generate_id
 from app.domain.models import DownloadJob
 from app.providers.deezer.client import DeezerClient
-from app.services.exceptions import BadRequest, NotFound
+from app.services.exceptions import BadRequest, NotFound, RequiresResolutionException
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +114,6 @@ class DownloadService:
     ) -> Optional[str]:
         """
         Surgical targeting strategy for official releases on YouTube Music.
-        
-        Step A: Search for the album "{Artist} {Album}" with filter="albums".
-        Step B: Fetch the validated album's tracklist using browseId.
-        Step C: Find the track in the tracklist with the highest fuzzy matching similarity score.
         """
         if not artist or not title:
             return None
@@ -127,127 +123,170 @@ class DownloadService:
             artist, title, album
         )
         
+        resolved_id = None
+        
         # We need an album name to run the album filter strategy.
-        if not album:
-            logger.info("YTM Targeted Search: no album specified, skipping Step A/B and trying search fallback")
-            return self._fallback_ytm_search(artist, title)
+        if album:
+            try:
+                # Step A: Search for the album
+                query = f"{artist} {album}".strip()
+                logger.info("YTM Step A: searching albums with query: %r", query)
+                search_results = ytmusic.search(query, filter="albums")
+                
+                validated_album = None
+                for item in search_results:
+                    artists_found = item.get("artists", [])
+                    if not artists_found:
+                        continue
+                    found_artist = artists_found[0].get("name", "")
+                    
+                    # Fuzzy match artist name (case-insensitive)
+                    ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                    logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%%", item.get("title"), found_artist, ratio)
+                    
+                    if ratio >= 75:
+                        validated_album = item
+                        break
+                
+                if validated_album:
+                    browse_id = validated_album.get("browseId")
+                    if browse_id:
+                        # Step B: Retrieve the album's tracklist
+                        logger.info("YTM Step B: fetching album tracks for browseId: %s", browse_id)
+                        album_detail = ytmusic.get_album(browse_id)
+                        tracks = album_detail.get("tracks", [])
+                        
+                        # Step C: Score tracks using fuzzy match
+                        best_track = None
+                        best_score = -1
+                        
+                        for track in tracks:
+                            track_title = track.get("title", "")
+                            track_video_id = track.get("videoId")
+                            if not track_title or not track_video_id:
+                                continue
+                                
+                            score = -1
+                            # Case-insensitive perfect match (100)
+                            if track_title.strip().lower() == title.strip().lower():
+                                score = 100
+                            # Content match (99)
+                            elif title.strip().lower() in track_title.strip().lower():
+                                score = 99
+                            # Partial match (fuzz.ratio)
+                            else:
+                                score = fuzz.ratio(title.lower(), track_title.lower())
+                                
+                            logger.info("YTM Step C: scoring album track %r (videoId=%s) -> score=%d", track_title, track_video_id, score)
+                            
+                            if score > best_score:
+                                best_score = score
+                                best_track = track
+                                
+                        if best_track and best_score >= 75:
+                            resolved_id = best_track["videoId"]
+                            logger.info(
+                                "YTM Targeted Search SUCCESS: selected %r (videoId=%s) with score %d",
+                                best_track.get("title"), resolved_id, best_score
+                            )
+                            return resolved_id
+            except Exception as e:
+                logger.error("YTM Targeted Search: Exception during album strategy: %s", e, exc_info=True)
 
-        try:
-            # Step A: Search for the album
-            query = f"{artist} {album}".strip()
-            logger.info("YTM Step A: searching albums with query: %r", query)
-            search_results = ytmusic.search(query, filter="albums")
+        # Fallback to smart song search
+        if not resolved_id:
+            logger.info("Album strategy failed or skipped, trying smart song search fallback")
+            resolved_id = self._smart_song_search(artist, title)
             
-            validated_album = None
-            for item in search_results:
-                # Compare found artist name with requested artist name
-                artists_found = item.get("artists", [])
-                if not artists_found:
-                    continue
-                
-                # Take the primary artist of the album
-                found_artist = artists_found[0].get("name", "")
-                
-                # Fuzzy match artist name (case-insensitive)
-                ratio = fuzz.ratio(artist.lower(), found_artist.lower())
-                logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%%", item.get("title"), found_artist, ratio)
-                
-                if ratio >= 70:
-                    validated_album = item
-                    break
+        if resolved_id:
+            return resolved_id
             
-            if not validated_album:
-                logger.info("YTM Step A: no album validated with >= 70% artist matching, trying search fallback")
-                return self._fallback_ytm_search(artist, title)
-                
-            browse_id = validated_album.get("browseId")
-            if not browse_id:
-                logger.info("YTM Step A: validated album is missing browseId")
-                return self._fallback_ytm_search(artist, title)
-                
-            # Step B: Retrieve the album's tracklist
-            logger.info("YTM Step B: fetching album tracks for browseId: %s", browse_id)
-            album_detail = ytmusic.get_album(browse_id)
-            tracks = album_detail.get("tracks", [])
-            if not tracks:
-                logger.info("YTM Step B: album has no tracks in payload")
-                return self._fallback_ytm_search(artist, title)
-                
-            # Step C: Score tracks using fuzzy match
-            best_track = None
-            best_score = -1
-            
-            for track in tracks:
-                track_title = track.get("title", "")
-                track_video_id = track.get("videoId")
-                if not track_title or not track_video_id:
-                    continue
-                    
-                score = -1
-                # Case-insensitive perfect match (100)
-                if track_title.strip().lower() == title.strip().lower():
-                    score = 100
-                # Content match (99)
-                elif title.strip().lower() in track_title.strip().lower():
-                    score = 99
-                # Partial match (fuzz.ratio)
-                else:
-                    score = fuzz.ratio(title.lower(), track_title.lower())
-                    
-                logger.info("YTM Step C: scoring album track %r (videoId=%s) -> score=%d", track_title, track_video_id, score)
-                
-                if score > best_score:
-                    best_score = score
-                    best_track = track
-                    
-            if best_track and best_score >= 60:
-                resolved_id = best_track["videoId"]
-                logger.info(
-                    "YTM Targeted Search SUCCESS: selected %r (videoId=%s) with score %d",
-                    best_track.get("title"), resolved_id, best_score
-                )
-                return resolved_id
-            else:
-                logger.info("YTM Step C: no track matched with score >= 60, trying search fallback")
-                return self._fallback_ytm_search(artist, title)
-                
-        except Exception as e:
-            logger.error("YTM Targeted Search: Exception during resolution: %s", e, exc_info=True)
-            return self._fallback_ytm_search(artist, title)
+        # If still not found or score < 75%, trigger RequiresResolutionException
+        candidates = self._fetch_5_candidates(artist, title)
+        raise RequiresResolutionException(candidates=candidates)
 
-    def _fallback_ytm_search(self, artist: str, title: str) -> Optional[str]:
+    def _smart_song_search(self, artist: str, title: str) -> Optional[str]:
         """
-        Fallback search targeting songs.
+        Smart fallback searching songs and filtering for high confidence match.
         """
         try:
             query = f"{artist} {title}".strip()
-            logger.info("YTM Fallback Search: searching songs for query: %r", query)
+            logger.info("YTM Smart Song Search: searching songs for query: %r", query)
             results = ytmusic.search(query, filter="songs")
             if not results:
                 return None
                 
-            # Take the first song returned and ensure artist similarity
-            for item in results:
+            best_song_id = None
+            best_score = -1
+            
+            for item in results[:3]:  # inspect top 3 songs
+                video_id = item.get("videoId")
+                if not video_id:
+                    continue
+                    
                 artists_found = item.get("artists", [])
-                found_artist = artists_found[0].get("name", "") if artists_found else ""
-                ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                found_artist = ", ".join([a.get("name", "") for a in artists_found if a.get("name")])
+                found_title = item.get("title", "")
                 
-                if ratio >= 60:
-                    video_id = item.get("videoId")
-                    if video_id:
-                        logger.info("YTM Fallback Search SUCCESS: selected song %r (videoId=%s)", item.get("title"), video_id)
-                        return video_id
-                        
-            # absolute fallback: take the first song's videoId regardless of artist score
-            first_video_id = results[0].get("videoId")
-            if first_video_id:
-                logger.info("YTM Fallback Search WEAK SUCCESS: selecting first result (videoId=%s)", first_video_id)
-                return first_video_id
+                # Compute fuzzy scores
+                artist_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                title_ratio = fuzz.ratio(title.lower(), found_title.lower())
+                
+                # Combined score
+                score = (artist_ratio + title_ratio) / 2
+                logger.info("YTM Smart Song Search: candidate %r by %r, score=%d%% (artist=%d%%, title=%d%%)", 
+                            found_title, found_artist, score, artist_ratio, title_ratio)
+                
+                if artist_ratio >= 75 and title_ratio >= 75 and score > best_score:
+                    best_score = score
+                    best_song_id = video_id
+                    
+            if best_song_id:
+                logger.info("YTM Smart Song Search SUCCESS: selected videoId=%s with score %d%%", best_song_id, best_score)
+                return best_song_id
                 
             return None
         except Exception as e:
-            logger.error("YTM Fallback Search: Exception during fallback search: %s", e)
+            logger.error("YTM Smart Song Search error: %s", e)
             return None
+
+    def _fetch_5_candidates(self, artist: str, title: str) -> List[dict]:
+        """Fetch 5 candidate songs from YTM search for user choice."""
+        try:
+            query = f"{artist} {title}".strip()
+            logger.info("Fetching 5 YTM candidates for query: %r", query)
+            results = ytmusic.search(query, filter="songs")
+            candidates = []
+            for item in results[:5]:
+                video_id = item.get("videoId")
+                if not video_id:
+                    continue
+                
+                # Format artist name
+                artists_found = item.get("artists", [])
+                artist_name = ", ".join([a.get("name", "") for a in artists_found if a.get("name")])
+                
+                # Cover URI
+                cover_uri = None
+                thumbnails = item.get("thumbnails", [])
+                if thumbnails:
+                    cover_uri = thumbnails[0].get("url")
+                
+                duration = item.get("duration")
+                album_name = item.get("album", {}).get("name") if isinstance(item.get("album"), dict) else None
+
+                candidates.append({
+                    "video_id": video_id,
+                    "title": item.get("title", ""),
+                    "artist": artist_name or artist,
+                    "album": album_name,
+                    "duration": duration,
+                    "cover_uri": cover_uri,
+                })
+            return candidates
+        except Exception as e:
+            logger.error("Failed to fetch YTM candidates: %s", e)
+            return []
 
     def create_job(
         self, user_id: str, track_id: str, provider_name: str = "youtube", source_hint: Optional[dict] = None
@@ -394,13 +433,27 @@ class DownloadService:
 
         # Try to resolve targeted YouTube Music videoId
         resolved_video_id = None
-        if ref and ref.provider_name == "deezer" and artist and title:
+        if source_hint and source_hint.get("resolved_video_id"):
+            resolved_video_id = source_hint["resolved_video_id"]
+            logger.info("Direct videoId provided in source_hint: %s", resolved_video_id)
+        elif ref and ref.provider_name == "deezer" and artist and title:
             # We run the targeted search in a thread pool since ytmusicapi makes blocking HTTP requests
             def _run_resolve():
                 return self._resolve_official_video_id(artist, title, album)
             
             loop = asyncio.get_event_loop()
-            resolved_video_id = await loop.run_in_executor(None, _run_resolve)
+            try:
+                resolved_video_id = await loop.run_in_executor(None, _run_resolve)
+            except RequiresResolutionException as e:
+                # Capture des candidats et mise à jour du job en requires_resolution
+                job.status = "requires_resolution"
+                job.candidates = e.candidates
+                job.updated_at = datetime.now(timezone.utc)
+                logger.info("Job %s requires user resolution, suspended download thread.", job_id)
+                return
+            except Exception as e:
+                logger.error("Error during targeted search: %s", e)
+                # Si autre chose échoue, on continue avec le fallback de téléchargement normal par requête
 
         # Build download target
         if resolved_video_id:

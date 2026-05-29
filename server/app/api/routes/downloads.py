@@ -18,6 +18,7 @@ from app.schemas.downloads import (
     DownloadJobResponse,
     DownloadRequest,
     PaginationMeta,
+    ResolveDownloadRequest,
 )
 from app.schemas.responses import ErrorDetails, ResponseEnvelope
 from app.services.download_service import DownloadService, DOWNLOADS_DIR
@@ -142,6 +143,61 @@ async def retry_download(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post(
+    "/downloads/{job_id}/resolve",
+    response_model=ResponseEnvelope[DownloadCreateResponse],
+)
+async def resolve_download(
+    job_id: str,
+    request: ResolveDownloadRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Resolve a pending download job by choosing one of the YouTube Music candidates.
+    """
+    try:
+        job = download_service.get_job(user_id=current_user.id, job_id=job_id)
+        if job.status != "requires_resolution":
+            raise BadRequest(f"Job is not in requires_resolution state: status={job.status}")
+            
+        import asyncio
+        from datetime import datetime, timezone
+        
+        job.status = "queued"
+        job.progress_percent = 0.0
+        job.error_code = None
+        job.error_message = None
+        job.candidates = []
+        job.updated_at = datetime.now(timezone.utc)
+        
+        # Trigger background download task with the selected video_id injected in source_hint
+        asyncio.create_task(
+            download_service._run_download_job(
+                job_id=job_id,
+                source_hint={"resolved_video_id": request.video_id}
+            )
+        )
+        
+        data = DownloadCreateResponse(
+            job_id=job.id,
+            track_id=job.track_id,
+            status=job.status,
+        )
+        return ResponseEnvelope(data=data)
+        
+    except NotFound as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
 
 
 @router.post(

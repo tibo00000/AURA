@@ -251,12 +251,28 @@ data class JobErrorPayload(
 )
 
 @JsonClass(generateAdapter = true)
+data class YtmCandidateDto(
+    @Json(name = "video_id") val videoId: String,
+    @Json(name = "title") val title: String,
+    @Json(name = "artist") val artist: String,
+    @Json(name = "album") val album: String? = null,
+    @Json(name = "duration") val duration: String? = null,
+    @Json(name = "cover_uri") val coverUri: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ResolveDownloadRequestDto(
+    @Json(name = "video_id") val videoId: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class JobStatusResponseData(
     @Json(name = "id") val id: String,
     @Json(name = "kind") val kind: String,
     @Json(name = "status") val status: String,
     @Json(name = "progress_percent") val progressPercent: Float = 0f,
     @Json(name = "error") val error: JobErrorPayload? = null,
+    @Json(name = "candidates") val candidates: List<YtmCandidateDto>? = null,
     @Json(name = "created_at") val createdAt: String,
     @Json(name = "updated_at") val updatedAt: String,
 )

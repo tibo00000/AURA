@@ -149,6 +149,7 @@ class DownloadJob:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
+    candidates: List[Any] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -164,5 +165,6 @@ class DownloadJob:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+            "candidates": self.candidates,
         }
 
