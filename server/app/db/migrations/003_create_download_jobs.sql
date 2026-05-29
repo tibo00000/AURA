@@ -22,3 +22,8 @@ CREATE TABLE IF NOT EXISTS download_jobs (
 CREATE INDEX IF NOT EXISTS idx_download_jobs_user_created ON download_jobs(user_id, created_at DESC);
 -- Index pour filtrer rapidement par statut
 CREATE INDEX IF NOT EXISTS idx_download_jobs_status ON download_jobs(status);
+
+-- Activation de la sécurité au niveau des lignes (RLS)
+-- Le serveur FastAPI utilisera la clé de rôle de service (service_role) qui contourne RLS,
+-- protégeant ainsi la table de tout accès anonyme direct de clients externes.
+ALTER TABLE download_jobs ENABLE ROW LEVEL SECURITY;
