@@ -55,6 +55,20 @@ class SyncService:
         playlists (with items), track likes, and the last playback snapshot.
         """
         logger.info("Sync Bootstrap requested for user %s on device %s", user_id, device_id)
+        
+        # Ensure user profile exists in profiles table to satisfy Foreign Key constraints
+        try:
+            prof_res = supabase.table("profiles").select("*").eq("id", user_id).execute()
+            if not prof_res.data:
+                logger.info("Initializing missing user profile for %s in profiles table", user_id)
+                supabase.table("profiles").insert({
+                    "id": user_id,
+                    "display_name": f"User {user_id[:8]}",
+                    "avatar_uri": None,
+                }).execute()
+        except Exception as pe:
+            logger.warning("Failed to verify/insert user profile %s: %s. Continuing anyway.", user_id, pe)
+
         try:
             # 1. User Settings
             settings_res = supabase.table("user_settings").select("*").eq("user_id", user_id).execute()
@@ -161,6 +175,20 @@ class SyncService:
         Guarantees idempotency and resolves concurrency conflicts based on LWW or order tokens.
         """
         logger.info("Sync Push Batch %s received with %d operations for user %s", batch_id, len(operations), user_id)
+        
+        # Ensure user profile exists in profiles table to satisfy Foreign Key constraints
+        try:
+            prof_res = supabase.table("profiles").select("*").eq("id", user_id).execute()
+            if not prof_res.data:
+                logger.info("Initializing missing user profile for %s in profiles table during push", user_id)
+                supabase.table("profiles").insert({
+                    "id": user_id,
+                    "display_name": f"User {user_id[:8]}",
+                    "avatar_uri": None,
+                }).execute()
+        except Exception as pe:
+            logger.warning("Failed to verify/insert user profile %s during push: %s. Continuing anyway.", user_id, pe)
+
         results = []
         
         for op in operations:
