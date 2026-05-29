@@ -228,7 +228,13 @@ interface TrackDao {
     suspend fun upsertTracks(items: List<TrackEntity>)
 
     @Upsert
+    suspend fun upsertTrack(item: TrackEntity)
+
+    @Upsert
     suspend fun upsertTrackMediaLinks(items: List<TrackMediaLinkEntity>)
+
+    @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
+    suspend fun getRawTrackById(trackId: String): TrackEntity?
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
@@ -624,3 +630,50 @@ interface AlbumSourceLinkDao {
     )
     suspend fun getActiveLink(albumId: String, usageType: String): AlbumSourceLinkEntity?
 }
+
+
+@Dao
+interface DownloadJobDao {
+    @Upsert
+    suspend fun upsert(job: DownloadJobEntity)
+
+    @Upsert
+    suspend fun upsert(jobs: List<DownloadJobEntity>)
+
+    @Query("SELECT * FROM download_jobs WHERE id = :jobId LIMIT 1")
+    suspend fun getJobById(jobId: String): DownloadJobEntity?
+
+    @Query("SELECT * FROM download_jobs ORDER BY created_at DESC")
+    fun getAllJobsFlow(): kotlinx.coroutines.flow.Flow<List<DownloadJobEntity>>
+
+    @Query("SELECT * FROM download_jobs WHERE status = :status ORDER BY created_at DESC")
+    fun getJobsByStatusFlow(status: String): kotlinx.coroutines.flow.Flow<List<DownloadJobEntity>>
+
+    @Query("SELECT * FROM download_jobs WHERE status IN ('queued', 'running')")
+    suspend fun getActiveJobs(): List<DownloadJobEntity>
+
+    @Query("""
+        SELECT 
+            download_jobs.id AS jobId,
+            download_jobs.track_id AS trackId,
+            COALESCE(tracks.title, 'Piste inconnue') AS title,
+            COALESCE(tracks.display_artist_name, 'Artiste inconnu') AS artistName,
+            tracks.cover_uri AS coverUri,
+            download_jobs.status AS status,
+            download_jobs.progress_percent AS progressPercent,
+            download_jobs.error_code AS errorCode,
+            download_jobs.error_message AS errorMessage,
+            download_jobs.created_at AS createdAt
+        FROM download_jobs
+        LEFT JOIN tracks ON tracks.id = download_jobs.track_id
+        ORDER BY download_jobs.created_at DESC
+    """)
+    fun getAllJobsWithTrackFlow(): kotlinx.coroutines.flow.Flow<List<DownloadJobRowModel>>
+
+    @Query("DELETE FROM download_jobs WHERE id = :jobId")
+    suspend fun deleteJob(jobId: String): Int
+
+    @Query("DELETE FROM download_jobs WHERE status IN ('succeeded', 'failed', 'cancelled')")
+    suspend fun clearCompletedJobs(): Int
+}
+

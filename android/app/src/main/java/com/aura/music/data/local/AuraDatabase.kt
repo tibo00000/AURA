@@ -11,6 +11,7 @@ import androidx.room.RoomDatabase
         AlbumSourceLinkEntity::class,
         ArtistEntity::class,
         ArtistSourceLinkEntity::class,
+        DownloadJobEntity::class,
         PlaybackSnapshotEntity::class,
         PlaylistEntity::class,
         PlaylistItemEntity::class,
@@ -20,7 +21,7 @@ import androidx.room.RoomDatabase
         TrackMediaLinkEntity::class,
         UserSettingsEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AuraDatabase : RoomDatabase() {
@@ -34,6 +35,7 @@ abstract class AuraDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
     abstract fun artistSourceLinkDao(): ArtistSourceLinkDao
     abstract fun albumSourceLinkDao(): AlbumSourceLinkDao
+    abstract fun downloadJobDao(): DownloadJobDao
 
     companion object {
         @Volatile
@@ -95,6 +97,33 @@ abstract class AuraDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `download_jobs` (
+                        `id` TEXT NOT NULL,
+                        `track_id` TEXT NOT NULL,
+                        `provider_name` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `progress_percent` REAL,
+                        `error_code` TEXT,
+                        `error_message` TEXT,
+                        `attempt_count` INTEGER NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `archived_in_cloud_at` INTEGER,
+                        `purge_after_at` INTEGER,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_download_jobs_track_id` ON `download_jobs` (`track_id`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_download_jobs_status` ON `download_jobs` (`status`)")
+            }
+        }
+
         fun getInstance(context: Context): AuraDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -102,7 +131,7 @@ abstract class AuraDatabase : RoomDatabase() {
                     klass = AuraDatabase::class.java,
                     name = "aura.db",
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }

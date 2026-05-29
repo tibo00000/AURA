@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -291,6 +292,7 @@ fun SharedTrackRowItem(
     onUnlike: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -449,6 +451,21 @@ fun SharedTrackRowItem(
                                         },
                                     )
                                 }
+                                if (onDownload != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Télécharger") },
+                                        onClick = {
+                                            onDownload()
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Rounded.Downloading,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                    )
+                                }
                             }
                             else -> {
                                 // Contexte Standard (Album, Search, Home, etc.)
@@ -477,6 +494,21 @@ fun SharedTrackRowItem(
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Rounded.FavoriteBorder,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                    )
+                                }
+                                if (onDownload != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Télécharger") },
+                                        onClick = {
+                                            onDownload()
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Rounded.Downloading,
                                                 contentDescription = null,
                                             )
                                         },

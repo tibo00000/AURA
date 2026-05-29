@@ -36,12 +36,20 @@ import androidx.compose.ui.unit.dp
 import com.aura.music.data.local.UserSettingsEntity
 import com.aura.music.data.repository.LibraryDashboardSummary
 import com.aura.music.data.repository.LocalLibraryRepository
+import com.aura.music.data.repository.DownloadRepository
 import com.aura.music.ui.RouteScaffold
 import kotlinx.coroutines.launch
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.flow.collect
 
 @Composable
 fun SettingsScreen(
     repository: LocalLibraryRepository,
+    downloadRepository: DownloadRepository,
     onNavigateBack: () -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
@@ -121,6 +129,81 @@ fun SettingsScreen(
                             }
                         },
                     )
+                }
+            }
+            item {
+                var cookiesText by remember { mutableStateOf("") }
+                var isUploading by remember { mutableStateOf(false) }
+                var uploadStatus by remember { mutableStateOf<String?>(null) }
+                var isSuccess by remember { mutableStateOf<Boolean?>(null) }
+
+                SettingsCard(title = "Contournement YouTube (Cookies)") {
+                    Text(
+                        "Collez vos cookies au format Netscape (obtenus via une extension d'export de cookies comme 'Get cookies.txt') pour permettre au serveur d'extraire les vidéos YouTube sans blocage.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = cookiesText,
+                        onValueChange = { cookiesText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        placeholder = { Text("# Netscape HTTP Cookie File\n...", style = MaterialTheme.typography.bodySmall) },
+                        maxLines = 10,
+                        singleLine = false,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        colors = OutlinedTextFieldDefaults.colors()
+                    )
+                    
+                    if (uploadStatus != null) {
+                        Text(
+                            text = uploadStatus!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isSuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (cookiesText.isBlank()) {
+                                uploadStatus = "Veuillez coller des cookies valides."
+                                isSuccess = false
+                                return@Button
+                            }
+                            isUploading = true
+                            uploadStatus = "Envoi en cours..."
+                            isSuccess = null
+                            scope.launch {
+                                downloadRepository.uploadCookies(cookiesText, "Bearer test_user_token")
+                                    .collect { result ->
+                                        isUploading = false
+                                        result.fold(
+                                            onSuccess = {
+                                                uploadStatus = "Cookies mis à jour avec succès sur le serveur."
+                                                isSuccess = true
+                                                cookiesText = ""
+                                            },
+                                            onFailure = { error ->
+                                                uploadStatus = "Erreur: ${error.localizedMessage}"
+                                                isSuccess = false
+                                            }
+                                        )
+                                    }
+                            }
+                        },
+                        enabled = !isUploading && cookiesText.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF6B00),
+                            contentColor = Color(0xFF160A00)
+                        ),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text(if (isUploading) "Téléversement..." else "Mettre à jour les cookies")
+                    }
                 }
             }
             item {

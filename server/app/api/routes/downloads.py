@@ -20,7 +20,7 @@ from app.schemas.downloads import (
     PaginationMeta,
 )
 from app.schemas.responses import ErrorDetails, ResponseEnvelope
-from app.services.download_service import DownloadService
+from app.services.download_service import DownloadService, DOWNLOADS_DIR
 from app.services.exceptions import BadRequest, NotFound
 
 logger = logging.getLogger(__name__)

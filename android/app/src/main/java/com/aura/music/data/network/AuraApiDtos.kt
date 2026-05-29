@@ -201,3 +201,72 @@ data class ResolveAlbumResponseData(
     @Json(name = "match_confidence") val matchConfidence: Double,
     @Json(name = "album") val album: ResolvedAlbumData?,
 )
+
+// ---------------------------------------------------------------------------
+// Download & Job API DTOs (SRV-006)
+// ---------------------------------------------------------------------------
+
+@JsonClass(generateAdapter = true)
+data class SourceHintDto(
+    @Json(name = "provider_name") val providerName: String,
+    @Json(name = "provider_track_id") val providerTrackId: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class DownloadRequestDto(
+    @Json(name = "track_id") val trackId: String,
+    @Json(name = "source_hint") val sourceHint: SourceHintDto? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class DownloadCreateResponseData(
+    @Json(name = "job_id") val jobId: String,
+    @Json(name = "track_id") val trackId: String,
+    @Json(name = "status") val status: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class DownloadJobResponseData(
+    @Json(name = "id") val id: String,
+    @Json(name = "track_id") val trackId: String,
+    @Json(name = "provider_name") val providerName: String,
+    @Json(name = "status") val status: String,
+    @Json(name = "progress_percent") val progressPercent: Float = 0f,
+    @Json(name = "error_code") val errorCode: String? = null,
+    @Json(name = "error_message") val errorMessage: String? = null,
+    @Json(name = "attempt_count") val attemptCount: Int = 1,
+    @Json(name = "created_at") val createdAt: String,
+    @Json(name = "updated_at") val updatedAt: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class DownloadJobListResponseData(
+    @Json(name = "items") val items: List<DownloadJobResponseData>,
+)
+
+@JsonClass(generateAdapter = true)
+data class JobErrorPayload(
+    @Json(name = "code") val code: String,
+    @Json(name = "message") val message: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class JobStatusResponseData(
+    @Json(name = "id") val id: String,
+    @Json(name = "kind") val kind: String,
+    @Json(name = "status") val status: String,
+    @Json(name = "progress_percent") val progressPercent: Float = 0f,
+    @Json(name = "error") val error: JobErrorPayload? = null,
+    @Json(name = "created_at") val createdAt: String,
+    @Json(name = "updated_at") val updatedAt: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class CookieUploadRequestDto(
+    @Json(name = "cookies_text") val cookiesText: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class CookieUploadResponseData(
+    @Json(name = "success") val success: Boolean,
+)

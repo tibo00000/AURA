@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -812,29 +813,285 @@ fun AlbumRouteScreen(
 }
 
 @Composable
-fun DownloadsScreen(onNavigateBack: () -> Unit) {
-    val filters = listOf("En attente", "En cours", "Termines", "Erreurs")
-    var selectedFilter by remember { mutableStateOf(filters.first()) }
+fun DownloadsScreen(
+    viewModel: com.aura.music.ui.downloads.DownloadsViewModel,
+    playerViewModel: PlayerViewModel,
+    onNavigateBack: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
 
-    RouteScaffold(title = "Downloads", onNavigateBack = onNavigateBack) {
-        LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item {
-                HeroIdentityCard(
-                    title = "Downloads",
-                    subtitle = "Le backend jobs arrive ensuite; cette surface est deja prete pour ses etats.",
-                    gradient = Brush.linearGradient(listOf(Color(0xFFFF6B00), Color(0xFF101010))),
-                )
+    val filterLabels = listOf(
+        "En attente (${uiState.queuedCount})",
+        "En cours (${uiState.runningCount})",
+        "Terminés (${uiState.succeededCount})",
+        "Erreurs (${uiState.failedCount})"
+    )
+    val filterMapping = mapOf(
+        "En attente (${uiState.queuedCount})" to "En attente",
+        "En cours (${uiState.runningCount})" to "En cours",
+        "Terminés (${uiState.succeededCount})" to "Terminés",
+        "Erreurs (${uiState.failedCount})" to "Erreurs"
+    )
+    val activeLabel = filterLabels.firstOrNull { it.startsWith(uiState.selectedTab) } ?: filterLabels.first()
+
+    RouteScaffold(
+        title = "Téléchargements",
+        onNavigateBack = onNavigateBack,
+        actions = {
+            IconButton(onClick = { viewModel.forceRefresh() }) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "Rafraîchir", tint = TextPrimary)
             }
-            item { FilterRow(values = filters, selected = selectedFilter, onSelect = { selectedFilter = it }) }
-            item {
-                when (selectedFilter) {
-                    "En attente" -> DownloadStateCard(Icons.Rounded.Schedule, "Aucun job en attente", "Les demandes de disponibilite locale apparaitront ici avant execution.")
-                    "En cours" -> DownloadStateCard(Icons.Rounded.Sync, "Pas de progression active", "Les barres de progression temps reel arriveront avec l'API jobs et downloads.")
-                    "Termines" -> DownloadStateCard(Icons.Rounded.DownloadDone, "Aucun download finalise", "Quand un titre sera disponible localement, tu pourras l'ouvrir ou le lire depuis ici.")
-                    else -> DownloadStateCard(Icons.Rounded.ErrorOutline, "Pas d'erreur de job", "Les details d'erreur et les boutons Retry seront branches quand SRV-006 sera actif.")
+        }
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (uiState.errorMessage != null) {
+                // Inline simple and beautiful error banner
+                androidx.compose.material3.Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF4A2A2A))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Erreur de synchronisation",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                uiState.errorMessage!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                        }
+                        IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Fermer", tint = Color.White)
+                        }
+                    }
                 }
             }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                item {
+                    HeroIdentityCard(
+                        title = "Downloads",
+                        subtitle = "Gère et écoute tes pistes hors-ligne en temps réel.",
+                        gradient = Brush.linearGradient(listOf(Color(0xFFFF6B00), Color(0xFF101010))),
+                    )
+                }
+
+                item {
+                    FilterRow(
+                        values = filterLabels,
+                        selected = activeLabel,
+                        onSelect = { label ->
+                            val mappedTab = filterMapping[label] ?: "En attente"
+                            viewModel.selectTab(mappedTab)
+                        }
+                    )
+                }
+
+                if (uiState.jobs.isEmpty()) {
+                    item {
+                        when (uiState.selectedTab) {
+                            "En attente" -> DownloadStateCard(
+                                Icons.Rounded.Schedule,
+                                "Aucun job en attente",
+                                "Les demandes de disponibilité locale apparaîtront ici avant exécution."
+                            )
+                            "En cours" -> DownloadStateCard(
+                                Icons.Rounded.Sync,
+                                "Pas de progression active",
+                                "Les barres de progression s'activent lorsque le téléchargement démarre."
+                            )
+                            "Terminés" -> DownloadStateCard(
+                                Icons.Rounded.DownloadDone,
+                                "Aucun download finalisé",
+                                "Quand un titre sera disponible localement, tu pourras l'ouvrir ou le lire depuis ici."
+                            )
+                            else -> DownloadStateCard(
+                                Icons.Rounded.ErrorOutline,
+                                "Pas d'erreur de job",
+                                "Les détails d'erreur et les boutons Retry seront branchés en cas d'échec."
+                            )
+                        }
+                    }
+                } else {
+                    items(uiState.jobs, key = { it.jobId }) { job ->
+                        DownloadJobRow(
+                            job = job,
+                            onRetry = { viewModel.retryDownload(job.jobId) },
+                            onPlay = {
+                                val trackRow = TrackListRow(
+                                    id = job.trackId,
+                                    artistId = null,
+                                    albumId = null,
+                                    title = job.title,
+                                    artistName = job.artistName,
+                                    albumTitle = null,
+                                    contentUri = null,
+                                    durationMs = null,
+                                    coverUri = job.coverUri,
+                                    isLiked = false
+                                )
+                                playerViewModel.onEvent(
+                                    PlayerEvent.PlayTrack(
+                                        trackId = job.trackId,
+                                        contextType = "downloads",
+                                        contextId = "downloads",
+                                        contextTracks = listOf(trackRow.toQueuedTrack()),
+                                        startIndex = 0
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadJobRow(
+    job: com.aura.music.data.local.DownloadJobRowModel,
+    onRetry: () -> Unit,
+    onPlay: () -> Unit
+) {
+    androidx.compose.material3.Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(androidx.compose.ui.graphics.Color(0xFF1E1E1E))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // 1. Cover Artwork or Placeholder
+            if (job.coverUri != null) {
+                AsyncImage(
+                    model = job.coverUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                )
+            } else {
+                PlaceholderCover(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                )
+            }
+
+            // 2. Info Block
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = job.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = TextPrimary
+                )
+                Text(
+                    text = job.artistName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Status indicators
+                when (job.status) {
+                    "running" -> {
+                        val progress = job.progressPercent ?: 0f
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        ) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = progress / 100f,
+                                color = BlazeOrange,
+                                trackColor = DarkGraphite,
+                                modifier = Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp))
+                            )
+                            Text(
+                                text = "${progress.toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = BlazeOrange,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    "queued" -> {
+                        Text(
+                            text = "Dans la file d'attente...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    "failed" -> {
+                        Text(
+                            text = "Erreur : ${job.errorMessage ?: "Inconnue"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Red,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    "succeeded" -> {
+                        Text(
+                            text = "Téléchargé avec succès",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Green,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            // 3. Trailing Actions
+            when (job.status) {
+                "failed", "cancelled" -> {
+                    IconButton(onClick = onRetry) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Réessayer",
+                            tint = BlazeOrange
+                        )
+                    }
+                }
+                "succeeded" -> {
+                    IconButton(onClick = onPlay) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = "Lire",
+                            tint = Color.Green
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -270,11 +270,23 @@ fun AuraApp() {
                 )
             }
             composable(AuraRoute.Downloads) {
-                DownloadsScreen(onNavigateBack = { navController.popBackStack() })
+                val ctx = LocalContext.current
+                val appContainer = (ctx.applicationContext as com.aura.music.AuraApplication).container
+                val downloadsViewModel: com.aura.music.ui.downloads.DownloadsViewModel = viewModel(
+                    factory = appContainer.downloadsViewModelFactory
+                )
+                DownloadsScreen(
+                    viewModel = downloadsViewModel,
+                    playerViewModel = playerViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
             composable(AuraRoute.Settings) {
+                val ctx = LocalContext.current
+                val appContainer = (ctx.applicationContext as com.aura.music.AuraApplication).container
                 SettingsScreen(
                     repository = repository,
+                    downloadRepository = appContainer.downloadRepository,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }

@@ -371,3 +371,55 @@ data class AlbumSourceLinkEntity(
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
+
+
+/**
+ * Représente un job de téléchargement asynchrone dans la base Room locale.
+ * Permet de suivre l'état de téléchargement d'un titre et de mettre à jour la vue.
+ *
+ * Governé par : docs/android/room-schema.md — table download_jobs
+ */
+@Entity(
+    tableName = "download_jobs",
+    foreignKeys = [
+        ForeignKey(
+            entity = TrackEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["track_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["track_id"]),
+        Index(value = ["status"]),
+    ],
+)
+data class DownloadJobEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "track_id") val trackId: String,
+    @ColumnInfo(name = "provider_name") val providerName: String,
+    val status: String, // 'queued', 'running', 'succeeded', 'failed', 'cancelled'
+    @ColumnInfo(name = "progress_percent") val progressPercent: Float? = null,
+    @ColumnInfo(name = "error_code") val errorCode: String? = null,
+    @ColumnInfo(name = "error_message") val errorMessage: String? = null,
+    @ColumnInfo(name = "attempt_count") val attemptCount: Int = 1,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "archived_in_cloud_at") val archivedInCloudAt: Long? = null,
+    @ColumnInfo(name = "purge_after_at") val purgeAfterAt: Long? = null,
+)
+
+data class DownloadJobRowModel(
+    val jobId: String,
+    val trackId: String,
+    val title: String,
+    val artistName: String,
+    val coverUri: String?,
+    val status: String,
+    val progressPercent: Float?,
+    val errorCode: String?,
+    val errorMessage: String?,
+    val createdAt: Long
+)
+
+

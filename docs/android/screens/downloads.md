@@ -5,6 +5,7 @@ Suivre l'etat des traitements lies a la disponibilite locale des pistes.
 
 ## Structure generale
 - header avec titre `Downloads`
+- bouton de rafraîchissement manuel dans la TopBar (`Icons.Rounded.Refresh`)
 - sous-navigation par onglets ou filtres
 - liste verticale de jobs ou de pistes selon le mode retenu
 
@@ -31,3 +32,5 @@ Suivre l'etat des traitements lies a la disponibilite locale des pistes.
 - progression en temps reel
 - erreur par job
 - succes avec acces direct a la piste
+- stockage des fichiers physiques sous `context.filesDir/downloads/{trackId}.mp3`
+

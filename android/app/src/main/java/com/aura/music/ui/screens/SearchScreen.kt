@@ -40,7 +40,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,6 +88,8 @@ fun SearchScreen(
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
     val searchRepository = application.container.searchRepository
     val enrichmentRepository = application.container.enrichmentRepository
+    val downloadRepository = application.container.downloadRepository
+    val scope = rememberCoroutineScope()
     
     val viewModel: SearchViewModel = viewModel(
         factory = SearchViewModelFactory(searchRepository, enrichmentRepository, application)
@@ -263,6 +268,22 @@ fun SearchScreen(
                                         "search_online_tracks"
                                     )
                                 },
+                                onDownloadTrack = { track ->
+                                    scope.launch {
+                                        downloadRepository.triggerDownload(
+                                            trackId = track.id,
+                                            title = track.title,
+                                            artistName = track.displayArtistName,
+                                            albumTitle = track.displayAlbumTitle,
+                                            coverUri = track.coverUri,
+                                            userToken = "Bearer test_user_token"
+                                        ).collect {
+                                            scope.launch {
+                                                downloadRepository.startPolling("Bearer test_user_token")
+                                            }
+                                        }
+                                    }
+                                },
                                 onAddToPlaylist = { /* TODO: playlist dialog */ },
                                 onOpenArtist = onOpenArtist,
                                 onOpenAlbum = onOpenAlbum,
@@ -361,6 +382,7 @@ private fun OnlineSearchTab(
     artists: List<ArtistSummary>,
     albums: List<AlbumSummary>,
     onPlayTrack: (TrackSummary) -> Unit,
+    onDownloadTrack: (TrackSummary) -> Unit,
     onAddToPlaylist: (TrackSummary) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
@@ -383,7 +405,8 @@ private fun OnlineSearchTab(
                         onClick = { onPlayTrack(track) },
                         showCover = true,
                         contextType = "search_online",
-                        onAddToPlaylist = { onAddToPlaylist(track) }
+                        onAddToPlaylist = { onAddToPlaylist(track) },
+                        onDownload = { onDownloadTrack(track) }
                     )
                 }
             }

@@ -10,6 +10,8 @@ import com.aura.music.data.player.QueueManager
 import com.aura.music.data.repository.EnrichmentRepository
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.data.repository.SearchRepository
+import com.aura.music.data.repository.DownloadRepository
+import com.aura.music.ui.downloads.DownloadsViewModel
 import com.aura.music.domain.player.PlaybackOrchestrator
 import com.aura.music.ui.player.PlayerViewModel
 
@@ -43,6 +45,21 @@ class AuraAppContainer(context: Context) {
             localLibraryRepository = localLibraryRepository,
             auraApiService = auraApiService,
             enrichmentRepository = enrichmentRepository,
+        )
+    }
+
+    val downloadRepository by lazy {
+        DownloadRepository(
+            database = database,
+            apiService = auraApiService,
+            context = appContext
+        )
+    }
+
+    val downloadsViewModelFactory by lazy {
+        DownloadsViewModel.Factory(
+            downloadRepository = downloadRepository,
+            userToken = "Bearer test_user_token"
         )
     }
 
