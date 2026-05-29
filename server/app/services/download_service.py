@@ -21,13 +21,11 @@ from app.core.id_generator import generate_id
 from app.domain.models import DownloadJob
 from app.providers.deezer.client import DeezerClient
 from app.services.exceptions import BadRequest, NotFound, RequiresResolutionException
+from app.db.supabase import supabase
 
 logger = logging.getLogger(__name__)
 
 DOWNLOADS_DIR = Path(os.getenv("DOWNLOADS_DIR", "/app/downloads"))
-
-# In-memory global store for jobs (job_id -> DownloadJob)
-_jobs_db: Dict[str, DownloadJob] = {}
 
 from ytmusicapi import YTMusic
 from rapidfuzz import fuzz
@@ -310,8 +308,13 @@ class DownloadService:
             updated_at=now,
         )
 
-        _jobs_db[job_id] = job
-        logger.info("Created download job %s for user %s, track %s", job_id, user_id, track_id)
+        try:
+            supabase.table("download_jobs").insert(job.to_dict()).execute()
+        except Exception as e:
+            logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
+            raise BadRequest(f"Failed to create job in database: {str(e)}")
+
+        logger.info("Created download job %s for user %s, track %s in Supabase", job_id, user_id, track_id)
 
         # Trigger real background download task
         asyncio.create_task(self._run_download_job(job_id, source_hint))
@@ -319,43 +322,52 @@ class DownloadService:
         return job
 
     def get_job(self, user_id: str, job_id: str) -> DownloadJob:
-        """Retrieve a specific job for a user."""
-        job = _jobs_db.get(job_id)
-        if not job or job.user_id != user_id:
-            raise NotFound(f"Download job {job_id} not found for this user")
-        return job
+        """Retrieve a specific job for a user from Supabase."""
+        try:
+            response = supabase.table("download_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
+            if not response.data:
+                raise NotFound(f"Download job {job_id} not found for this user")
+            return DownloadJob.from_dict(response.data[0])
+        except NotFound:
+            raise
+        except Exception as e:
+            logger.error("Failed to retrieve job %s from Supabase: %s", job_id, e)
+            raise BadRequest(f"Failed to retrieve job: {str(e)}")
 
     def list_jobs(
         self, user_id: str, status: Optional[str] = None, limit: int = 20, cursor: Optional[str] = None
     ) -> Tuple[List[DownloadJob], Optional[str]]:
-        """List download jobs for a user."""
-        user_jobs = [j for j in _jobs_db.values() if j.user_id == user_id]
+        """List download jobs for a user from Supabase."""
+        try:
+            query = supabase.table("download_jobs").select("*").eq("user_id", user_id)
+            if status:
+                query = query.eq("status", status)
 
-        if status:
-            user_jobs = [j for j in user_jobs if j.status == status]
+            # Cursor-based pagination: created_at < cursor's created_at
+            if cursor:
+                cursor_response = supabase.table("download_jobs").select("created_at").eq("id", cursor).execute()
+                if cursor_response.data:
+                    cursor_time = cursor_response.data[0]["created_at"]
+                    query = query.lt("created_at", cursor_time)
 
-        user_jobs.sort(key=lambda j: j.created_at or datetime.min, reverse=True)
+            # Retrieve limit + 1 items to determine if there is a next page
+            response = query.order("created_at", desc=True).limit(limit + 1).execute()
+            data_list = response.data or []
 
-        start_idx = 0
-        if cursor:
-            for i, job in enumerate(user_jobs):
-                if job.id == cursor:
-                    start_idx = i + 1
-                    break
+            jobs = [DownloadJob.from_dict(d) for d in data_list[:limit]]
 
-        sliced_jobs = user_jobs[start_idx : start_idx + limit]
+            next_cursor = None
+            if len(data_list) > limit:
+                next_cursor = jobs[-1].id
 
-        next_cursor = None
-        if len(user_jobs) > start_idx + limit:
-            next_cursor = sliced_jobs[-1].id
-
-        return sliced_jobs, next_cursor
+            return jobs, next_cursor
+        except Exception as e:
+            logger.error("Failed to list jobs from Supabase: %s", e)
+            return [], None
 
     def retry_job(self, user_id: str, job_id: str) -> DownloadJob:
-        """Retry a failed or cancelled job."""
-        job = _jobs_db.get(job_id)
-        if not job or job.user_id != user_id:
-            raise NotFound(f"Download job {job_id} not found")
+        """Retry a failed or cancelled job in Supabase."""
+        job = self.get_job(user_id, job_id)
 
         if job.status not in ("failed", "cancelled"):
             raise BadRequest(f"Cannot retry a job that is currently {job.status}")
@@ -368,7 +380,20 @@ class DownloadService:
         job.attempt_count += 1
         job.updated_at = now
 
-        logger.info("Retrying download job %s, attempt %d", job_id, job.attempt_count)
+        try:
+            supabase.table("download_jobs").update({
+                "status": "queued",
+                "progress_percent": 0.0,
+                "error_code": None,
+                "error_message": None,
+                "attempt_count": job.attempt_count,
+                "updated_at": now.isoformat()
+            }).eq("id", job_id).execute()
+        except Exception as e:
+            logger.error("Failed to update job %s for retry in Supabase: %s", job_id, e)
+            raise BadRequest(f"Failed to retry job: {str(e)}")
+
+        logger.info("Retrying download job %s in Supabase, attempt %d", job_id, job.attempt_count)
 
         # Trigger real background download task
         asyncio.create_task(self._run_download_job(job_id))
@@ -397,6 +422,14 @@ class DownloadService:
             logger.error("Failed to write cookies file: %s", e)
             raise BadRequest(f"Internal error saving cookies: {str(e)}")
 
+    def _update_job_status(self, job_id: str, **kwargs) -> None:
+        """Helper to quickly update specific job fields in Supabase in real-time."""
+        try:
+            kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
+            supabase.table("download_jobs").update(kwargs).eq("id", job_id).execute()
+        except Exception as e:
+            logger.error("Failed to update job status for %s in Supabase: %s", job_id, e)
+
     async def _run_download_job(self, job_id: str, source_hint: Optional[dict] = None) -> None:
         """
         Background download worker task using yt-dlp.
@@ -406,8 +439,14 @@ class DownloadService:
         3. Converts format, embeds metadata and saves file in volumes.
         4. Updates status to succeeded or failed with diagnostic messages.
         """
-        job = _jobs_db.get(job_id)
-        if not job:
+        try:
+            response = supabase.table("download_jobs").select("*").eq("id", job_id).execute()
+            if not response.data:
+                logger.error("Job %s not found in Supabase", job_id)
+                return
+            job = DownloadJob.from_dict(response.data[0])
+        except Exception as e:
+            logger.error("Failed to fetch job %s from Supabase for worker: %s", job_id, e)
             return
 
         # 1. Resolve track metadata to get the YouTube search query
@@ -446,9 +485,11 @@ class DownloadService:
                 resolved_video_id = await loop.run_in_executor(None, _run_resolve)
             except RequiresResolutionException as e:
                 # Capture des candidats et mise à jour du job en requires_resolution
-                job.status = "requires_resolution"
-                job.candidates = e.candidates
-                job.updated_at = datetime.now(timezone.utc)
+                self._update_job_status(
+                    job_id,
+                    status="requires_resolution",
+                    candidates=e.candidates
+                )
                 logger.info("Job %s requires user resolution, suspended download thread.", job_id)
                 return
             except Exception as e:
@@ -475,63 +516,79 @@ class DownloadService:
             download_target = query
             logger.info("Targeted search returned no candidate. Falling back to search query: %r", download_target)
 
-        job.status = "running"
-        job.progress_percent = 5.0
-        job.updated_at = datetime.now(timezone.utc)
+        self._update_job_status(job_id, status="running", progress_percent=5.0)
         logger.info("Starting real download for target: %r (Job: %s)", download_target, job_id)
 
-        # 2. Setup progress hooks
+        # 2. Setup progress hooks (with performance throttling to avoid saturating Supabase requests)
+        last_update_time = [0.0]
+        last_progress = [0.0]
+
         def _progress_hook(d: dict) -> None:
             if d["status"] == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 downloaded = d.get("downloaded_bytes", 0)
                 if total > 0:
-                    job.progress_percent = round((downloaded / total) * 100, 1)
-                    job.updated_at = datetime.now(timezone.utc)
+                    progress = round((downloaded / total) * 100, 1)
+                    now_time = time.time()
+                    if (progress - last_progress[0] >= 3.0) or (now_time - last_update_time[0] >= 2.0):
+                        self._update_job_status(job_id, progress_percent=progress)
+                        last_progress[0] = progress
+                        last_update_time[0] = now_time
             elif d["status"] == "finished":
-                job.progress_percent = 99.0
-                job.updated_at = datetime.now(timezone.utc)
+                self._update_job_status(job_id, progress_percent=99.0)
 
         # 3. Define the blocking yt-dlp execution
         def _execute_yt_dlp():
             opts = _build_yt_dlp_opts(DOWNLOADS_DIR, job_id)
             opts["progress_hooks"] = [_progress_hook]
 
+            status = "failed"
+            error_code = None
+            error_message = None
+            progress_percent = 0.0
+
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(download_target, download=True)
                     if info is None:
-                        job.status = "failed"
-                        job.error_code = "job_failed"
-                        job.error_message = "No search result found on YouTube"
+                        status = "failed"
+                        error_code = "job_failed"
+                        error_message = "No search result found on YouTube"
                         return
 
                     expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
                     if expected_file.exists():
-                        job.status = "succeeded"
-                        job.progress_percent = 100.0
+                        status = "succeeded"
+                        progress_percent = 100.0
                     else:
                         matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
                         non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
                         if non_thumb:
-                            job.status = "succeeded"
-                            job.progress_percent = 100.0
+                            status = "succeeded"
+                            progress_percent = 100.0
                         else:
-                            job.status = "failed"
-                            job.error_code = "job_failed"
-                            job.error_message = "Audio conversion failed, no MP3 found."
+                            status = "failed"
+                            error_code = "job_failed"
+                            error_message = "Audio conversion failed, no MP3 found."
             except yt_dlp.utils.DownloadError as e:
-                job.status = "failed"
-                job.error_code = "job_failed"
-                job.error_message = str(e).splitlines()[-1] if str(e).splitlines() else str(e)
+                status = "failed"
+                error_code = "job_failed"
+                error_message = str(e).splitlines()[-1] if str(e).splitlines() else str(e)
             except Exception as e:
-                job.status = "failed"
-                job.error_code = "job_failed"
-                job.error_message = f"Unexpected: {type(e).__name__}: {str(e)}"
+                status = "failed"
+                error_code = "job_failed"
+                error_message = f"Unexpected: {type(e).__name__}: {str(e)}"
             finally:
-                job.updated_at = datetime.now(timezone.utc)
+                # Update Supabase with the final state
+                self._update_job_status(
+                    job_id,
+                    status=status,
+                    progress_percent=progress_percent if status == "succeeded" else None,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
 
         # 4. Run blocking yt-dlp in a thread pool
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _execute_yt_dlp)
-        logger.info("Real download job finished. Status: %s, Progress: %s%%", job.status, job.progress_percent)
+        logger.info("Real download job finished. (Job: %s)", job_id)

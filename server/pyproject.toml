@@ -17,6 +17,7 @@ dependencies = [
   "yt-dlp>=2025.5",
   "ytmusicapi>=1.9,<2.0",
   "rapidfuzz>=3.9,<4.0",
+  "supabase>=2.11.0,<3.0",
 ]
 
 [tool.hatch.build.targets.wheel]

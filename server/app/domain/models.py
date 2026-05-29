@@ -168,3 +168,34 @@ class DownloadJob:
             "candidates": self.candidates,
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "DownloadJob":
+        """Reconstruct DownloadJob from dictionary (e.g. from PostgreSQL/Supabase)."""
+        # Parse ISO datetime strings back to datetime objects
+        def parse_date(val):
+            if not val:
+                return None
+            if isinstance(val, datetime):
+                return val
+            try:
+                cleaned = val.replace("Z", "+00:00")
+                return datetime.fromisoformat(cleaned)
+            except ValueError:
+                return None
+
+        return cls(
+            id=d["id"],
+            user_id=str(d["user_id"]),
+            track_id=d["track_id"],
+            provider_name=d["provider_name"],
+            status=d["status"],
+            progress_percent=float(d.get("progress_percent") or 0.0),
+            error_code=d.get("error_code"),
+            error_message=d.get("error_message"),
+            attempt_count=int(d.get("attempt_count") or 1),
+            created_at=parse_date(d.get("created_at")),
+            updated_at=parse_date(d.get("updated_at")),
+            archived_at=parse_date(d.get("archived_at")),
+            candidates=d.get("candidates") or [],
+        )
+
