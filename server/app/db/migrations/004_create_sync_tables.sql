@@ -118,3 +118,11 @@ ALTER TABLE playback_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE history_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE listening_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE playback_events ENABLE ROW LEVEL SECURITY;
+
+-- Table d'idempotence des opérations de synchronisation (processed_operations)
+CREATE TABLE IF NOT EXISTS processed_operations (
+    operation_id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE processed_operations ENABLE ROW LEVEL SECURITY;

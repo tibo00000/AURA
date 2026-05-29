@@ -9,6 +9,7 @@ from app.api.routes.test_download import router as test_download_router
 from app.api.routes.downloads import router as downloads_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.me import router as me_router
+from app.api.routes.sync import router as sync_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -20,5 +21,6 @@ api_router.include_router(test_download_router)
 api_router.include_router(downloads_router)
 api_router.include_router(jobs_router)
 api_router.include_router(me_router)
+api_router.include_router(sync_router)
 
 
