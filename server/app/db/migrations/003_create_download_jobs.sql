@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS download_jobs (
     id TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    track_id TEXT NOT NULL,
     provider_name TEXT NOT NULL,
     status TEXT NOT NULL,
     progress_percent REAL DEFAULT 0.0,
