@@ -43,6 +43,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.activity.result.IntentSenderRequest
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -267,6 +271,13 @@ fun AuraApp() {
                     value = repository.getPlaylists()
                 }
                 val scope = rememberCoroutineScope()
+                val intentSenderLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartIntentSenderForResult()
+                ) { result ->
+                    if (result.resultCode == android.app.Activity.RESULT_OK) {
+                        vm.refreshLocal()
+                    }
+                }
                 HybridArtistScreen(
                     viewModel = vm,
                     playlists = playlistsState.value,
@@ -276,16 +287,27 @@ fun AuraApp() {
                     onLikeTrack = { track ->
                         scope.launch {
                             repository.toggleLike(track.id, track.isLiked, "artist", artistId)
+                            vm.refreshLocal()
                         }
                     },
                     onAddTrackToPlaylist = { playlist, track ->
                         scope.launch {
                             repository.addTrackToPlaylist(playlist.id, track.id, "artist")
+                            vm.refreshLocal()
                         }
                     },
                     onDeleteTrack = { track ->
                         scope.launch {
-                            repository.deleteTrack(track.id)
+                            val pendingIntent = repository.deleteTrack(track.id)
+                            if (pendingIntent != null) {
+                                try {
+                                    val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                    intentSenderLauncher.launch(intentSenderRequest)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("AuraApp", "Failed to launch intent for deletion", e)
+                                }
+                            }
+                            vm.refreshLocal()
                         }
                     },
                     onAddToQueue = { track ->
@@ -312,6 +334,13 @@ fun AuraApp() {
                     value = repository.getPlaylists()
                 }
                 val scope = rememberCoroutineScope()
+                val intentSenderLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartIntentSenderForResult()
+                ) { result ->
+                    if (result.resultCode == android.app.Activity.RESULT_OK) {
+                        vm.refreshLocal()
+                    }
+                }
                 HybridAlbumScreen(
                     viewModel = vm,
                     playlists = playlistsState.value,
@@ -321,16 +350,27 @@ fun AuraApp() {
                     onLikeTrack = { track ->
                         scope.launch {
                             repository.toggleLike(track.id, track.isLiked, "album", albumId)
+                            vm.refreshLocal()
                         }
                     },
                     onAddTrackToPlaylist = { playlist, track ->
                         scope.launch {
                             repository.addTrackToPlaylist(playlist.id, track.id, "album")
+                            vm.refreshLocal()
                         }
                     },
                     onDeleteTrack = { track ->
                         scope.launch {
-                            repository.deleteTrack(track.id)
+                            val pendingIntent = repository.deleteTrack(track.id)
+                            if (pendingIntent != null) {
+                                try {
+                                    val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                    intentSenderLauncher.launch(intentSenderRequest)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("AuraApp", "Failed to launch intent for deletion", e)
+                                }
+                            }
+                            vm.refreshLocal()
                         }
                     },
                     onAddToQueue = { track ->

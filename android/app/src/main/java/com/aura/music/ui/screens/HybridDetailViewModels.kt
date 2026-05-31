@@ -76,6 +76,10 @@ class ArtistDetailViewModel(
         }
     }
 
+    fun refreshLocal() {
+        loadLocal()
+    }
+
     /**
      * Step 2: Async enrichment — respects AND-009 network governance.
      *
@@ -199,6 +203,10 @@ class AlbumDetailViewModel(
                 triggerEnrichmentIfAllowed(detail)
             }
         }
+    }
+
+    fun refreshLocal() {
+        loadLocal()
     }
 
     private fun triggerEnrichmentIfAllowed(localDetail: AlbumDetail?) {
