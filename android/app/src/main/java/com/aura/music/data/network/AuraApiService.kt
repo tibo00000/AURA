@@ -149,5 +149,35 @@ interface AuraApiService {
         @Header("Authorization") token: String,
         @Path("job_id") jobId: String
     ): Response<ResponseBody>
+
+    /**
+     * POST /me/sync/bootstrap
+     * Compile initial client hydration snapshot containing user settings, playlists, favorites, etc.
+     */
+    @POST("/me/sync/bootstrap")
+    suspend fun bootstrap(
+        @Header("Authorization") token: String,
+        @Body request: BootstrapRequestDto
+    ): AuraResponse<BootstrapResponseDto>
+
+    /**
+     * POST /me/sync/push-batch
+     * Push a batch of local client mutations.
+     */
+    @POST("/me/sync/push-batch")
+    suspend fun pushBatch(
+        @Header("Authorization") token: String,
+        @Body request: PushBatchRequestDto
+    ): AuraResponse<PushBatchResponseDto>
+
+    /**
+     * POST /me/sync/pull-batch
+     * Pull latest server changes.
+     */
+    @POST("/me/sync/pull-batch")
+    suspend fun pullBatch(
+        @Header("Authorization") token: String,
+        @Body request: PullBatchRequestDto
+    ): AuraResponse<PullBatchResponseDto>
 }
 

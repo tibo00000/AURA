@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -41,6 +43,15 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ListItem
+import com.aura.music.data.local.PlaylistListRow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -277,6 +288,23 @@ fun EmptyStateSurface(
  * - "favorites" : Retirer des favoris, Ajouter à une playlist
  * - "standard" : Ajouter à playlist, Ajouter aux favoris (défaut)
  */
+private data class ContextMenuItem(
+    val text: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit
+)
+
+/**
+ * Ligne de piste partagee entre FavoritesScreen et PlaylistDetailScreenNew.
+ * Card DarkGraphite + titre + sous-titre + slot leading + slot trailing + menu contextuel.
+ * 
+ * Le menu contextuel varie selon le contextType :
+ * - "album" : standard
+ * - "playlist" : Retirer de playlist, Ajouter à une autre playlist, Voir l'artiste, Voir l'album
+ * - "favorites" : Retirer des favoris, Ajouter à une playlist, Voir l'artiste, Voir l'album
+ * - "search_online" : Ajouter à une playlist, Télécharger, Voir l'artiste, Voir l'album
+ * - "standard" : Lire maintenant, Ajouter à la file, Ajouter à playlist, Ajouter aux favoris, Voir artiste/album, Télécharger, Supprimer
+ */
 @Composable
 fun SharedTrackRowItem(
     title: String,
@@ -286,15 +314,178 @@ fun SharedTrackRowItem(
     coverUri: String? = null,
     showCover: Boolean = true,
     trailingIcon: @Composable (() -> Unit)? = null,
-    contextType: String = "standard",  // "album", "playlist", "favorites", "standard"
+    contextType: String = "standard",  // "album", "playlist", "favorites", "search_online", "standard", "artist"
+    isLiked: Boolean = false,
+    onPlayNow: (() -> Unit)? = null,
+    onAddToQueue: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
     onLike: (() -> Unit)? = null,
     onUnlike: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
-    onMore: (() -> Unit)? = null,
+    onViewArtist: (() -> Unit)? = null,
+    onViewAlbum: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
+    onDeleteDownload: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+
+    val menuItems = remember(
+        contextType,
+        isLiked,
+        onPlayNow,
+        onAddToQueue,
+        onAddToPlaylist,
+        onLike,
+        onUnlike,
+        onRemoveFromPlaylist,
+        onViewArtist,
+        onViewAlbum,
+        onDownload,
+        onDeleteDownload
+    ) {
+        val items = mutableListOf<ContextMenuItem>()
+        when (contextType) {
+            "playlist" -> {
+                if (onRemoveFromPlaylist != null) {
+                    items.add(ContextMenuItem("Retirer de cette playlist", Icons.Rounded.Delete, onRemoveFromPlaylist))
+                }
+                if (onAddToPlaylist != null) {
+                    items.add(ContextMenuItem("Ajouter à une autre playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                }
+                if (isLiked) {
+                    if (onUnlike != null) {
+                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                    }
+                } else {
+                    if (onLike != null) {
+                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
+                    }
+                }
+                if (onViewArtist != null) {
+                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                }
+                if (onViewAlbum != null) {
+                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                }
+            }
+            "favorites" -> {
+                if (isLiked) {
+                    if (onUnlike != null) {
+                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                    }
+                } else {
+                    if (onLike != null) {
+                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
+                    }
+                }
+                if (onAddToPlaylist != null) {
+                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                }
+                if (onViewArtist != null) {
+                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                }
+                if (onViewAlbum != null) {
+                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                }
+            }
+            "search_online" -> {
+                if (onDownload != null) {
+                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.ArrowDownward, onDownload))
+                }
+                if (onViewArtist != null) {
+                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                }
+                if (onViewAlbum != null) {
+                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                }
+            }
+            "artist" -> {
+                if (onPlayNow != null) {
+                    items.add(ContextMenuItem("Lire maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                }
+                if (onAddToQueue != null) {
+                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                }
+                if (onAddToPlaylist != null) {
+                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                }
+                if (isLiked) {
+                    if (onUnlike != null) {
+                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                    }
+                } else {
+                    if (onLike != null) {
+                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
+                    }
+                }
+                if (onViewAlbum != null) {
+                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                }
+                if (onDeleteDownload != null) {
+                    items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
+                }
+            }
+            "album" -> {
+                if (onPlayNow != null) {
+                    items.add(ContextMenuItem("Lire maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                }
+                if (onAddToQueue != null) {
+                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                }
+                if (onAddToPlaylist != null) {
+                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                }
+                if (isLiked) {
+                    if (onUnlike != null) {
+                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                    }
+                } else {
+                    if (onLike != null) {
+                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
+                    }
+                }
+                if (onViewArtist != null) {
+                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                }
+                if (onDeleteDownload != null) {
+                    items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
+                }
+            }
+            else -> { // standard, search_local, library_tracks, etc.
+                if (onPlayNow != null) {
+                    items.add(ContextMenuItem("Lire maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                }
+                if (onAddToQueue != null) {
+                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                }
+                if (onAddToPlaylist != null) {
+                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                }
+                if (isLiked) {
+                    if (onUnlike != null) {
+                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                    }
+                } else {
+                    if (onLike != null) {
+                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
+                    }
+                }
+                if (onViewArtist != null) {
+                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                }
+                if (onViewAlbum != null) {
+                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                }
+                if (onDownload != null) {
+                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.ArrowDownward, onDownload))
+                }
+                if (onDeleteDownload != null) {
+                    items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
+                }
+            }
+        }
+        items
+    }
 
     androidx.compose.material3.Card(
         modifier = modifier
@@ -350,8 +541,7 @@ fun SharedTrackRowItem(
             }
             if (trailingIcon != null) {
                 trailingIcon()
-            } else {
-                // Menu contextuel par défaut selon contextType
+            } else if (menuItems.isNotEmpty()) {
                 Box {
                     IconButton(
                         onClick = { menuExpanded = true },
@@ -367,173 +557,64 @@ fun SharedTrackRowItem(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
                     ) {
-                        when (contextType) {
-                            "playlist" -> {
-                                // Contexte Playlist
-                                if (onRemoveFromPlaylist != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Retirer de cette playlist") },
-                                        onClick = {
-                                            onRemoveFromPlaylist()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.Delete,
-                                                contentDescription = null,
-                                            )
-                                        },
+                        menuItems.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item.text) },
+                                onClick = {
+                                    item.onClick()
+                                    menuExpanded = false
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = item.icon,
+                                        contentDescription = null,
                                     )
-                                }
-                                if (onAddToPlaylist != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Ajouter à une autre playlist") },
-                                        onClick = {
-                                            onAddToPlaylist()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.PlaylistAdd,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                            "favorites" -> {
-                                // Contexte Favoris
-                                if (onUnlike != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Retirer des favoris") },
-                                        onClick = {
-                                            onUnlike()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.Favorite,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                                if (onAddToPlaylist != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Ajouter à une playlist") },
-                                        onClick = {
-                                            onAddToPlaylist()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.PlaylistAdd,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                            "search_online" -> {
-                                // Contexte Recherche Online (pas de like, seulement playlist)
-                                if (onAddToPlaylist != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Ajouter à une playlist") },
-                                        onClick = {
-                                            onAddToPlaylist()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.PlaylistAdd,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                                if (onDownload != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Télécharger") },
-                                        onClick = {
-                                            onDownload()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.Downloading,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                            else -> {
-                                // Contexte Standard (Album, Search, Home, etc.)
-                                if (onAddToPlaylist != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Ajouter à une playlist") },
-                                        onClick = {
-                                            onAddToPlaylist()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.PlaylistAdd,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                                if (onLike != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Ajouter aux favoris") },
-                                        onClick = {
-                                            onLike()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.FavoriteBorder,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                                if (onDownload != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Télécharger") },
-                                        onClick = {
-                                            onDownload()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.Downloading,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                                if (onMore != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Plus") },
-                                        onClick = {
-                                            onMore()
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Rounded.MoreVert,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                    )
-                                }
-                            }
+                                },
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * Dialogue de selection de playlist (UI pure conforme MVVM).
+ */
+@Composable
+fun SelectPlaylistDialog(
+    playlists: List<PlaylistListRow>,
+    onDismiss: () -> Unit,
+    onPlaylistSelected: (PlaylistListRow) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ajouter à une playlist") },
+        text = {
+            if (playlists.isEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
+                ) {
+                    Text("Aucune playlist locale", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.height(280.dp)) {
+                    items(playlists, key = { it.id }) { playlist ->
+                        ListItem(
+                            headlineContent = { Text(playlist.name) },
+                            supportingContent = { Text("${playlist.itemCount} piste(s)") },
+                            modifier = Modifier.clickable { onPlaylistSelected(playlist) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
 }

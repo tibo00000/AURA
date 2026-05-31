@@ -18,7 +18,8 @@ interface ArtistDao {
             artists.name AS name,
             artists.picture_uri AS picture_uri,
             COUNT(DISTINCT tracks.id) AS track_count,
-            COUNT(DISTINCT albums.id) AS album_count
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
         FROM artists
         LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
@@ -36,7 +37,26 @@ interface ArtistDao {
             artists.name AS name,
             artists.picture_uri AS picture_uri,
             COUNT(DISTINCT tracks.id) AS track_count,
-            COUNT(DISTINCT albums.id) AS album_count
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
+        FROM artists
+        LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        GROUP BY artists.id
+        ORDER BY lower(artists.name) ASC
+        """,
+    )
+    suspend fun getAllBrowseArtists(): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
         FROM artists
         LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
@@ -239,6 +259,15 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
 
+    @Query("SELECT id FROM tracks WHERE canonical_audio_source_type = 'local'")
+    suspend fun getLocalTrackIds(): List<String>
+
+    @Query("SELECT id FROM tracks WHERE canonical_audio_source_type = 'downloaded'")
+    suspend fun getDownloadedTrackIds(): List<String>
+
+    @Query("DELETE FROM tracks WHERE id IN (:ids)")
+    suspend fun deleteTracksByIds(ids: List<String>)
+
     @Query(
         """
         SELECT
@@ -251,7 +280,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         ORDER BY tracks.updated_at DESC
@@ -272,7 +302,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.id = :trackId
@@ -293,7 +324,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.title) LIKE '%' || lower(:query) || '%'
@@ -317,7 +349,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
@@ -337,7 +370,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.primary_artist_id = :artistId
@@ -359,7 +393,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.album_id = :albumId
@@ -380,7 +415,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.display_album_title) = lower(:albumTitle)
@@ -402,7 +438,8 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked
+            tracks.is_liked AS is_liked,
+            tracks.updated_at AS updated_at
         FROM tracks
         INNER JOIN track_likes ON track_likes.track_id = tracks.id
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -476,7 +513,9 @@ interface PlaylistDao {
             tracks.display_album_title AS album_title,
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
-            tracks.cover_uri AS cover_uri
+            tracks.cover_uri AS cover_uri,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id
         FROM playlist_items
         INNER JOIN tracks ON tracks.id = playlist_items.track_id
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -575,6 +614,9 @@ interface UserSettingsDao {
 
     @Query("UPDATE user_settings SET stats_sync_network_policy = :policy WHERE id = 'default'")
     suspend fun updateStatsSyncNetworkPolicy(policy: String): Int
+
+    @Query("UPDATE user_settings SET sync_token = :token, last_sync_at = :lastSyncAt WHERE id = 'default'")
+    suspend fun updateSyncToken(token: String?, lastSyncAt: Long): Int
 }
 
 // ---------------------------------------------------------------------------
@@ -675,5 +717,23 @@ interface DownloadJobDao {
 
     @Query("DELETE FROM download_jobs WHERE status IN ('succeeded', 'failed', 'cancelled')")
     suspend fun clearCompletedJobs(): Int
+}
+
+@Dao
+interface SyncOutboxDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: SyncOutboxEntity)
+
+    @Query("SELECT * FROM sync_outbox WHERE status = 'pending' ORDER BY created_at ASC")
+    suspend fun getPendingOperations(): List<SyncOutboxEntity>
+
+    @Query("UPDATE sync_outbox SET status = :status, attempt_count = attempt_count + 1, updated_at = :now WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String, now: Long)
+
+    @Query("DELETE FROM sync_outbox WHERE id = :id")
+    suspend fun deleteOperation(id: String): Int
+
+    @Query("DELETE FROM sync_outbox")
+    suspend fun clearAll()
 }
 

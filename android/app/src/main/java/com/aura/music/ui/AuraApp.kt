@@ -81,6 +81,8 @@ import com.aura.music.ui.screens.FavoritesScreen
 import com.aura.music.ui.screens.HybridAlbumScreen
 import com.aura.music.ui.screens.HybridArtistScreen
 import com.aura.music.ui.screens.LibraryScreen
+import com.aura.music.ui.screens.LibraryTracksScreen
+import com.aura.music.ui.screens.LibraryArtistsScreen
 import com.aura.music.ui.screens.PlayerScreen
 import com.aura.music.ui.screens.PlaylistDetailScreenNew
 import com.aura.music.ui.screens.PlaylistsListScreen
@@ -173,8 +175,8 @@ fun AuraApp() {
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                     onOpenPlayer = { navController.navigate(AuraRoute.Player) },
-                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
-                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
                 )
             }
             composable(AuraRoute.Search) {
@@ -183,8 +185,9 @@ fun AuraApp() {
                     refreshToken = permissionRefreshTick,
                     onRequestAudioPermission = requestAudioPermission,
                     onPlayTrackInList = onPlayTrackInList,
-                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
-                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                    onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                 )
             }
             composable(AuraRoute.Library) {
@@ -196,9 +199,26 @@ fun AuraApp() {
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                     onOpenPlaylists = { navController.navigate(AuraRoute.Playlists) },
                     onOpenFavorites = { navController.navigate(AuraRoute.Favorites) },
-                    onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
-                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
-                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
+                    onOpenTracks = { navController.navigate(AuraRoute.LibraryTracks) },
+                    onOpenArtists = { navController.navigate(AuraRoute.LibraryArtists) },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                )
+            }
+            composable(AuraRoute.LibraryTracks) {
+                LibraryTracksScreen(
+                    repository = repository,
+                    playerViewModel = playerViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                )
+            }
+            composable(AuraRoute.LibraryArtists) {
+                LibraryArtistsScreen(
+                    repository = repository,
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                 )
             }
             composable(AuraRoute.Playlists) {
@@ -213,8 +233,8 @@ fun AuraApp() {
                     repository = repository,
                     playerViewModel = playerViewModel,
                     onNavigateBack = { navController.popBackStack() },
-                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
-                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
                 )
             }
             composable(AuraRoute.PlaylistDetailPattern) { backStackEntry ->
@@ -223,6 +243,8 @@ fun AuraApp() {
                     playerViewModel = playerViewModel,
                     playlistId = backStackEntry.arguments?.getString(AuraRoute.PlaylistIdArg).orEmpty(),
                     onNavigateBack = { navController.popBackStack() },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
                 )
             }
             composable(AuraRoute.ArtistPattern) { backStackEntry ->
@@ -244,7 +266,7 @@ fun AuraApp() {
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                     onPlayTrackInList = onPlayTrackInList,
-                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) },
+                    onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
                 )
             }
             composable(AuraRoute.AlbumPattern) { backStackEntry ->
@@ -266,7 +288,7 @@ fun AuraApp() {
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                     onPlayTrackInList = onPlayTrackInList,
-                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) },
+                    onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                 )
             }
             composable(AuraRoute.Downloads) {
@@ -287,6 +309,7 @@ fun AuraApp() {
                 SettingsScreen(
                     repository = repository,
                     downloadRepository = appContainer.downloadRepository,
+                    syncRepository = appContainer.syncRepository,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
@@ -439,6 +462,8 @@ object AuraRoute {
     const val Downloads = "downloads"
     const val Settings = "settings"
     const val Player = "player"
+    const val LibraryTracks = "library_tracks"
+    const val LibraryArtists = "library_artists"
 
     const val ArtistIdArg = "artistId"
     const val AlbumIdArg = "albumId"
@@ -539,6 +564,9 @@ fun TrackList(
     showCover: Boolean = true,
     onAddTrackToPlaylist: ((TrackListRow) -> Unit)? = null,
     onLikeTrack: ((TrackListRow) -> Unit)? = null,
+    onPlayNow: ((TrackListRow) -> Unit)? = null,
+    onAddToQueue: ((TrackListRow) -> Unit)? = null,
+    onDeleteDownload: ((TrackListRow) -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -565,8 +593,16 @@ fun TrackList(
                     coverUri = track.coverUri,
                     showCover = showCover,
                     onClick = { onPlayTrackInList(track, tracks, contextType) },
+                    contextType = contextType,
+                    isLiked = track.isLiked,
                     onAddToPlaylist = onAddTrackToPlaylist?.let { { it(track) } },
                     onLike = onLikeTrack?.let { { it(track) } },
+                    onUnlike = onLikeTrack?.let { { it(track) } },
+                    onPlayNow = onPlayNow?.let { { it(track) } },
+                    onAddToQueue = onAddToQueue?.let { { it(track) } },
+                    onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
+                    onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
+                    onDeleteDownload = onDeleteDownload?.let { { it(track) } },
                 )
             }
         }

@@ -56,6 +56,7 @@ class MediaStoreAudioDataSource(
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.DATE_MODIFIED,
+            MediaStore.Audio.Media.DATA,
         )
 
         buildList {
@@ -75,8 +76,22 @@ class MediaStoreAudioDataSource(
                 val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
                 val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
                 val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+                val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
 
                 while (cursor.moveToNext()) {
+                    val filePath = cursor.getString(dataColumn).orEmpty()
+                    val albumTitle = cursor.getString(albumColumn).orEmpty()
+                    val mimeType = cursor.getString(mimeTypeColumn).orEmpty()
+
+                    // Exclude all .opus files and WhatsApp audios/voice notes/media
+                    if (mimeType.contains("opus", ignoreCase = true) ||
+                        filePath.endsWith(".opus", ignoreCase = true) ||
+                        albumTitle.equals("WhatsApp Audio", ignoreCase = true) ||
+                        filePath.contains("WhatsApp", ignoreCase = true) || 
+                        filePath.contains("com.whatsapp", ignoreCase = true)) {
+                        continue
+                    }
+
                     val mediaStoreId = cursor.getLong(idColumn)
                     val contentUri: Uri = Uri.withAppendedPath(
                         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,

@@ -209,6 +209,7 @@ data class UserSettingsEntity(
     @ColumnInfo(name = "online_search_network_policy") val onlineSearchNetworkPolicy: String,
     @ColumnInfo(name = "stats_sync_network_policy") val statsSyncNetworkPolicy: String,
     @ColumnInfo(name = "last_sync_at") val lastSyncAt: Long? = null,
+    @ColumnInfo(name = "sync_token") val syncToken: String? = null,
 )
 
 data class TrackListRow(
@@ -222,6 +223,7 @@ data class TrackListRow(
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
     @ColumnInfo(name = "cover_uri") val coverUri: String?,
     @ColumnInfo(name = "is_liked") val isLiked: Boolean,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long = 0,
 )
 
 data class PlaylistListRow(
@@ -253,6 +255,8 @@ data class PlaylistTrackRow(
     @ColumnInfo(name = "content_uri") val contentUri: String?,
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
     @ColumnInfo(name = "cover_uri") val coverUri: String?,
+    @ColumnInfo(name = "artist_id") val artistId: String? = null,
+    @ColumnInfo(name = "album_id") val albumId: String? = null,
 )
 
 data class ArtistBrowseRow(
@@ -261,6 +265,7 @@ data class ArtistBrowseRow(
     @ColumnInfo(name = "picture_uri") val pictureUri: String?,
     @ColumnInfo(name = "track_count") val trackCount: Int,
     @ColumnInfo(name = "album_count") val albumCount: Int,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long = 0,
 )
 
 data class ArtistDetailRow(
@@ -420,6 +425,30 @@ data class DownloadJobRowModel(
     val errorCode: String?,
     val errorMessage: String?,
     val createdAt: Long
+)
+
+/**
+ * Opérations locales en attente de synchronisation cloud (outbox sync).
+ *
+ * Governé par : docs/android/local-persistence.md — table sync_outbox
+ */
+@Entity(
+    tableName = "sync_outbox",
+    indices = [
+        Index(value = ["status"]),
+        Index(value = ["created_at"]),
+    ],
+)
+data class SyncOutboxEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "entity_type") val entityType: String, // 'user_settings', 'playlist', 'playlist_item', 'track_like', 'playback_snapshot'
+    @ColumnInfo(name = "entity_id") val entityId: String,
+    @ColumnInfo(name = "operation_type") val operationType: String, // 'patch', 'create', 'update', 'delete', 'set'
+    @ColumnInfo(name = "payload_json") val payloadJson: String,
+    val status: String, // 'pending', 'syncing', 'failed'
+    @ColumnInfo(name = "attempt_count") val attemptCount: Int = 0,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
 
 

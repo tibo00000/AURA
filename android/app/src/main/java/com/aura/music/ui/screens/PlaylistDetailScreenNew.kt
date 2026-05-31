@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aura.music.data.local.PlaylistTrackRow
+import com.aura.music.data.local.PlaylistListRow
+import com.aura.music.ui.screens.SelectPlaylistDialog
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.data.repository.PlaylistDetail
 import com.aura.music.ui.RouteScaffold
@@ -60,6 +62,8 @@ fun PlaylistDetailScreenNew(
     playerViewModel: PlayerViewModel,
     playlistId: String,
     onNavigateBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId, refreshTick) {
@@ -70,6 +74,12 @@ fun PlaylistDetailScreenNew(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showMenuOpen by remember { mutableStateOf(false) }
     val detail = detailState.value
+
+    var activeTrackForPlaylist by remember { mutableStateOf<PlaylistTrackRow?>(null) }
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
 
     RouteScaffold(title = detail?.summary?.name ?: "Playlist", onNavigateBack = onNavigateBack) {
         if (detail == null) {
@@ -204,6 +214,9 @@ fun PlaylistDetailScreenNew(
                                 playPlaylist(playerViewModel, tracks, false, detail.summary.id, track.trackId)
                             },
                             onRefresh = { refreshTick++ },
+                            onAddToPlaylist = { activeTrackForPlaylist = it },
+                            onOpenArtist = onOpenArtist,
+                            onOpenAlbum = onOpenAlbum,
                         )
                     }
                 }
@@ -244,6 +257,20 @@ fun PlaylistDetailScreenNew(
             },
         )
     }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.trackId, contextType = "playlist")
+                    activeTrackForPlaylist = null
+                    refreshTick++
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -253,8 +280,10 @@ private fun PlaylistTrackRowItem(
     repository: LocalLibraryRepository,
     onPlayTrack: () -> Unit,
     onRefresh: () -> Unit,
+    onAddToPlaylist: (PlaylistTrackRow) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
 ) {
-    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     SharedTrackRowItem(
@@ -270,14 +299,11 @@ private fun PlaylistTrackRowItem(
             }
         },
         onAddToPlaylist = {
-            showAddToPlaylistDialog = true
+            onAddToPlaylist(track)
         },
+        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
+        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
     )
-
-    if (showAddToPlaylistDialog) {
-        // TODO: Implémenter le dialog pour ajouter à une autre playlist
-        showAddToPlaylistDialog = false
-    }
 }
 
 private fun playPlaylist(

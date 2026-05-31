@@ -96,6 +96,9 @@ dependencies {
     implementation("com.squareup.moshi:moshi-adapters:1.15.1")
     ksp("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
 
+    // Background Sync WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

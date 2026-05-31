@@ -45,6 +45,8 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -61,11 +63,14 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.foundation.layout.PaddingValues
 import com.aura.music.ui.theme.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -117,7 +122,8 @@ fun LibraryScreen(
     onOpenPlaylist: (String) -> Unit,
     onOpenPlaylists: () -> Unit,
     onOpenFavorites: () -> Unit,
-    onOpenDownloads: () -> Unit,
+    onOpenTracks: () -> Unit,
+    onOpenArtists: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
@@ -152,12 +158,7 @@ fun LibraryScreen(
     val isSearchActive = query.trim().length >= 2
 
     RouteScaffold(
-        title = "Bibliothèque",
-        actions = {
-            IconButton(onClick = onOpenDownloads) {
-                Icon(Icons.Rounded.Downloading, contentDescription = "Téléchargements", tint = TextPrimary)
-            }
-        }
+        title = "Bibliothèque"
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().background(DeepBlack),
@@ -200,11 +201,11 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, { }, Modifier.weight(1f))
+                            LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
                             LibraryGridItem("Favoris", "${favoritesCountState.value} éléments", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, { }, Modifier.weight(1f))
+                            LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, onOpenArtists, Modifier.weight(1f))
                             LibraryGridItem("Playlists", "${playlistsState.value.size} éléments", Icons.Rounded.QueueMusic, onOpenPlaylists, Modifier.weight(1f))
                         }
                     }
@@ -259,6 +260,12 @@ fun FavoritesScreen(
     val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick) {
         value = repository.getLikedTracks()
     }
+    val scope = rememberCoroutineScope()
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
 
     RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack) {
         if (tracksState.value.isEmpty()) {
@@ -359,17 +366,36 @@ fun FavoritesScreen(
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
                         onClick = { playerViewModel.onEvent(playEvent) },
                         coverUri = track.coverUri,
-                        trailingIcon = {
-                            // Menu contextuel Favoris — à implémenter (component-states.md)
-                            IconButton(onClick = { /* TODO: menu contextuel */ }, enabled = false) {
-                                Icon(Icons.Rounded.MoreVert, contentDescription = "Options", tint = TextSecondary)
+                        contextType = "favorites",
+                        onUnlike = {
+                            scope.launch {
+                                repository.toggleLike(track.id, currentlyLiked = true, contextType = "favorites")
+                                refreshTick++
                             }
                         },
+                        onAddToPlaylist = {
+                            activeTrackForPlaylist = track
+                        },
+                        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
+                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
+    }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "favorites")
+                    activeTrackForPlaylist = null
+                }
+            }
+        )
     }
 }
 
@@ -624,19 +650,25 @@ fun PlaylistDetailScreen(
         )
     }
 }
-
-@Composable
 fun ArtistRouteScreen(
     repository: LocalLibraryRepository,
+    playerViewModel: PlayerViewModel,
     artistId: String,
     onNavigateBack: () -> Unit,
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
-    val artistState = produceState<ArtistDetail?>(initialValue = null, repository, artistId) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val artistState = produceState<ArtistDetail?>(initialValue = null, repository, artistId, refreshTick) {
         value = repository.getArtistDetail(artistId)
     }
     val artist = artistState.value
+    val scope = rememberCoroutineScope()
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
 
     RouteScaffold(title = artist?.summary?.name ?: "Artist", onNavigateBack = onNavigateBack) {
         if (artist == null) {
@@ -681,6 +713,21 @@ fun ArtistRouteScreen(
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenArtist = { },
                     onOpenAlbum = onOpenAlbum,
+                    onPlayNow = { track -> onPlayTrackInList(track, artist.topTracks, "artist") },
+                    onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                    onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                    onLikeTrack = { track ->
+                        scope.launch {
+                            repository.toggleLike(track.id, track.isLiked, "artist", artistId)
+                            refreshTick++
+                        }
+                    },
+                    onDeleteDownload = { track ->
+                        scope.launch {
+                            repository.deleteTrack(track.id)
+                            refreshTick++
+                        }
+                    }
                 )
             }
             item { SectionTitle("Albums", "Navigation album depuis la bibliotheque locale.") }
@@ -688,20 +735,42 @@ fun ArtistRouteScreen(
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "artist")
+                    activeTrackForPlaylist = null
+                    refreshTick++
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun AlbumRouteScreen(
     repository: LocalLibraryRepository,
+    playerViewModel: PlayerViewModel,
     albumId: String,
     onNavigateBack: () -> Unit,
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenArtist: (String) -> Unit,
 ) {
-    val albumState = produceState<AlbumDetail?>(initialValue = null, repository, albumId) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val albumState = produceState<AlbumDetail?>(initialValue = null, repository, albumId, refreshTick) {
         value = repository.getAlbumDetail(albumId)
     }
     val album = albumState.value
+    val scope = rememberCoroutineScope()
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
 
     RouteScaffold(title = album?.summary?.title ?: "Album", onNavigateBack = onNavigateBack) {
         if (album == null) {
@@ -806,10 +875,39 @@ fun AlbumRouteScreen(
                     onOpenArtist = onOpenArtist,
                     onOpenAlbum = { },
                     showCover = false,
+                    onPlayNow = { track -> onPlayTrackInList(track, album.tracks, "album") },
+                    onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                    onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                    onLikeTrack = { track ->
+                        scope.launch {
+                            repository.toggleLike(track.id, track.isLiked, "album", albumId)
+                            refreshTick++
+                        }
+                    },
+                    onDeleteDownload = { track ->
+                        scope.launch {
+                            repository.deleteTrack(track.id)
+                            refreshTick++
+                        }
+                    }
                 )
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
+    }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "album")
+                    activeTrackForPlaylist = null
+                    refreshTick++
+                }
+            }
+        )
     }
 }
 
@@ -1456,6 +1554,364 @@ fun YtmProposalsDialog(
                         Text(text = "Annuler", color = BlazeOrange)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun LibraryTracksScreen(
+    repository: LocalLibraryRepository,
+    playerViewModel: PlayerViewModel,
+    onNavigateBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick) {
+        value = repository.getAllTracks()
+    }
+    val scope = rememberCoroutineScope()
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null)}
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
+
+    val sortingOptions = listOf("A-Z", "Récents")
+    var selectedSort by remember { mutableStateOf("A-Z") }
+    var showSortMenu by remember { mutableStateOf(false) }
+
+    val sortedTracks by remember(tracksState.value, selectedSort) {
+        derivedStateOf {
+            when (selectedSort) {
+                "A-Z" -> tracksState.value.sortedBy { it.title.lowercase() }
+                "Récents" -> tracksState.value.sortedByDescending { it.updatedAt }
+                else -> tracksState.value
+            }
+        }
+    }
+
+    RouteScaffold(title = "Titres", onNavigateBack = onNavigateBack) {
+        if (tracksState.value.isEmpty()) {
+            EmptyStateSurface(
+                title = "Aucun titre",
+                message = "Indexe tes musiques locales pour voir tes pistes ici.",
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().background(DeepBlack),
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .background(
+                                Brush.linearGradient(listOf(Color(0xFF00E0FF), Color(0xFF101010))),
+                                RoundedCornerShape(24.dp),
+                            )
+                            .padding(20.dp),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(
+                                Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp),
+                            )
+                            Text(
+                                "Tous les titres",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                            Text(
+                                "${tracksState.value.size} piste(s) locale(s)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.75f),
+                            )
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            onClick = {
+                                val tracks = sortedTracks
+                                if (tracks.isNotEmpty()) {
+                                    playerViewModel.onEvent(
+                                        PlayerEvent.PlayTrack(
+                                            trackId = tracks.first().id,
+                                            contextType = "library_tracks",
+                                            contextId = "library_tracks",
+                                            contextTracks = tracks.map { it.toQueuedTrack() },
+                                            startIndex = 0,
+                                        ),
+                                    )
+                                }
+                            },
+                            enabled = tracksState.value.isNotEmpty(),
+                        ) { Text("Lire tout") }
+                        Button(
+                            onClick = {
+                                val tracks = sortedTracks.shuffled()
+                                if (tracks.isNotEmpty()) {
+                                    playerViewModel.onEvent(
+                                        PlayerEvent.PlayTrack(
+                                            trackId = tracks.first().id,
+                                            contextType = "library_tracks",
+                                            contextId = "library_tracks",
+                                            contextTracks = tracks.map { it.toQueuedTrack() },
+                                            startIndex = 0,
+                                        ),
+                                    )
+                                }
+                            },
+                            enabled = tracksState.value.isNotEmpty(),
+                        ) { Text("Aléatoire") }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    Icons.Rounded.Sort,
+                                    contentDescription = "Trier",
+                                    tint = Color.White,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                            ) {
+                                sortingOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            selectedSort = option
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = if (selectedSort == option) {
+                                            { Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF00E0FF)) }
+                                        } else null,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                items(sortedTracks, key = { it.id }) { track ->
+                    val trackIndex = sortedTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                    val contextTracks = sortedTracks.map { it.toQueuedTrack() }
+                    val playEvent = PlayerEvent.PlayTrack(
+                        trackId = track.id,
+                        contextType = "library_tracks",
+                        contextId = "library_tracks",
+                        contextTracks = contextTracks,
+                        startIndex = trackIndex,
+                    )
+                    SharedTrackRowItem(
+                        title = track.title,
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                        onClick = { playerViewModel.onEvent(playEvent) },
+                        coverUri = track.coverUri,
+                        contextType = "standard",
+                        isLiked = track.isLiked,
+                        onLike = {
+                            scope.launch {
+                                repository.toggleLike(track.id, false, "library_tracks", "library_tracks")
+                                refreshTick++
+                            }
+                        },
+                        onUnlike = {
+                            scope.launch {
+                                repository.toggleLike(track.id, true, "library_tracks", "library_tracks")
+                                refreshTick++
+                            }
+                        },
+                        onAddToPlaylist = {
+                            activeTrackForPlaylist = track
+                        },
+                        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
+                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
+                        onDeleteDownload = {
+                            scope.launch {
+                                repository.deleteTrack(track.id)
+                                refreshTick++
+                            }
+                        }
+                    )
+                }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
+            }
+        }
+    }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "library_tracks")
+                    activeTrackForPlaylist = null
+                    refreshTick++
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun LibraryArtistsScreen(
+    repository: LocalLibraryRepository,
+    onNavigateBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+) {
+    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository) {
+        value = repository.getAllBrowseArtists()
+    }
+
+    val sortingOptions = listOf("A-Z", "Plus de titres", "Récents")
+    var selectedSort by remember { mutableStateOf("A-Z") }
+    var showSortMenu by remember { mutableStateOf(false) }
+
+    val sortedArtists by remember(artistsState.value, selectedSort) {
+        derivedStateOf {
+            when (selectedSort) {
+                "A-Z" -> artistsState.value.sortedBy { it.name.lowercase() }
+                "Plus de titres" -> artistsState.value.sortedByDescending { it.trackCount }
+                "Récents" -> artistsState.value.sortedByDescending { it.updatedAt }
+                else -> artistsState.value
+            }
+        }
+    }
+
+    RouteScaffold(title = "Artistes", onNavigateBack = onNavigateBack) {
+        if (artistsState.value.isEmpty()) {
+            EmptyStateSurface(
+                title = "Aucun artiste",
+                message = "Indexe tes musiques locales pour voir tes artistes ici.",
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().background(DeepBlack),
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${artistsState.value.size} artiste(s)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                        )
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    Icons.Rounded.Sort,
+                                    contentDescription = "Trier",
+                                    tint = Color.White,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                            ) {
+                                sortingOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            selectedSort = option
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = if (selectedSort == option) {
+                                            { Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF00E0FF)) }
+                                        } else null,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                items(sortedArtists, key = { it.id }) { artist ->
+                    androidx.compose.material3.Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = { onOpenArtist(artist.id) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(androidx.compose.ui.graphics.Color(0xFF1E1E1E))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            if (artist.pictureUri != null) {
+                                AsyncImage(
+                                    model = artist.pictureUri,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(
+                                            Brush.linearGradient(listOf(Color(0xFF792BEE), Color(0xFF101010))),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Mic,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    artist.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "${artist.trackCount} piste(s) • ${artist.albumCount} album(s)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
     }

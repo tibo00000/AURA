@@ -21,10 +21,20 @@ class AuraAppContainer(context: Context) {
     private val database by lazy { AuraDatabase.getInstance(appContext) }
     private val mediaStoreAudioDataSource by lazy { MediaStoreAudioDataSource(appContext) }
 
+    val syncRepository by lazy {
+        com.aura.music.data.repository.SyncRepository(
+            database = database,
+            apiService = auraApiService,
+            context = appContext,
+        )
+    }
+
     val localLibraryRepository by lazy {
         LocalLibraryRepository(
             database = database,
             mediaStoreAudioDataSource = mediaStoreAudioDataSource,
+            syncRepositoryProvider = { syncRepository },
+            context = appContext
         )
     }
 

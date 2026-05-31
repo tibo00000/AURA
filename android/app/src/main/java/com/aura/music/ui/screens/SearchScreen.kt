@@ -23,6 +23,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Downloading
+import com.aura.music.ui.theme.TextPrimary
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +44,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.produceState
+import com.aura.music.data.local.PlaylistListRow
+import com.aura.music.ui.screens.SelectPlaylistDialog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.Alignment
@@ -84,6 +89,7 @@ fun SearchScreen(
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onOpenDownloads: () -> Unit,
 ) {
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
     val searchRepository = application.container.searchRepository
@@ -97,6 +103,12 @@ fun SearchScreen(
     
     val uiState by viewModel.uiState.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
 
     LaunchedEffect(refreshToken) {
         // Any permission refresh can be handled here if needed
@@ -114,7 +126,18 @@ fun SearchScreen(
         }
     }
 
-    RouteScaffold(title = "Recherche") {
+    RouteScaffold(
+        title = "Recherche",
+        actions = {
+            IconButton(onClick = onOpenDownloads) {
+                Icon(
+                    imageVector = Icons.Rounded.Downloading,
+                    contentDescription = "Téléchargements",
+                    tint = TextPrimary
+                )
+            }
+        }
+    ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -225,9 +248,15 @@ fun SearchScreen(
                                 onLikeTrack = { trackId, isLiked ->
                                     viewModel.likeLocalTrack(trackId, isLiked)
                                 },
-                                onAddToPlaylist = { /* TODO: playlist dialog */ },
+                                onAddToPlaylist = { track -> activeTrackForPlaylist = track },
                                 onOpenArtist = onOpenArtist,
                                 onOpenAlbum = onOpenAlbum,
+                                onDeleteTrack = { track ->
+                                    scope.launch {
+                                        repository.deleteTrack(track.id)
+                                        viewModel.refreshDisplayedLocalResults()
+                                    }
+                                },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -284,7 +313,20 @@ fun SearchScreen(
                                         }
                                     }
                                 },
-                                onAddToPlaylist = { /* TODO: playlist dialog */ },
+                                onAddToPlaylist = { track ->
+                                    activeTrackForPlaylist = TrackListRow(
+                                        id = track.id,
+                                        artistId = null,
+                                        albumId = null,
+                                        title = track.title,
+                                        artistName = track.displayArtistName,
+                                        albumTitle = track.displayAlbumTitle,
+                                        contentUri = null,
+                                        durationMs = track.durationMs.toLong(),
+                                        coverUri = track.coverUri,
+                                        isLiked = track.isLiked
+                                    )
+                                },
                                 onOpenArtist = onOpenArtist,
                                 onOpenAlbum = onOpenAlbum,
                                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -305,6 +347,19 @@ fun SearchScreen(
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "search")
+                    activeTrackForPlaylist = null
+                }
+            }
+        )
+    }
 }
 
 /**
@@ -320,6 +375,7 @@ private fun LocalLibrarySearchTab(
     onAddToPlaylist: (TrackListRow) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onDeleteTrack: (TrackListRow) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -339,9 +395,13 @@ private fun LocalLibrarySearchTab(
                         onClick = { onPlayTrack(track, tracks) },
                         showCover = true,
                         contextType = "standard",
+                        isLiked = track.isLiked,
                         onLike = { onLikeTrack(track.id, track.isLiked) },
                         onUnlike = { onLikeTrack(track.id, track.isLiked) },
-                        onAddToPlaylist = { onAddToPlaylist(track) }
+                        onAddToPlaylist = { onAddToPlaylist(track) },
+                        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
+                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
+                        onDeleteDownload = { onDeleteTrack(track) }
                     )
                 }
             }
@@ -405,8 +465,9 @@ private fun OnlineSearchTab(
                         onClick = { onPlayTrack(track) },
                         showCover = true,
                         contextType = "search_online",
-                        onAddToPlaylist = { onAddToPlaylist(track) },
-                        onDownload = { onDownloadTrack(track) }
+                        onDownload = { onDownloadTrack(track) },
+                        onViewArtist = { onOpenArtist("artist:${normalize(track.displayArtistName)}") },
+                        onViewAlbum = track.displayAlbumTitle?.let { albumTitle -> { onOpenAlbum("album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}") } }
                     )
                 }
             }
@@ -1018,4 +1079,17 @@ private fun SectionTitle(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+private fun normalize(value: String): String {
+    val slug = value
+        .trim()
+        .lowercase()
+        .replace(Regex("[^\\p{L}\\p{N}]+"), "-")
+        .trim('-')
+    if (slug.isNotBlank()) return slug
+    val bytes = value.trim().lowercase().toByteArray(Charsets.UTF_8)
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+    val hex = digest.joinToString("") { "%02x".format(it) }
+    return hex.take(16).ifBlank { "unknown" }
 }

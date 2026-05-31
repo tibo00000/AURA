@@ -16,12 +16,13 @@ import androidx.room.RoomDatabase
         PlaylistEntity::class,
         PlaylistItemEntity::class,
         RecentSearchEntity::class,
+        SyncOutboxEntity::class,
         TrackEntity::class,
         TrackLikeEntity::class,
         TrackMediaLinkEntity::class,
         UserSettingsEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AuraDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ abstract class AuraDatabase : RoomDatabase() {
     abstract fun artistSourceLinkDao(): ArtistSourceLinkDao
     abstract fun albumSourceLinkDao(): AlbumSourceLinkDao
     abstract fun downloadJobDao(): DownloadJobDao
+    abstract fun syncOutboxDao(): SyncOutboxDao
 
     companion object {
         @Volatile
@@ -124,6 +126,33 @@ abstract class AuraDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // 1. Create sync_outbox table
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_outbox` (
+                        `id` TEXT NOT NULL,
+                        `entity_type` TEXT NOT NULL,
+                        `entity_id` TEXT NOT NULL,
+                        `operation_type` TEXT NOT NULL,
+                        `payload_json` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `attempt_count` INTEGER NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_status` ON `sync_outbox` (`status`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_created_at` ON `sync_outbox` (`created_at`)")
+
+                // 2. Add sync_token column to user_settings table
+                database.execSQL("ALTER TABLE `user_settings` ADD COLUMN `sync_token` TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AuraDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -131,7 +160,7 @@ abstract class AuraDatabase : RoomDatabase() {
                     klass = AuraDatabase::class.java,
                     name = "aura.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }

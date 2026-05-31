@@ -1,5 +1,6 @@
 package com.aura.music.ui.screens
 
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +58,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 fun SettingsScreen(
     repository: LocalLibraryRepository,
     downloadRepository: DownloadRepository,
+    syncRepository: com.aura.music.data.repository.SyncRepository,
     onNavigateBack: () -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
@@ -67,6 +69,10 @@ fun SettingsScreen(
     var uploadStatus by remember { mutableStateOf<String?>(null) }
     var isSuccess by remember { mutableStateOf<Boolean?>(null) }
     var showYouTubeLogin by remember { mutableStateOf(false) }
+
+    var isSyncing by remember { mutableStateOf(false) }
+    var syncResultStatus by remember { mutableStateOf<String?>(null) }
+    var isSyncSuccess by remember { mutableStateOf<Boolean?>(null) }
 
     val settingsState = produceState<UserSettingsEntity?>(initialValue = null, repository, refreshTick) {
         repository.ensureDefaults()
@@ -92,6 +98,7 @@ fun SettingsScreen(
                 )
             }
             item {
+                val ctx = LocalContext.current
                 SettingsCard(title = "Compte et sync") {
                     SettingToggleRow(
                         title = "Sync cloud",
@@ -104,7 +111,89 @@ fun SettingsScreen(
                             }
                         },
                     )
+
+                    if (settings.syncEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Divider()
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val formattedDate = remember(settings.lastSyncAt) {
+                            settings.lastSyncAt?.let { timestamp ->
+                                val sdf = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault())
+                                sdf.format(java.util.Date(timestamp))
+                            } ?: "Jamais synchronisé"
+                        }
+
+                        Text(
+                            text = "Dernière synchronisation : $formattedDate",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        if (syncResultStatus != null) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = syncResultStatus!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isSyncSuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                isSyncing = true
+                                syncResultStatus = "Synchronisation réseau démarrée..."
+                                isSyncSuccess = null
+                                scope.launch {
+                                    try {
+                                        val deviceId = android.provider.Settings.Secure.getString(
+                                            ctx.contentResolver,
+                                            android.provider.Settings.Secure.ANDROID_ID
+                                        ) ?: "android_pixel_device"
+                                        val success = syncRepository.performSync(deviceId, force = true)
+                                        if (success) {
+                                            syncResultStatus = "Synchronisation réussie !"
+                                            isSyncSuccess = true
+                                            refreshTick++
+                                        } else {
+                                            syncResultStatus = "Échec ou aucun changement à synchroniser."
+                                            isSyncSuccess = false
+                                        }
+                                    } catch (e: Exception) {
+                                        syncResultStatus = "Erreur: ${e.localizedMessage}"
+                                        isSyncSuccess = false
+                                    } finally {
+                                        isSyncing = false
+                                    }
+                                }
+                            },
+                            enabled = !isSyncing,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFF6B00),
+                                contentColor = Color(0xFF160A00)
+                            ),
+                            shape = RoundedCornerShape(999.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Sync,
+                                    contentDescription = "Synchroniser"
+                                )
+                                Text(if (isSyncing) "Synchronisation..." else "Synchroniser maintenant")
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Divider()
+                    Spacer(modifier = Modifier.height(12.dp))
                     PolicyRow(
                         title = "Sync stats",
                         selected = settings.statsSyncNetworkPolicy,
@@ -267,6 +356,9 @@ fun SettingsScreen(
                 }
             }
             item {
+                var isIndexing by remember { mutableStateOf(false) }
+                var indexResult by remember { mutableStateOf<String?>(null) }
+
                 SettingsCard(title = "Diagnostics") {
                     Text("Pistes indexees: ${summaryState.value?.roomTrackCount ?: 0}", style = MaterialTheme.typography.bodyMedium)
                     Text("MediaStore detecte: ${summaryState.value?.mediaStoreTrackCount ?: 0}", style = MaterialTheme.typography.bodyMedium)
@@ -274,6 +366,45 @@ fun SettingsScreen(
                         "Snapshot actif: ${if (summaryState.value?.activeSnapshot != null) "oui" else "non"}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
+
+                    if (indexResult != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = indexResult!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF00E0FF),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            isIndexing = true
+                            indexResult = "Indexation locale en cours..."
+                            scope.launch {
+                                try {
+                                    val count = repository.refreshLocalMediaIndex()
+                                    indexResult = "Indexation terminée : $count piste(s) synchronisée(s) !"
+                                    refreshTick++
+                                } catch (e: java.lang.Exception) {
+                                    indexResult = "Erreur : ${e.localizedMessage}"
+                                } finally {
+                                    isIndexing = false
+                                }
+                            }
+                        },
+                        enabled = !isIndexing,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00E0FF),
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text(if (isIndexing) "Indexation..." else "Rafraîchir l'index local")
+                    }
                 }
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
