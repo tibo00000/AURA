@@ -112,10 +112,14 @@ import com.aura.music.ui.TrackList
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.toQueuedTrack
 import kotlinx.coroutines.launch
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 
 @Composable
 fun LibraryScreen(
     repository: LocalLibraryRepository,
+    playerViewModel: PlayerViewModel,
     refreshToken: Int,
     onRequestAudioPermission: () -> Unit,
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
@@ -127,16 +131,28 @@ fun LibraryScreen(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
-    val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    val scope = rememberCoroutineScope()
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            refreshTick++
+        }
+    }
+
+    val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken, refreshTick) {
         value = repository.getLibraryDashboardSummary()
     }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken, refreshTick) {
         value = repository.getPlaylists()
     }
-    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository, refreshToken) {
+    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository, refreshToken, refreshTick) {
         value = repository.getBrowseArtists(8)
     }
-    val favoritesCountState = produceState(initialValue = 0, repository, refreshToken) {
+    val favoritesCountState = produceState(initialValue = 0, repository, refreshToken, refreshTick) {
         value = repository.getLikedTracks().size
     }
     var query by remember { mutableStateOf("") }
@@ -144,7 +160,7 @@ fun LibraryScreen(
     val searchArtists = remember { mutableStateListOf<ArtistBrowseRow>() }
     val searchAlbums = remember { mutableStateListOf<AlbumBrowseRow>() }
 
-    LaunchedEffect(query, repository, refreshToken) {
+    LaunchedEffect(query, repository, refreshToken, refreshTick) {
         searchResults.clear()
         searchArtists.clear()
         searchAlbums.clear()
@@ -235,6 +251,16 @@ fun LibraryScreen(
                             onPlayTrackInList = onPlayTrackInList,
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
+                            onPlayNow = { track -> onPlayTrackInList(track, searchResults.toList(), "library_search") },
+                            onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                            onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                            onLikeTrack = { track ->
+                                scope.launch {
+                                    repository.toggleLike(track.id, track.isLiked, "library_search")
+                                    refreshTick++
+                                }
+                            },
+                            onDeleteDownload = { track -> trackToDelete = track }
                         )
                     }
                 }
@@ -245,6 +271,44 @@ fun LibraryScreen(
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
+    }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlistsState.value,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                scope.launch {
+                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "library_search")
+                    activeTrackForPlaylist = null
+                    refreshTick++
+                }
+            }
+        )
+    }
+
+    if (trackToDelete != null) {
+        ConfirmDialog(
+            title = "Supprimer de l'appareil ?",
+            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
+            confirmLabel = "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                scope.launch {
+                    val pendingIntent = repository.deleteTrack(trackToDelete!!.id)
+                    if (pendingIntent != null) {
+                        try {
+                            val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                            intentSenderLauncher.launch(intentSenderRequest)
+                        } catch (e: Exception) {
+                            android.util.Log.e("LibraryScreen", "Failed to launch intent sender for delete", e)
+                        }
+                    }
+                    trackToDelete = null
+                    refreshTick++
+                }
+            }
+        )
     }
 }
 
@@ -650,6 +714,7 @@ fun PlaylistDetailScreen(
         )
     }
 }
+@Composable
 fun ArtistRouteScreen(
     repository: LocalLibraryRepository,
     playerViewModel: PlayerViewModel,
@@ -1573,6 +1638,14 @@ fun LibraryTracksScreen(
     }
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null)}
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            refreshTick++
+        }
+    }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
         value = repository.getPlaylists()
     }
@@ -1740,10 +1813,7 @@ fun LibraryTracksScreen(
                         onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
                         onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
                         onDeleteDownload = {
-                            scope.launch {
-                                repository.deleteTrack(track.id)
-                                refreshTick++
-                            }
+                            trackToDelete = track
                         }
                     )
                 }
@@ -1760,6 +1830,30 @@ fun LibraryTracksScreen(
                 scope.launch {
                     repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "library_tracks")
                     activeTrackForPlaylist = null
+                    refreshTick++
+                }
+            }
+        )
+    }
+
+    if (trackToDelete != null) {
+        ConfirmDialog(
+            title = "Supprimer de l'appareil ?",
+            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
+            confirmLabel = "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                scope.launch {
+                    val pendingIntent = repository.deleteTrack(trackToDelete!!.id)
+                    if (pendingIntent != null) {
+                        try {
+                            val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                            intentSenderLauncher.launch(intentSenderRequest)
+                        } catch (e: Exception) {
+                            android.util.Log.e("LibraryTracksScreen", "Failed to launch intent sender for delete", e)
+                        }
+                    }
+                    trackToDelete = null
                     refreshTick++
                 }
             }

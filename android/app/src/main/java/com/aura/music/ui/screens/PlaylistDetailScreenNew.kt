@@ -292,6 +292,7 @@ private fun PlaylistTrackRowItem(
         onClick = onPlayTrack,
         coverUri = track.coverUri,
         contextType = "playlist",
+        isLiked = track.isLiked,
         onRemoveFromPlaylist = {
             scope.launch {
                 repository.removeTrackFromPlaylist(playlistId, track.playlistItemId)
@@ -300,6 +301,18 @@ private fun PlaylistTrackRowItem(
         },
         onAddToPlaylist = {
             onAddToPlaylist(track)
+        },
+        onLike = {
+            scope.launch {
+                repository.toggleLike(track.trackId, currentlyLiked = false, contextType = "playlist", contextId = playlistId)
+                onRefresh()
+            }
+        },
+        onUnlike = {
+            scope.launch {
+                repository.toggleLike(track.trackId, currentlyLiked = true, contextType = "playlist", contextId = playlistId)
+                onRefresh()
+            }
         },
         onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
         onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },

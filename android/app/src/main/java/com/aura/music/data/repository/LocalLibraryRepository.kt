@@ -709,7 +709,10 @@ class LocalLibraryRepository(
             )
         }
 
-    suspend fun deleteTrack(trackId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteTrack(trackId: String): android.app.PendingIntent? = withContext(Dispatchers.IO) {
+        var pendingIntent: android.app.PendingIntent? = null
+        val track = database.trackDao().getTrackById(trackId)
+        
         database.withTransaction {
             database.trackDao().deleteTracksByIds(listOf(trackId))
             val downloadsDir = java.io.File(context.filesDir, "downloads")
@@ -717,7 +720,31 @@ class LocalLibraryRepository(
             if (targetFile.exists()) {
                 targetFile.delete()
             }
+            
+            track?.contentUri?.let { uriString ->
+                if (uriString.startsWith("content://")) {
+                    try {
+                        val uri = android.net.Uri.parse(uriString)
+                        context.contentResolver.delete(uri, null, null)
+                    } catch (securityException: SecurityException) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            val recoverableSecurityException = securityException as? android.app.RecoverableSecurityException
+                            if (recoverableSecurityException != null) {
+                                pendingIntent = recoverableSecurityException.userAction.actionIntent
+                            } else {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                    val uriList = listOf(android.net.Uri.parse(uriString))
+                                    pendingIntent = android.provider.MediaStore.createDeleteRequest(context.contentResolver, uriList)
+                                }
+                            }
+                        } else {
+                            throw securityException
+                        }
+                    }
+                }
+            }
         }
+        pendingIntent
     }
 
     private suspend fun normalizePlaylistPositions(playlistId: String) {

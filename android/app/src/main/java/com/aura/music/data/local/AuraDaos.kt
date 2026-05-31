@@ -515,7 +515,8 @@ interface PlaylistDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.primary_artist_id AS artist_id,
-            tracks.album_id AS album_id
+            tracks.album_id AS album_id,
+            tracks.is_liked AS is_liked
         FROM playlist_items
         INNER JOIN tracks ON tracks.id = playlist_items.track_id
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id

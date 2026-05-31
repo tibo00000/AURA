@@ -257,6 +257,7 @@ data class PlaylistTrackRow(
     @ColumnInfo(name = "cover_uri") val coverUri: String?,
     @ColumnInfo(name = "artist_id") val artistId: String? = null,
     @ColumnInfo(name = "album_id") val albumId: String? = null,
+    @ColumnInfo(name = "is_liked") val isLiked: Boolean = false,
 )
 
 data class ArtistBrowseRow(

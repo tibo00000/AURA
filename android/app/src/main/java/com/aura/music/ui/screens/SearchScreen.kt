@@ -49,6 +49,9 @@ import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.ui.screens.SelectPlaylistDialog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -105,6 +108,14 @@ fun SearchScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.refreshDisplayedLocalResults()
+        }
+    }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
         value = repository.getPlaylists()
     }
@@ -252,10 +263,7 @@ fun SearchScreen(
                                 onOpenArtist = onOpenArtist,
                                 onOpenAlbum = onOpenAlbum,
                                 onDeleteTrack = { track ->
-                                    scope.launch {
-                                        repository.deleteTrack(track.id)
-                                        viewModel.refreshDisplayedLocalResults()
-                                    }
+                                    trackToDelete = track
                                 },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
@@ -356,6 +364,30 @@ fun SearchScreen(
                 scope.launch {
                     repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "search")
                     activeTrackForPlaylist = null
+                }
+            }
+        )
+    }
+
+    if (trackToDelete != null) {
+        ConfirmDialog(
+            title = "Supprimer de l'appareil ?",
+            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
+            confirmLabel = "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                scope.launch {
+                    val pendingIntent = repository.deleteTrack(trackToDelete!!.id)
+                    if (pendingIntent != null) {
+                        try {
+                            val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                            intentSenderLauncher.launch(intentSenderRequest)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SearchScreen", "Failed to launch intent sender for delete", e)
+                        }
+                    }
+                    trackToDelete = null
+                    viewModel.refreshDisplayedLocalResults()
                 }
             }
         )
@@ -466,8 +498,18 @@ private fun OnlineSearchTab(
                         showCover = true,
                         contextType = "search_online",
                         onDownload = { onDownloadTrack(track) },
-                        onViewArtist = { onOpenArtist("artist:${normalize(track.displayArtistName)}") },
-                        onViewAlbum = track.displayAlbumTitle?.let { albumTitle -> { onOpenAlbum("album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}") } }
+                        onViewArtist = {
+                            val matchedArtist = artists.firstOrNull { it.name.trim().lowercase() == track.displayArtistName.trim().lowercase() }
+                            val artistIdToOpen = matchedArtist?.id ?: "artist:${normalize(track.displayArtistName)}"
+                            onOpenArtist(artistIdToOpen)
+                        },
+                        onViewAlbum = track.displayAlbumTitle?.let { albumTitle ->
+                            {
+                                val matchedAlbum = albums.firstOrNull { it.title.trim().lowercase() == albumTitle.trim().lowercase() }
+                                val albumIdToOpen = matchedAlbum?.id ?: "album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}"
+                                onOpenAlbum(albumIdToOpen)
+                            }
+                        }
                     )
                 }
             }

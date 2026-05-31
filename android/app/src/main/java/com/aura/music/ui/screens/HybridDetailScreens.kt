@@ -58,6 +58,12 @@ import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import com.aura.music.data.local.PlaylistListRow
+import com.aura.music.domain.player.PlayerEvent
 
 // =============================================================================
 // HybridArtistScreen (AND-010)
@@ -73,9 +79,14 @@ import com.aura.music.ui.theme.TextSecondary
 @Composable
 fun HybridArtistScreen(
     viewModel: ArtistDetailViewModel,
+    playlists: List<PlaylistListRow>,
     onNavigateBack: () -> Unit,
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onLikeTrack: (TrackListRow) -> Unit,
+    onAddTrackToPlaylist: (PlaylistListRow, TrackListRow) -> Unit,
+    onDeleteTrack: (TrackListRow) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val artist = state.localData
@@ -83,6 +94,8 @@ fun HybridArtistScreen(
 
     // Title from local if available, else from online, else placeholder
     val showAllOnlineTracks = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
 
     RouteScaffold(title = null, onNavigateBack = onNavigateBack) {
         if (state.isLocalLoading) {
@@ -145,6 +158,11 @@ fun HybridArtistScreen(
                         onPlayTrackInList = onPlayTrackInList,
                         onOpenArtist = { },
                         onOpenAlbum = onOpenAlbum,
+                        onPlayNow = { track -> onPlayTrackInList(track, localTracks, "artist") },
+                        onAddToQueue = onAddToQueue,
+                        onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                        onLikeTrack = onLikeTrack,
+                        onDeleteDownload = { track -> trackToDelete = track }
                     )
                 }
             } else if (onlineData != null && onlineData.topTracks.isNotEmpty()) {
@@ -225,6 +243,30 @@ fun HybridArtistScreen(
             item { Spacer(Modifier.height(32.dp)) }
         }
     }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                onAddTrackToPlaylist(playlist, activeTrackForPlaylist!!)
+                activeTrackForPlaylist = null
+            }
+        )
+    }
+
+    if (trackToDelete != null) {
+        ConfirmDialog(
+            title = "Supprimer de l'appareil ?",
+            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
+            confirmLabel = "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                onDeleteTrack(trackToDelete!!)
+                trackToDelete = null
+            }
+        )
+    }
 }
 
 // =============================================================================
@@ -237,15 +279,22 @@ fun HybridArtistScreen(
 @Composable
 fun HybridAlbumScreen(
     viewModel: AlbumDetailViewModel,
+    playlists: List<PlaylistListRow>,
     onNavigateBack: () -> Unit,
     onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
     onOpenArtist: (String) -> Unit,
+    onLikeTrack: (TrackListRow) -> Unit,
+    onAddTrackToPlaylist: (PlaylistListRow, TrackListRow) -> Unit,
+    onDeleteTrack: (TrackListRow) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val album = state.localData
     val onlineData = state.onlineData
 
     val screenTitle = album?.summary?.title ?: onlineData?.title ?: "Album"
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
 
     RouteScaffold(title = screenTitle, onNavigateBack = onNavigateBack) {
         if (state.isLocalLoading) {
@@ -334,6 +383,11 @@ fun HybridAlbumScreen(
                         onOpenArtist = onOpenArtist,
                         onOpenAlbum = { },
                         showCover = false,
+                        onPlayNow = { track -> onPlayTrackInList(track, localTracks, "album") },
+                        onAddToQueue = onAddToQueue,
+                        onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                        onLikeTrack = onLikeTrack,
+                        onDeleteDownload = { track -> trackToDelete = track }
                     )
                 }
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
@@ -364,6 +418,30 @@ fun HybridAlbumScreen(
 
             item { Spacer(Modifier.height(32.dp)) }
         }
+    }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                onAddTrackToPlaylist(playlist, activeTrackForPlaylist!!)
+                activeTrackForPlaylist = null
+            }
+        )
+    }
+
+    if (trackToDelete != null) {
+        ConfirmDialog(
+            title = "Supprimer de l'appareil ?",
+            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
+            confirmLabel = "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                onDeleteTrack(trackToDelete!!)
+                trackToDelete = null
+            }
+        )
     }
 }
 

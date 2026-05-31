@@ -193,6 +193,7 @@ fun AuraApp() {
             composable(AuraRoute.Library) {
                 LibraryScreen(
                     repository = repository,
+                    playerViewModel = playerViewModel,
                     refreshToken = permissionRefreshTick,
                     onRequestAudioPermission = requestAudioPermission,
                     onPlayTrackInList = onPlayTrackInList,
@@ -262,11 +263,34 @@ fun AuraApp() {
                         appContext = ctx.applicationContext,
                     )
                 )
+                val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
+                    value = repository.getPlaylists()
+                }
+                val scope = rememberCoroutineScope()
                 HybridArtistScreen(
                     viewModel = vm,
+                    playlists = playlistsState.value,
                     onNavigateBack = { navController.popBackStack() },
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                    onLikeTrack = { track ->
+                        scope.launch {
+                            repository.toggleLike(track.id, track.isLiked, "artist", artistId)
+                        }
+                    },
+                    onAddTrackToPlaylist = { playlist, track ->
+                        scope.launch {
+                            repository.addTrackToPlaylist(playlist.id, track.id, "artist")
+                        }
+                    },
+                    onDeleteTrack = { track ->
+                        scope.launch {
+                            repository.deleteTrack(track.id)
+                        }
+                    },
+                    onAddToQueue = { track ->
+                        playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                    }
                 )
             }
             composable(AuraRoute.AlbumPattern) { backStackEntry ->
@@ -284,11 +308,34 @@ fun AuraApp() {
                         appContext = ctx.applicationContext,
                     )
                 )
+                val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
+                    value = repository.getPlaylists()
+                }
+                val scope = rememberCoroutineScope()
                 HybridAlbumScreen(
                     viewModel = vm,
+                    playlists = playlistsState.value,
                     onNavigateBack = { navController.popBackStack() },
                     onPlayTrackInList = onPlayTrackInList,
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
+                    onLikeTrack = { track ->
+                        scope.launch {
+                            repository.toggleLike(track.id, track.isLiked, "album", albumId)
+                        }
+                    },
+                    onAddTrackToPlaylist = { playlist, track ->
+                        scope.launch {
+                            repository.addTrackToPlaylist(playlist.id, track.id, "album")
+                        }
+                    },
+                    onDeleteTrack = { track ->
+                        scope.launch {
+                            repository.deleteTrack(track.id)
+                        }
+                    },
+                    onAddToQueue = { track ->
+                        playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                    }
                 )
             }
             composable(AuraRoute.Downloads) {
