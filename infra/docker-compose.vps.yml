@@ -6,7 +6,7 @@ services:
     container_name: aura-api
     restart: unless-stopped
     env_file:
-      - ../server/.env
+      - /opt/aura/server/.env
     environment:
       - DOWNLOADS_DIR=/app/downloads
       - POT_PROVIDER_URL=http://pot-provider:4416/token
