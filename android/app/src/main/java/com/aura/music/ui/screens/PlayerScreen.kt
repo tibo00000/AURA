@@ -40,11 +40,29 @@ import org.burnoutcrew.reorderable.reorderable
 fun PlayerScreen(
     playerViewModel: PlayerViewModel,
     onNavigateBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
 ) {
     val uiState by playerViewModel.uiState.collectAsState()
     val track = uiState.currentTrack
     var seekDraft by remember(track?.trackId, uiState.durationMs) { mutableStateOf<Float?>(null) }
     val sliderValue = seekDraft ?: uiState.positionMs.toFloat()
+
+    // State for context menu and playlists
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showSelectPlaylistDialog by remember { mutableStateOf(false) }
+
+    val trackDetailsState = produceState<com.aura.music.data.local.TrackListRow?>(initialValue = null, track?.trackId) {
+        value = track?.trackId?.let { playerViewModel.getTrackById(it) }
+    }
+    val trackDetails = trackDetailsState.value
+    val artistId = trackDetails?.artistId
+    val albumId = trackDetails?.albumId
+
+    val playlistsState = produceState<List<com.aura.music.data.local.PlaylistListRow>>(initialValue = emptyList(), playerViewModel) {
+        value = playerViewModel.getPlaylists()
+    }
+    val playlists = playlistsState.value
 
     // Local state for smooth Reordering
     val localPriorityQueue = remember { mutableStateOf(uiState.priorityQueue) }
@@ -106,8 +124,78 @@ fun PlayerScreen(
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = { /* Optional Context Menu */ }) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = "Options supplémentaires")
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "Options supplémentaires")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        // Like
+                        DropdownMenuItem(
+                            text = { Text(if (uiState.isCurrentTrackLiked) "Ne plus aimer" else "Aimer") },
+                            onClick = {
+                                playerViewModel.onEvent(PlayerEvent.ToggleLike)
+                                menuExpanded = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                        // Ajouter à une playlist
+                        DropdownMenuItem(
+                            text = { Text("Ajouter à une playlist") },
+                            onClick = {
+                                showSelectPlaylistDialog = true
+                                menuExpanded = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.PlaylistAdd, contentDescription = null)
+                            }
+                        )
+                        // Ajouter/Retirer aux favoris
+                        DropdownMenuItem(
+                            text = { Text(if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris") },
+                            onClick = {
+                                playerViewModel.onEvent(PlayerEvent.ToggleLike)
+                                menuExpanded = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                        // Voir l'artiste
+                        DropdownMenuItem(
+                            text = { Text("Voir l'artiste") },
+                            onClick = {
+                                artistId?.let { onOpenArtist(it) }
+                                menuExpanded = false
+                            },
+                            enabled = artistId != null,
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Person, contentDescription = null)
+                            }
+                        )
+                        // Voir l'album
+                        DropdownMenuItem(
+                            text = { Text("Voir l'album") },
+                            onClick = {
+                                albumId?.let { onOpenAlbum(it) }
+                                menuExpanded = false
+                            },
+                            enabled = albumId != null,
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Album, contentDescription = null)
+                            }
+                        )
+                    }
                 }
             }
         },
@@ -298,14 +386,14 @@ fun PlayerScreen(
                                 modifier = Modifier.size(28.dp),
                             )
                         }
-                        // Bouton de test pour ajouter a la file d'attente utilisateur !
+                        // Ajouter à une playlist
                         IconButton(
-                            onClick = { playerViewModel.onEvent(PlayerEvent.AddToQueue(track)) }
+                            onClick = { showSelectPlaylistDialog = true }
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.PlaylistAdd,
-                                contentDescription = "Ajouter à la Queue (Test)",
-                                tint = MaterialTheme.colorScheme.secondary,
+                                contentDescription = "Ajouter à une playlist",
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(28.dp),
                             )
                         }
@@ -462,6 +550,17 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+
+    if (showSelectPlaylistDialog && track != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { showSelectPlaylistDialog = false },
+            onPlaylistSelected = { playlist ->
+                playerViewModel.addTrackToPlaylist(playlist.id, track.trackId)
+                showSelectPlaylistDialog = false
+            }
+        )
     }
 }
 

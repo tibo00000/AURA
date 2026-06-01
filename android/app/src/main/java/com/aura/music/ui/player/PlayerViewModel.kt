@@ -3,6 +3,8 @@ package com.aura.music.ui.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.aura.music.data.local.PlaylistListRow
+import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.domain.player.PlaybackOrchestrator
 import com.aura.music.domain.player.PlaybackState
@@ -56,6 +58,25 @@ class PlayerViewModel(
      * Retourne la position courante du player.
      */
     fun currentPositionMs(): Long = orchestrator.currentPositionMs()
+
+    /**
+     * Récupère un morceau de la bibliothèque locale par son ID.
+     */
+    suspend fun getTrackById(trackId: String): TrackListRow? = repository.getTrackById(trackId)
+
+    /**
+     * Récupère toutes les listes de lecture locales.
+     */
+    suspend fun getPlaylists(): List<PlaylistListRow> = repository.getPlaylists()
+
+    /**
+     * Ajoute un morceau à une liste de lecture.
+     */
+    fun addTrackToPlaylist(playlistId: String, trackId: String) {
+        viewModelScope.launch {
+            repository.addTrackToPlaylist(playlistId, trackId, contextType = "player")
+        }
+    }
 
     /**
      * Bascule le like de la piste courante.

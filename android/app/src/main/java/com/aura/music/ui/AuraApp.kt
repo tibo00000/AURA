@@ -411,6 +411,12 @@ fun AuraApp() {
                 PlayerScreen(
                     playerViewModel = playerViewModel,
                     onNavigateBack = { navController.popBackStack() },
+                    onOpenArtist = { artistId ->
+                        navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true }
+                    },
+                    onOpenAlbum = { albumId ->
+                        navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true }
+                    }
                 )
             }
         }
