@@ -381,37 +381,12 @@ fun PlayerScreen(
                 // PRIORITY QUEUE ITEMS (Reorderable)
                 itemsIndexed(localPriorityQueue.value, key = { _, it -> "pq_${it.internalId}" }) { index, queuedTrack ->
                     ReorderableItem(reorderState, key = "pq_${queuedTrack.internalId}") { isDragging ->
-                        val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-                        val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .shadow(elevation)
-                                .background(bgColor)
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = { playerViewModel.onEvent(PlayerEvent.RemoveFromQueue(index)) },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Retirer", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                                Text(queuedTrack.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(queuedTrack.artistName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            Icon(
-                                imageVector = Icons.Rounded.DragHandle,
-                                contentDescription = "Réorganiser",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .detectReorderAfterLongPress(reorderState)
-                                    .padding(8.dp)
-                            )
-                        }
+                        PriorityQueueItemRow(
+                            queuedTrack = queuedTrack,
+                            isDragging = isDragging,
+                            onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromQueue(index)) },
+                            dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
+                        )
                     }
                 }
 
@@ -431,39 +406,12 @@ fun PlayerScreen(
                 // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
                 itemsIndexed(localMainQueue.value.take(30), key = { _, it -> "mq_${it.internalId}" }) { index, queuedTrack ->
                     ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
-                        val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-                        val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .shadow(elevation)
-                                .background(bgColor)
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Retirer de la suite", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            
-                            Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                                Text(queuedTrack.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(queuedTrack.artistName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-
-                            Icon(
-                                imageVector = Icons.Rounded.DragHandle,
-                                contentDescription = "Réorganiser",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .detectReorderAfterLongPress(reorderState)
-                                    .padding(8.dp)
-                            )
-                        }
+                        MainQueueItemRow(
+                            queuedTrack = queuedTrack,
+                            isDragging = isDragging,
+                            onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) },
+                            dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
+                        )
                     }
                 }
                 
@@ -489,6 +437,120 @@ fun PlayerScreen(
                 playerViewModel.addTrackToPlaylist(playlist.id, track.trackId)
                 showSelectPlaylistDialog = false
             }
+        )
+    }
+}
+
+@Composable
+private fun PriorityQueueItemRow(
+    queuedTrack: com.aura.music.domain.player.QueuedTrack,
+    isDragging: Boolean,
+    onRemove: () -> Unit,
+    dragModifier: Modifier,
+    modifier: Modifier = Modifier
+) {
+    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+    val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(elevation)
+            .background(bgColor)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(40.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Retirer",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Text(
+                text = queuedTrack.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = queuedTrack.artistName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.DragHandle,
+            contentDescription = "Réorganiser",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = dragModifier
+                .size(40.dp)
+                .padding(8.dp)
+        )
+    }
+}
+
+@Composable
+private fun MainQueueItemRow(
+    queuedTrack: com.aura.music.domain.player.QueuedTrack,
+    isDragging: Boolean,
+    onRemove: () -> Unit,
+    dragModifier: Modifier,
+    modifier: Modifier = Modifier
+) {
+    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+    val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(elevation)
+            .background(bgColor)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(40.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Retirer de la suite",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Text(
+                text = queuedTrack.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = queuedTrack.artistName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Icon(
+            imageVector = Icons.Rounded.DragHandle,
+            contentDescription = "Réorganiser",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = dragModifier
+                .size(40.dp)
+                .padding(8.dp)
         )
     }
 }
