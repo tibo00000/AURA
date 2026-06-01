@@ -99,6 +99,7 @@ fun SearchScreen(
     val enrichmentRepository = application.container.enrichmentRepository
     val downloadRepository = application.container.downloadRepository
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     
     val viewModel: SearchViewModel = viewModel(
         factory = SearchViewModelFactory(searchRepository, enrichmentRepository, application)
@@ -139,6 +140,7 @@ fun SearchScreen(
 
     RouteScaffold(
         title = "Recherche",
+        snackbarHostState = snackbarHostState,
         actions = {
             IconButton(onClick = onOpenDownloads) {
                 Icon(
@@ -314,9 +316,21 @@ fun SearchScreen(
                                             albumTitle = track.displayAlbumTitle,
                                             coverUri = track.coverUri,
                                             userToken = "Bearer test_user_token"
-                                        ).collect {
-                                            scope.launch {
-                                                downloadRepository.startPolling("Bearer test_user_token")
+                                        ).collect { result ->
+                                            if (result.isSuccess) {
+                                                scope.launch {
+                                                    val snackbarResult = snackbarHostState.showSnackbar(
+                                                        message = "Téléchargement lancé : ${track.title}",
+                                                        actionLabel = "Voir",
+                                                        duration = androidx.compose.material3.SnackbarDuration.Short
+                                                    )
+                                                    if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                                        onOpenDownloads()
+                                                    }
+                                                }
+                                                scope.launch {
+                                                    downloadRepository.startPolling("Bearer test_user_token")
+                                                }
                                             }
                                         }
                                     }

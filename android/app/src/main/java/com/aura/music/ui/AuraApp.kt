@@ -571,6 +571,7 @@ fun RouteScaffold(
     title: String? = null,
     style: TextStyle? = null,
     onNavigateBack: (() -> Unit)? = null,
+    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     content: @Composable () -> Unit,
 ) {
@@ -598,6 +599,18 @@ fun RouteScaffold(
                 actions = actions
             )
         },
+        snackbarHost = {
+            if (snackbarHostState != null) {
+                androidx.compose.material3.SnackbarHost(hostState = snackbarHostState) { data ->
+                    androidx.compose.material3.Snackbar(
+                        snackbarData = data,
+                        containerColor = ElevatedGraphite,
+                        contentColor = TextPrimary,
+                        actionColor = BlazeOrange
+                    )
+                }
+            }
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
