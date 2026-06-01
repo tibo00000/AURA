@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -39,6 +40,21 @@ class PlayerViewModel(
 ) : ViewModel() {
 
     val uiState: StateFlow<PlayerUiState> = orchestrator.uiState
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
+
+    val staticUiState: StateFlow<PlayerUiState> = orchestrator.uiState
+        .distinctUntilChanged { old, new ->
+            old.currentTrack?.trackId == new.currentTrack?.trackId &&
+            old.playbackState == new.playbackState &&
+            old.shuffleEnabled == new.shuffleEnabled &&
+            old.repeatMode == new.repeatMode &&
+            old.priorityQueue == new.priorityQueue &&
+            old.mainQueueTracks == new.mainQueueTracks &&
+            old.contextType == new.contextType &&
+            old.contextId == new.contextId &&
+            old.errorMessage == new.errorMessage &&
+            old.isCurrentTrackLiked == new.isCurrentTrackLiked
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
 
     init {

@@ -43,10 +43,8 @@ fun PlayerScreen(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
-    val uiState by playerViewModel.uiState.collectAsState()
+    val uiState by playerViewModel.staticUiState.collectAsState()
     val track = uiState.currentTrack
-    var seekDraft by remember(track?.trackId, uiState.durationMs) { mutableStateOf<Float?>(null) }
-    val sliderValue = seekDraft ?: uiState.positionMs.toFloat()
 
     // State for context menu and playlists
     var menuExpanded by remember { mutableStateOf(false) }
@@ -272,42 +270,10 @@ fun PlayerScreen(
 
                 // Progress Block
                 item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 12.dp)
-                    ) {
-                        Slider(
-                            value = sliderValue.coerceIn(0f, uiState.durationMs.toFloat().coerceAtLeast(0f)),
-                            onValueChange = { seekDraft = it },
-                            onValueChangeFinished = {
-                                val finalValue = seekDraft?.toLong() ?: uiState.positionMs
-                                playerViewModel.onEvent(PlayerEvent.SeekTo(finalValue))
-                                seekDraft = null
-                            },
-                            valueRange = 0f..uiState.durationMs.toFloat().coerceAtLeast(1f),
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = formatDuration((seekDraft ?: uiState.positionMs.toFloat()).toLong()),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = formatDuration(uiState.durationMs),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    PlaybackProgressBlock(
+                        playerViewModel = playerViewModel,
+                        trackId = track?.trackId
+                    )
                 }
 
                 // Transport Controls
@@ -566,4 +532,51 @@ private fun formatDuration(ms: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
+@Composable
+private fun PlaybackProgressBlock(
+    playerViewModel: PlayerViewModel,
+    trackId: String?,
+) {
+    val uiState by playerViewModel.uiState.collectAsState()
+    var seekDraft by remember(trackId, uiState.durationMs) { mutableStateOf<Float?>(null) }
+    val sliderValue = seekDraft ?: uiState.positionMs.toFloat()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+    ) {
+        Slider(
+            value = sliderValue.coerceIn(0f, uiState.durationMs.toFloat().coerceAtLeast(0f)),
+            onValueChange = { seekDraft = it },
+            onValueChangeFinished = {
+                val finalValue = seekDraft?.toLong() ?: uiState.positionMs
+                playerViewModel.onEvent(PlayerEvent.SeekTo(finalValue))
+                seekDraft = null
+            },
+            valueRange = 0f..uiState.durationMs.toFloat().coerceAtLeast(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = formatDuration((seekDraft ?: uiState.positionMs.toFloat()).toLong()),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = formatDuration(uiState.durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
