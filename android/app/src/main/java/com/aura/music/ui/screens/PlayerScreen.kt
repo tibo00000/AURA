@@ -403,12 +403,16 @@ fun PlayerScreen(
                     }
                 }
 
-                // MAIN UPCOMING QUEUE ITEMS (Passive upcoming list)
+                // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
                 itemsIndexed(localMainQueue.value.take(30), key = { _, it -> "mq_${it.internalId}" }) { index, queuedTrack ->
-                    MainQueueItemRow(
-                        queuedTrack = queuedTrack,
-                        onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) }
-                    )
+                    ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
+                        MainQueueItemRow(
+                            queuedTrack = queuedTrack,
+                            isDragging = isDragging,
+                            onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) },
+                            dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
+                        )
+                    }
                 }
                 
                 if (uiState.mainQueueTracks.size > 30) {
@@ -467,7 +471,36 @@ private fun PriorityQueueItemRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+
+        if (queuedTrack.coverUri != null) {
+            AsyncImage(
+                model = queuedTrack.coverUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = queuedTrack.title,
                 style = MaterialTheme.typography.titleSmall,
@@ -496,12 +529,19 @@ private fun PriorityQueueItemRow(
 @Composable
 private fun MainQueueItemRow(
     queuedTrack: com.aura.music.domain.player.QueuedTrack,
+    isDragging: Boolean,
     onRemove: () -> Unit,
+    dragModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
+    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+    val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(elevation)
+            .background(bgColor)
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -516,8 +556,36 @@ private fun MainQueueItemRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        if (queuedTrack.coverUri != null) {
+            AsyncImage(
+                model = queuedTrack.coverUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
         
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = queuedTrack.title,
                 style = MaterialTheme.typography.bodyMedium,
@@ -532,6 +600,15 @@ private fun MainQueueItemRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
+
+        Icon(
+            imageVector = Icons.Rounded.DragHandle,
+            contentDescription = "Réorganiser",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = dragModifier
+                .size(40.dp)
+                .padding(8.dp)
+        )
     }
 }
 
