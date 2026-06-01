@@ -482,31 +482,8 @@ fun PlayerScreen(
                             ) {
                                 Icon(Icons.Rounded.Close, contentDescription = "Retirer de la suite", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-
-                            if (queuedTrack.coverUri != null) {
-                                AsyncImage(
-                                    model = queuedTrack.coverUri,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
-                                }
-                            }
                             
-                            Spacer(modifier = Modifier.width(12.dp))
-                            
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
                                 Text(queuedTrack.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(queuedTrack.artistName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
