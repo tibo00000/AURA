@@ -169,7 +169,7 @@ class LocalLibraryRepository(
                             durationMs = durationMs,
                             coverUri = coverUri,
                             canonicalAudioSourceType = "downloaded",
-                            isLiked = false,
+                            isLiked = existingTrack?.isLiked ?: false,
                             isDownloadedByAura = true,
                             isExplicit = null,
                             popularity = null,
@@ -249,6 +249,7 @@ class LocalLibraryRepository(
                 }
 
                 // Create track
+                val existingTrack = database.trackDao().getRawTrackById(trackId)
                 scannedTracks.add(
                     TrackEntity(
                         id = trackId,
@@ -261,7 +262,7 @@ class LocalLibraryRepository(
                         durationMs = media.durationMs,
                         coverUri = media.coverUri,
                         canonicalAudioSourceType = "local",
-                        isLiked = false,
+                        isLiked = existingTrack?.isLiked ?: false,
                         isDownloadedByAura = false,
                         isExplicit = null,
                         popularity = null,

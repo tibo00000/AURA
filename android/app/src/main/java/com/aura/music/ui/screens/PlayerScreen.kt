@@ -132,9 +132,9 @@ fun PlayerScreen(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
-                        // Like
+                        // Ajouter/Retirer aux favoris
                         DropdownMenuItem(
-                            text = { Text(if (uiState.isCurrentTrackLiked) "Ne plus aimer" else "Aimer") },
+                            text = { Text(if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris") },
                             onClick = {
                                 playerViewModel.onEvent(PlayerEvent.ToggleLike)
                                 menuExpanded = false
@@ -155,20 +155,6 @@ fun PlayerScreen(
                             },
                             leadingIcon = {
                                 Icon(Icons.Rounded.PlaylistAdd, contentDescription = null)
-                            }
-                        )
-                        // Ajouter/Retirer aux favoris
-                        DropdownMenuItem(
-                            text = { Text(if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris") },
-                            onClick = {
-                                playerViewModel.onEvent(PlayerEvent.ToggleLike)
-                                menuExpanded = false
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                    contentDescription = null
-                                )
                             }
                         )
                         // Voir l'artiste
