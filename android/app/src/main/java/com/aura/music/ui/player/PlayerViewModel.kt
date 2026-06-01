@@ -44,7 +44,6 @@ class PlayerViewModel(
     init {
         startProgressUpdater()
         startPeriodicSnapshotSave()
-        startLikeStateObserver()
     }
 
     fun onEvent(event: PlayerEvent) {
@@ -99,25 +98,6 @@ class PlayerViewModel(
             // Relecture Room pour garantir la coherence avec la regle de denormalisation
             val fresh = repository.getTrackById(currentTrack.trackId)
             orchestrator.updateLikedState(fresh?.isLiked ?: !currentlyLiked)
-        }
-    }
-
-    /**
-     * Observe les changements de piste et recharge isLiked depuis Room a chaque transition.
-     * Evite d'afficher un coeur incorrect quand on navigue dans la queue.
-     */
-    private fun startLikeStateObserver() {
-        viewModelScope.launch {
-            orchestrator.uiState
-                .distinctUntilChangedBy { it.currentTrack?.trackId }
-                .collect { state ->
-                    val trackId = state.currentTrack?.trackId ?: run {
-                        orchestrator.updateLikedState(false)
-                        return@collect
-                    }
-                    val fresh = repository.getTrackById(trackId)
-                    orchestrator.updateLikedState(fresh?.isLiked ?: false)
-                }
         }
     }
 

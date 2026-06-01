@@ -618,7 +618,7 @@ class LocalLibraryRepository(
                     contentUri = row.contentUri,
                     coverUri = row.coverUri,
                     durationMs = row.durationMs,
-                    isLiked = false,
+                    isLiked = row.isLiked,
                 )
             }
         }

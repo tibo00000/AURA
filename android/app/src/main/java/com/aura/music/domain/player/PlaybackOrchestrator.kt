@@ -65,6 +65,15 @@ class PlaybackOrchestrator(
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             syncUiState()
+            val trackId = mediaItem?.mediaId
+            if (trackId != null) {
+                scope.launch {
+                    val fresh = repository.getTrackById(trackId)
+                    updateLikedState(fresh?.isLiked ?: false)
+                }
+            } else {
+                updateLikedState(false)
+            }
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -328,6 +337,7 @@ class PlaybackOrchestrator(
         snapshot.currentTrackId?.let { trackId ->
             val trackRow = repository.getTrackById(trackId)
             if (trackRow != null) {
+                updateLikedState(trackRow.isLiked)
                 val queuedTrack = QueuedTrack(
                     trackId = trackRow.id,
                     title = trackRow.title,

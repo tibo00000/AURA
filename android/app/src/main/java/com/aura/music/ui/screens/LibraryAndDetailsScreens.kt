@@ -1483,7 +1483,7 @@ fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
     contentUri = contentUri,
     durationMs = durationMs,
     coverUri = coverUri,
-    isLiked = false,
+    isLiked = isLiked,
 )
 
 @Composable
