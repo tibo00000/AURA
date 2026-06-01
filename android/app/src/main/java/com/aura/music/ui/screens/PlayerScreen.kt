@@ -403,16 +403,12 @@ fun PlayerScreen(
                     }
                 }
 
-                // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
+                // MAIN UPCOMING QUEUE ITEMS (Passive upcoming list)
                 itemsIndexed(localMainQueue.value.take(30), key = { _, it -> "mq_${it.internalId}" }) { index, queuedTrack ->
-                    ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
-                        MainQueueItemRow(
-                            queuedTrack = queuedTrack,
-                            isDragging = isDragging,
-                            onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) },
-                            dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
-                        )
-                    }
+                    MainQueueItemRow(
+                        queuedTrack = queuedTrack,
+                        onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) }
+                    )
                 }
                 
                 if (uiState.mainQueueTracks.size > 30) {
@@ -500,19 +496,12 @@ private fun PriorityQueueItemRow(
 @Composable
 private fun MainQueueItemRow(
     queuedTrack: com.aura.music.domain.player.QueuedTrack,
-    isDragging: Boolean,
     onRemove: () -> Unit,
-    dragModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
-    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-    val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation)
-            .background(bgColor)
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -543,15 +532,6 @@ private fun MainQueueItemRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-
-        Icon(
-            imageVector = Icons.Rounded.DragHandle,
-            contentDescription = "Réorganiser",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = dragModifier
-                .size(40.dp)
-                .padding(8.dp)
-        )
     }
 }
 
