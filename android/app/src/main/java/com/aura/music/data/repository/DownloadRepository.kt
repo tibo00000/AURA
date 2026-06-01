@@ -249,6 +249,23 @@ class DownloadRepository(
             }
             database.downloadJobDao().upsert(jobs)
             Log.i(TAG, "Synchronized ${jobs.size} download jobs from server")
+
+            // Auto-fetch physical files for succeeded jobs that are missing or incomplete locally
+            for (item in items) {
+                if (item.status == "succeeded") {
+                    val downloadsDir = File(context.filesDir, "downloads")
+                    val targetFile = File(downloadsDir, "${item.trackId}.mp3")
+                    
+                    // Verify database link is correct and points to "downloaded" status
+                    val rawTrack = database.trackDao().getRawTrackById(item.trackId)
+                    val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
+                    
+                    if (!targetFile.exists() || targetFile.length() == 0L || !isDbLinked) {
+                        Log.i(TAG, "Succeeded job ${item.id} (track ${item.trackId}) is missing local file, has 0 bytes or lacks DB link. Self-healing/fetching now...")
+                        fetchDownloadedFile(item.id, item.trackId, userToken)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sync active jobs with backend", e)
         }
@@ -295,7 +312,7 @@ class DownloadRepository(
                 }
             }
 
-            Log.i(TAG, "Downloaded file saved successfully to ${targetFile.absolutePath}")
+            Log.i(TAG, "Downloaded file saved successfully to ${targetFile.absolutePath} (size: ${targetFile.length()} bytes)")
 
             // Update DB values
             val now = System.currentTimeMillis()

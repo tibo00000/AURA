@@ -982,6 +982,7 @@ fun DownloadsScreen(
     playerViewModel: PlayerViewModel,
     onNavigateBack: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     var activeResolveJobId by remember { mutableStateOf<String?>(null) }
 
@@ -1102,6 +1103,14 @@ fun DownloadsScreen(
                                 activeResolveJobId = job.jobId
                             },
                             onPlay = {
+                                val downloadsDir = File(context.filesDir, "downloads")
+                                val targetFile = File(downloadsDir, "${job.trackId}.mp3")
+                                val resolvedUri = if (targetFile.exists() && targetFile.length() > 0L) {
+                                    android.net.Uri.fromFile(targetFile).toString()
+                                } else {
+                                    null
+                                }
+
                                 val trackRow = TrackListRow(
                                     id = job.trackId,
                                     artistId = null,
@@ -1109,7 +1118,7 @@ fun DownloadsScreen(
                                     title = job.title,
                                     artistName = job.artistName,
                                     albumTitle = null,
-                                    contentUri = null,
+                                    contentUri = resolvedUri,
                                     durationMs = null,
                                     coverUri = job.coverUri,
                                     isLiked = false

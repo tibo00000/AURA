@@ -105,6 +105,27 @@ class LocalLibraryRepository(
                     val albumId = albumTitle?.let { albumIdOf(artistName, it) }
                     val fileUri = android.net.Uri.fromFile(file).toString()
 
+                    val existingTrack = database.trackDao().getRawTrackById(trackId)
+                    var coverUri: String? = existingTrack?.coverUri
+                    if (coverUri == null) {
+                        val embeddedPicture = retriever.embeddedPicture
+                        if (embeddedPicture != null) {
+                            try {
+                                val coversDir = java.io.File(context.cacheDir, "covers")
+                                if (!coversDir.exists()) {
+                                    coversDir.mkdirs()
+                                }
+                                val coverFile = java.io.File(coversDir, "$trackId.jpg")
+                                java.io.FileOutputStream(coverFile).use { fos ->
+                                    fos.write(embeddedPicture)
+                                }
+                                coverUri = android.net.Uri.fromFile(coverFile).toString()
+                            } catch (e: Exception) {
+                                android.util.Log.e("LocalLibraryRepository", "Failed to extract embedded cover for $trackId", e)
+                            }
+                        }
+                    }
+
                     // Upsert artist
                     if (!scannedArtists.containsKey(artistId)) {
                         scannedArtists[artistId] = ArtistEntity(
@@ -126,7 +147,7 @@ class LocalLibraryRepository(
                                 primaryArtistId = artistId,
                                 title = albumTitle,
                                 normalizedTitle = normalize(albumTitle),
-                                coverUri = null,
+                                coverUri = coverUri,
                                 releaseDate = null,
                                 trackCount = null,
                                 createdAt = now,
@@ -146,7 +167,7 @@ class LocalLibraryRepository(
                             displayArtistName = artistName,
                             displayAlbumTitle = albumTitle,
                             durationMs = durationMs,
-                            coverUri = null,
+                            coverUri = coverUri,
                             canonicalAudioSourceType = "downloaded",
                             isLiked = false,
                             isDownloadedByAura = true,
