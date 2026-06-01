@@ -432,6 +432,9 @@ fun FavoritesScreen(
                         onClick = { playerViewModel.onEvent(playEvent) },
                         coverUri = track.coverUri,
                         contextType = "favorites",
+                        onAddToQueue = {
+                            playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                        },
                         onUnlike = {
                             scope.launch {
                                 repository.toggleLike(track.id, currentlyLiked = true, contextType = "favorites")
@@ -1803,6 +1806,9 @@ fun LibraryTracksScreen(
                         coverUri = track.coverUri,
                         contextType = "standard",
                         isLiked = track.isLiked,
+                        onAddToQueue = {
+                            playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                        },
                         onLike = {
                             scope.launch {
                                 repository.toggleLike(track.id, false, "library_tracks", "library_tracks")

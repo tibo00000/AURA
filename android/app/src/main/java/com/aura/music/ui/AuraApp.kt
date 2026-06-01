@@ -192,6 +192,7 @@ fun AuraApp() {
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
+                    playerViewModel = playerViewModel,
                 )
             }
             composable(AuraRoute.Library) {

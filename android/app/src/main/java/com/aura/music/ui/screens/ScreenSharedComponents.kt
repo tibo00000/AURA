@@ -349,6 +349,9 @@ fun SharedTrackRowItem(
                 if (onRemoveFromPlaylist != null) {
                     items.add(ContextMenuItem("Retirer de cette playlist", Icons.Rounded.Delete, onRemoveFromPlaylist))
                 }
+                if (onAddToQueue != null) {
+                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                }
                 if (onAddToPlaylist != null) {
                     items.add(ContextMenuItem("Ajouter à une autre playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
                 }
@@ -369,6 +372,9 @@ fun SharedTrackRowItem(
                 }
             }
             "favorites" -> {
+                if (onAddToQueue != null) {
+                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                }
                 if (isLiked) {
                     if (onUnlike != null) {
                         items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))

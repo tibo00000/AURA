@@ -82,6 +82,9 @@ import com.aura.music.ui.search.SearchViewModel
 import com.aura.music.ui.search.SearchViewModelFactory
 import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.HairlineDark
+import com.aura.music.ui.player.PlayerViewModel
+import com.aura.music.domain.player.PlayerEvent
+import com.aura.music.ui.toQueuedTrack
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +96,7 @@ fun SearchScreen(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenDownloads: () -> Unit,
+    playerViewModel: PlayerViewModel,
 ) {
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
     val searchRepository = application.container.searchRepository
@@ -267,6 +271,9 @@ fun SearchScreen(
                                 onDeleteTrack = { track ->
                                     trackToDelete = track
                                 },
+                                onAddToQueue = { track ->
+                                    playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                                },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -422,6 +429,7 @@ private fun LocalLibrarySearchTab(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onDeleteTrack: (TrackListRow) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -444,6 +452,7 @@ private fun LocalLibrarySearchTab(
                         isLiked = track.isLiked,
                         onLike = { onLikeTrack(track.id, track.isLiked) },
                         onUnlike = { onLikeTrack(track.id, track.isLiked) },
+                        onAddToQueue = { onAddToQueue(track) },
                         onAddToPlaylist = { onAddToPlaylist(track) },
                         onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
                         onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
@@ -783,6 +792,7 @@ private fun LocalLibrarySection(
     onPlayTrack: (TrackListRow, List<TrackListRow>) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -803,7 +813,8 @@ private fun LocalLibrarySection(
                     title = track.title,
                     subtitle = track.artistName,
                     coverUri = track.coverUri,
-                    onClick = { onPlayTrack(track, tracks) }
+                    onClick = { onPlayTrack(track, tracks) },
+                    onAddToQueue = { onAddToQueue(track) }
                 )
             }
         }

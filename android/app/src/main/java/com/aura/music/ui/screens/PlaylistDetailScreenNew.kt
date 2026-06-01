@@ -217,6 +217,9 @@ fun PlaylistDetailScreenNew(
                             onAddToPlaylist = { activeTrackForPlaylist = it },
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
+                            onAddToQueue = {
+                                playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toTrackListRow().toQueuedTrack()))
+                            }
                         )
                     }
                 }
@@ -283,6 +286,7 @@ private fun PlaylistTrackRowItem(
     onAddToPlaylist: (PlaylistTrackRow) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onAddToQueue: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -299,6 +303,7 @@ private fun PlaylistTrackRowItem(
                 onRefresh()
             }
         },
+        onAddToQueue = onAddToQueue,
         onAddToPlaylist = {
             onAddToPlaylist(track)
         },
