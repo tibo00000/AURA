@@ -1,5 +1,6 @@
 package com.aura.music.ui.screens
 
+import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -987,14 +988,12 @@ fun DownloadsScreen(
     var activeResolveJobId by remember { mutableStateOf<String?>(null) }
 
     val filterLabels = listOf(
-        "En attente (${uiState.queuedCount})",
-        "En cours (${uiState.runningCount})",
+        "En cours (${uiState.queuedCount})",
         "Terminés (${uiState.succeededCount})",
         "Erreurs (${uiState.failedCount})"
     )
     val filterMapping = mapOf(
-        "En attente (${uiState.queuedCount})" to "En attente",
-        "En cours (${uiState.runningCount})" to "En cours",
+        "En cours (${uiState.queuedCount})" to "En cours",
         "Terminés (${uiState.succeededCount})" to "Terminés",
         "Erreurs (${uiState.failedCount})" to "Erreurs"
     )

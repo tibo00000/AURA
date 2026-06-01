@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
  * Tracks current active filters and count badges for each tab.
  */
 data class DownloadsUiState(
-    val selectedTab: String = "En attente",
+    val selectedTab: String = "En cours",
     val jobs: List<DownloadJobRowModel> = emptyList(),
     val queuedCount: Int = 0,
     val runningCount: Int = 0,
@@ -37,7 +37,7 @@ class DownloadsViewModel(
     private val userToken: String
 ) : ViewModel() {
 
-    private val _selectedTab = MutableStateFlow("En attente")
+    private val _selectedTab = MutableStateFlow("En cours")
     val selectedTab = _selectedTab.asStateFlow()
 
     private val _isSyncing = MutableStateFlow(false)
@@ -52,14 +52,12 @@ class DownloadsViewModel(
         _isSyncing,
         _errorMessage
     ) { tab, allJobs, isSyncing, errorMsg ->
-        val queued = allJobs.filter { it.status == "queued" || it.status == "requires_resolution" }
-        val running = allJobs.filter { it.status == "running" }
+        val active = allJobs.filter { it.status == "queued" || it.status == "requires_resolution" || it.status == "running" }
         val succeeded = allJobs.filter { it.status == "succeeded" }
         val failed = allJobs.filter { it.status == "failed" || it.status == "cancelled" }
 
         val filteredJobs = when (tab) {
-            "En attente" -> queued
-            "En cours" -> running
+            "En cours" -> active
             "Terminés" -> succeeded
             else -> failed
         }
@@ -67,8 +65,8 @@ class DownloadsViewModel(
         DownloadsUiState(
             selectedTab = tab,
             jobs = filteredJobs,
-            queuedCount = queued.size,
-            runningCount = running.size,
+            queuedCount = active.size,
+            runningCount = 0,
             succeededCount = succeeded.size,
             failedCount = failed.size,
             isSyncing = isSyncing,

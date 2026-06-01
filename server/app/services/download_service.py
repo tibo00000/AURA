@@ -293,6 +293,49 @@ class DownloadService:
         if not track_id.startswith("trk_"):
             raise BadRequest("Invalid track ID format. Must start with 'trk_'")
 
+        # Check if a download job already exists for this track and user
+        try:
+            existing = supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
+            if existing.data:
+                # Find the most recent active or successful job
+                sorted_jobs = sorted(existing.data, key=lambda x: x.get("created_at", ""), reverse=True)
+                for job_dict in sorted_jobs:
+                    existing_job = DownloadJob.from_dict(job_dict)
+                    
+                    # If job is currently active (queued, running, requires_resolution), reuse it
+                    if existing_job.status in ("queued", "running", "requires_resolution"):
+                        logger.info("Reusing existing active download job %s for user %s, track %s", existing_job.id, user_id, track_id)
+                        return existing_job
+                        
+                    # If job is already succeeded, verify the physical file exists on disk
+                    if existing_job.status == "succeeded":
+                        expected_file = DOWNLOADS_DIR / f"{existing_job.id}.mp3"
+                        if expected_file.exists() and expected_file.stat().st_size > 0:
+                            logger.info("Reusing existing succeeded download job %s for user %s, track %s (file present)", existing_job.id, user_id, track_id)
+                            return existing_job
+                        else:
+                            # If succeeded but file is missing, we reset its status to queued and trigger it again
+                            logger.info("Found succeeded job %s but file was missing. Resetting to queued...", existing_job.id)
+                            now = datetime.now(timezone.utc)
+                            existing_job.status = "queued"
+                            existing_job.progress_percent = 0.0
+                            existing_job.error_code = None
+                            existing_job.error_message = None
+                            existing_job.updated_at = now
+                            supabase.table("download_jobs").update({
+                                "status": "queued",
+                                "progress_percent": 0.0,
+                                "error_code": None,
+                                "error_message": None,
+                                "updated_at": now.isoformat()
+                            }).eq("id", existing_job.id).execute()
+                            
+                            asyncio.create_task(self._run_download_job(existing_job.id, source_hint))
+                            return existing_job
+        except Exception as e:
+            logger.error("Failed to query existing jobs in Supabase: %s", e)
+            # Fail silently and proceed to create a new job to prevent blocking downloads
+
         job_id = generate_id("job")
         now = datetime.now(timezone.utc)
 
