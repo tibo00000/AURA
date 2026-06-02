@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.aura.music.ui.RouteScaffold
+import com.aura.music.data.repository.LocalLibraryRepository
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
@@ -41,6 +42,7 @@ data class SandboxItem(
 
 @Composable
 fun SandboxScreen(
+    repository: LocalLibraryRepository,
     onNavigateBack: () -> Unit
 ) {
     // Control panel states
@@ -50,19 +52,39 @@ fun SandboxScreen(
     var useStableKeys by remember { mutableStateOf(true) }
     var useExplicitContentTypes by remember { mutableStateOf(true) }
     var enableDragHandles by remember { mutableStateOf(true) }
+    var useRealTracks by remember { mutableStateOf(false) }
     var listSize by remember { mutableFloatStateOf(100f) }
     var showSettingsPanel by remember { mutableStateOf(true) }
 
-    // Generate list items based on selected size
-    val items = remember(listSize) {
-        List(listSize.toInt()) { i ->
-            SandboxItem(
-                id = "item_stable_id_$i",
-                title = "Sandbox Track #${i + 1}",
-                subtitle = "Artist Diagnostics ${i + 1}",
-                coverUrl = "https://picsum.photos/100?random=$i",
-                type = if (i % 5 == 0) "priority_item" else "main_item"
-            )
+    // Load real tracks from database
+    val realTracksState = produceState<List<com.aura.music.data.local.TrackListRow>>(initialValue = emptyList(), repository) {
+        value = repository.getAllTracks()
+    }
+    val realTracks = realTracksState.value
+
+    // Generate list items based on selected size and source
+    val items = remember(listSize, useRealTracks, realTracks) {
+        if (useRealTracks && realTracks.isNotEmpty()) {
+            List(listSize.toInt()) { i ->
+                val dbTrack = realTracks[i % realTracks.size]
+                SandboxItem(
+                    id = "real_${dbTrack.id}_$i",
+                    title = dbTrack.title,
+                    subtitle = dbTrack.artistName,
+                    coverUrl = dbTrack.coverUri ?: "",
+                    type = if (dbTrack.isLiked) "priority_item" else "main_item"
+                )
+            }
+        } else {
+            List(listSize.toInt()) { i ->
+                SandboxItem(
+                    id = "item_stable_id_$i",
+                    title = "Sandbox Track #${i + 1}",
+                    subtitle = "Artist Diagnostics ${i + 1}",
+                    coverUrl = "https://picsum.photos/100?random=$i",
+                    type = if (i % 5 == 0) "priority_item" else "main_item"
+                )
+            }
         }
     }
 
@@ -151,6 +173,12 @@ fun SandboxScreen(
                             title = "Poignées de déplacement (detectReorder)",
                             checked = enableDragHandles,
                             onCheckedChange = { enableDragHandles = it }
+                        )
+
+                        SandboxSwitchRow(
+                            title = "Utiliser les sons réels de la BDD",
+                            checked = useRealTracks,
+                            onCheckedChange = { useRealTracks = it }
                         )
 
                         // Slider for list size

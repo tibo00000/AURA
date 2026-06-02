@@ -404,6 +404,7 @@ fun AuraApp() {
             }
             composable(AuraRoute.Sandbox) {
                 com.aura.music.ui.screens.SandboxScreen(
+                    repository = repository,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
