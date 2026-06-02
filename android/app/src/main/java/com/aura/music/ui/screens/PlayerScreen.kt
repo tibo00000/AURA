@@ -72,6 +72,20 @@ fun PlayerScreen(
         localMainQueue.value = uiState.mainQueueTracks
     }
 
+    val visiblePriorityQueue by remember { derivedStateOf { localPriorityQueue.value } }
+    val visibleMainQueue by remember { derivedStateOf { localMainQueue.value.take(30) } }
+
+    val onRemoveFromQueue = remember(playerViewModel) {
+        { index: Int ->
+            playerViewModel.onEvent(PlayerEvent.RemoveFromQueue(index))
+        }
+    }
+    val onRemoveFromMainQueue = remember(playerViewModel) {
+        { trackId: String ->
+            playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(trackId))
+        }
+    }
+
     val reorderState = rememberReorderableLazyListState(
         onMove = { from, to ->
             if (from.key.toString().startsWith("pq_") && to.key.toString().startsWith("pq_")) {
@@ -368,7 +382,7 @@ fun PlayerScreen(
                         color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.padding(horizontal = 24.dp)
                     )
-                    if (localPriorityQueue.value.isEmpty()) {
+                    if (visiblePriorityQueue.isEmpty()) {
                         Text(
                             text = "Aucune piste ajoutée manuellement.",
                             style = MaterialTheme.typography.bodyMedium,
@@ -379,12 +393,12 @@ fun PlayerScreen(
                 }
 
                 // PRIORITY QUEUE ITEMS (Reorderable)
-                itemsIndexed(localPriorityQueue.value, key = { _, it -> "pq_${it.internalId}" }) { index, queuedTrack ->
+                itemsIndexed(visiblePriorityQueue, key = { _, it -> "pq_${it.internalId}" }) { index, queuedTrack ->
                     ReorderableItem(reorderState, key = "pq_${queuedTrack.internalId}") { isDragging ->
                         PriorityQueueItemRow(
                             queuedTrack = queuedTrack,
                             isDragging = isDragging,
-                            onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromQueue(index)) },
+                            onRemove = { onRemoveFromQueue(index) },
                             dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
                         )
                     }
@@ -404,12 +418,12 @@ fun PlayerScreen(
                 }
 
                 // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
-                itemsIndexed(localMainQueue.value.take(30), key = { _, it -> "mq_${it.internalId}" }) { index, queuedTrack ->
+                itemsIndexed(visibleMainQueue, key = { _, it -> "mq_${it.internalId}" }) { index, queuedTrack ->
                     ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
                         MainQueueItemRow(
                             queuedTrack = queuedTrack,
                             isDragging = isDragging,
-                            onRemove = { playerViewModel.onEvent(PlayerEvent.RemoveFromMainQueue(queuedTrack.internalId)) },
+                            onRemove = { onRemoveFromMainQueue(queuedTrack.internalId) },
                             dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
                         )
                     }
