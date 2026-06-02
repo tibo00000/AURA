@@ -399,6 +399,12 @@ fun AuraApp() {
                     downloadRepository = appContainer.downloadRepository,
                     syncRepository = appContainer.syncRepository,
                     onNavigateBack = { navController.popBackStack() },
+                    onNavigateToSandbox = { navController.navigate(AuraRoute.Sandbox) }
+                )
+            }
+            composable(AuraRoute.Sandbox) {
+                com.aura.music.ui.screens.SandboxScreen(
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable(
@@ -558,6 +564,7 @@ object AuraRoute {
     const val Player = "player"
     const val LibraryTracks = "library_tracks"
     const val LibraryArtists = "library_artists"
+    const val Sandbox = "sandbox"
 
     const val ArtistIdArg = "artistId"
     const val AlbumIdArg = "albumId"
