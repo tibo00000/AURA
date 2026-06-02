@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -109,7 +110,7 @@ import com.aura.music.domain.player.RepeatMode
 import com.aura.music.ui.DashboardSummaryCard
 import com.aura.music.ui.PlaylistPreviewList
 import com.aura.music.ui.RouteScaffold
-import com.aura.music.ui.TrackList
+import com.aura.music.ui.trackList
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.toQueuedTrack
 import kotlinx.coroutines.launch
@@ -244,26 +245,24 @@ fun LibraryScreen(
                     item { BrowseArtistRail(artists = searchArtists.toList(), onOpenArtist = onOpenArtist) } 
                 }
                 if (searchResults.isNotEmpty()) {
-                    item {
-                        TrackList(
-                            title = "Titres correspondants",
-                            tracks = searchResults.toList(),
-                            contextType = "library_search",
-                            onPlayTrackInList = onPlayTrackInList,
-                            onOpenArtist = onOpenArtist,
-                            onOpenAlbum = onOpenAlbum,
-                            onPlayNow = { track -> onPlayTrackInList(track, searchResults.toList(), "library_search") },
-                            onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
-                            onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
-                            onLikeTrack = { track ->
-                                scope.launch {
-                                    repository.toggleLike(track.id, track.isLiked, "library_search")
-                                    refreshTick++
-                                }
-                            },
-                            onDeleteDownload = { track -> trackToDelete = track }
-                        )
-                    }
+                    trackList(
+                        title = "Titres correspondants",
+                        tracks = searchResults.toList(),
+                        contextType = "library_search",
+                        onPlayTrackInList = onPlayTrackInList,
+                        onOpenArtist = onOpenArtist,
+                        onOpenAlbum = onOpenAlbum,
+                        onPlayNow = { track -> onPlayTrackInList(track, searchResults.toList(), "library_search") },
+                        onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                        onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                        onLikeTrack = { track ->
+                            scope.launch {
+                                repository.toggleLike(track.id, track.isLiked, "library_search")
+                                refreshTick++
+                            }
+                        },
+                        onDeleteDownload = { track -> trackToDelete = track }
+                    )
                 }
                 if (searchAlbums.isNotEmpty()) {
                     item { Text("Albums correspondants", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.padding(horizontal = 16.dp)) }
@@ -416,16 +415,19 @@ fun FavoritesScreen(
                         ) { Text("Aléatoire") }
                     }
                 }
-                items(tracksState.value, key = { it.id }) { track ->
-                    val trackIndex = tracksState.value.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                    val contextTracks = tracksState.value.map { it.toQueuedTrack() }
-                    val playEvent = PlayerEvent.PlayTrack(
-                        trackId = track.id,
-                        contextType = "favorites",
-                        contextId = "favorites",
-                        contextTracks = contextTracks,
-                        startIndex = trackIndex,
-                    )
+                val contextTracks = remember(tracksState.value) {
+                    tracksState.value.map { it.toQueuedTrack() }
+                }
+                itemsIndexed(tracksState.value, key = { _, track -> track.id }) { index, track ->
+                    val playEvent = remember(track.id, index, contextTracks) {
+                        PlayerEvent.PlayTrack(
+                            trackId = track.id,
+                            contextType = "favorites",
+                            contextId = "favorites",
+                            contextTracks = contextTracks,
+                            startIndex = index,
+                        )
+                    }
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
@@ -774,31 +776,29 @@ fun ArtistRouteScreen(
                     ) { Text("Mix local") }
                 }
             }
-            item {
-                TrackList(
-                    title = "Titres populaires",
-                    tracks = artist.topTracks,
-                    contextType = "artist",
-                    onPlayTrackInList = onPlayTrackInList,
-                    onOpenArtist = { },
-                    onOpenAlbum = onOpenAlbum,
-                    onPlayNow = { track -> onPlayTrackInList(track, artist.topTracks, "artist") },
-                    onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
-                    onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
-                    onLikeTrack = { track ->
-                        scope.launch {
-                            repository.toggleLike(track.id, track.isLiked, "artist", artistId)
-                            refreshTick++
-                        }
-                    },
-                    onDeleteDownload = { track ->
-                        scope.launch {
-                            repository.deleteTrack(track.id)
-                            refreshTick++
-                        }
+            trackList(
+                title = "Titres populaires",
+                tracks = artist.topTracks,
+                contextType = "artist",
+                onPlayTrackInList = onPlayTrackInList,
+                onOpenArtist = { },
+                onOpenAlbum = onOpenAlbum,
+                onPlayNow = { track -> onPlayTrackInList(track, artist.topTracks, "artist") },
+                onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                onLikeTrack = { track ->
+                    scope.launch {
+                        repository.toggleLike(track.id, track.isLiked, "artist", artistId)
+                        refreshTick++
                     }
-                )
-            }
+                },
+                onDeleteDownload = { track ->
+                    scope.launch {
+                        repository.deleteTrack(track.id)
+                        refreshTick++
+                    }
+                }
+            )
             item { SectionTitle("Albums", "Navigation album depuis la bibliotheque locale.") }
             item { BrowseAlbumRail(albums = artist.albums, onOpenAlbum = onOpenAlbum) }
             item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -935,32 +935,30 @@ fun AlbumRouteScreen(
                     ) { Text("Shuffle") }
                 }
             }
-            item {
-                TrackList(
-                    title = "",
-                    tracks = album.tracks,
-                    contextType = "album",
-                    onPlayTrackInList = onPlayTrackInList,
-                    onOpenArtist = onOpenArtist,
-                    onOpenAlbum = { },
-                    showCover = false,
-                    onPlayNow = { track -> onPlayTrackInList(track, album.tracks, "album") },
-                    onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
-                    onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
-                    onLikeTrack = { track ->
-                        scope.launch {
-                            repository.toggleLike(track.id, track.isLiked, "album", albumId)
-                            refreshTick++
-                        }
-                    },
-                    onDeleteDownload = { track ->
-                        scope.launch {
-                            repository.deleteTrack(track.id)
-                            refreshTick++
-                        }
+            trackList(
+                title = "",
+                tracks = album.tracks,
+                contextType = "album",
+                onPlayTrackInList = onPlayTrackInList,
+                onOpenArtist = onOpenArtist,
+                onOpenAlbum = { },
+                showCover = false,
+                onPlayNow = { track -> onPlayTrackInList(track, album.tracks, "album") },
+                onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                onLikeTrack = { track ->
+                    scope.launch {
+                        repository.toggleLike(track.id, track.isLiked, "album", albumId)
+                        refreshTick++
                     }
-                )
-            }
+                },
+                onDeleteDownload = { track ->
+                    scope.launch {
+                        repository.deleteTrack(track.id)
+                        refreshTick++
+                    }
+                }
+            )
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
@@ -1789,16 +1787,19 @@ fun LibraryTracksScreen(
                         }
                     }
                 }
-                items(sortedTracks, key = { it.id }) { track ->
-                    val trackIndex = sortedTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                    val contextTracks = sortedTracks.map { it.toQueuedTrack() }
-                    val playEvent = PlayerEvent.PlayTrack(
-                        trackId = track.id,
-                        contextType = "library_tracks",
-                        contextId = "library_tracks",
-                        contextTracks = contextTracks,
-                        startIndex = trackIndex,
-                    )
+                val contextTracks = remember(sortedTracks) {
+                    sortedTracks.map { it.toQueuedTrack() }
+                }
+                itemsIndexed(sortedTracks, key = { _, track -> track.id }) { index, track ->
+                    val playEvent = remember(track.id, index, contextTracks) {
+                        PlayerEvent.PlayTrack(
+                            trackId = track.id,
+                            contextType = "library_tracks",
+                            contextId = "library_tracks",
+                            contextTracks = contextTracks,
+                            startIndex = index,
+                        )
+                    }
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),

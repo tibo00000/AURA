@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,6 +48,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.activity.result.IntentSenderRequest
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -109,7 +113,13 @@ fun AuraApp() {
     val playerViewModel: PlayerViewModel = viewModel(
         factory = application.container.playerViewModelFactory,
     )
-    val playerUiState by playerViewModel.uiState.collectAsState()
+    val currentTrack by remember(playerViewModel) {
+        playerViewModel.uiState.map { it.currentTrack }.distinctUntilChanged()
+    }.collectAsState(initial = null)
+
+    val playbackState by remember(playerViewModel) {
+        playerViewModel.uiState.map { it.playbackState }.distinctUntilChanged()
+    }.collectAsState(initial = PlaybackState.Idle)
 
     val topDestinations = remember {
         listOf(
@@ -159,7 +169,8 @@ fun AuraApp() {
         AuraAppScaffold(
             navController = navController,
             topDestinations = topDestinations,
-            playerUiState = playerUiState,
+            currentTrack = currentTrack,
+            playbackState = playbackState,
             onMiniPlayerClick = { navController.navigate(AuraRoute.Player) },
             onPrevious = { playerViewModel.onEvent(PlayerEvent.Previous) },
             onTogglePlayPause = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
@@ -428,7 +439,8 @@ fun AuraApp() {
 private fun AuraAppScaffold(
     navController: NavHostController,
     topDestinations: List<TopLevelDestination>,
-    playerUiState: PlayerUiState,
+    currentTrack: QueuedTrack?,
+    playbackState: PlaybackState,
     onMiniPlayerClick: () -> Unit,
     onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
@@ -439,7 +451,7 @@ private fun AuraAppScaffold(
     val currentRoute = backStackEntry?.destination?.route
     val isTopLevelRoute = topDestinations.any { it.route == currentRoute }
     val showBottomBar = currentRoute != AuraRoute.Player
-    val showMiniPlayer = playerUiState.currentTrack != null && currentRoute != AuraRoute.Player
+    val showMiniPlayer = currentTrack != null && currentRoute != AuraRoute.Player
 
     Scaffold(
         bottomBar = {
@@ -447,7 +459,8 @@ private fun AuraAppScaffold(
                 Column {
                     if (showMiniPlayer) {
                         MiniPlayerCard(
-                            playerUiState = playerUiState,
+                            currentTrack = currentTrack,
+                            playbackState = playbackState,
                             onClick = onMiniPlayerClick,
                             onPrevious = onPrevious,
                             onTogglePlayPause = onTogglePlayPause,
@@ -492,13 +505,14 @@ private fun AuraAppScaffold(
 
 @Composable
 private fun MiniPlayerCard(
-    playerUiState: PlayerUiState,
+    currentTrack: QueuedTrack?,
+    playbackState: PlaybackState,
     onClick: () -> Unit,
     onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
 ) {
-    val track = playerUiState.currentTrack ?: return
+    val track = currentTrack ?: return
 
     Surface(
         tonalElevation = 4.dp,
@@ -533,7 +547,7 @@ private fun MiniPlayerCard(
                 Icon(Icons.Rounded.SkipPrevious, contentDescription = "Piste precedente")
             }
             IconButton(onClick = onTogglePlayPause) {
-                val icon = if (playerUiState.playbackState == PlaybackState.Playing) {
+                val icon = if (playbackState == PlaybackState.Playing) {
                     Icons.Rounded.Pause
                 } else {
                     Icons.Rounded.PlayArrow
@@ -660,8 +674,7 @@ fun SummaryList(title: String, items: List<String>) {
     }
 }
 
-@Composable
-fun TrackList(
+fun LazyListScope.trackList(
     title: String,
     tracks: List<TrackListRow>,
     contextType: String,
@@ -675,43 +688,46 @@ fun TrackList(
     onAddToQueue: ((TrackListRow) -> Unit)? = null,
     onDeleteDownload: ((TrackListRow) -> Unit)? = null,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (title.isNotBlank()) {
+    if (title.isNotBlank()) {
+        item(key = "tracklist_title_${title}_${contextType}") {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
-        if (tracks.isEmpty()) {
+    }
+    if (tracks.isEmpty()) {
+        item(key = "tracklist_empty_${contextType}") {
             Text(
                 text = "No local tracks found yet.",
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        } else {
-            tracks.forEach { track ->
-                com.aura.music.ui.screens.SharedTrackRowItem(
-                    title = track.title,
-                    subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
-                    coverUri = track.coverUri,
-                    showCover = showCover,
-                    onClick = { onPlayTrackInList(track, tracks, contextType) },
-                    contextType = contextType,
-                    isLiked = track.isLiked,
-                    onAddToPlaylist = onAddTrackToPlaylist?.let { { it(track) } },
-                    onLike = onLikeTrack?.let { { it(track) } },
-                    onUnlike = onLikeTrack?.let { { it(track) } },
-                    onPlayNow = onPlayNow?.let { { it(track) } },
-                    onAddToQueue = onAddToQueue?.let { { it(track) } },
-                    onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
-                    onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
-                    onDeleteDownload = onDeleteDownload?.let { { it(track) } },
-                )
-            }
+        }
+    } else {
+        items(
+            items = tracks,
+            key = { track -> "track_${track.id}_${contextType}" },
+            contentType = { "track_row" }
+        ) { track ->
+            com.aura.music.ui.screens.SharedTrackRowItem(
+                title = track.title,
+                subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                coverUri = track.coverUri,
+                showCover = showCover,
+                onClick = { onPlayTrackInList(track, tracks, contextType) },
+                contextType = contextType,
+                isLiked = track.isLiked,
+                onAddToPlaylist = onAddTrackToPlaylist?.let { { it(track) } },
+                onLike = onLikeTrack?.let { { it(track) } },
+                onUnlike = onLikeTrack?.let { { it(track) } },
+                onPlayNow = onPlayNow?.let { { it(track) } },
+                onAddToQueue = onAddToQueue?.let { { it(track) } },
+                onViewArtist = track.artistId?.takeIf { it.isNotBlank() }?.let { artistId -> { onOpenArtist(artistId) } },
+                onViewAlbum = track.albumId?.takeIf { it.isNotBlank() }?.let { albumId -> { onOpenAlbum(albumId) } },
+                onDeleteDownload = onDeleteDownload?.let { { it(track) } },
+            )
         }
     }
 }

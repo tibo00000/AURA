@@ -53,7 +53,7 @@ import com.aura.music.data.network.AlbumSummary
 import com.aura.music.data.repository.ArtistDetail
 import com.aura.music.data.repository.AlbumDetail
 import com.aura.music.ui.RouteScaffold
-import com.aura.music.ui.TrackList
+import com.aura.music.ui.trackList
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.TextPrimary
@@ -141,30 +141,19 @@ fun HybridArtistScreen(
             // Prefer local tracks; fall back to online top_tracks summary if local is empty
             val localTracks = artist?.topTracks ?: emptyList()
             if (localTracks.isNotEmpty()) {
-                item(key = "tracklist_header") {
-                    Text(
-                        "Titres populaires",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-                }
-                item(key = "tracklist") {
-                    TrackList(
-                        title = "",
-                        tracks = localTracks,
-                        contextType = "artist",
-                        onPlayTrackInList = onPlayTrackInList,
-                        onOpenArtist = { },
-                        onOpenAlbum = onOpenAlbum,
-                        onPlayNow = { track -> onPlayTrackInList(track, localTracks, "artist") },
-                        onAddToQueue = onAddToQueue,
-                        onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
-                        onLikeTrack = onLikeTrack,
-                        onDeleteDownload = { track -> trackToDelete = track }
-                    )
-                }
+                trackList(
+                    title = "Titres populaires",
+                    tracks = localTracks,
+                    contextType = "artist",
+                    onPlayTrackInList = onPlayTrackInList,
+                    onOpenArtist = { },
+                    onOpenAlbum = onOpenAlbum,
+                    onPlayNow = { track -> onPlayTrackInList(track, localTracks, "artist") },
+                    onAddToQueue = onAddToQueue,
+                    onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                    onLikeTrack = onLikeTrack,
+                    onDeleteDownload = { track -> trackToDelete = track }
+                )
             } else if (onlineData != null && onlineData.topTracks.isNotEmpty()) {
                 item(key = "online_tracklist_header") {
                     Text(
@@ -374,22 +363,20 @@ fun HybridAlbumScreen(
 
             // ---- TRACKLIST (local only) ----
             if (localTracks.isNotEmpty()) {
-                item(key = "tracklist") {
-                    TrackList(
-                        title = "",
-                        tracks = localTracks,
-                        contextType = "album",
-                        onPlayTrackInList = onPlayTrackInList,
-                        onOpenArtist = onOpenArtist,
-                        onOpenAlbum = { },
-                        showCover = false,
-                        onPlayNow = { track -> onPlayTrackInList(track, localTracks, "album") },
-                        onAddToQueue = onAddToQueue,
-                        onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
-                        onLikeTrack = onLikeTrack,
-                        onDeleteDownload = { track -> trackToDelete = track }
-                    )
-                }
+                trackList(
+                    title = "",
+                    tracks = localTracks,
+                    contextType = "album",
+                    onPlayTrackInList = onPlayTrackInList,
+                    onOpenArtist = onOpenArtist,
+                    onOpenAlbum = { },
+                    showCover = false,
+                    onPlayNow = { track -> onPlayTrackInList(track, localTracks, "album") },
+                    onAddToQueue = onAddToQueue,
+                    onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
+                    onLikeTrack = onLikeTrack,
+                    onDeleteDownload = { track -> trackToDelete = track }
+                )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 items(onlineData.tracks, key = { "online_album_track_${it.id}" }) { track ->
                     OnlineTrackRow(track = track, showCover = false)
