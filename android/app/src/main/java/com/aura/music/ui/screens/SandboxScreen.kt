@@ -102,6 +102,17 @@ fun SandboxScreen(
                 list.add(toIdx, list.removeAt(fromIdx))
                 localItems = list
             }
+        },
+        canDragOver = { draggedOver, dragging ->
+            val draggingKey = dragging.key?.toString() ?: ""
+            val draggedOverKey = draggedOver.key?.toString() ?: ""
+            val isStaticDragging = draggingKey == "sandbox_settings_panel" || 
+                                   draggingKey == "sandbox_settings_info_banner" || 
+                                   draggingKey == "sandbox_artwork_header"
+            val isStaticDraggedOver = draggedOverKey == "sandbox_settings_panel" || 
+                                      draggedOverKey == "sandbox_settings_info_banner" || 
+                                      draggedOverKey == "sandbox_artwork_header"
+            !isStaticDragging && !isStaticDraggedOver
         }
     )
 
@@ -120,121 +131,6 @@ fun SandboxScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            // Collapsible settings panel
-            if (showSettingsPanel) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "Paramètres de Diagnostic",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        // Switches
-                        SandboxSwitchRow(
-                            title = "Modifier reorderable sur LazyColumn",
-                            checked = enableReorderableModifier,
-                            onCheckedChange = { enableReorderableModifier = it }
-                        )
-
-                        SandboxSwitchRow(
-                            title = "Header complexe INSIDE LazyColumn",
-                            checked = enableComplexHeaderInside,
-                            onCheckedChange = { enableComplexHeaderInside = it }
-                        )
-
-                        SandboxSwitchRow(
-                            title = "Chargement d'images Coil",
-                            checked = enableAsyncCovers,
-                            onCheckedChange = { enableAsyncCovers = it }
-                        )
-
-                        SandboxSwitchRow(
-                            title = "Clés stables vs index",
-                            checked = useStableKeys,
-                            onCheckedChange = { useStableKeys = it }
-                        )
-
-                        SandboxSwitchRow(
-                            title = "Paramètre contentType explicite",
-                            checked = useExplicitContentTypes,
-                            onCheckedChange = { useExplicitContentTypes = it }
-                        )
-
-                        SandboxSwitchRow(
-                            title = "Poignées de déplacement (detectReorder)",
-                            checked = enableDragHandles,
-                            onCheckedChange = { enableDragHandles = it }
-                        )
-
-                        SandboxSwitchRow(
-                            title = "Utiliser les sons réels de la BDD",
-                            checked = useRealTracks,
-                            onCheckedChange = { useRealTracks = it }
-                        )
-
-                        // Slider for list size
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Taille de la liste", style = MaterialTheme.typography.bodyMedium)
-                                Text("${listSize.toInt()} éléments", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                            }
-                            Slider(
-                                value = listSize,
-                                onValueChange = { listSize = it },
-                                valueRange = 10f..500f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                        }
-
-                        Button(
-                            onClick = { showSettingsPanel = false },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Text("Masquer pour tester le scroll")
-                        }
-                    }
-                }
-            } else {
-                // Info banner when settings are hidden
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .clickable { showSettingsPanel = true }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Réglages masqués. Scroll libre.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Afficher",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
             // Heavy header rendered OUTSIDE LazyColumn if not nested inside
             if (!enableComplexHeaderInside && showSettingsPanel) {
                 ComplexHeaderWidget()
@@ -254,8 +150,127 @@ fun SandboxScreen(
             LazyColumn(
                 state = reorderState.listState,
                 modifier = columnModifierWithReorder,
-                contentPadding = PaddingValues(bottom = 32.dp)
+                contentPadding = PaddingValues(bottom = 120.dp)
             ) {
+                // Collapsible settings panel inside LazyColumn
+                if (showSettingsPanel) {
+                    item(key = "sandbox_settings_panel", contentType = "sandbox_settings_panel") {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = "Paramètres de Diagnostic",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                // Switches
+                                SandboxSwitchRow(
+                                    title = "Modifier reorderable sur LazyColumn",
+                                    checked = enableReorderableModifier,
+                                    onCheckedChange = { enableReorderableModifier = it }
+                                )
+
+                                SandboxSwitchRow(
+                                    title = "Header complexe INSIDE LazyColumn",
+                                    checked = enableComplexHeaderInside,
+                                    onCheckedChange = { enableComplexHeaderInside = it }
+                                )
+
+                                SandboxSwitchRow(
+                                    title = "Chargement d'images Coil",
+                                    checked = enableAsyncCovers,
+                                    onCheckedChange = { enableAsyncCovers = it }
+                                )
+
+                                SandboxSwitchRow(
+                                    title = "Clés stables vs index",
+                                    checked = useStableKeys,
+                                    onCheckedChange = { useStableKeys = it }
+                                )
+
+                                SandboxSwitchRow(
+                                    title = "Paramètre contentType explicite",
+                                    checked = useExplicitContentTypes,
+                                    onCheckedChange = { useExplicitContentTypes = it }
+                                )
+
+                                SandboxSwitchRow(
+                                    title = "Poignées de déplacement (detectReorder)",
+                                    checked = enableDragHandles,
+                                    onCheckedChange = { enableDragHandles = it }
+                                )
+
+                                SandboxSwitchRow(
+                                    title = "Utiliser les sons réels de la BDD",
+                                    checked = useRealTracks,
+                                    onCheckedChange = { useRealTracks = it }
+                                )
+
+                                // Slider for list size
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Taille de la liste", style = MaterialTheme.typography.bodyMedium)
+                                        Text("${listSize.toInt()} éléments", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    }
+                                    Slider(
+                                        value = listSize,
+                                        onValueChange = { listSize = it },
+                                        valueRange = 10f..500f,
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = MaterialTheme.colorScheme.primary,
+                                            activeTrackColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    )
+                                }
+
+                                Button(
+                                    onClick = { showSettingsPanel = false },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Text("Masquer pour tester le scroll")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Info banner when settings are hidden inside LazyColumn
+                    item(key = "sandbox_settings_info_banner", contentType = "sandbox_settings_info_banner") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .clickable { showSettingsPanel = true }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Réglages masqués. Scroll libre.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Afficher",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
                 // Heavy header rendered INSIDE LazyColumn if enabled
                 if (enableComplexHeaderInside) {
                     item(key = "sandbox_artwork_header", contentType = "sandbox_artwork_header") {
