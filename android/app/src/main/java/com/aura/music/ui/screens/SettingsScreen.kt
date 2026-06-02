@@ -60,6 +60,7 @@ fun SettingsScreen(
     downloadRepository: DownloadRepository,
     syncRepository: com.aura.music.data.repository.SyncRepository,
     onNavigateBack: () -> Unit,
+    onNavigateToSandbox: () -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -404,6 +405,27 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(999.dp)
                     ) {
                         Text(if (isIndexing) "Indexation..." else "Rafraîchir l'index local")
+                    }
+                }
+            }
+            item {
+                SettingsCard(title = "Sandbox Performance") {
+                    Text(
+                        "Outil de diagnostic pour tester la fluidité des listes réorganisables sous différentes configurations.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onNavigateToSandbox,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onSecondary
+                        ),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text("Ouvrir la Sandbox")
                     }
                 }
             }
