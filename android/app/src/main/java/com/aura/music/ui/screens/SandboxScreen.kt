@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -290,21 +291,6 @@ private fun SandboxSwitchRow(
     }
 }
 
-// Extension to scale standard switch to make it more compact
-private fun Modifier.scale(scale: Float): Modifier = this.then(
-    Modifier.layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints)
-        layout(
-            (placeable.width * scale).toInt(),
-            (placeable.height * scale).toInt()
-        ) {
-            placeable.placeRelativeWithLayer(0, 0) {
-                scaleX = scale
-                scaleY = scale
-            }
-        }
-    }
-)
 
 @Composable
 private fun ComplexHeaderWidget() {
