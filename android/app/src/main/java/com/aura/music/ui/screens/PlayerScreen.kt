@@ -208,243 +208,236 @@ fun PlayerScreen(
                 )
             }
         } else {
-            LazyColumn(
-                state = reorderState.listState,
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .reorderable(reorderState),
-                contentPadding = PaddingValues(bottom = 32.dp)
             ) {
                 // Large Artwork
-                item(key = "artwork", contentType = "artwork") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 32.dp, vertical = 12.dp)
-                            .aspectRatio(1f) // Square
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF1A1A1A)))),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (track.coverUri != null) {
-                            AsyncImage(
-                                model = track.coverUri,
-                                contentDescription = "Pochette de ${track.title}",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.size(80.dp)
-                            )
-                        }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 8.dp)
+                        .aspectRatio(1f) // Square
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF1A1A1A)))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (track.coverUri != null) {
+                        AsyncImage(
+                            model = track.coverUri,
+                            contentDescription = "Pochette de ${track.title}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(80.dp)
+                        )
                     }
                 }
 
                 // Track Meta
-                item(key = "meta", contentType = "meta") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = track.artistName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (!track.albumTitle.isNullOrEmpty()) {
                         Text(
-                            text = track.title,
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = track.artistName,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = track.albumTitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (!track.albumTitle.isNullOrEmpty()) {
-                            Text(
-                                text = track.albumTitle,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
                     }
                 }
 
                 // Progress Block
-                item(key = "progress", contentType = "progress") {
-                    PlaybackProgressBlock(
-                        playerViewModel = playerViewModel,
-                        trackId = track?.trackId
-                    )
-                }
+                PlaybackProgressBlock(
+                    playerViewModel = playerViewModel,
+                    trackId = track.trackId
+                )
 
                 // Transport Controls
-                item(key = "controls", contentType = "controls") {
-                    Row(
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleShuffle) }) {
+                        Icon(
+                            Icons.Rounded.Shuffle,
+                            contentDescription = "Lecture aléatoire",
+                            tint = if (uiState.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Previous) }) {
+                        Icon(Icons.Rounded.SkipPrevious, contentDescription = "Piste précédente", modifier = Modifier.size(48.dp))
+                    }
+                    IconButton(
+                        onClick = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
+                            .size(72.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
                     ) {
-                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleShuffle) }) {
-                            Icon(
-                                Icons.Rounded.Shuffle,
-                                contentDescription = "Lecture aléatoire",
-                                tint = if (uiState.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Previous) }) {
-                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Piste précédente", modifier = Modifier.size(48.dp))
-                        }
-                        IconButton(
-                            onClick = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
-                            modifier = Modifier
-                                .size(72.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = if (uiState.playbackState == PlaybackState.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = "Lecture ou pause",
-                                modifier = Modifier.size(40.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Next) }) {
-                            Icon(Icons.Rounded.SkipNext, contentDescription = "Piste suivante", modifier = Modifier.size(48.dp))
-                        }
-                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.CycleRepeatMode) }) {
-                            Icon(
-                                imageVector = if (uiState.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                                contentDescription = "Mode répétition",
-                                tint = if (uiState.repeatMode == RepeatMode.Off) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-                            )
-                        }
+                        Icon(
+                            imageVector = if (uiState.playbackState == PlaybackState.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = "Lecture ou pause",
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Next) }) {
+                        Icon(Icons.Rounded.SkipNext, contentDescription = "Piste suivante", modifier = Modifier.size(48.dp))
+                    }
+                    IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.CycleRepeatMode) }) {
+                        Icon(
+                            imageVector = if (uiState.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                            contentDescription = "Mode répétition",
+                            tint = if (uiState.repeatMode == RepeatMode.Off) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
 
                 // Secondary Actions
-                item(key = "actions", contentType = "actions") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 32.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleLike) }) {
+                        Icon(
+                            imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
+                            tint = if (uiState.isCurrentTrackLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                    // Ajouter à une playlist
+                    IconButton(
+                        onClick = { showSelectPlaylistDialog = true }
                     ) {
-                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleLike) }) {
-                            Icon(
-                                imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
-                                tint = if (uiState.isCurrentTrackLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(28.dp),
-                            )
-                        }
-                        // Ajouter à une playlist
-                        IconButton(
-                            onClick = { showSelectPlaylistDialog = true }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PlaylistAdd,
-                                contentDescription = "Ajouter à une playlist",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.PlaylistAdd,
+                            contentDescription = "Ajouter à une playlist",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp),
+                        )
                     }
                 }
 
                 // Context
-                item(key = "context", contentType = "context") {
-                    Box(modifier = Modifier.padding(vertical = 12.dp)) {
-                        SourceContextCard(uiState)
-                    }
-                }
+                SourceContextCard(uiState)
 
-                // PRIORITY QUEUE HEADER
-                item(key = "pq_header", contentType = "header") {
-                    Text(
-                        text = "File d'attente prioritaire (${visiblePriorityQueue.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(horizontal = 24.dp)
-                    )
-                    if (visiblePriorityQueue.isEmpty()) {
+                // Dynamic Queue (Scrollable, takes remaining height)
+                LazyColumn(
+                    state = reorderState.listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .reorderable(reorderState),
+                    contentPadding = PaddingValues(bottom = 32.dp)
+                ) {
+                    // PRIORITY QUEUE HEADER
+                    item(key = "pq_header", contentType = "header") {
                         Text(
-                            text = "Aucune piste ajoutée manuellement.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-
-                // PRIORITY QUEUE ITEMS (Reorderable)
-                itemsIndexed(
-                    items = visiblePriorityQueue,
-                    key = { _, it -> "pq_${it.internalId}" },
-                    contentType = { _, _ -> "priority_item" }
-                ) { index, queuedTrack ->
-                    ReorderableItem(reorderState, key = "pq_${queuedTrack.internalId}") { isDragging ->
-                        PriorityQueueItemRow(
-                            queuedTrack = queuedTrack,
-                            isDragging = isDragging,
-                            onRemove = { onRemoveFromQueue(index) },
-                            dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
-                        )
-                    }
-                }
-
-                // MAIN UPCOMING QUEUE HEADER
-                if (uiState.mainQueueTracks.isNotEmpty()) {
-                    item(key = "mq_header", contentType = "header") {
-                        Text(
-                            text = "À suivre (${uiState.mainQueueTracks.size})",
+                            text = "File d'attente prioritaire (${visiblePriorityQueue.size})",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                         )
+                        if (visiblePriorityQueue.isEmpty()) {
+                            Text(
+                                text = "Aucune piste ajoutée manuellement.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                            )
+                        }
                     }
-                }
 
-                // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
-                itemsIndexed(
-                    items = visibleMainQueue,
-                    key = { _, it -> "mq_${it.internalId}" },
-                    contentType = { _, _ -> "main_item" }
-                ) { index, queuedTrack ->
-                    ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
-                        MainQueueItemRow(
-                            queuedTrack = queuedTrack,
-                            isDragging = isDragging,
-                            onRemove = { onRemoveFromMainQueue(queuedTrack.internalId) },
-                            dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
-                        )
+                    // PRIORITY QUEUE ITEMS (Reorderable)
+                    itemsIndexed(
+                        items = visiblePriorityQueue,
+                        key = { _, it -> "pq_${it.internalId}" },
+                        contentType = { _, _ -> "priority_item" }
+                    ) { index, queuedTrack ->
+                        ReorderableItem(reorderState, key = "pq_${queuedTrack.internalId}") { isDragging ->
+                            PriorityQueueItemRow(
+                                queuedTrack = queuedTrack,
+                                isDragging = isDragging,
+                                onRemove = { onRemoveFromQueue(index) },
+                                dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
+                            )
+                        }
                     }
-                }
-                
-                if (uiState.mainQueueTracks.size > 30) {
-                    item(key = "mq_footer", contentType = "footer") {
-                        Text(
-                            text = "Et ${uiState.mainQueueTracks.size - 30} autres pistes...",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                        )
+
+                    // MAIN UPCOMING QUEUE HEADER
+                    if (uiState.mainQueueTracks.isNotEmpty()) {
+                        item(key = "mq_header", contentType = "header") {
+                            Text(
+                                text = "À suivre (${uiState.mainQueueTracks.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+
+                    // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
+                    itemsIndexed(
+                        items = visibleMainQueue,
+                        key = { _, it -> "mq_${it.internalId}" },
+                        contentType = { _, _ -> "main_item" }
+                    ) { index, queuedTrack ->
+                        ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
+                            MainQueueItemRow(
+                                queuedTrack = queuedTrack,
+                                isDragging = isDragging,
+                                onRemove = { onRemoveFromMainQueue(queuedTrack.internalId) },
+                                dragModifier = Modifier.detectReorderAfterLongPress(reorderState)
+                            )
+                        }
+                    }
+
+                    if (uiState.mainQueueTracks.size > 30) {
+                        item(key = "mq_footer", contentType = "footer") {
+                            Text(
+                                text = "Et ${uiState.mainQueueTracks.size - 30} autres pistes...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
             }
