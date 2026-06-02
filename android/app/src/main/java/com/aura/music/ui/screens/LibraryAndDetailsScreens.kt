@@ -332,6 +332,9 @@ fun FavoritesScreen(
     val playlists = playlistsState.value
 
     RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack) {
+        val contextTracks = remember(tracksState.value) {
+            tracksState.value.map { it.toQueuedTrack() }
+        }
         if (tracksState.value.isEmpty()) {
             EmptyStateSurface(
                 title = "Aucun favori",
@@ -414,9 +417,6 @@ fun FavoritesScreen(
                             enabled = tracksState.value.isNotEmpty(),
                         ) { Text("Aléatoire") }
                     }
-                }
-                val contextTracks = remember(tracksState.value) {
-                    tracksState.value.map { it.toQueuedTrack() }
                 }
                 itemsIndexed(tracksState.value, key = { _, track -> track.id }) { index, track ->
                     val playEvent = remember(track.id, index, contextTracks) {
@@ -1675,6 +1675,9 @@ fun LibraryTracksScreen(
     }
 
     RouteScaffold(title = "Titres", onNavigateBack = onNavigateBack) {
+        val contextTracks = remember(sortedTracks) {
+            sortedTracks.map { it.toQueuedTrack() }
+        }
         if (tracksState.value.isEmpty()) {
             EmptyStateSurface(
                 title = "Aucun titre",
@@ -1786,9 +1789,6 @@ fun LibraryTracksScreen(
                             }
                         }
                     }
-                }
-                val contextTracks = remember(sortedTracks) {
-                    sortedTracks.map { it.toQueuedTrack() }
                 }
                 itemsIndexed(sortedTracks, key = { _, track -> track.id }) { index, track ->
                     val playEvent = remember(track.id, index, contextTracks) {
