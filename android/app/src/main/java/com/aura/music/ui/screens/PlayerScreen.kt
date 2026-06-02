@@ -217,7 +217,7 @@ fun PlayerScreen(
                 contentPadding = PaddingValues(bottom = 32.dp)
             ) {
                 // Large Artwork
-                item {
+                item(key = "artwork", contentType = "artwork") {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -246,7 +246,7 @@ fun PlayerScreen(
                 }
 
                 // Track Meta
-                item {
+                item(key = "meta", contentType = "meta") {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -283,7 +283,7 @@ fun PlayerScreen(
                 }
 
                 // Progress Block
-                item {
+                item(key = "progress", contentType = "progress") {
                     PlaybackProgressBlock(
                         playerViewModel = playerViewModel,
                         trackId = track?.trackId
@@ -291,7 +291,7 @@ fun PlayerScreen(
                 }
 
                 // Transport Controls
-                item {
+                item(key = "controls", contentType = "controls") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -336,7 +336,7 @@ fun PlayerScreen(
                 }
 
                 // Secondary Actions
-                item {
+                item(key = "actions", contentType = "actions") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -367,16 +367,16 @@ fun PlayerScreen(
                 }
 
                 // Context
-                item {
+                item(key = "context", contentType = "context") {
                     Box(modifier = Modifier.padding(vertical = 12.dp)) {
                         SourceContextCard(uiState)
                     }
                 }
 
                 // PRIORITY QUEUE HEADER
-                item {
+                item(key = "pq_header", contentType = "header") {
                     Text(
-                        text = "File d'attente prioritaire (${localPriorityQueue.value.size})",
+                        text = "File d'attente prioritaire (${visiblePriorityQueue.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -393,7 +393,11 @@ fun PlayerScreen(
                 }
 
                 // PRIORITY QUEUE ITEMS (Reorderable)
-                itemsIndexed(visiblePriorityQueue, key = { _, it -> "pq_${it.internalId}" }) { index, queuedTrack ->
+                itemsIndexed(
+                    items = visiblePriorityQueue,
+                    key = { _, it -> "pq_${it.internalId}" },
+                    contentType = { _, _ -> "priority_item" }
+                ) { index, queuedTrack ->
                     ReorderableItem(reorderState, key = "pq_${queuedTrack.internalId}") { isDragging ->
                         PriorityQueueItemRow(
                             queuedTrack = queuedTrack,
@@ -406,7 +410,7 @@ fun PlayerScreen(
 
                 // MAIN UPCOMING QUEUE HEADER
                 if (uiState.mainQueueTracks.isNotEmpty()) {
-                    item {
+                    item(key = "mq_header", contentType = "header") {
                         Text(
                             text = "À suivre (${uiState.mainQueueTracks.size})",
                             style = MaterialTheme.typography.titleMedium,
@@ -418,7 +422,11 @@ fun PlayerScreen(
                 }
 
                 // MAIN UPCOMING QUEUE ITEMS (Reorderable natively)
-                itemsIndexed(visibleMainQueue, key = { _, it -> "mq_${it.internalId}" }) { index, queuedTrack ->
+                itemsIndexed(
+                    items = visibleMainQueue,
+                    key = { _, it -> "mq_${it.internalId}" },
+                    contentType = { _, _ -> "main_item" }
+                ) { index, queuedTrack ->
                     ReorderableItem(reorderState, key = "mq_${queuedTrack.internalId}") { isDragging ->
                         MainQueueItemRow(
                             queuedTrack = queuedTrack,
@@ -430,7 +438,7 @@ fun PlayerScreen(
                 }
                 
                 if (uiState.mainQueueTracks.size > 30) {
-                    item {
+                    item(key = "mq_footer", contentType = "footer") {
                         Text(
                             text = "Et ${uiState.mainQueueTracks.size - 30} autres pistes...",
                             style = MaterialTheme.typography.labelSmall,
