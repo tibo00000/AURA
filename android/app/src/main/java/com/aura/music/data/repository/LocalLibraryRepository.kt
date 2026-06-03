@@ -111,7 +111,7 @@ class LocalLibraryRepository(
                         val embeddedPicture = retriever.embeddedPicture
                         if (embeddedPicture != null) {
                             try {
-                                val coversDir = java.io.File(context.cacheDir, "covers")
+                                val coversDir = java.io.File(context.filesDir, "covers")
                                 if (!coversDir.exists()) {
                                     coversDir.mkdirs()
                                 }
