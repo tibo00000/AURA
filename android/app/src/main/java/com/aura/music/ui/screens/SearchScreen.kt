@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import com.aura.music.data.local.PlaylistListRow
@@ -442,21 +443,16 @@ private fun LocalLibrarySearchTab(
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
                 tracks.take(5).forEach { track ->
-                    SharedTrackRowItem(
-                        title = track.title,
-                        subtitle = track.artistName,
-                        coverUri = track.coverUri,
-                        onClick = { onPlayTrack(track, tracks) },
-                        showCover = true,
-                        contextType = "standard",
-                        isLiked = track.isLiked,
-                        onLike = { onLikeTrack(track.id, track.isLiked) },
-                        onUnlike = { onLikeTrack(track.id, track.isLiked) },
-                        onAddToQueue = { onAddToQueue(track) },
-                        onAddToPlaylist = { onAddToPlaylist(track) },
-                        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
-                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
-                        onDeleteDownload = { onDeleteTrack(track) }
+                    SearchTrackRowItem(
+                        track = track,
+                        tracks = tracks,
+                        onPlayTrack = onPlayTrack,
+                        onAddToQueue = onAddToQueue,
+                        onLikeTrack = onLikeTrack,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onOpenArtist = onOpenArtist,
+                        onOpenAlbum = onOpenAlbum,
+                        onDeleteTrack = onDeleteTrack
                     )
                 }
             }
@@ -513,26 +509,14 @@ private fun OnlineSearchTab(
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
                 tracks.take(5).forEach { track ->
-                    SharedTrackRowItem(
-                        title = track.title,
-                        subtitle = track.displayArtistName,
-                        coverUri = track.coverUri,
-                        onClick = { onPlayTrack(track) },
-                        showCover = true,
-                        contextType = "search_online",
-                        onDownload = { onDownloadTrack(track) },
-                        onViewArtist = {
-                            val matchedArtist = artists.firstOrNull { it.name.trim().lowercase() == track.displayArtistName.trim().lowercase() }
-                            val artistIdToOpen = matchedArtist?.id ?: "artist:${normalize(track.displayArtistName)}"
-                            onOpenArtist(artistIdToOpen)
-                        },
-                        onViewAlbum = track.displayAlbumTitle?.let { albumTitle ->
-                            {
-                                val matchedAlbum = albums.firstOrNull { it.title.trim().lowercase() == albumTitle.trim().lowercase() }
-                                val albumIdToOpen = matchedAlbum?.id ?: "album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}"
-                                onOpenAlbum(albumIdToOpen)
-                            }
-                        }
+                    SearchOnlineTrackRowItem(
+                        track = track,
+                        artists = artists,
+                        albums = albums,
+                        onPlayTrack = onPlayTrack,
+                        onDownloadTrack = onDownloadTrack,
+                        onOpenArtist = onOpenArtist,
+                        onOpenAlbum = onOpenAlbum
                     )
                 }
             }
@@ -809,12 +793,11 @@ private fun LocalLibrarySection(
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
             tracks.take(5).forEach { track ->
-                SharedTrackRowItem(
-                    title = track.title,
-                    subtitle = track.artistName,
-                    coverUri = track.coverUri,
-                    onClick = { onPlayTrack(track, tracks) },
-                    onAddToQueue = { onAddToQueue(track) }
+                SearchTrackRowItem(
+                    track = track,
+                    tracks = tracks,
+                    onPlayTrack = onPlayTrack,
+                    onAddToQueue = onAddToQueue
                 )
             }
         }
@@ -1159,4 +1142,126 @@ private fun normalize(value: String): String {
     val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
     val hex = digest.joinToString("") { "%02x".format(it) }
     return hex.take(16).ifBlank { "unknown" }
+}
+
+@Composable
+private fun SearchTrackRowItem(
+    track: TrackListRow,
+    tracks: List<TrackListRow>,
+    onPlayTrack: (TrackListRow, List<TrackListRow>) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
+    onLikeTrack: ((String, Boolean) -> Unit)? = null,
+    onAddToPlaylist: ((TrackListRow) -> Unit)? = null,
+    onOpenArtist: ((String) -> Unit)? = null,
+    onOpenAlbum: ((String) -> Unit)? = null,
+    onDeleteTrack: ((TrackListRow) -> Unit)? = null,
+) {
+    val currentOnPlay = rememberUpdatedState(onPlayTrack)
+    val currentOnQueue = rememberUpdatedState(onAddToQueue)
+    val currentOnLike = rememberUpdatedState(onLikeTrack)
+    val currentOnPlaylist = rememberUpdatedState(onAddToPlaylist)
+    val currentOnArtist = rememberUpdatedState(onOpenArtist)
+    val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
+    val currentOnDelete = rememberUpdatedState(onDeleteTrack)
+
+    val onClick = remember(track.id, tracks) { { currentOnPlay.value(track, tracks) } }
+    val onAddToQueueClick = remember(track.id) { { currentOnQueue.value(track) } }
+    
+    val onLikeClick = remember(track.id, track.isLiked, currentOnLike.value != null) {
+        if (currentOnLike.value != null) {
+            { currentOnLike.value?.invoke(track.id, track.isLiked) }
+        } else null
+    }
+    
+    val onAddToPlaylistClick = remember(track.id, currentOnPlaylist.value != null) {
+        if (currentOnPlaylist.value != null) {
+            { currentOnPlaylist.value?.invoke(track) }
+        } else null
+    }
+
+    val artistId = track.artistId
+    val hasArtist = !artistId.isNullOrBlank() && currentOnArtist.value != null
+    val onViewArtistClick = remember(track.id, artistId, hasArtist) {
+        if (hasArtist) {
+            { currentOnArtist.value?.invoke(artistId!!) }
+        } else null
+    }
+
+    val albumId = track.albumId
+    val hasAlbum = !albumId.isNullOrBlank() && currentOnAlbum.value != null
+    val onViewAlbumClick = remember(track.id, albumId, hasAlbum) {
+        if (hasAlbum) {
+            { currentOnAlbum.value?.invoke(albumId!!) }
+        } else null
+    }
+
+    val onDeleteClick = remember(track.id, currentOnDelete.value != null) {
+        if (currentOnDelete.value != null) {
+            { currentOnDelete.value?.invoke(track) }
+        } else null
+    }
+
+    SharedTrackRowItem(
+        title = track.title,
+        subtitle = track.artistName,
+        coverUri = track.coverUri,
+        onClick = onClick,
+        showCover = true,
+        contextType = "standard",
+        isLiked = track.isLiked,
+        onLike = onLikeClick,
+        onUnlike = onLikeClick,
+        onAddToQueue = onAddToQueueClick,
+        onAddToPlaylist = onAddToPlaylistClick,
+        onViewArtist = onViewArtistClick,
+        onViewAlbum = onViewAlbumClick,
+        onDeleteDownload = onDeleteClick
+    )
+}
+
+@Composable
+private fun SearchOnlineTrackRowItem(
+    track: TrackSummary,
+    artists: List<com.aura.music.data.local.ArtistBrowseRow>,
+    albums: List<com.aura.music.data.local.AlbumBrowseRow>,
+    onPlayTrack: (TrackSummary) -> Unit,
+    onDownloadTrack: (TrackSummary) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+) {
+    val currentOnPlay = rememberUpdatedState(onPlayTrack)
+    val currentOnDownload = rememberUpdatedState(onDownloadTrack)
+    val currentOnArtist = rememberUpdatedState(onOpenArtist)
+    val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
+
+    val onClick = remember(track.id) { { currentOnPlay.value(track) } }
+    val onDownload = remember(track.id) { { currentOnDownload.value(track) } }
+    val onViewArtist = remember(track.displayArtistName, artists) {
+        {
+            val matchedArtist = artists.firstOrNull { it.name.trim().lowercase() == track.displayArtistName.trim().lowercase() }
+            val artistIdToOpen = matchedArtist?.id ?: "artist:${normalize(track.displayArtistName)}"
+            currentOnArtist.value(artistIdToOpen)
+        }
+    }
+    val onViewAlbum = remember(track.displayArtistName, track.displayAlbumTitle, albums) {
+        track.displayAlbumTitle?.let { albumTitle ->
+            {
+                val matchedAlbum = albums.firstOrNull { it.title.trim().lowercase() == albumTitle.trim().lowercase() }
+                val albumIdToOpen = matchedAlbum?.id ?: "album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}"
+                currentOnAlbum.value(albumIdToOpen)
+            }
+        }
+    }
+
+    SharedTrackRowItem(
+        title = track.title,
+        subtitle = track.displayArtistName,
+        coverUri = track.coverUri,
+        onClick = onClick,
+        showCover = true,
+        contextType = "search_online",
+        onDownload = onDownload,
+        onViewArtist = onViewArtist,
+        onViewAlbum = onViewAlbum
+    )
 }

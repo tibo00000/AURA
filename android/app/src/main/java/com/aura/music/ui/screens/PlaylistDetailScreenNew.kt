@@ -204,22 +204,34 @@ fun PlaylistDetailScreenNew(
                         )
                     }
                 } else {
-                    items(detail.tracks, key = { it.playlistItemId }) { track ->
+                    items(
+                        items = detail.tracks,
+                        key = { it.playlistItemId },
+                        contentType = { "track_row" }
+                    ) { track ->
+                        val onPlayTrackClick = remember(track.trackId, detail.tracks) {
+                            {
+                                val tracks = detail.tracks.map { it.toTrackListRow() }
+                                playPlaylist(playerViewModel, tracks, false, detail.summary.id, track.trackId)
+                            }
+                        }
+                        val onRefreshClick = remember { { refreshTick++ } }
+                        val onAddToPlaylistClick = remember { { t: PlaylistTrackRow -> activeTrackForPlaylist = t } }
+                        val onAddToQueueClick = remember(track.trackId) {
+                            {
+                                playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                            }
+                        }
                         PlaylistTrackRowItem(
                             track = track,
                             playlistId = detail.summary.id,
                             repository = repository,
-                            onPlayTrack = {
-                                val tracks = detail.tracks.map { it.toTrackListRow() }
-                                playPlaylist(playerViewModel, tracks, false, detail.summary.id, track.trackId)
-                            },
-                            onRefresh = { refreshTick++ },
-                            onAddToPlaylist = { activeTrackForPlaylist = it },
+                            onPlayTrack = onPlayTrackClick,
+                            onRefresh = onRefreshClick,
+                            onAddToPlaylist = onAddToPlaylistClick,
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
-                            onAddToQueue = {
-                                playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toTrackListRow().toQueuedTrack()))
-                            }
+                            onAddToQueue = onAddToQueueClick
                         )
                     }
                 }
@@ -290,6 +302,38 @@ private fun PlaylistTrackRowItem(
 ) {
     val scope = rememberCoroutineScope()
 
+    val onRemoveClick = remember(track.playlistItemId, playlistId) {
+        {
+            scope.launch {
+                repository.removeTrackFromPlaylist(playlistId, track.playlistItemId)
+                onRefresh()
+            }
+        }
+    }
+    val onAddToPlaylistClick = remember(track.trackId) { { onAddToPlaylist(track) } }
+    val onLikeClick = remember(track.trackId, playlistId) {
+        {
+            scope.launch {
+                repository.toggleLike(track.trackId, currentlyLiked = false, contextType = "playlist", contextId = playlistId)
+                onRefresh()
+            }
+        }
+    }
+    val onUnlikeClick = remember(track.trackId, playlistId) {
+        {
+            scope.launch {
+                repository.toggleLike(track.trackId, currentlyLiked = true, contextType = "playlist", contextId = playlistId)
+                onRefresh()
+            }
+        }
+    }
+    val onViewArtistClick = remember(track.artistId) {
+        track.artistId?.let { artistId -> { onOpenArtist(artistId) } }
+    }
+    val onViewAlbumClick = remember(track.albumId) {
+        track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "Artiste inconnu",
@@ -297,30 +341,13 @@ private fun PlaylistTrackRowItem(
         coverUri = track.coverUri,
         contextType = "playlist",
         isLiked = track.isLiked,
-        onRemoveFromPlaylist = {
-            scope.launch {
-                repository.removeTrackFromPlaylist(playlistId, track.playlistItemId)
-                onRefresh()
-            }
-        },
+        onRemoveFromPlaylist = onRemoveClick,
         onAddToQueue = onAddToQueue,
-        onAddToPlaylist = {
-            onAddToPlaylist(track)
-        },
-        onLike = {
-            scope.launch {
-                repository.toggleLike(track.trackId, currentlyLiked = false, contextType = "playlist", contextId = playlistId)
-                onRefresh()
-            }
-        },
-        onUnlike = {
-            scope.launch {
-                repository.toggleLike(track.trackId, currentlyLiked = true, contextType = "playlist", contextId = playlistId)
-                onRefresh()
-            }
-        },
-        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
-        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
+        onAddToPlaylist = onAddToPlaylistClick,
+        onLike = onLikeClick,
+        onUnlike = onUnlikeClick,
+        onViewArtist = onViewArtistClick,
+        onViewAlbum = onViewAlbumClick,
     )
 }
 

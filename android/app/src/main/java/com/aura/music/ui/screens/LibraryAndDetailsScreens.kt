@@ -418,7 +418,11 @@ fun FavoritesScreen(
                         ) { Text("Aléatoire") }
                     }
                 }
-                itemsIndexed(tracksState.value, key = { _, track -> track.id }) { index, track ->
+                itemsIndexed(
+                    items = tracksState.value,
+                    key = { _, track -> track.id },
+                    contentType = { _, _ -> "track_row" }
+                ) { index, track ->
                     val playEvent = remember(track.id, index, contextTracks) {
                         PlayerEvent.PlayTrack(
                             trackId = track.id,
@@ -428,26 +432,35 @@ fun FavoritesScreen(
                             startIndex = index,
                         )
                     }
-                    SharedTrackRowItem(
-                        title = track.title,
-                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
-                        onClick = { playerViewModel.onEvent(playEvent) },
-                        coverUri = track.coverUri,
-                        contextType = "favorites",
-                        onAddToQueue = {
-                            playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
-                        },
-                        onUnlike = {
+                    val onPlayClick = remember(playEvent) { { playerViewModel.onEvent(playEvent) } }
+                    val onAddToQueueClick = remember(track.id) { { playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) } }
+                    val onUnlikeClick = remember(track.id) {
+                        {
                             scope.launch {
                                 repository.toggleLike(track.id, currentlyLiked = true, contextType = "favorites")
                                 refreshTick++
                             }
-                        },
-                        onAddToPlaylist = {
-                            activeTrackForPlaylist = track
-                        },
-                        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
-                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
+                        }
+                    }
+                    val onAddToPlaylistClick = remember(track.id) { { activeTrackForPlaylist = track } }
+                    val onViewArtistClick = remember(track.artistId) {
+                        track.artistId?.let { artistId -> { onOpenArtist(artistId) } }
+                    }
+                    val onViewAlbumClick = remember(track.albumId) {
+                        track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
+                    }
+
+                    SharedTrackRowItem(
+                        title = track.title,
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                        onClick = onPlayClick,
+                        coverUri = track.coverUri,
+                        contextType = "favorites",
+                        onAddToQueue = onAddToQueueClick,
+                        onUnlike = onUnlikeClick,
+                        onAddToPlaylist = onAddToPlaylistClick,
+                        onViewArtist = onViewArtistClick,
+                        onViewAlbum = onViewAlbumClick,
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -1790,7 +1803,11 @@ fun LibraryTracksScreen(
                         }
                     }
                 }
-                itemsIndexed(sortedTracks, key = { _, track -> track.id }) { index, track ->
+                itemsIndexed(
+                    items = sortedTracks,
+                    key = { _, track -> track.id },
+                    contentType = { _, _ -> "track_row" }
+                ) { index, track ->
                     val playEvent = remember(track.id, index, contextTracks) {
                         PlayerEvent.PlayTrack(
                             trackId = track.id,
@@ -1800,36 +1817,47 @@ fun LibraryTracksScreen(
                             startIndex = index,
                         )
                     }
-                    SharedTrackRowItem(
-                        title = track.title,
-                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
-                        onClick = { playerViewModel.onEvent(playEvent) },
-                        coverUri = track.coverUri,
-                        contextType = "standard",
-                        isLiked = track.isLiked,
-                        onAddToQueue = {
-                            playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
-                        },
-                        onLike = {
+                    val onPlayClick = remember(playEvent) { { playerViewModel.onEvent(playEvent) } }
+                    val onAddToQueueClick = remember(track.id) { { playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) } }
+                    val onLikeClick = remember(track.id) {
+                        {
                             scope.launch {
                                 repository.toggleLike(track.id, false, "library_tracks", "library_tracks")
                                 refreshTick++
                             }
-                        },
-                        onUnlike = {
+                        }
+                    }
+                    val onUnlikeClick = remember(track.id) {
+                        {
                             scope.launch {
                                 repository.toggleLike(track.id, true, "library_tracks", "library_tracks")
                                 refreshTick++
                             }
-                        },
-                        onAddToPlaylist = {
-                            activeTrackForPlaylist = track
-                        },
-                        onViewArtist = track.artistId?.let { artistId -> { onOpenArtist(artistId) } },
-                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
-                        onDeleteDownload = {
-                            trackToDelete = track
                         }
+                    }
+                    val onAddToPlaylistClick = remember(track.id) { { activeTrackForPlaylist = track } }
+                    val onViewArtistClick = remember(track.artistId) {
+                        track.artistId?.let { artistId -> { onOpenArtist(artistId) } }
+                    }
+                    val onViewAlbumClick = remember(track.albumId) {
+                        track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
+                    }
+                    val onDeleteDownloadClick = remember(track.id) { { trackToDelete = track } }
+
+                    SharedTrackRowItem(
+                        title = track.title,
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                        onClick = onPlayClick,
+                        coverUri = track.coverUri,
+                        contextType = "standard",
+                        isLiked = track.isLiked,
+                        onAddToQueue = onAddToQueueClick,
+                        onLike = onLikeClick,
+                        onUnlike = onUnlikeClick,
+                        onAddToPlaylist = onAddToPlaylistClick,
+                        onViewArtist = onViewArtistClick,
+                        onViewAlbum = onViewAlbumClick,
+                        onDeleteDownload = onDeleteDownloadClick,
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }

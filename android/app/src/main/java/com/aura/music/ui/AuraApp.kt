@@ -56,6 +56,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -150,19 +151,21 @@ fun AuraApp() {
         repository.refreshLocalMediaIndex()
     }
 
-    val onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit = { track, allTracks, contextType ->
-        val contextTracks = allTracks.map { it.toQueuedTrack() }
-        val startIndex = allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-        playerViewModel.onEvent(
-            PlayerEvent.PlayTrack(
-                trackId = track.id,
-                contextType = contextType,
-                contextId = contextType,
-                contextTracks = contextTracks,
-                startIndex = startIndex,
-            ),
-        )
-        navController.navigate(AuraRoute.Player)
+    val onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit = remember(playerViewModel, navController) {
+        { track, allTracks, contextType ->
+            val contextTracks = allTracks.map { it.toQueuedTrack() }
+            val startIndex = allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            playerViewModel.onEvent(
+                PlayerEvent.PlayTrack(
+                    trackId = track.id,
+                    contextType = contextType,
+                    contextId = contextType,
+                    contextTracks = contextTracks,
+                    startIndex = startIndex,
+                ),
+            )
+            navController.navigate(AuraRoute.Player)
+        }
     }
 
     AuraTheme {
@@ -719,22 +722,79 @@ fun LazyListScope.trackList(
             key = { track -> "track_${track.id}_${contextType}" },
             contentType = { "track_row" }
         ) { track ->
+            val currentOnPlay = rememberUpdatedState(onPlayTrackInList)
+            val currentOnAdd = rememberUpdatedState(onAddTrackToPlaylist)
+            val currentOnLike = rememberUpdatedState(onLikeTrack)
+            val currentOnPlayNow = rememberUpdatedState(onPlayNow)
+            val currentOnAddToQueue = rememberUpdatedState(onAddToQueue)
+            val currentOnOpenArtist = rememberUpdatedState(onOpenArtist)
+            val currentOnOpenAlbum = rememberUpdatedState(onOpenAlbum)
+            val currentOnDelete = rememberUpdatedState(onDeleteDownload)
+
+            val currentOnClick = remember(track.id, tracks, contextType) {
+                { currentOnPlay.value(track, tracks, contextType) }
+            }
+            val onAddToPlaylistLambda = remember(track.id, currentOnAdd.value != null) {
+                if (currentOnAdd.value != null) {
+                    { currentOnAdd.value?.invoke(track) }
+                } else null
+            }
+            val onLikeLambda = remember(track.id, currentOnLike.value != null) {
+                if (currentOnLike.value != null) {
+                    { currentOnLike.value?.invoke(track) }
+                } else null
+            }
+            val onUnlikeLambda = remember(track.id, currentOnLike.value != null) {
+                if (currentOnLike.value != null) {
+                    { currentOnLike.value?.invoke(track) }
+                } else null
+            }
+            val onPlayNowLambda = remember(track.id, currentOnPlayNow.value != null) {
+                if (currentOnPlayNow.value != null) {
+                    { currentOnPlayNow.value?.invoke(track) }
+                } else null
+            }
+            val onAddToQueueLambda = remember(track.id, currentOnAddToQueue.value != null) {
+                if (currentOnAddToQueue.value != null) {
+                    { currentOnAddToQueue.value?.invoke(track) }
+                } else null
+            }
+            val artistId = track.artistId
+            val hasArtist = !artistId.isNullOrBlank()
+            val onViewArtistLambda = remember(track.id, artistId, hasArtist) {
+                if (hasArtist) {
+                    { currentOnOpenArtist.value(artistId!!) }
+                } else null
+            }
+            val albumId = track.albumId
+            val hasAlbum = !albumId.isNullOrBlank()
+            val onViewAlbumLambda = remember(track.id, albumId, hasAlbum) {
+                if (hasAlbum) {
+                    { currentOnOpenAlbum.value(albumId!!) }
+                } else null
+            }
+            val onDeleteDownloadLambda = remember(track.id, currentOnDelete.value != null) {
+                if (currentOnDelete.value != null) {
+                    { currentOnDelete.value?.invoke(track) }
+                } else null
+            }
+
             com.aura.music.ui.screens.SharedTrackRowItem(
                 title = track.title,
                 subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
                 coverUri = track.coverUri,
                 showCover = showCover,
-                onClick = { onPlayTrackInList(track, tracks, contextType) },
+                onClick = currentOnClick,
                 contextType = contextType,
                 isLiked = track.isLiked,
-                onAddToPlaylist = onAddTrackToPlaylist?.let { { it(track) } },
-                onLike = onLikeTrack?.let { { it(track) } },
-                onUnlike = onLikeTrack?.let { { it(track) } },
-                onPlayNow = onPlayNow?.let { { it(track) } },
-                onAddToQueue = onAddToQueue?.let { { it(track) } },
-                onViewArtist = track.artistId?.takeIf { it.isNotBlank() }?.let { artistId -> { onOpenArtist(artistId) } },
-                onViewAlbum = track.albumId?.takeIf { it.isNotBlank() }?.let { albumId -> { onOpenAlbum(albumId) } },
-                onDeleteDownload = onDeleteDownload?.let { { it(track) } },
+                onAddToPlaylist = onAddToPlaylistLambda,
+                onLike = onLikeLambda,
+                onUnlike = onUnlikeLambda,
+                onPlayNow = onPlayNowLambda,
+                onAddToQueue = onAddToQueueLambda,
+                onViewArtist = onViewArtistLambda,
+                onViewAlbum = onViewAlbumLambda,
+                onDeleteDownload = onDeleteDownloadLambda,
             )
         }
     }
