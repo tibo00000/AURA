@@ -115,11 +115,20 @@ fun SearchScreen(
 
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            viewModel.refreshDisplayedLocalResults()
+            pendingDeleteTrackId?.let { trackId ->
+                scope.launch {
+                    repository.deleteTrack(trackId)
+                    pendingDeleteTrackId = null
+                    viewModel.refreshDisplayedLocalResults()
+                }
+            }
+        } else {
+            pendingDeleteTrackId = null
         }
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
@@ -398,18 +407,23 @@ fun SearchScreen(
             confirmLabel = "Supprimer",
             onDismiss = { trackToDelete = null },
             onConfirm = {
+                val trackId = trackToDelete!!.id
+                pendingDeleteTrackId = trackId
                 scope.launch {
-                    val pendingIntent = repository.deleteTrack(trackToDelete!!.id)
+                    val pendingIntent = repository.deleteTrack(trackId)
                     if (pendingIntent != null) {
                         try {
                             val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
                             intentSenderLauncher.launch(intentSenderRequest)
                         } catch (e: Exception) {
                             android.util.Log.e("SearchScreen", "Failed to launch intent sender for delete", e)
+                            pendingDeleteTrackId = null
                         }
+                    } else {
+                        pendingDeleteTrackId = null
+                        viewModel.refreshDisplayedLocalResults()
                     }
                     trackToDelete = null
-                    viewModel.refreshDisplayedLocalResults()
                 }
             }
         )

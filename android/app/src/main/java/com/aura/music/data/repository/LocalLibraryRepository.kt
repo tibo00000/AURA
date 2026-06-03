@@ -735,34 +735,39 @@ class LocalLibraryRepository(
         var pendingIntent: android.app.PendingIntent? = null
         val track = database.trackDao().getTrackById(trackId)
         
-        database.withTransaction {
-            database.trackDao().deleteTracksByIds(listOf(trackId))
-            val downloadsDir = java.io.File(context.filesDir, "downloads")
-            val targetFile = java.io.File(downloadsDir, "$trackId.mp3")
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-            
-            track?.contentUri?.let { uriString ->
-                if (uriString.startsWith("content://")) {
-                    try {
-                        val uri = android.net.Uri.parse(uriString)
-                        context.contentResolver.delete(uri, null, null)
-                    } catch (securityException: SecurityException) {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                            val recoverableSecurityException = securityException as? android.app.RecoverableSecurityException
-                            if (recoverableSecurityException != null) {
-                                pendingIntent = recoverableSecurityException.userAction.actionIntent
-                            } else {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                    val uriList = listOf(android.net.Uri.parse(uriString))
-                                    pendingIntent = android.provider.MediaStore.createDeleteRequest(context.contentResolver, uriList)
-                                }
-                            }
+        var securityExceptionThrown = false
+        
+        track?.contentUri?.let { uriString ->
+            if (uriString.startsWith("content://")) {
+                try {
+                    val uri = android.net.Uri.parse(uriString)
+                    context.contentResolver.delete(uri, null, null)
+                } catch (securityException: SecurityException) {
+                    securityExceptionThrown = true
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        val recoverableSecurityException = securityException as? android.app.RecoverableSecurityException
+                        if (recoverableSecurityException != null) {
+                            pendingIntent = recoverableSecurityException.userAction.actionIntent
                         } else {
-                            throw securityException
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                val uriList = listOf(android.net.Uri.parse(uriString))
+                                pendingIntent = android.provider.MediaStore.createDeleteRequest(context.contentResolver, uriList)
+                            }
                         }
+                    } else {
+                        throw securityException
                     }
+                }
+            }
+        }
+        
+        if (!securityExceptionThrown) {
+            database.withTransaction {
+                database.trackDao().deleteTracksByIds(listOf(trackId))
+                val downloadsDir = java.io.File(context.filesDir, "downloads")
+                val targetFile = java.io.File(downloadsDir, "$trackId.mp3")
+                if (targetFile.exists()) {
+                    targetFile.delete()
                 }
             }
         }

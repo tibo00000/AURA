@@ -136,12 +136,21 @@ fun LibraryScreen(
     var refreshTick by remember { mutableIntStateOf(0) }
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            refreshTick++
+            pendingDeleteTrackId?.let { trackId ->
+                scope.launch {
+                    repository.deleteTrack(trackId)
+                    pendingDeleteTrackId = null
+                    refreshTick++
+                }
+            }
+        } else {
+            pendingDeleteTrackId = null
         }
     }
 
@@ -294,18 +303,23 @@ fun LibraryScreen(
             confirmLabel = "Supprimer",
             onDismiss = { trackToDelete = null },
             onConfirm = {
+                val trackId = trackToDelete!!.id
+                pendingDeleteTrackId = trackId
                 scope.launch {
-                    val pendingIntent = repository.deleteTrack(trackToDelete!!.id)
+                    val pendingIntent = repository.deleteTrack(trackId)
                     if (pendingIntent != null) {
                         try {
                             val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
                             intentSenderLauncher.launch(intentSenderRequest)
                         } catch (e: Exception) {
                             android.util.Log.e("LibraryScreen", "Failed to launch intent sender for delete", e)
+                            pendingDeleteTrackId = null
                         }
+                    } else {
+                        pendingDeleteTrackId = null
+                        refreshTick++
                     }
                     trackToDelete = null
-                    refreshTick++
                 }
             }
         )
@@ -1662,11 +1676,20 @@ fun LibraryTracksScreen(
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null)}
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            refreshTick++
+            pendingDeleteTrackId?.let { trackId ->
+                scope.launch {
+                    repository.deleteTrack(trackId)
+                    pendingDeleteTrackId = null
+                    refreshTick++
+                }
+            }
+        } else {
+            pendingDeleteTrackId = null
         }
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
@@ -1889,18 +1912,23 @@ fun LibraryTracksScreen(
             confirmLabel = "Supprimer",
             onDismiss = { trackToDelete = null },
             onConfirm = {
+                val trackId = trackToDelete!!.id
+                pendingDeleteTrackId = trackId
                 scope.launch {
-                    val pendingIntent = repository.deleteTrack(trackToDelete!!.id)
+                    val pendingIntent = repository.deleteTrack(trackId)
                     if (pendingIntent != null) {
                         try {
                             val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
                             intentSenderLauncher.launch(intentSenderRequest)
                         } catch (e: Exception) {
                             android.util.Log.e("LibraryTracksScreen", "Failed to launch intent sender for delete", e)
+                            pendingDeleteTrackId = null
                         }
+                    } else {
+                        pendingDeleteTrackId = null
+                        refreshTick++
                     }
                     trackToDelete = null
-                    refreshTick++
                 }
             }
         )
