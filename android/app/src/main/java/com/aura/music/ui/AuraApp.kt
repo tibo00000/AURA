@@ -506,14 +506,23 @@ private fun AuraAppScaffold(
                             onNext = onNext,
                         )
                     }
-                        NavigationBar(
-                            containerColor = OffBlack,
-                            contentColor = TextSecondary
-                        ) {
-                            topDestinations.forEach { destination ->
-                                NavigationBarItem(
-                                    selected = currentRoute == destination.route,
-                                    onClick = {
+                    NavigationBar(
+                        containerColor = OffBlack,
+                        contentColor = TextSecondary
+                    ) {
+                        topDestinations.forEach { destination ->
+                            NavigationBarItem(
+                                selected = isRouteInTab(currentRoute, destination.route),
+                                onClick = {
+                                    if (isRouteInTab(currentRoute, destination.route)) {
+                                        if (currentRoute != destination.route) {
+                                            navController.popBackStack(destination.route, inclusive = false)
+                                        } else {
+                                            navController.navigate(destination.route) {
+                                                popUpTo(destination.route) { inclusive = true }
+                                            }
+                                        }
+                                    } else {
                                         navController.navigate(destination.route) {
                                             popUpTo(navController.graph.findStartDestination().id) {
                                                 saveState = true
@@ -521,17 +530,18 @@ private fun AuraAppScaffold(
                                             launchSingleTop = true
                                             restoreState = true
                                         }
-                                    },
-                                    icon = { Icon(destination.icon, contentDescription = destination.label) },
-                                    label = { Text(destination.label) },
-                                    colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
-                                        selectedIconColor = BlazeOrange,
-                                        selectedTextColor = BlazeOrange,
-                                        indicatorColor = Color.Transparent,
-                                        unselectedIconColor = TextSecondary,
-                                        unselectedTextColor = TextSecondary
-                                    )
+                                    }
+                                },
+                                icon = { Icon(destination.icon, contentDescription = destination.label) },
+                                label = { Text(destination.label) },
+                                colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                    selectedIconColor = BlazeOrange,
+                                    selectedTextColor = BlazeOrange,
+                                    indicatorColor = Color.Transparent,
+                                    unselectedIconColor = TextSecondary,
+                                    unselectedTextColor = TextSecondary
                                 )
+                            )
                         }
                     }
                 }
@@ -896,3 +906,19 @@ fun TrackListRow.toQueuedTrack(): QueuedTrack = QueuedTrack(
     coverUri = coverUri,
     source = TrackSource.CONTEXT,
 )
+
+private fun isRouteInTab(route: String?, tabRoute: String): Boolean {
+    if (route == null) return false
+    if (route == tabRoute) return true
+    return when (tabRoute) {
+        AuraRoute.Home -> route == AuraRoute.ArtistPattern || route == AuraRoute.AlbumPattern
+        AuraRoute.Search -> route == AuraRoute.Downloads
+        AuraRoute.Library -> route == AuraRoute.Playlists ||
+                route == AuraRoute.Favorites ||
+                route == AuraRoute.LibraryTracks ||
+                route == AuraRoute.LibraryArtists ||
+                route == AuraRoute.PlaylistDetailPattern
+        AuraRoute.Settings -> route == AuraRoute.Sandbox
+        else -> false
+    }
+}
