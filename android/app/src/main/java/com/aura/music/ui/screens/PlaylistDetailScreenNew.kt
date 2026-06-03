@@ -215,11 +215,11 @@ fun PlaylistDetailScreenNew(
                                 playPlaylist(playerViewModel, tracks, false, detail.summary.id, track.trackId)
                             }
                         }
-                        val onRefreshClick = remember { { refreshTick++ } }
+                        val onRefreshClick = remember { { refreshTick++; Unit } }
                         val onAddToPlaylistClick = remember { { t: PlaylistTrackRow -> activeTrackForPlaylist = t } }
                         val onAddToQueueClick = remember(track.trackId) {
                             {
-                                playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                                playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toTrackListRow().toQueuedTrack()))
                             }
                         }
                         PlaylistTrackRowItem(
@@ -308,6 +308,7 @@ private fun PlaylistTrackRowItem(
                 repository.removeTrackFromPlaylist(playlistId, track.playlistItemId)
                 onRefresh()
             }
+            Unit
         }
     }
     val onAddToPlaylistClick = remember(track.trackId) { { onAddToPlaylist(track) } }
@@ -317,6 +318,7 @@ private fun PlaylistTrackRowItem(
                 repository.toggleLike(track.trackId, currentlyLiked = false, contextType = "playlist", contextId = playlistId)
                 onRefresh()
             }
+            Unit
         }
     }
     val onUnlikeClick = remember(track.trackId, playlistId) {
@@ -325,6 +327,7 @@ private fun PlaylistTrackRowItem(
                 repository.toggleLike(track.trackId, currentlyLiked = true, contextType = "playlist", contextId = playlistId)
                 onRefresh()
             }
+            Unit
         }
     }
     val onViewArtistClick = remember(track.artistId) {

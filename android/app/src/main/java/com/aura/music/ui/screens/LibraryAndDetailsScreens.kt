@@ -440,6 +440,7 @@ fun FavoritesScreen(
                                 repository.toggleLike(track.id, currentlyLiked = true, contextType = "favorites")
                                 refreshTick++
                             }
+                            Unit
                         }
                     }
                     val onAddToPlaylistClick = remember(track.id) { { activeTrackForPlaylist = track } }
@@ -1825,6 +1826,7 @@ fun LibraryTracksScreen(
                                 repository.toggleLike(track.id, false, "library_tracks", "library_tracks")
                                 refreshTick++
                             }
+                            Unit
                         }
                     }
                     val onUnlikeClick = remember(track.id) {
@@ -1833,6 +1835,7 @@ fun LibraryTracksScreen(
                                 repository.toggleLike(track.id, true, "library_tracks", "library_tracks")
                                 refreshTick++
                             }
+                            Unit
                         }
                     }
                     val onAddToPlaylistClick = remember(track.id) { { activeTrackForPlaylist = track } }

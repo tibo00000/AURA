@@ -735,48 +735,40 @@ fun LazyListScope.trackList(
                 { currentOnPlay.value(track, tracks, contextType) }
             }
             val onAddToPlaylistLambda = remember(track.id, currentOnAdd.value != null) {
-                if (currentOnAdd.value != null) {
-                    { currentOnAdd.value?.invoke(track) }
-                } else null
+                val cb = currentOnAdd.value
+                if (cb != null) { { cb(track) } } else null
             }
             val onLikeLambda = remember(track.id, currentOnLike.value != null) {
-                if (currentOnLike.value != null) {
-                    { currentOnLike.value?.invoke(track) }
-                } else null
+                val cb = currentOnLike.value
+                if (cb != null) { { cb(track) } } else null
             }
             val onUnlikeLambda = remember(track.id, currentOnLike.value != null) {
-                if (currentOnLike.value != null) {
-                    { currentOnLike.value?.invoke(track) }
-                } else null
+                val cb = currentOnLike.value
+                if (cb != null) { { cb(track) } } else null
             }
             val onPlayNowLambda = remember(track.id, currentOnPlayNow.value != null) {
-                if (currentOnPlayNow.value != null) {
-                    { currentOnPlayNow.value?.invoke(track) }
-                } else null
+                val cb = currentOnPlayNow.value
+                if (cb != null) { { cb(track) } } else null
             }
             val onAddToQueueLambda = remember(track.id, currentOnAddToQueue.value != null) {
-                if (currentOnAddToQueue.value != null) {
-                    { currentOnAddToQueue.value?.invoke(track) }
-                } else null
+                val cb = currentOnAddToQueue.value
+                if (cb != null) { { cb(track) } } else null
             }
             val artistId = track.artistId
             val hasArtist = !artistId.isNullOrBlank()
             val onViewArtistLambda = remember(track.id, artistId, hasArtist) {
-                if (hasArtist) {
-                    { currentOnOpenArtist.value(artistId!!) }
-                } else null
+                val cb = currentOnOpenArtist.value
+                if (hasArtist) { { cb(artistId!!) } } else null
             }
             val albumId = track.albumId
             val hasAlbum = !albumId.isNullOrBlank()
             val onViewAlbumLambda = remember(track.id, albumId, hasAlbum) {
-                if (hasAlbum) {
-                    { currentOnOpenAlbum.value(albumId!!) }
-                } else null
+                val cb = currentOnOpenAlbum.value
+                if (hasAlbum) { { cb(albumId!!) } } else null
             }
             val onDeleteDownloadLambda = remember(track.id, currentOnDelete.value != null) {
-                if (currentOnDelete.value != null) {
-                    { currentOnDelete.value?.invoke(track) }
-                } else null
+                val cb = currentOnDelete.value
+                if (cb != null) { { cb(track) } } else null
             }
 
             com.aura.music.ui.screens.SharedTrackRowItem(

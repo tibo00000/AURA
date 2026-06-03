@@ -1168,36 +1168,41 @@ private fun SearchTrackRowItem(
     val onAddToQueueClick = remember(track.id) { { currentOnQueue.value(track) } }
     
     val onLikeClick = remember(track.id, track.isLiked, currentOnLike.value != null) {
-        if (currentOnLike.value != null) {
-            { currentOnLike.value?.invoke(track.id, track.isLiked) }
+        val cb = currentOnLike.value
+        if (cb != null) {
+            { cb(track.id, track.isLiked) }
         } else null
     }
     
     val onAddToPlaylistClick = remember(track.id, currentOnPlaylist.value != null) {
-        if (currentOnPlaylist.value != null) {
-            { currentOnPlaylist.value?.invoke(track) }
+        val cb = currentOnPlaylist.value
+        if (cb != null) {
+            { cb(track) }
         } else null
     }
 
     val artistId = track.artistId
     val hasArtist = !artistId.isNullOrBlank() && currentOnArtist.value != null
     val onViewArtistClick = remember(track.id, artistId, hasArtist) {
-        if (hasArtist) {
-            { currentOnArtist.value?.invoke(artistId!!) }
+        val cb = currentOnArtist.value
+        if (hasArtist && cb != null) {
+            { cb(artistId!!) }
         } else null
     }
 
     val albumId = track.albumId
     val hasAlbum = !albumId.isNullOrBlank() && currentOnAlbum.value != null
     val onViewAlbumClick = remember(track.id, albumId, hasAlbum) {
-        if (hasAlbum) {
-            { currentOnAlbum.value?.invoke(albumId!!) }
+        val cb = currentOnAlbum.value
+        if (hasAlbum && cb != null) {
+            { cb(albumId!!) }
         } else null
     }
 
     val onDeleteClick = remember(track.id, currentOnDelete.value != null) {
-        if (currentOnDelete.value != null) {
-            { currentOnDelete.value?.invoke(track) }
+        val cb = currentOnDelete.value
+        if (cb != null) {
+            { cb(track) }
         } else null
     }
 
@@ -1222,8 +1227,8 @@ private fun SearchTrackRowItem(
 @Composable
 private fun SearchOnlineTrackRowItem(
     track: TrackSummary,
-    artists: List<com.aura.music.data.local.ArtistBrowseRow>,
-    albums: List<com.aura.music.data.local.AlbumBrowseRow>,
+    artists: List<ArtistSummary>,
+    albums: List<AlbumSummary>,
     onPlayTrack: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
     onOpenArtist: (String) -> Unit,
