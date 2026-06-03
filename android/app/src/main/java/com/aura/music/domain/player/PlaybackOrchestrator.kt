@@ -11,6 +11,10 @@ import androidx.media3.session.SessionToken
 import com.aura.music.data.player.PlaybackStateStore
 import com.aura.music.data.player.QueueManager
 import com.aura.music.data.repository.LocalLibraryRepository
+import com.aura.music.data.repository.PlaylistDetail
+import com.aura.music.data.repository.AlbumDetail
+import com.aura.music.data.repository.ArtistDetail
+import com.aura.music.data.local.TrackListRow
 import com.aura.music.service.PlaybackService
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -73,6 +77,15 @@ class PlaybackOrchestrator(
                 }
             } else {
                 updateLikedState(false)
+            }
+
+            val ctrl = controller
+            if (ctrl != null && ctrl.currentMediaItemIndex == 1) {
+                queueManager.next()
+                if (ctrl.mediaItemCount > 0) {
+                    ctrl.removeMediaItem(0)
+                }
+                syncNextTrackInExoPlayer()
             }
         }
 
@@ -236,37 +249,44 @@ class PlaybackOrchestrator(
 
     private fun handleAddToQueue(track: QueuedTrack) {
         queueManager.addToQueue(track)
+        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
     private fun handleRemoveFromQueue(index: Int) {
         queueManager.removeFromQueue(index)
+        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
     private fun handleReorderQueue(fromIndex: Int, toIndex: Int) {
         queueManager.reorderQueue(fromIndex, toIndex)
+        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
     private fun handleRemoveFromMainQueue(internalId: String) {
         queueManager.removeUpcomingContextTrack(internalId)
+        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
     private fun handleReorderMainQueue(fromInternalId: String, toInternalId: String) {
         queueManager.reorderUpcomingContextTrack(fromInternalId, toInternalId)
+        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
     private fun handleToggleShuffle() {
         queueManager.toggleShuffle()
+        syncNextTrackInExoPlayer()
         syncUiState()
         saveSnapshot()
     }
 
     private fun handleCycleRepeatMode() {
         queueManager.cycleRepeatMode()
+        syncNextTrackInExoPlayer()
         syncUiState()
         saveSnapshot()
     }
@@ -293,6 +313,7 @@ class PlaybackOrchestrator(
         ctrl.setMediaItem(mediaItem)
         ctrl.prepare()
         ctrl.play()
+        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
@@ -348,12 +369,24 @@ class PlaybackOrchestrator(
                     coverUri = null,
                     source = com.aura.music.domain.player.TrackSource.CONTEXT
                 )
-                queueManager.setContext(
-                    type = snapshot.contextType ?: "single_track",
-                    id = snapshot.contextId ?: trackRow.id,
-                    tracks = listOf(queuedTrack),
+                
+                val contextType = snapshot.contextType ?: "single_track"
+                val contextId = snapshot.contextId ?: trackRow.id
+                
+                var finalTracks = reloadContextTracks(contextType, contextId)
+                var startIndex = finalTracks.indexOfFirst { it.trackId == trackId }
+                if (startIndex == -1) {
+                    finalTracks = listOf(queuedTrack)
                     startIndex = 0
+                }
+                
+                queueManager.setContext(
+                    type = contextType,
+                    id = contextId,
+                    tracks = finalTracks,
+                    startIndex = startIndex
                 )
+                
                 val ctrl = controller
                 val uri = queuedTrack.contentUri
                 if (ctrl != null && uri != null) {
@@ -372,10 +405,122 @@ class PlaybackOrchestrator(
                     ctrl.setMediaItem(mediaItem)
                     ctrl.prepare()
                     ctrl.seekTo(snapshot.positionMs)
+                    
+                    syncNextTrackInExoPlayer()
                 }
             }
         }
         
         syncUiState()
+    }
+
+    private suspend fun reloadContextTracks(type: String, id: String): List<QueuedTrack> {
+        return when (type) {
+            "favorites" -> repository.getLikedTracks().map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            }
+            "playlist" -> repository.getPlaylistDetail(id)?.tracks?.map { row ->
+                QueuedTrack(
+                    trackId = row.trackId,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            } ?: emptyList()
+            "album" -> repository.getAlbumDetail(id)?.tracks?.map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            } ?: emptyList()
+            "artist" -> repository.getArtistDetail(id)?.topTracks?.map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            } ?: emptyList()
+            "library_tracks" -> repository.getAllTracks().map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            }
+            else -> emptyList()
+        }
+    }
+
+    private fun syncNextTrackInExoPlayer() {
+        val ctrl = controller ?: return
+        if (ctrl.mediaItemCount < 1) return
+
+        val targetNextTrack = queueManager.state.value.priorityQueue.firstOrNull()
+            ?: queueManager.getUpcomingContextTracks().firstOrNull()
+
+        if (targetNextTrack != null) {
+            val mediaItem = createMediaItem(targetNextTrack)
+            if (mediaItem != null) {
+                val currentNextMediaId = if (ctrl.mediaItemCount > 1) ctrl.getMediaItemAt(1).mediaId else null
+                if (currentNextMediaId != targetNextTrack.trackId) {
+                    if (ctrl.mediaItemCount > 1) {
+                        ctrl.removeMediaItem(1)
+                    }
+                    ctrl.addMediaItem(1, mediaItem)
+                }
+            } else {
+                if (ctrl.mediaItemCount > 1) {
+                    ctrl.removeMediaItem(1)
+                }
+            }
+        } else {
+            if (ctrl.mediaItemCount > 1) {
+                ctrl.removeMediaItem(1)
+            }
+        }
+    }
+
+    private fun createMediaItem(track: QueuedTrack): MediaItem? {
+        val uri = track.contentUri ?: return null
+        return MediaItem.Builder()
+            .setMediaId(track.trackId)
+            .setUri(Uri.parse(uri))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artistName)
+                    .setAlbumTitle(track.albumTitle)
+                    .build(),
+            )
+            .build()
     }
 }
