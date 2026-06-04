@@ -395,8 +395,11 @@ fun FavoritesScreen(
                 }
                 item {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Button(
                             onClick = {
@@ -414,7 +417,22 @@ fun FavoritesScreen(
                                 }
                             },
                             enabled = tracksState.value.isNotEmpty(),
-                        ) { Text("Lire tout") }
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = BlazeOrange,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Play", fontWeight = FontWeight.Bold)
+                        }
                         Button(
                             onClick = {
                                 val tracks = tracksState.value.shuffled()
@@ -431,7 +449,22 @@ fun FavoritesScreen(
                                 }
                             },
                             enabled = tracksState.value.isNotEmpty(),
-                        ) { Text("Aléatoire") }
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DarkGraphite,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Shuffle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Shuffle", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
                 itemsIndexed(
