@@ -281,10 +281,11 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        ORDER BY tracks.updated_at DESC
+        ORDER BY tracks.created_at DESC
         LIMIT :limit
         """,
     )
@@ -303,6 +304,7 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -325,13 +327,14 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.title) LIKE '%' || lower(:query) || '%'
            OR lower(tracks.display_artist_name) LIKE '%' || lower(:query) || '%'
            OR lower(COALESCE(tracks.display_album_title, '')) LIKE '%' || lower(:query) || '%'
-        ORDER BY tracks.updated_at DESC
+        ORDER BY tracks.created_at DESC
         LIMIT :limit
         """,
     )
@@ -350,6 +353,7 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
@@ -371,11 +375,12 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.primary_artist_id = :artistId
-        ORDER BY tracks.updated_at DESC, tracks.title ASC
+        ORDER BY tracks.created_at DESC, tracks.title ASC
         LIMIT :limit
         """,
     )
@@ -394,11 +399,12 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.album_id = :albumId
-        ORDER BY tracks.title ASC, tracks.updated_at DESC
+        ORDER BY tracks.title ASC, tracks.created_at DESC
         """,
     )
     suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
@@ -416,12 +422,13 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.display_album_title) = lower(:albumTitle)
           AND lower(tracks.display_artist_name) = lower(:artistName)
-        ORDER BY tracks.title ASC, tracks.updated_at DESC
+        ORDER BY tracks.title ASC, tracks.created_at DESC
         """
     )
     suspend fun getTracksForAlbumByText(albumTitle: String, artistName: String): List<TrackListRow>
@@ -439,6 +446,7 @@ interface TrackDao {
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
             tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         INNER JOIN track_likes ON track_likes.track_id = tracks.id

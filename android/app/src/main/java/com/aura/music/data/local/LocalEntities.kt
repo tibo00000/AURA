@@ -223,6 +223,7 @@ data class TrackListRow(
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
     @ColumnInfo(name = "cover_uri") val coverUri: String?,
     @ColumnInfo(name = "is_liked") val isLiked: Boolean,
+    @ColumnInfo(name = "created_at") val createdAt: Long = 0,
     @ColumnInfo(name = "updated_at") val updatedAt: Long = 0,
 )
 

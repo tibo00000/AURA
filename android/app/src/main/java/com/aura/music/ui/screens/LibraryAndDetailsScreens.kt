@@ -1697,21 +1697,24 @@ fun LibraryTracksScreen(
     }
     val playlists = playlistsState.value
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
+
     val sortingOptions = listOf("A-Z", "Récents")
-    var selectedSort by remember { mutableStateOf("A-Z") }
+    var selectedSort by remember { mutableStateOf(sharedPrefs.getString("library_tracks_sort", "A-Z") ?: "A-Z") }
     var showSortMenu by remember { mutableStateOf(false) }
 
     val sortedTracks by remember(tracksState.value, selectedSort) {
         derivedStateOf {
             when (selectedSort) {
                 "A-Z" -> tracksState.value.sortedBy { it.title.lowercase() }
-                "Récents" -> tracksState.value.sortedByDescending { it.updatedAt }
+                "Récents" -> tracksState.value.sortedByDescending { it.createdAt }
                 else -> tracksState.value
             }
         }
     }
 
-    RouteScaffold(title = "Titres", onNavigateBack = onNavigateBack) {
+    RouteScaffold(title = "Tous les titres", onNavigateBack = onNavigateBack) {
         val contextTracks = remember(sortedTracks) {
             sortedTracks.map { it.toQueuedTrack() }
         }
@@ -1732,7 +1735,7 @@ fun LibraryTracksScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .background(
-                                Brush.linearGradient(listOf(Color(0xFF00E0FF), Color(0xFF101010))),
+                                Brush.linearGradient(listOf(BlazeOrange, Color(0xFF101010))),
                                 RoundedCornerShape(24.dp),
                             )
                             .padding(20.dp),
@@ -1760,7 +1763,9 @@ fun LibraryTracksScreen(
                 }
                 item {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1780,7 +1785,22 @@ fun LibraryTracksScreen(
                                 }
                             },
                             enabled = tracksState.value.isNotEmpty(),
-                        ) { Text("Lire tout") }
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = BlazeOrange,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Play", fontWeight = FontWeight.Bold)
+                        }
                         Button(
                             onClick = {
                                 val tracks = sortedTracks.shuffled()
@@ -1797,15 +1817,39 @@ fun LibraryTracksScreen(
                                 }
                             },
                             enabled = tracksState.value.isNotEmpty(),
-                        ) { Text("Aléatoire") }
-                        Spacer(modifier = Modifier.weight(1f))
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DarkGraphite,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Shuffle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Shuffle", fontWeight = FontWeight.Bold)
+                        }
                         Box {
-                            IconButton(onClick = { showSortMenu = true }) {
+                            Button(
+                                onClick = { showSortMenu = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                            ) {
                                 Icon(
                                     Icons.Rounded.Sort,
                                     contentDescription = "Trier",
-                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(selectedSort, style = MaterialTheme.typography.labelLarge)
                             }
                             DropdownMenu(
                                 expanded = showSortMenu,
@@ -1816,10 +1860,11 @@ fun LibraryTracksScreen(
                                         text = { Text(option) },
                                         onClick = {
                                             selectedSort = option
+                                            sharedPrefs.edit().putString("library_tracks_sort", option).apply()
                                             showSortMenu = false
                                         },
                                         leadingIcon = if (selectedSort == option) {
-                                            { Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF00E0FF)) }
+                                            { Icon(Icons.Rounded.Check, contentDescription = null, tint = BlazeOrange) }
                                         } else null,
                                     )
                                 }
