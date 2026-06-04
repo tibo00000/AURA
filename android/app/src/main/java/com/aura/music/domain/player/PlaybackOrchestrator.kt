@@ -3,6 +3,7 @@ package com.aura.music.domain.player
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -79,13 +80,27 @@ class PlaybackOrchestrator(
                 updateLikedState(false)
             }
 
-            val ctrl = controller
-            if (ctrl != null && ctrl.currentMediaItemIndex == 1) {
-                queueManager.next()
-                if (ctrl.mediaItemCount > 0) {
-                    ctrl.removeMediaItem(0)
+            val ctrl = controller ?: return
+            val transitionedTrackId = mediaItem?.mediaId ?: return
+            
+            val currentTrack = queueManager.state.value.currentTrack
+            if (transitionedTrackId != currentTrack?.trackId) {
+                val targetNextTrack = queueManager.state.value.priorityQueue.firstOrNull()
+                    ?: queueManager.getUpcomingContextTracks().firstOrNull()
+                val targetPrevTrack = queueManager.state.value.history.lastOrNull()
+                
+                if (transitionedTrackId == targetNextTrack?.trackId) {
+                    queueManager.next()
+                    syncExoPlayerPlaylist()
+                    saveSnapshot()
+                } else if (transitionedTrackId == targetPrevTrack?.trackId) {
+                    queueManager.previous(0L)
+                    syncExoPlayerPlaylist()
+                    saveSnapshot()
+                } else {
+                    syncExoPlayerPlaylist()
+                    saveSnapshot()
                 }
-                syncNextTrackInExoPlayer()
             }
         }
 
@@ -249,44 +264,44 @@ class PlaybackOrchestrator(
 
     private fun handleAddToQueue(track: QueuedTrack) {
         queueManager.addToQueue(track)
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
     }
 
     private fun handleRemoveFromQueue(index: Int) {
         queueManager.removeFromQueue(index)
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
     }
 
     private fun handleReorderQueue(fromIndex: Int, toIndex: Int) {
         queueManager.reorderQueue(fromIndex, toIndex)
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
     }
 
     private fun handleRemoveFromMainQueue(internalId: String) {
         queueManager.removeUpcomingContextTrack(internalId)
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
     }
 
     private fun handleReorderMainQueue(fromInternalId: String, toInternalId: String) {
         queueManager.reorderUpcomingContextTrack(fromInternalId, toInternalId)
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
     }
 
     private fun handleToggleShuffle() {
         queueManager.toggleShuffle()
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
         saveSnapshot()
     }
 
     private fun handleCycleRepeatMode() {
         queueManager.cycleRepeatMode()
-        syncNextTrackInExoPlayer()
+        syncExoPlayerPlaylist()
         syncUiState()
         saveSnapshot()
     }
@@ -297,23 +312,8 @@ class PlaybackOrchestrator(
 
     private fun playTrackOnController(track: QueuedTrack) {
         val ctrl = controller ?: return
-        val uri = track.contentUri ?: return
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(track.trackId)
-            .setUri(Uri.parse(uri))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artistName)
-                    .setAlbumTitle(track.albumTitle)
-                    .build(),
-            )
-            .build()
-
-        ctrl.setMediaItem(mediaItem)
-        ctrl.prepare()
+        syncExoPlayerPlaylist()
         ctrl.play()
-        syncNextTrackInExoPlayer()
         syncUiState()
     }
 
@@ -388,25 +388,10 @@ class PlaybackOrchestrator(
                 )
                 
                 val ctrl = controller
-                val uri = queuedTrack.contentUri
-                if (ctrl != null && uri != null) {
-                    val mediaItem = MediaItem.Builder()
-                        .setMediaId(queuedTrack.trackId)
-                        .setUri(Uri.parse(uri))
-                        .setMediaMetadata(
-                            MediaMetadata.Builder()
-                                .setTitle(queuedTrack.title)
-                                .setArtist(queuedTrack.artistName)
-                                .setAlbumTitle(queuedTrack.albumTitle)
-                                .build(),
-                        )
-                        .build()
-
-                    ctrl.setMediaItem(mediaItem)
-                    ctrl.prepare()
-                    ctrl.seekTo(snapshot.positionMs)
-                    
-                    syncNextTrackInExoPlayer()
+                if (ctrl != null) {
+                    syncExoPlayerPlaylist()
+                    val activeIndex = if (queueManager.state.value.history.isNotEmpty()) 1 else 0
+                    ctrl.seekTo(activeIndex, snapshot.positionMs)
                 }
             }
         }
@@ -480,31 +465,113 @@ class PlaybackOrchestrator(
         }
     }
 
-    private fun syncNextTrackInExoPlayer() {
+    private fun syncExoPlayerPlaylist() {
         val ctrl = controller ?: return
-        if (ctrl.mediaItemCount < 1) return
+        if (ctrl.mediaItemCount < 1) {
+            val state = queueManager.state.value
+            val currentTrack = state.currentTrack ?: return
+            val prev = state.history.lastOrNull()
+            val next = state.priorityQueue.firstOrNull() ?: queueManager.getUpcomingContextTracks().firstOrNull()
 
-        val targetNextTrack = queueManager.state.value.priorityQueue.firstOrNull()
-            ?: queueManager.getUpcomingContextTracks().firstOrNull()
+            val desiredTracks = mutableListOf<QueuedTrack>()
+            if (prev != null) desiredTracks.add(prev)
+            desiredTracks.add(currentTrack)
+            if (next != null) desiredTracks.add(next)
 
-        if (targetNextTrack != null) {
-            val mediaItem = createMediaItem(targetNextTrack)
-            if (mediaItem != null) {
-                val currentNextMediaId = if (ctrl.mediaItemCount > 1) ctrl.getMediaItemAt(1).mediaId else null
-                if (currentNextMediaId != targetNextTrack.trackId) {
-                    if (ctrl.mediaItemCount > 1) {
-                        ctrl.removeMediaItem(1)
+            val mediaItems = desiredTracks.mapNotNull { createMediaItem(it) }
+            val activeIndex = if (prev != null) 1 else 0
+            ctrl.setMediaItems(mediaItems, activeIndex, C.TIME_UNSET)
+            ctrl.prepare()
+            return
+        }
+
+        val state = queueManager.state.value
+        val currentTrack = state.currentTrack ?: return
+        
+        val desiredTracks = mutableListOf<QueuedTrack>()
+        val prev = state.history.lastOrNull()
+        val next = state.priorityQueue.firstOrNull() ?: queueManager.getUpcomingContextTracks().firstOrNull()
+        
+        if (prev != null) {
+            desiredTracks.add(prev)
+        }
+        desiredTracks.add(currentTrack)
+        if (next != null) {
+            desiredTracks.add(next)
+        }
+        
+        var currentIndexInPlayer = -1
+        for (i in 0 until ctrl.mediaItemCount) {
+            if (ctrl.getMediaItemAt(i).mediaId == currentTrack.trackId) {
+                currentIndexInPlayer = i
+                break
+            }
+        }
+        
+        if (currentIndexInPlayer == -1) {
+            val mediaItems = desiredTracks.mapNotNull { createMediaItem(it) }
+            val startIndex = if (prev != null) 1 else 0
+            ctrl.setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
+            ctrl.prepare()
+            return
+        }
+        
+        val desiredNext = next
+        val hasNextInPlayer = ctrl.mediaItemCount > currentIndexInPlayer + 1
+        val currentNextMediaId = if (hasNextInPlayer) ctrl.getMediaItemAt(currentIndexInPlayer + 1).mediaId else null
+        
+        if (desiredNext != null) {
+            val nextMediaItem = createMediaItem(desiredNext)
+            if (nextMediaItem != null) {
+                if (currentNextMediaId != desiredNext.trackId) {
+                    if (hasNextInPlayer) {
+                        ctrl.removeMediaItem(currentIndexInPlayer + 1)
                     }
-                    ctrl.addMediaItem(1, mediaItem)
+                    ctrl.addMediaItem(currentIndexInPlayer + 1, nextMediaItem)
+                }
+                while (ctrl.mediaItemCount > currentIndexInPlayer + 2) {
+                    ctrl.removeMediaItem(currentIndexInPlayer + 2)
                 }
             } else {
-                if (ctrl.mediaItemCount > 1) {
-                    ctrl.removeMediaItem(1)
+                while (ctrl.mediaItemCount > currentIndexInPlayer + 1) {
+                    ctrl.removeMediaItem(currentIndexInPlayer + 1)
                 }
             }
         } else {
-            if (ctrl.mediaItemCount > 1) {
-                ctrl.removeMediaItem(1)
+            while (ctrl.mediaItemCount > currentIndexInPlayer + 1) {
+                ctrl.removeMediaItem(currentIndexInPlayer + 1)
+            }
+        }
+        
+        val desiredPrev = prev
+        val hasPrevInPlayer = currentIndexInPlayer > 0
+        val currentPrevMediaId = if (hasPrevInPlayer) ctrl.getMediaItemAt(currentIndexInPlayer - 1).mediaId else null
+        
+        if (desiredPrev != null) {
+            val prevMediaItem = createMediaItem(desiredPrev)
+            if (prevMediaItem != null) {
+                if (currentPrevMediaId != desiredPrev.trackId) {
+                    if (hasPrevInPlayer) {
+                        for (i in 0 until currentIndexInPlayer) {
+                            ctrl.removeMediaItem(0)
+                        }
+                    }
+                    ctrl.addMediaItem(0, prevMediaItem)
+                } else {
+                    if (currentIndexInPlayer > 1) {
+                        for (i in 0 until currentIndexInPlayer - 1) {
+                            ctrl.removeMediaItem(0)
+                        }
+                    }
+                }
+            } else {
+                for (i in 0 until currentIndexInPlayer) {
+                    ctrl.removeMediaItem(0)
+                }
+            }
+        } else {
+            for (i in 0 until currentIndexInPlayer) {
+                ctrl.removeMediaItem(0)
             }
         }
     }

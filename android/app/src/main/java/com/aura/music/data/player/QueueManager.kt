@@ -52,22 +52,28 @@ class QueueManager {
         startIndex: Int,
     ) {
         val contextTracks = tracks.map { it.copy(source = TrackSource.CONTEXT) }
+        val safeIndex = startIndex.coerceIn(0, (contextTracks.size - 1).coerceAtLeast(0))
         val context = PlaybackContext(
             type = type,
             id = id,
             tracks = contextTracks,
-            currentIndex = startIndex.coerceIn(0, (contextTracks.size - 1).coerceAtLeast(0)),
+            currentIndex = safeIndex,
         )
+        val historyTracks = if (safeIndex > 0) {
+            contextTracks.take(safeIndex)
+        } else {
+            emptyList()
+        }
         _state.update {
             QueueState(
                 context = context,
                 currentTrack = context.currentTrack,
                 priorityQueue = emptyList(),
-                history = emptyList(),
+                history = historyTracks,
                 shuffleEnabled = it.shuffleEnabled,
                 repeatMode = it.repeatMode,
                 shuffledContextIndices = if (it.shuffleEnabled) {
-                    buildShuffledIndices(contextTracks.size, startIndex)
+                    buildShuffledIndices(contextTracks.size, safeIndex)
                 } else {
                     null
                 },
