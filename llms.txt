@@ -44,14 +44,22 @@ Android
 - `docs/android/player/queue-rules.md`: regles de queue prioritaire et reprise playlist.
 - `docs/android/player/states-and-events.md`: etats et evenements du player.
 - `docs/android/screens/home.md`: documentation de l'ecran Home.
+- `docs/android/screens/home-layout.md`: schema visuel canonique de Home.
 - `docs/android/screens/search.md`: recherche locale et online avec backend AURA pour la partie online.
+- `docs/android/screens/search-layout.md`: layout canonique de Search, suggestions, hero et onglets local/online.
 - `docs/android/screens/library.md`: bibliotheque utilisateur.
+- `docs/android/screens/library-layout.md`: layout canonique de Library, titres, artistes, albums et favoris.
+- `docs/android/screens/favorites-layout.md`: layout canonique de la vue Favoris.
 - `docs/android/screens/playlists.md`: liste et detail des playlists.
+- `docs/android/screens/playlists-layout.md`: layout canonique des listes et details de playlists.
 - `docs/android/screens/player.md`: surface player plein ecran.
-- `docs/android/screens/player-layout.md`: schema visuel du player et hypothese de densite.
+- `docs/android/screens/player-layout.md`: layout canonique du player avec vues Lecteur et File.
 - `docs/android/screens/artist.md`: ecran artiste.
+- `docs/android/screens/artist-layout.md`: layout canonique des pages artiste locales, online et hybrides.
 - `docs/android/screens/album.md`: ecran album.
+- `docs/android/screens/album-layout.md`: layout canonique des pages album locales, online et hybrides.
 - `docs/android/screens/downloads.md`: suivi des jobs de telechargement.
+- `docs/android/screens/downloads-layout.md`: layout canonique de Downloads, filtres, jobs et resolution YTM.
 - `docs/android/screens/settings.md`: reglages, sync et diagnostics.
 
 Server

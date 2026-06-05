@@ -3,34 +3,42 @@
 ## Role
 Suivre l'etat des traitements lies a la disponibilite locale des pistes.
 
+## Reference de layout
+- Voir `docs/android/screens/downloads-layout.md` pour le schema visuel de reference.
+
 ## Structure generale
-- header avec titre `Downloads`
-- bouton de rafraîchissement manuel dans la TopBar (`Icons.Rounded.Refresh`)
-- sous-navigation par onglets ou filtres
-- liste verticale de jobs ou de pistes selon le mode retenu
+- header avec titre `Telechargements`
+- bouton de rafraichissement manuel dans la TopBar (`Icons.Rounded.Refresh`)
+- sous-navigation par filtres
+- liste verticale reactive de jobs
+- dialogue de choix de version quand un job demande une resolution utilisateur
 
 ## Filtres
-- `En attente`
 - `En cours`
 - `Termines`
 - `Erreurs`
+- `En cours` regroupe les jobs `queued`, `requires_resolution` et `running`
+- `Termines` regroupe les jobs `succeeded`
+- `Erreurs` regroupe les jobs `failed` et `cancelled`
 
 ## Ligne de download
 - titre principal
-- metadonnee secondaire
+- artiste en metadonnee secondaire
+- cover ou placeholder
 - etat ou progression
 - action contextuelle a droite
 
 ## Actions
-- `Reessayer`
-- `Annuler` pour un job en attente ou en cours si l'architecture le permet
-- `Ouvrir` ou `Lire` quand le contenu est disponible
-- ouvrir le detail de l'erreur
+- `Reessayer` pour `failed` et `cancelled`
+- `Choisir` pour `requires_resolution`
+- `Lire` quand le contenu est disponible
+- rafraichir manuellement les jobs depuis la TopBar
 
 ## Etats
-- liste vide
+- liste vide par filtre
 - progression en temps reel
 - erreur par job
 - succes avec acces direct a la piste
+- choix de version YTM requis
+- erreur reseau non bloquante
 - stockage des fichiers physiques sous `context.filesDir/downloads/{trackId}.mp3`
-
