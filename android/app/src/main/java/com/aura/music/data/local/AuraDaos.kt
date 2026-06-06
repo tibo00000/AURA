@@ -147,6 +147,24 @@ interface AlbumDao {
         FROM albums
         LEFT JOIN artists ON artists.id = albums.primary_artist_id
         LEFT JOIN tracks ON tracks.album_id = albums.id
+        GROUP BY albums.id
+        ORDER BY albums.title ASC
+        """,
+    )
+    suspend fun getAllBrowseAlbums(): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
         WHERE lower(albums.title) LIKE '%' || lower(:query) || '%'
            OR lower(artists.name) LIKE '%' || lower(:query) || '%'
         GROUP BY albums.id
@@ -455,6 +473,29 @@ interface TrackDao {
         """,
     )
     suspend fun getLikedTracks(): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.canonical_audio_source_type = 'downloaded'
+        ORDER BY tracks.created_at DESC
+        """
+    )
+    suspend fun getDownloadedTracks(): List<TrackListRow>
 }
 
 @Dao

@@ -357,6 +357,9 @@ class LocalLibraryRepository(
     suspend fun getLikedTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getLikedTracks() }
 
+    suspend fun getDownloadedTracks(): List<TrackListRow> =
+        withContext(Dispatchers.IO) { database.trackDao().getDownloadedTracks() }
+
     suspend fun searchLocalTracks(query: String, limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.IO) {
             if (query.isBlank()) {
@@ -396,6 +399,9 @@ class LocalLibraryRepository(
 
     suspend fun getBrowseAlbums(limit: Int = 8): List<AlbumBrowseRow> =
         withContext(Dispatchers.IO) { database.albumDao().getBrowseAlbums(limit) }
+
+    suspend fun getAllBrowseAlbums(): List<AlbumBrowseRow> =
+        withContext(Dispatchers.IO) { database.albumDao().getAllBrowseAlbums() }
 
     suspend fun searchLocalArtists(query: String, limit: Int = 8): List<ArtistBrowseRow> =
         withContext(Dispatchers.IO) {

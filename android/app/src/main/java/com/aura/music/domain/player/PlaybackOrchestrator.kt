@@ -98,9 +98,12 @@ class PlaybackOrchestrator(
                     syncExoPlayerPlaylist()
                     saveSnapshot()
                 } else {
-                    syncExoPlayerPlaylist()
-                    saveSnapshot()
+                    scope.launch {
+                        handleExternalTrackTransition(transitionedTrackId)
+                    }
                 }
+            } else {
+                syncExoPlayerPlaylist()
             }
         }
 
@@ -589,5 +592,42 @@ class PlaybackOrchestrator(
                     .build(),
             )
             .build()
+    }
+
+    private suspend fun handleExternalTrackTransition(trackId: String) {
+        val state = queueManager.state.value
+        val indexInContext = state.context?.tracks?.indexOfFirst { it.trackId == trackId } ?: -1
+        if (indexInContext != -1) {
+            queueManager.setContext(
+                type = state.context!!.type,
+                id = state.context.id,
+                tracks = state.context.tracks,
+                startIndex = indexInContext
+            )
+            syncExoPlayerPlaylist()
+            saveSnapshot()
+        } else {
+            val track = repository.getTrackById(trackId)
+            if (track != null) {
+                val queuedTrack = QueuedTrack(
+                    trackId = track.id,
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    contentUri = track.contentUri,
+                    durationMs = track.durationMs,
+                    coverUri = track.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+                queueManager.setContext(
+                    type = "single_track",
+                    id = trackId,
+                    tracks = listOf(queuedTrack),
+                    startIndex = 0
+                )
+                syncExoPlayerPlaylist()
+                saveSnapshot()
+            }
+        }
     }
 }
