@@ -436,6 +436,10 @@ class LocalLibraryRepository(
         )
     }
 
+    suspend fun getTracksForAlbum(albumId: String): List<TrackListRow> = withContext(Dispatchers.IO) {
+        database.trackDao().getTracksForAlbum(albumId)
+    }
+
     suspend fun getTracksForAlbumByText(albumTitle: String, artistName: String): List<TrackListRow> = withContext(Dispatchers.IO) {
         database.trackDao().getTracksForAlbumByText(albumTitle, artistName)
     }

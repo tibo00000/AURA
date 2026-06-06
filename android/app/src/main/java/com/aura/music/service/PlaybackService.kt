@@ -186,7 +186,7 @@ class PlaybackService : MediaLibraryService() {
                                 val playlistId = mediaId.substringAfter("playlist:")
                                 val playlist = repository.getPlaylistDetail(playlistId)
                                 playlist?.let {
-                                    createFolderItem("playlist:${it.id}", it.name, MediaMetadata.FOLDER_TYPE_PLAYLISTS)
+                                    createFolderItem("playlist:${it.summary.id}", it.summary.name, MediaMetadata.FOLDER_TYPE_PLAYLISTS)
                                 }
                             } else if (mediaId.startsWith("album:")) {
                                 val albumId = mediaId.substringAfter("album:")
