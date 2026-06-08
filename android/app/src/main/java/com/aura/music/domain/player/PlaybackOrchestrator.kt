@@ -577,6 +577,11 @@ class PlaybackOrchestrator(
                 ctrl.removeMediaItem(0)
             }
         }
+
+        val targetActiveIndex = if (desiredPrev != null) 1 else 0
+        if (ctrl.currentMediaItemIndex != targetActiveIndex) {
+            ctrl.seekTo(targetActiveIndex, C.TIME_UNSET)
+        }
     }
 
     private fun createMediaItem(track: QueuedTrack): MediaItem? {
