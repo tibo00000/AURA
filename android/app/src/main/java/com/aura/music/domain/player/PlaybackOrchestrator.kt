@@ -437,9 +437,7 @@ class PlaybackOrchestrator(
                 
                 val ctrl = controller
                 if (ctrl != null) {
-                    syncExoPlayerPlaylist()
-                    val activeIndex = if (queueManager.state.value.history.isNotEmpty()) 1 else 0
-                    ctrl.seekTo(activeIndex, snapshot.positionMs)
+                    syncExoPlayerPlaylist(snapshot.positionMs)
                 }
             }
         }
@@ -513,7 +511,7 @@ class PlaybackOrchestrator(
         }
     }
 
-    private fun syncExoPlayerPlaylist() {
+    private fun syncExoPlayerPlaylist(initialPositionMs: Long = C.TIME_UNSET) {
         val ctrl = controller ?: return
         
         val state = queueManager.state.value
@@ -542,8 +540,8 @@ class PlaybackOrchestrator(
 
             val mediaItems = desiredTracks.mapNotNull { createMediaItem(it) }
             val activeIndex = if (prev != null) 1 else 0
-            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: empty playlist. Setting items: ${desiredTracks.map { it.trackId }}, activeIndex=$activeIndex")
-            ctrl.setMediaItems(mediaItems, activeIndex, C.TIME_UNSET)
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: empty playlist. Setting items: ${desiredTracks.map { it.trackId }}, activeIndex=$activeIndex, pos=$initialPositionMs")
+            ctrl.setMediaItems(mediaItems, activeIndex, initialPositionMs)
             ctrl.prepare()
             return
         }
@@ -580,8 +578,8 @@ class PlaybackOrchestrator(
         if (currentIndexInPlayer == -1) {
             val mediaItems = desiredTracks.mapNotNull { createMediaItem(it) }
             val startIndex = if (prev != null) 1 else 0
-            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: track not in playlist. Rebuilding: ${desiredTracks.map { it.trackId }}, startIndex=$startIndex")
-            ctrl.setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: track not in playlist. Rebuilding: ${desiredTracks.map { it.trackId }}, startIndex=$startIndex, pos=$initialPositionMs")
+            ctrl.setMediaItems(mediaItems, startIndex, initialPositionMs)
             ctrl.prepare()
             return
         }
@@ -658,8 +656,12 @@ class PlaybackOrchestrator(
         val targetActiveIndex = if (desiredPrev != null) 1 else 0
         android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: targetActiveIndex=$targetActiveIndex, currentActiveIndex=${ctrl.currentMediaItemIndex}")
         if (ctrl.currentMediaItemIndex != targetActiveIndex || ctrl.playbackState == Player.STATE_ENDED) {
-            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($targetActiveIndex, 0L) because index differs or state is ENDED")
-            ctrl.seekTo(targetActiveIndex, 0L)
+            val seekPos = if (initialPositionMs != C.TIME_UNSET) initialPositionMs else 0L
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($targetActiveIndex, $seekPos) because index differs or state is ENDED")
+            ctrl.seekTo(targetActiveIndex, seekPos)
+        } else if (initialPositionMs != C.TIME_UNSET) {
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($initialPositionMs) for initial restore")
+            ctrl.seekTo(initialPositionMs)
         }
         
         android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: END. currentMediaItemIndex=${ctrl.currentMediaItemIndex}, mediaItemCount=${ctrl.mediaItemCount}")
