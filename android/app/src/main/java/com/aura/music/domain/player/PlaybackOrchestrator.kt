@@ -100,6 +100,12 @@ class PlaybackOrchestrator(
                 android.util.Log.e("PlaybackOrchestrator", "onMediaItemTransition: controller is null!")
                 return
             }
+
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED queue adjustment because transition was caused by a PLAYLIST_CHANGED event.")
+                return
+            }
+
             val transitionedTrackIdResolved = mediaItem?.mediaId ?: return
             
             val currentTrack = queueManager.state.value.currentTrack
