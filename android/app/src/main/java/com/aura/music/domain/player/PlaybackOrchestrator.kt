@@ -55,6 +55,7 @@ class PlaybackOrchestrator(
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+    private var isManualTransition = false
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -103,6 +104,12 @@ class PlaybackOrchestrator(
 
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                 android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED queue adjustment because transition was caused by a PLAYLIST_CHANGED event.")
+                return
+            }
+
+            if (isManualTransition) {
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: manual transition detected. Clearing flag and ignoring mismatch logic.")
+                isManualTransition = false
                 return
             }
 
@@ -289,10 +296,11 @@ class PlaybackOrchestrator(
     private fun handlePrevious() {
         val positionMs = controller?.currentPosition ?: 0L
         android.util.Log.d("PlaybackOrchestrator", "handlePrevious: positionMs=$positionMs")
+        val currentTrackBefore = queueManager.state.value.currentTrack
         val previousTrack = queueManager.previous(positionMs) ?: return
         android.util.Log.d("PlaybackOrchestrator", "handlePrevious: resolved previousTrack=${previousTrack.trackId}")
-        if (positionMs > QueueManager.RESTART_THRESHOLD_MS) {
-            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: seek to 0 because position exceeds threshold")
+        if (previousTrack.trackId == currentTrackBefore?.trackId) {
+            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: seek to 0 because previousTrack is currentTrack (position > threshold or empty history)")
             controller?.seekTo(0)
         } else {
             android.util.Log.d("PlaybackOrchestrator", "handlePrevious: play previous track")
@@ -658,6 +666,9 @@ class PlaybackOrchestrator(
         if (ctrl.currentMediaItemIndex != targetActiveIndex || ctrl.playbackState == Player.STATE_ENDED) {
             val seekPos = if (initialPositionMs != C.TIME_UNSET) initialPositionMs else 0L
             android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($targetActiveIndex, $seekPos) because index differs or state is ENDED")
+            if (ctrl.currentMediaItemIndex != targetActiveIndex) {
+                isManualTransition = true
+            }
             ctrl.seekTo(targetActiveIndex, seekPos)
         } else if (initialPositionMs != C.TIME_UNSET) {
             android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($initialPositionMs) for initial restore")
