@@ -55,7 +55,6 @@ class PlaybackOrchestrator(
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
-    private var isManualTransition = false
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -104,12 +103,6 @@ class PlaybackOrchestrator(
 
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                 android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED queue adjustment because transition was caused by a PLAYLIST_CHANGED event.")
-                return
-            }
-
-            if (isManualTransition) {
-                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: manual transition detected. Clearing flag and ignoring mismatch logic.")
-                isManualTransition = false
                 return
             }
 
@@ -280,33 +273,46 @@ class PlaybackOrchestrator(
     }
 
     private fun handleNext() {
-        android.util.Log.d("PlaybackOrchestrator", "handleNext: currentTrack=${queueManager.state.value.currentTrack?.trackId}")
-        val nextTrack = queueManager.next() ?: run {
+        val state = queueManager.state.value
+        android.util.Log.d("PlaybackOrchestrator", "handleNext: currentTrack=${state.currentTrack?.trackId}, repeatMode=${state.repeatMode}")
+        
+        if (state.repeatMode == RepeatMode.One) {
+            android.util.Log.d("PlaybackOrchestrator", "handleNext: RepeatOne active, seeking to 0")
+            controller?.seekTo(0)
+            return
+        }
+
+        val hasNext = state.priorityQueue.isNotEmpty() || 
+            queueManager.getUpcomingContextTracks().isNotEmpty() ||
+            (state.repeatMode == RepeatMode.All && state.context?.tracks?.isNotEmpty() == true)
+
+        if (!hasNext) {
             android.util.Log.d("PlaybackOrchestrator", "handleNext: no next track, stopping player")
             controller?.stop()
+            queueManager.next() // Update queueState (currentTrack = null, add current to history)
             _uiState.update { it.copy(playbackState = PlaybackState.Idle, currentTrack = null) }
             saveSnapshot()
             return
         }
-        android.util.Log.d("PlaybackOrchestrator", "handleNext: zapping to nextTrack=${nextTrack.trackId}")
-        playTrackOnController(nextTrack)
-        saveSnapshot()
+
+        android.util.Log.d("PlaybackOrchestrator", "handleNext: delegating transition to ExoPlayer seekToNextMediaItem()")
+        controller?.seekToNextMediaItem()
     }
 
     private fun handlePrevious() {
-        val positionMs = controller?.currentPosition ?: 0L
-        android.util.Log.d("PlaybackOrchestrator", "handlePrevious: positionMs=$positionMs")
-        val currentTrackBefore = queueManager.state.value.currentTrack
-        val previousTrack = queueManager.previous(positionMs) ?: return
-        android.util.Log.d("PlaybackOrchestrator", "handlePrevious: resolved previousTrack=${previousTrack.trackId}")
-        if (previousTrack.trackId == currentTrackBefore?.trackId) {
-            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: seek to 0 because previousTrack is currentTrack (position > threshold or empty history)")
-            controller?.seekTo(0)
+        val ctrl = controller ?: return
+        val positionMs = ctrl.currentPosition
+        val state = queueManager.state.value
+        val historyEmpty = state.history.isEmpty()
+        android.util.Log.d("PlaybackOrchestrator", "handlePrevious: positionMs=$positionMs, historyEmpty=$historyEmpty")
+        
+        if (positionMs > 3000L || historyEmpty) {
+            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: restarting current track (seek to 0)")
+            ctrl.seekTo(0)
         } else {
-            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: play previous track")
-            playTrackOnController(previousTrack)
+            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: delegating transition to ExoPlayer seekToPreviousMediaItem()")
+            ctrl.seekToPreviousMediaItem()
         }
-        saveSnapshot()
     }
 
     private fun handleSeek(positionMs: Long) {
@@ -523,6 +529,13 @@ class PlaybackOrchestrator(
         val ctrl = controller ?: return
         
         val state = queueManager.state.value
+        
+        // Update native repeat mode based on AURA repeat mode
+        ctrl.repeatMode = when (state.repeatMode) {
+            RepeatMode.One -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+
         val currentTrack = state.currentTrack ?: run {
             android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: currentTrack is null")
             return
@@ -666,9 +679,6 @@ class PlaybackOrchestrator(
         if (ctrl.currentMediaItemIndex != targetActiveIndex || ctrl.playbackState == Player.STATE_ENDED) {
             val seekPos = if (initialPositionMs != C.TIME_UNSET) initialPositionMs else 0L
             android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($targetActiveIndex, $seekPos) because index differs or state is ENDED")
-            if (ctrl.currentMediaItemIndex != targetActiveIndex) {
-                isManualTransition = true
-            }
             ctrl.seekTo(targetActiveIndex, seekPos)
         } else if (initialPositionMs != C.TIME_UNSET) {
             android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($initialPositionMs) for initial restore")
