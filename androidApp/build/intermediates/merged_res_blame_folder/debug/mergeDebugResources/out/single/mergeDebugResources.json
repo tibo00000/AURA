@@ -1,0 +1,14 @@
+[
+    {
+        "merged": "C:\\Users\\thiba\\.gradle\\daemon\\8.7\\com.aura.music.app-debug-79:\\font_outfit.ttf.flat",
+        "source": "C:\\Users\\thiba\\.gradle\\daemon\\8.7\\com.aura.music.app-main-81:\\font\\outfit.ttf"
+    },
+    {
+        "merged": "C:\\Users\\thiba\\.gradle\\daemon\\8.7\\com.aura.music.app-debug-79:\\xml_automotive_app_desc.xml.flat",
+        "source": "C:\\Users\\thiba\\.gradle\\daemon\\8.7\\com.aura.music.app-main-81:\\xml\\automotive_app_desc.xml"
+    },
+    {
+        "merged": "com.aura.music.app-debug-79:/xml_automotive_app_desc.xml.flat",
+        "source": "com.aura.music.app-main-81:/xml/automotive_app_desc.xml"
+    }
+]

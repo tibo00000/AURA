@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.aura.music.app-mergeDebugResources-77:/values-watch-v21/values-watch-v21.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\thiba\\.gradle\\caches\\transforms-4\\b202e373b65e64ccc86477de450e5892\\transformed\\appcompat-1.6.1\\res\\values-watch-v21\\values-watch-v21.xml",
+                    "from": {
+                        "startLines": "2,6,10",
+                        "startColumns": "4,4,4",
+                        "startOffsets": "55,271,499",
+                        "endLines": "5,9,13",
+                        "endColumns": "12,12,12",
+                        "endOffsets": "266,494,724"
+                    }
+                }
+            ]
+        }
+    ]
+}

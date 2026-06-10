@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.aura.music.app-mergeDebugResources-77:/values-h720dp-v13/values-h720dp-v13.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\thiba\\.gradle\\caches\\transforms-4\\b202e373b65e64ccc86477de450e5892\\transformed\\appcompat-1.6.1\\res\\values-h720dp-v13\\values-h720dp-v13.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "66",
+                        "endOffsets": "117"
+                    }
+                }
+            ]
+        }
+    ]
+}

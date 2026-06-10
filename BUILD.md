@@ -217,13 +217,12 @@ Resultat attendu :
 
 ### Desktop & Web
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
-|---|---|---|---|---|---|---|
-| DSK-001 | desktop | Initialiser le build multiplateforme Gradle (Kotlin/JVM et Kotlin/Wasm) | not_started | none | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | squelette CMP, cibles desktop (JVM 17) et web (Wasm) définies |
-| DSK-002 | desktop | Porter le schéma Room vers Room Multiplatform pour Desktop | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/room-schema.md` | persistance locale unifiée sur SQLite |
-| DSK-003 | desktop | Implémenter le décodage et la lecture audio locale native Bureau et Web | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/domain/playback-model.md` | rodio/symphonia JNI pour Bureau, HTML5 Audio pour Web |
-| DSK-004 | desktop | Adapter et partager les composants graphiques Compose (Thème, listes, player) | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/ui/components.md` | design system unifié réutilisé sur Desktop et Web |
+| DSK-001 | desktop | Initialiser le build multiplateforme Gradle (Kotlin/JVM et Kotlin/Wasm) | completed | none | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | squelette CMP, cibles desktop (JVM 17) et web (Wasm) définies |
+| DSK-002 | desktop | Porter le schéma Room vers Room Multiplatform pour Desktop | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/room-schema.md` | persistance locale unifiée sur SQLite |
+| DSK-003 | desktop | Implémenter le décodage et la lecture audio locale native Bureau et Web | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/domain/playback-model.md` | rodio/symphonia JNI pour Bureau, HTML5 Audio pour Web |
+| DSK-004 | desktop | Adapter et partager les composants graphiques Compose (Thème, listes, player) | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/ui/components.md` | design system unifié réutilisé sur Desktop et Web |
 | DSK-005 | desktop | Connecter le client multiplateforme aux API du serveur FastAPI | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/server/api-contract.md` | recherche online et requêtes de téléchargement reliées |
-| DSK-006 | desktop | Implémenter le System Tray, la suspension de rendu Skia et le packaging JRE 21 | not_started | DSK-001, DSK-004 | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | réduction zone de notification, suspension canevas et JRE 21 (ZGC) |
+| DSK-006 | desktop | Implémenter le System Tray, la suspension de rendu Skia et le packaging JRE 21 | completed | DSK-001, DSK-004 | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | réduction zone de notification, suspension canevas et JRE 21 (ZGC) |
 | DSK-007 | desktop | Implémenter la synchronisation des fichiers audio locaux via le backend | not_started | DSK-001, DSK-002 | `docs/server/api-contract.md` | Upload de sons locaux et récupération automatique sur PC |
 
 ### Infrastructure et gouvernance
@@ -286,6 +285,7 @@ Resultat attendu :
 - Gestion des cookies YouTube : l'utilisateur pourra soumettre ses cookies Netscape via un endpoint sécurisé `POST /admin/cookies` (protégé par un secret admin) pour mettre à jour le fichier `cookies.txt` partagé, ou via une variable d'environnement/paramètre utilisateur.
 
 ## Journal des changements
+- 2026-06-11T01:05:00+02:00 | code, config | `webApp/build.gradle.kts`, `webApp/src/wasmJsMain/resources/index.html`, `webApp/src/wasmJsMain/kotlin/com/aura/music/web/Main.kt`, `androidApp/build.gradle.kts`, `shared/src/commonMain/kotlin/com/aura/music/data/local/AuraDatabase.kt`, `desktopApp/src/jvmMain/kotlin/com/aura/music/desktop/Main.kt`, `BUILD.md` | Phase 7 : Initialisation du client Web (Kotlin/Wasm), configuration de ComposeViewport et du canevas Skia, mise en commun de l'instanciation singleton de AuraDatabase (getInstance) avec le pilote Bundled SQLite sur toutes les cibles (Android/Desktop/Web), mise à jour de la liaison du module `:shared` dans `androidApp` et nettoyage des dépendances obsolètes (Room, Coil).
 - 2026-06-11T00:25:00+02:00 | docs, api, decision | `docs/server/api-contract.md`, `BUILD.md` | Spécification de la synchronisation directe des fichiers audio locaux via le stockage du backend (upload/download direct sans limitation de bande passante).
 - 2026-06-10T20:25:00+02:00 | docs, decision | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md`, `BUILD.md` | ADR 007 : Ajout de la Phase 7 (Client Bureau & Web via Compose Multiplatform) au plan de développement avec ciblage JDK 17 en compilation, packaging JDK 21 avec Generational ZGC, et minimisation au System Tray pour suspendre Skia.
 - 2026-06-09T23:56:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Refactoring des contrôles manuels Next et Previous pour utiliser les méthodes de transition de playlist natives de Media3/ExoPlayer, et suppression du flag temporaire `isManualTransition`.
