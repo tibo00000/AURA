@@ -1,8 +1,8 @@
 package com.aura.music.data.local
 
 import android.content.Context
-import androidx.room.Room
-import androidx.room.RoomDatabase
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
 
 actual fun createDatabaseBuilder(context: Any?): RoomDatabase.Builder<AuraDatabase> {
     val appContext = context as? Context ?: throw IllegalArgumentException("Context must be provided on Android")

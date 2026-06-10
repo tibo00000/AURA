@@ -1,7 +1,7 @@
 package com.aura.music.data.local
 
-import androidx.room.Room
-import androidx.room.RoomDatabase
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
 import java.io.File
 
 actual fun createDatabaseBuilder(context: Any?): RoomDatabase.Builder<AuraDatabase> {

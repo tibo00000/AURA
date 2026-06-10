@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
-    id("androidx.room")
+    id("androidx.room3")
 }
 
 kotlin {
@@ -45,17 +45,17 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
                 
                 // Room & SQLite
-                implementation("androidx.room:room-runtime:2.7.0-alpha07")
-                implementation("androidx.sqlite:sqlite-bundled:2.5.0-alpha07")
+                implementation("androidx.room3:room3-runtime:3.0.0-alpha01")
+                implementation("androidx.sqlite:sqlite-bundled:3.0.0-alpha01")
                 
                 // Coil 3 KMP
                 implementation("io.coil-kt.coil3:coil-compose:3.0.0-alpha06")
                 implementation("io.coil-kt.coil3:coil-network-ktor:3.0.0-alpha06")
                 
                 // Ktor for network requests
-                implementation("io.ktor:ktor-client-core:2.3.12")
-                implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
-                implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
+                implementation("io.ktor:ktor-client-core:3.0.0")
+                implementation("io.ktor:ktor-client-content-negotiation:3.0.0")
+                implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.0")
             }
         }
         
@@ -97,7 +97,7 @@ room {
 }
 
 dependencies {
-    add("kspAndroid", "androidx.room:room-compiler:2.7.0-alpha07")
-    add("kspDesktop", "androidx.room:room-compiler:2.7.0-alpha07")
-    add("kspWasmJs", "androidx.room:room-compiler:2.7.0-alpha07")
+    add("kspAndroid", "androidx.room3:room3-compiler:3.0.0-alpha01")
+    add("kspDesktop", "androidx.room3:room3-compiler:3.0.0-alpha01")
+    add("kspWasmJs", "androidx.room3:room3-compiler:3.0.0-alpha01")
 }

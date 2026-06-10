@@ -46,7 +46,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
             )
             packageName = "AURA"
-            packageVersion = "0.1.0"
+            packageVersion = "1.0.0"
             
             // Optimizations: Generational ZGC for low latency
             jvmArgs += listOf("-XX:+UseZGC")

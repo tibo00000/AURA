@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import androidx.room.withTransaction
+import androidx.room3.withTransaction
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
