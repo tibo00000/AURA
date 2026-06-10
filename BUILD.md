@@ -156,6 +156,24 @@ Resultat attendu :
 - mappings piste et payload vectoriel exploitables
 - socle pret pour des recommandations futures
 
+### Phase 7 - Client Bureau & Web (Compose Multiplatform)
+Objectif :
+- Développer le client Bureau et Web léger et performant en partageant le code UI/Métier
+
+Priorite :
+- `DSK-001`
+- `DSK-002`
+- `DSK-003`
+- `DSK-004`
+- `DSK-006`
+
+Resultat attendu :
+- Build gradle multiplateforme fonctionnel (JVM et Wasm)
+- Base Room Multiplatform branchée sur le Bureau
+- Moteur audio natif JNI/HTML5 opérationnel
+- Interface partagée adaptée aux formats Bureau et Web
+- Réduction System Tray et suspension de rendu Skia câblée
+
 ### Ce qu'il ne faut pas faire trop tot
 - ne pas commencer par la sync cloud avant le coeur local
 - ne pas commencer par `Qdrant` avant la recherche online et le modele cloud
@@ -182,7 +200,7 @@ Resultat attendu :
 | AND-012 | android | Implementer la synchronisation cloud offline-first / batch sync cote client Android | completed | AND-003, SRV-007 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md`, `docs/android/room-schema.md` | Room v4, outbox DAO, retrofits API, SyncRepository, SyncWorker, injection DI, et bouton Settings + lastSyncAt |
 | AND-013 | android | Spécifier et implémenter le menu contextuel complet de SharedTrackRowItem et SelectPlaylistDialog | completed | AND-005, AND-007 | `docs/android/ui/components.md`, `docs/android/ui/component-states.md` | menu contextuel dynamique mémorisé, dialogue réutilisable purement UI et launchSingleTop raccordé |
 | AND-014 | android | Ajouter le support Android Auto pour rendre AURA selectionnable et pilotable en voiture | completed | AND-004, AND-007 | `docs/android/player/architecture.md`, `docs/android/player/states-and-events.md`, `docs/android/navigation.md` | MediaLibraryService integre, browse tree structure (Favoris, Telechargements, Playlists, Albums, Titres), pagination, toMediaItem() centralise, validation de confiance, et gestion robuste de onAddMediaItems |
-
+| AND-015 | android | Implémenter l'upload des fichiers audio locaux et le téléchargement depuis le cloud | not_started | AND-012 | `docs/server/api-contract.md` | Option d'upload dans le menu contextuel, et récupération automatique |
 
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -195,6 +213,18 @@ Resultat attendu :
 | SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
 | SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | completed | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | Faisabilite yt-dlp validee sur VPS et persistance PostgreSQL/Supabase OK |
 | SRV-008 | backend | Exposer la resolution metadata pour entites locales et completer les payloads detail `artist` / `album` | completed | SRV-002 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | `GET /resolve/artist` et `GET /resolve/album` implementes via `resolve_service.py` + `routes/resolve.py`, score textuel [0,1], ID AURA opaque retourne |
+| SRV-009 | backend | Implémenter les routes d'upload/download direct de fichiers audio physiques | not_started | SRV-004 | `docs/server/api-contract.md` | Stockage sur disque local VPS ou Supabase Storage |
+
+### Desktop & Web
+| ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
+|---|---|---|---|---|---|---|
+| DSK-001 | desktop | Initialiser le build multiplateforme Gradle (Kotlin/JVM et Kotlin/Wasm) | not_started | none | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | squelette CMP, cibles desktop (JVM 17) et web (Wasm) définies |
+| DSK-002 | desktop | Porter le schéma Room vers Room Multiplatform pour Desktop | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/room-schema.md` | persistance locale unifiée sur SQLite |
+| DSK-003 | desktop | Implémenter le décodage et la lecture audio locale native Bureau et Web | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/domain/playback-model.md` | rodio/symphonia JNI pour Bureau, HTML5 Audio pour Web |
+| DSK-004 | desktop | Adapter et partager les composants graphiques Compose (Thème, listes, player) | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/ui/components.md` | design system unifié réutilisé sur Desktop et Web |
+| DSK-005 | desktop | Connecter le client multiplateforme aux API du serveur FastAPI | not_started | DSK-001 | `docs/desktop/app-architecture.md`, `docs/server/api-contract.md` | recherche online et requêtes de téléchargement reliées |
+| DSK-006 | desktop | Implémenter le System Tray, la suspension de rendu Skia et le packaging JRE 21 | not_started | DSK-001, DSK-004 | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | réduction zone de notification, suspension canevas et JRE 21 (ZGC) |
+| DSK-007 | desktop | Implémenter la synchronisation des fichiers audio locaux via le backend | not_started | DSK-001, DSK-002 | `docs/server/api-contract.md` | Upload de sons locaux et récupération automatique sur PC |
 
 ### Infrastructure et gouvernance
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -256,6 +286,8 @@ Resultat attendu :
 - Gestion des cookies YouTube : l'utilisateur pourra soumettre ses cookies Netscape via un endpoint sécurisé `POST /admin/cookies` (protégé par un secret admin) pour mettre à jour le fichier `cookies.txt` partagé, ou via une variable d'environnement/paramètre utilisateur.
 
 ## Journal des changements
+- 2026-06-11T00:25:00+02:00 | docs, api, decision | `docs/server/api-contract.md`, `BUILD.md` | Spécification de la synchronisation directe des fichiers audio locaux via le stockage du backend (upload/download direct sans limitation de bande passante).
+- 2026-06-10T20:25:00+02:00 | docs, decision | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md`, `BUILD.md` | ADR 007 : Ajout de la Phase 7 (Client Bureau & Web via Compose Multiplatform) au plan de développement avec ciblage JDK 17 en compilation, packaging JDK 21 avec Generational ZGC, et minimisation au System Tray pour suspendre Skia.
 - 2026-06-09T23:56:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Refactoring des contrôles manuels Next et Previous pour utiliser les méthodes de transition de playlist natives de Media3/ExoPlayer, et suppression du flag temporaire `isManualTransition`.
 - 2026-06-08T16:50:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Correction du bouton précédent (retour à 0 si historique vide ou position > 3s) et du bug de double skip (ignorance de la logique de mismatch lors des transitions manuelles de seek initiées par le lecteur).
 - 2026-06-08T16:37:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Correction du bug de double appui pour sauter un morceau (skip) : ignorance des événements de transition d'ExoPlayer générés par une modification structurelle de la playlist (`PLAYLIST_CHANGED`), filtrage des doublons adjacents dans la playlist d'ExoPlayer, correction de la résolution d'index actif, et restauration atomique de la position de session.

@@ -720,6 +720,62 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   - l'envoi idempotent d'operations issues de `sync_outbox`
   - la recuperation des changements serveur depuis un token de sync
 
+### Synchronisation des fichiers audio locaux
+
+Les routes suivantes permettent aux utilisateurs de pousser (upload) et tirer (download) des fichiers audio locaux physiques pour assurer le transfert direct entre leurs différents appareils via le backend.
+
+#### `POST /me/sync/files/{track_id}`
+- Usage : Uploader un fichier audio local physique vers le stockage du backend.
+- Auth : requise.
+- Path params :
+  - `track_id` requis.
+- Body : `multipart/form-data` contenant la clé `file` (le fichier audio).
+- Reponse `data` :
+```json
+{
+  "track_id": "track_local_123",
+  "synced": true,
+  "size_bytes": 10485760,
+  "updated_at": "2026-06-10T20:25:00Z"
+}
+```
+
+#### `GET /me/sync/files/{track_id}`
+- Usage : Télécharger le fichier audio physique précédemment poussé sur le backend.
+- Auth : requise.
+- Path params :
+  - `track_id` requis.
+- Reponse : Le flux binaire du fichier audio (`audio/mpeg` ou `audio/mp4`).
+
+#### `DELETE /me/sync/files/{track_id}`
+- Usage : Supprimer le fichier audio physique stocké sur le backend.
+- Auth : requise.
+- Path params :
+  - `track_id` requis.
+- Reponse `data` :
+```json
+{
+  "track_id": "track_local_123",
+  "deleted": true
+}
+```
+
+#### `GET /me/sync/files`
+- Usage : Lister les fichiers audio locaux stockés et synchronisés sur le cloud pour cet utilisateur.
+- Auth : requise.
+- Reponse `data` :
+```json
+{
+  "items": [
+    {
+      "track_id": "track_local_123",
+      "size_bytes": 10485760,
+      "uploaded_at": "2026-06-10T20:25:00Z"
+    }
+  ]
+}
+```
+
 ## API jobs et downloads
 
 ### `GET /downloads`

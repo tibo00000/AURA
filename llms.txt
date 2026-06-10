@@ -13,6 +13,7 @@ Architecture Decision Records
 - `docs/adrs/004-provider-adapter-strategy.md`: adaptateurs providers, Deezer v1 et evolution future.
 - `docs/adrs/005-mcp-bridge.md`: bridge MCP pour logs, schemas et jobs.
 - `docs/adrs/006-online-search-backend-only.md`: decision de garder la recherche online v1 exclusivement derriere le backend AURA.
+- `docs/adrs/007-desktop-client-cmp.md`: decision d'utiliser Compose Multiplatform pour le client Bureau et Web avec optimisations de ressources.
 
 Documentation Governance
 - `docs/documentation/style-guide.md`: normes d'ecriture intemporelles et regles de mise a jour.
@@ -61,6 +62,9 @@ Android
 - `docs/android/screens/downloads.md`: suivi des jobs de telechargement.
 - `docs/android/screens/downloads-layout.md`: layout canonique de Downloads, filtres, jobs et resolution YTM.
 - `docs/android/screens/settings.md`: reglages, sync et diagnostics.
+
+Desktop & Web
+- `docs/desktop/app-architecture.md`: couches, dependances et principes de performance de l'application Bureau et Web Compose Multiplatform.
 
 Server
 - `docs/server/architecture.md`: architecture du backend.
