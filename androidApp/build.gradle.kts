@@ -79,14 +79,17 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
     
-    // HTTP & Serialization
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
-    implementation("com.squareup.moshi:moshi-adapters:1.15.1")
-    ksp("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
+    // Room3 runtime
+    implementation("androidx.room3:room3-runtime:3.0.0-alpha01")
+    implementation("androidx.sqlite:sqlite:2.5.0")
+
+    // Coil3 compose KMP
+    implementation("io.coil-kt.coil3:coil-compose:3.0.0-alpha06")
+
+    // Ktor and serialization KMP
+    implementation("io.ktor:ktor-client-core:3.0.0")
+    implementation("io.ktor:ktor-client-okhttp:3.0.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Background Sync WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.1")

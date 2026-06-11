@@ -708,12 +708,13 @@ class PlaybackOrchestrator(
 
     private suspend fun handleExternalTrackTransition(trackId: String) {
         val state = queueManager.state.value
-        val indexInContext = state.context?.tracks?.indexOfFirst { it.trackId == trackId } ?: -1
-        if (indexInContext != -1) {
+        val context = state.context
+        val indexInContext = context?.tracks?.indexOfFirst { it.trackId == trackId } ?: -1
+        if (context != null && indexInContext != -1) {
             queueManager.setContext(
-                type = state.context!!.type,
-                id = state.context.id,
-                tracks = state.context.tracks,
+                type = context.type,
+                id = context.id,
+                tracks = context.tracks,
                 startIndex = indexInContext
             )
             syncExoPlayerPlaylist()

@@ -71,7 +71,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.aura.music.AuraApplication
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.ArtistSummary
@@ -869,9 +869,10 @@ private fun OnlineTracksSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (track.coverUri != null) {
-                        coil.compose.AsyncImage(
-                            model = track.coverUri,
+                    val cover = track.coverUri
+                    if (cover != null) {
+                        AsyncImage(
+                            model = cover,
                             contentDescription = null,
                             modifier = Modifier
                                 .size(40.dp)
@@ -987,9 +988,10 @@ private fun HeroLocalTrackCard(track: TrackListRow, onPlay: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (track.coverUri != null) {
+            val cover = track.coverUri
+            if (cover != null) {
                 AsyncImage(
-                    model = track.coverUri,
+                    model = cover,
                     contentDescription = null,
                     modifier = Modifier
                         .size(80.dp)

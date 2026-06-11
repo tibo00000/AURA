@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.data.repository.LocalLibraryRepository
 import org.burnoutcrew.reorderable.ReorderableItem

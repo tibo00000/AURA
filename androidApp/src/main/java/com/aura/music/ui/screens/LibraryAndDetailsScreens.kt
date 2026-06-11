@@ -93,7 +93,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
@@ -953,18 +953,20 @@ fun AlbumRouteScreen(
                             modifier = Modifier.padding(horizontal = 24.dp)
                         )
                         // Nom de l'artiste cliquable
-                        if (album.summary.artistId != null && album.summary.artistName != null) {
+                        val artistId = album.summary.artistId
+                        val artistName = album.summary.artistName
+                        if (artistId != null && artistName != null) {
                             Text(
-                                text = album.summary.artistName,
+                                text = artistName,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
-                                    .clickable { onOpenArtist(album.summary.artistId) }
+                                    .clickable { onOpenArtist(artistId) }
                                     .padding(4.dp)
                             )
                         } else {
                             Text(
-                                text = album.summary.artistName ?: "Unknown Artist",
+                                text = artistName ?: "Unknown Artist",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1669,9 +1671,10 @@ fun YtmProposalsDialog(
                                         )
                                     }
 
-                                    if (candidate.duration != null) {
+                                    val duration = candidate.duration
+                                    if (duration != null) {
                                         Text(
-                                            text = candidate.duration,
+                                            text = duration,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = TextSecondary
                                         )

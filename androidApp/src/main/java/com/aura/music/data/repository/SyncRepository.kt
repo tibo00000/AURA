@@ -220,12 +220,17 @@ class SyncRepository(
         )
         
         val response = apiService.bootstrap(AUTH_TOKEN, request)
-        if (response.error != null || response.data == null) {
-            Log.e(TAG, "Bootstrap endpoint failed: ${response.error?.message}")
+        val error = response.error
+        val data = response.data
+        if (error != null) {
+            Log.e(TAG, "Bootstrap endpoint failed: ${error.message}")
+            return false
+        }
+        if (data == null) {
+            Log.e(TAG, "Bootstrap endpoint failed: response data is null")
             return false
         }
 
-        val data = response.data
         val snapshot = data.snapshot
         val serverToken = data.syncToken.value
 
@@ -379,12 +384,17 @@ class SyncRepository(
             )
 
             val response = apiService.pushBatch(AUTH_TOKEN, request)
-            if (response.error != null || response.data == null) {
-                Log.e(TAG, "Push batch failed: ${response.error?.message}")
+            val error = response.error
+            val data = response.data
+            if (error != null) {
+                Log.e(TAG, "Push batch failed: ${error.message}")
+                return false
+            }
+            if (data == null) {
+                Log.e(TAG, "Push batch failed: response data is null")
                 return false
             }
 
-            val data = response.data
             activeToken = data.nextPullToken.value
             
             // Delete successfully processed operations
@@ -409,12 +419,17 @@ class SyncRepository(
         )
 
         val pullResponse = apiService.pullBatch(AUTH_TOKEN, pullRequest)
-        if (pullResponse.error != null || pullResponse.data == null) {
-            Log.e(TAG, "Pull batch failed: ${pullResponse.error?.message}")
+        val error = pullResponse.error
+        val pullData = pullResponse.data
+        if (error != null) {
+            Log.e(TAG, "Pull batch failed: ${error.message}")
+            return false
+        }
+        if (pullData == null) {
+            Log.e(TAG, "Pull batch failed: response data is null")
             return false
         }
 
-        val pullData = pullResponse.data
         val changes = pullData.changes
         Log.i(TAG, "Received ${changes.size} changes from server.")
 

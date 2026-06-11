@@ -43,7 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.ArtistDetailResponseData
@@ -704,9 +704,10 @@ private fun OnlineTrackRow(track: TrackSummary, showCover: Boolean = true) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (showCover) {
-            if (track.coverUri != null) {
+            val cover = track.coverUri
+            if (cover != null) {
                 AsyncImage(
-                    model = track.coverUri,
+                    model = cover,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),

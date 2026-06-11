@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.aura.music.domain.player.PlaybackState
 import com.aura.music.domain.player.PlayerEvent
 import com.aura.music.domain.player.PlayerUiState
@@ -264,9 +264,10 @@ fun PlayerScreen(
                             .background(Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF1A1A1A)))),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (track.coverUri != null) {
+                        val cover = track.coverUri
+                        if (cover != null) {
                             AsyncImage(
-                                model = track.coverUri,
+                                model = cover,
                                 contentDescription = "Pochette de ${track.title}",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -554,9 +555,10 @@ private fun PriorityQueueItemRow(
             )
         }
 
-        if (queuedTrack.coverUri != null) {
+        val cover = queuedTrack.coverUri
+        if (cover != null) {
             AsyncImage(
-                model = queuedTrack.coverUri,
+                model = cover,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -639,9 +641,10 @@ private fun MainQueueItemRow(
             )
         }
 
-        if (queuedTrack.coverUri != null) {
+        val cover = queuedTrack.coverUri
+        if (cover != null) {
             AsyncImage(
-                model = queuedTrack.coverUri,
+                model = cover,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

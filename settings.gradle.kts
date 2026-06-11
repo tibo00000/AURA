@@ -16,7 +16,7 @@ dependencyResolutionManagement {
         ivy {
             url = java.net.URI("https://nodejs.org/dist")
             patternLayout {
-                artifact("[revision]/[artifact]-[revision]-[classifier].[ext]")
+                artifact("v[revision]/[artifact]-v[revision]-[classifier].[ext]")
             }
             metadataSources {
                 artifact()
