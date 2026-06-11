@@ -1,0 +1,54 @@
+package com.aura.music.data.network
+
+import io.ktor.client.statement.HttpResponse
+
+/**
+ * Common Multiplatform interface for the AURA API.
+ * Defines all public catalog, download, resolve, and sync endpoints.
+ */
+interface AuraApiService {
+
+    suspend fun search(
+        query: String,
+        limitTracks: Int = 10,
+        limitArtists: Int = 8,
+        limitAlbums: Int = 8
+    ): AuraResponse<SearchResponseData>
+
+    suspend fun getArtist(id: String): AuraResponse<ArtistDetailResponseData>
+
+    suspend fun getAlbum(id: String): AuraResponse<AlbumDetailResponseData>
+
+    suspend fun resolveArtist(name: String): AuraResponse<ResolveArtistResponseData>
+
+    suspend fun resolveAlbum(title: String, artistName: String? = null): AuraResponse<ResolveAlbumResponseData>
+
+    suspend fun createDownload(token: String, request: DownloadRequestDto): AuraResponse<DownloadCreateResponseData>
+
+    suspend fun listDownloads(
+        token: String,
+        status: String? = null,
+        limit: Int = 20,
+        cursor: String? = null
+    ): AuraResponse<DownloadJobListResponseData>
+
+    suspend fun retryDownload(token: String, jobId: String): AuraResponse<DownloadCreateResponseData>
+
+    suspend fun resolveDownload(
+        token: String,
+        jobId: String,
+        request: ResolveDownloadRequestDto
+    ): AuraResponse<DownloadCreateResponseData>
+
+    suspend fun getJobStatus(token: String, jobId: String): AuraResponse<JobStatusResponseData>
+
+    suspend fun uploadCookies(token: String, request: CookieUploadRequestDto): AuraResponse<CookieUploadResponseData>
+
+    suspend fun downloadFile(token: String, jobId: String): HttpResponse
+
+    suspend fun bootstrap(token: String, request: BootstrapRequestDto): AuraResponse<BootstrapResponseDto>
+
+    suspend fun pushBatch(token: String, request: PushBatchRequestDto): AuraResponse<PushBatchResponseDto>
+
+    suspend fun pullBatch(token: String, request: PullBatchRequestDto): AuraResponse<PullBatchResponseDto>
+}

@@ -24,6 +24,21 @@ fun main() {
         val audioPlayer = remember { WasmAudioPlayer() }
 
         AuraTheme {
+            val apiService = remember { com.aura.music.data.network.KtorAuraApiService.createDefault() }
+            var pingStatus by remember { mutableStateOf("En attente de connexion...") }
+            LaunchedEffect(Unit) {
+                pingStatus = try {
+                    val response = apiService.search("test", limitTracks = 1)
+                    if (response.data != null) {
+                        "Connecté (FastAPI: OK)"
+                    } else {
+                        "Connecté (Erreur API: ${response.error?.message})"
+                    }
+                } catch (e: Exception) {
+                    "Erreur de connexion: ${e.message}"
+                }
+            }
+
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
@@ -54,6 +69,7 @@ fun main() {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("Base de données Room: Connectée (OPFS SQLite)")
                             Text("Moteur Audio: HTML5 Audio DOM Bindings")
+                            Text("Serveur API: $pingStatus")
                         }
                     }
 

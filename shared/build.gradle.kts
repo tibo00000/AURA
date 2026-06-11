@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
     id("androidx.room3") version "3.0.0-alpha01"
+    kotlin("plugin.serialization")
 }
 
 kotlin {
@@ -51,6 +52,9 @@ kotlin {
                 // Coil 3 KMP
                 implementation("io.coil-kt.coil3:coil-compose:3.0.0-alpha06")
                 implementation("io.coil-kt.coil3:coil-network-ktor:3.0.0-alpha06")
+
+                // Serialization KMP
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
                 // Ktor for network requests
                 implementation("io.ktor:ktor-client-core:3.0.0")

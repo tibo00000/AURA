@@ -4,7 +4,6 @@ import android.content.Context
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.media.MediaStoreAudioDataSource
 import com.aura.music.data.network.AuraApiService
-import com.aura.music.data.network.AuraHttpClientFactory
 import com.aura.music.data.player.PlaybackStateStore
 import com.aura.music.data.player.QueueManager
 import com.aura.music.data.repository.EnrichmentRepository
@@ -38,8 +37,8 @@ class AuraAppContainer(context: Context) {
         )
     }
 
-    val auraApiService by lazy {
-        AuraHttpClientFactory.createAuraApiService()
+    val auraApiService: AuraApiService by lazy {
+        com.aura.music.data.network.KtorAuraApiService.createDefault()
     }
 
     val enrichmentRepository by lazy {

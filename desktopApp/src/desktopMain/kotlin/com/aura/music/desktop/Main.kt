@@ -120,6 +120,21 @@ fun main() = application {
             undecorated = false
         ) {
             AuraTheme {
+                val apiService = remember { com.aura.music.data.network.KtorAuraApiService.createDefault() }
+                var pingStatus by remember { mutableStateOf("En attente de connexion...") }
+                LaunchedEffect(Unit) {
+                    pingStatus = try {
+                        val response = apiService.search("test", limitTracks = 1)
+                        if (response.data != null) {
+                            "Connecté (FastAPI: OK)"
+                        } else {
+                            "Connecté (Erreur API: ${response.error?.message})"
+                        }
+                    } catch (e: Exception) {
+                        "Erreur de connexion: ${e.message}"
+                    }
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -152,6 +167,7 @@ fun main() = application {
                                 Text("Moteur Audio: JavaFX Media (JNI Native Bridge)")
                                 Text("Clavier Global (OS Hooks): JNativeHook Actif")
                                 Text("Réduction System Tray: Configurée (Minimiser suspend Skia)")
+                                Text("Serveur API: $pingStatus")
                             }
                         }
 

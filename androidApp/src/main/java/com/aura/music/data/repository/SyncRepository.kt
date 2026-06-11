@@ -25,12 +25,12 @@ import com.aura.music.data.network.SyncOperationDto
 import com.aura.music.data.network.SyncTokenDto
 import com.aura.music.data.network.ServerChangeDto
 import com.aura.music.data.sync.SyncWorker
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.Types
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.json.*
+import kotlinx.serialization.encodeToString
 
 class SyncRepository(
     private val database: AuraDatabase,
@@ -48,10 +48,27 @@ class SyncRepository(
         var isSyncingFromServer: Boolean = false
     }
 
-    private val moshi = Moshi.Builder().build()
-    private val mapAdapter = moshi.adapter<Map<String, Any?>>(
-        Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
-    )
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private fun Map<String, Any?>.toJsonObject(): JsonObject {
+        val map = mapValues { (_, value) ->
+            when (value) {
+                null -> JsonNull
+                is Boolean -> JsonPrimitive(value)
+                is Number -> JsonPrimitive(value)
+                is String -> JsonPrimitive(value)
+                is JsonElement -> value
+                else -> JsonPrimitive(value.toString())
+            }
+        }
+        return JsonObject(map)
+    }
+
+    private fun JsonObject.boolean(key: String): Boolean? = get(key)?.jsonPrimitive?.booleanOrNull
+    private fun JsonObject.string(key: String): String? = get(key)?.jsonPrimitive?.contentOrNull
+    private fun JsonObject.int(key: String): Int? = get(key)?.jsonPrimitive?.intOrNull
+    private fun JsonObject.long(key: String): Long? = get(key)?.jsonPrimitive?.longOrNull
+    private fun JsonObject.double(key: String): Double? = get(key)?.jsonPrimitive?.doubleOrNull
 
     /**
      * Inscrire une mutation locale dans la table sync_outbox.
@@ -75,7 +92,7 @@ class SyncRepository(
         }
 
         try {
-            val payloadJson = mapAdapter.toJson(payload) ?: "{}"
+            val payloadJson = json.encodeToString(payload.toJsonObject())
             val operation = SyncOutboxEntity(
                 id = "op_${UUID.randomUUID()}",
                 entityType = entityType,
@@ -216,25 +233,26 @@ class SyncRepository(
         database.syncOutboxDao().clearAll()
 
         // 1. Process server snapshot settings
-        val userSettingsMap = snapshot["user_settings"] as? Map<String, Any?>
+        val userSettingsMap = snapshot["user_settings"] as? JsonObject
         if (userSettingsMap != null) {
             val localSettings = database.userSettingsDao().getSettings()
             if (localSettings != null) {
                 val updatedSettings = localSettings.copy(
-                    onlineSearchEnabled = (userSettingsMap["online_search_enabled"] as? Boolean) ?: localSettings.onlineSearchEnabled,
-                    onlineSearchNetworkPolicy = (userSettingsMap["online_search_network_policy"] as? String) ?: localSettings.onlineSearchNetworkPolicy,
-                    statsSyncNetworkPolicy = (userSettingsMap["stats_sync_network_policy"] as? String) ?: localSettings.statsSyncNetworkPolicy
+                    onlineSearchEnabled = userSettingsMap.boolean("online_search_enabled") ?: localSettings.onlineSearchEnabled,
+                    onlineSearchNetworkPolicy = userSettingsMap.string("online_search_network_policy") ?: localSettings.onlineSearchNetworkPolicy,
+                    statsSyncNetworkPolicy = userSettingsMap.string("stats_sync_network_policy") ?: localSettings.statsSyncNetworkPolicy
                 )
                 database.userSettingsDao().insertOrReplace(updatedSettings)
             }
         }
 
         // 2. Process server snapshot likes (favorites)
-        val trackLikesList = snapshot["track_likes"] as? List<Map<String, Any?>>
+        val trackLikesList = snapshot["track_likes"] as? JsonArray
         if (trackLikesList != null) {
-            for (likeMap in trackLikesList) {
-                val trackId = likeMap["track_id"] as? String ?: continue
-                val likedAtStr = likeMap["liked_at"] as? String
+            for (likeElement in trackLikesList) {
+                val likeMap = likeElement as? JsonObject ?: continue
+                val trackId = likeMap.string("track_id") ?: continue
+                val likedAtStr = likeMap.string("liked_at")
                 val likedAt = parseIsoDateToMillis(likedAtStr)
                 
                 ensureTrackStub(trackId)
@@ -243,8 +261,8 @@ class SyncRepository(
                     TrackLikeEntity(
                         trackId = trackId,
                         likedAt = likedAt,
-                        sourceContextType = likeMap["source_context_type"] as? String,
-                        sourceContextId = likeMap["source_context_id"] as? String
+                        sourceContextType = likeMap.string("source_context_type"),
+                        sourceContextId = likeMap.string("source_context_id")
                     )
                 )
                 database.trackLikeDao().setTrackIsLiked(trackId, true, likedAt)
@@ -252,15 +270,16 @@ class SyncRepository(
         }
 
         // 3. Process server snapshot playlists & items
-        val playlistsList = snapshot["playlists"] as? List<Map<String, Any?>>
+        val playlistsList = snapshot["playlists"] as? JsonArray
         if (playlistsList != null) {
-            for (plMap in playlistsList) {
-                val plId = plMap["id"] as? String ?: continue
-                val name = plMap["name"] as? String ?: "Unnamed Playlist"
-                val coverUri = plMap["cover_uri"] as? String
-                val isPinned = (plMap["is_pinned"] as? Boolean) ?: false
-                val createdStr = plMap["created_at"] as? String
-                val updatedStr = plMap["updated_at"] as? String
+            for (plElement in playlistsList) {
+                val plMap = plElement as? JsonObject ?: continue
+                val plId = plMap.string("id") ?: continue
+                val name = plMap.string("name") ?: "Unnamed Playlist"
+                val coverUri = plMap.string("cover_uri")
+                val isPinned = plMap.boolean("is_pinned") ?: false
+                val createdStr = plMap.string("created_at")
+                val updatedStr = plMap.string("updated_at")
                 
                 val plEntity = PlaylistEntity(
                     id = plId,
@@ -273,13 +292,14 @@ class SyncRepository(
                 database.playlistDao().insertPlaylist(plEntity)
 
                 // Process items
-                val itemsList = plMap["items"] as? List<Map<String, Any?>>
+                val itemsList = plMap["items"] as? JsonArray
                 if (itemsList != null) {
-                    for (itemMap in itemsList) {
-                        val itemId = itemMap["id"] as? String ?: continue
-                        val trackId = itemMap["track_id"] as? String ?: continue
-                        val position = (itemMap["position"] as? Double)?.toInt() ?: 0
-                        val addedStr = itemMap["added_at"] as? String
+                    for (itemElement in itemsList) {
+                        val itemMap = itemElement as? JsonObject ?: continue
+                        val itemId = itemMap.string("id") ?: continue
+                        val trackId = itemMap.string("track_id") ?: continue
+                        val position = itemMap.int("position") ?: 0
+                        val addedStr = itemMap.string("added_at")
                         
                         ensureTrackStub(trackId)
                         
@@ -289,8 +309,8 @@ class SyncRepository(
                             trackId = trackId,
                             position = position,
                             addedAt = parseIsoDateToMillis(addedStr),
-                            addedFromContextType = itemMap["added_from_context_type"] as? String,
-                            addedFromContextId = itemMap["added_from_context_id"] as? String
+                            addedFromContextType = itemMap.string("added_from_context_type"),
+                            addedFromContextId = itemMap.string("added_from_context_id")
                         )
                         database.playlistDao().insertPlaylistItem(itemEntity)
                     }
@@ -324,7 +344,7 @@ class SyncRepository(
                     operationType = op.operationType,
                     deviceId = deviceId,
                     occurredAt = formatMillisToIsoDate(op.createdAt),
-                    payload = mapAdapter.fromJson(op.payloadJson) ?: emptyMap()
+                    payload = json.decodeFromString<JsonObject>(op.payloadJson)
                 )
             }.toMutableList()
 
@@ -346,7 +366,7 @@ class SyncRepository(
                             "position_ms" to activeSnapshot.positionMs,
                             "shuffle_enabled" to activeSnapshot.shuffleEnabled,
                             "repeat_mode" to activeSnapshot.repeatMode
-                        )
+                        ).toJsonObject()
                     )
                 )
             }

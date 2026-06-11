@@ -7,4 +7,5 @@ plugins {
     id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
     id("org.jetbrains.compose") version "1.7.0" apply false
     id("androidx.room3") version "3.0.0-alpha01" apply false
+    kotlin("plugin.serialization") version "2.1.0" apply false
 }

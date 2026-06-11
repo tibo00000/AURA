@@ -15,6 +15,8 @@ import com.aura.music.data.network.DownloadRequestDto
 import com.aura.music.data.network.CookieUploadRequestDto
 import com.aura.music.data.network.DownloadJobListResponseData
 import com.aura.music.data.network.ResolveDownloadRequestDto
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -279,14 +281,8 @@ class DownloadRepository(
         try {
             Log.i(TAG, "Fetching physical MP3 file for succeeded job $jobId...")
             val response = apiService.downloadFile(userToken, jobId)
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Failed to download physical file for job $jobId: HTTP ${response.code()}")
-                return@withContext
-            }
-
-            val body = response.body()
-            if (body == null) {
-                Log.e(TAG, "Null ResponseBody received for job $jobId")
+            if (response.status.value !in 200..299) {
+                Log.e(TAG, "Failed to download physical file for job $jobId: HTTP ${response.status.value}")
                 return@withContext
             }
 
@@ -302,7 +298,8 @@ class DownloadRepository(
             }
 
             // Stream download to prevent OOM
-            body.byteStream().use { inputStream ->
+            val channel = response.bodyAsChannel()
+            channel.toInputStream().use { inputStream ->
                 FileOutputStream(targetFile).use { outputStream ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
