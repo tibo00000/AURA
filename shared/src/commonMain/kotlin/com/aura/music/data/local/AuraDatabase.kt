@@ -45,7 +45,7 @@ abstract class AuraDatabase : RoomDatabase() {
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 // Add new columns
                 connection.execSQL("ALTER TABLE artists ADD COLUMN artwork_origin TEXT")
                 connection.execSQL("ALTER TABLE artists ADD COLUMN artwork_last_resolved_at INTEGER")
@@ -101,7 +101,7 @@ abstract class AuraDatabase : RoomDatabase() {
         }
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `download_jobs` (
@@ -128,7 +128,7 @@ abstract class AuraDatabase : RoomDatabase() {
         }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 // 1. Create sync_outbox table
                 connection.execSQL(
                     """

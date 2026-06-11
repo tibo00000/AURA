@@ -29,7 +29,7 @@ fun AuraTheme(
 
     MaterialTheme(
         colorScheme = DarkColorScheme,
-        typography = AuraTypography,
+        typography = getAuraTypography(),
         content = content
     )
 }
