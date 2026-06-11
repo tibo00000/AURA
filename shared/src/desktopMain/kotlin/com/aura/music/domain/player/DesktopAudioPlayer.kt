@@ -3,8 +3,8 @@ package com.aura.music.domain.player
 import javafx.application.Platform
 import javafx.scene.media.Media
 import javafx.scene.media.MediaPlayer
-import javafx.util.Duration
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 class DesktopAudioPlayer : AudioPlayer {
     private var mediaPlayer: MediaPlayer? = null
@@ -63,17 +63,18 @@ class DesktopAudioPlayer : AudioPlayer {
     }
 
     override fun seekTo(positionMs: Long) {
-        mediaPlayer?.seek(Duration.millis(positionMs.toDouble()))
+        mediaPlayer?.seek(javafx.util.Duration.millis(positionMs.toDouble()))
     }
 
     override fun getDuration(): Long {
         val duration = mediaPlayer?.media?.duration
-        return if (duration == null || duration.isUnknown) 0L else duration.toMillis().toLong()
+        if (duration == null || duration.isUnknown) return 0L
+        return duration.toMillis().milliseconds.inWholeMilliseconds
     }
 
     override fun getCurrentPosition(): Long {
-        val currentTime = mediaPlayer?.currentTime
-        return if (currentTime == null) 0L else currentTime.toMillis().toLong()
+        val currentTime = mediaPlayer?.currentTime ?: return 0L
+        return currentTime.toMillis().milliseconds.inWholeMilliseconds
     }
 
     override fun isPlaying(): Boolean = isPlaying
