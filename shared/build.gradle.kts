@@ -72,6 +72,7 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.windows_x64)
+                runtimeOnly("org.jetbrains.skiko:skiko-awt-runtime-windows-arm64:0.8.15")
 
                 // Moteur SQLite C embarqué pour le Bureau
                 implementation("androidx.sqlite:sqlite-bundled:2.5.0")

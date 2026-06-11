@@ -12,6 +12,7 @@ kotlin {
             dependencies {
                 implementation(project(":shared"))
                 implementation(compose.desktop.windows_x64)
+                runtimeOnly("org.jetbrains.skiko:skiko-awt-runtime-windows-arm64:0.8.15")
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
