@@ -83,7 +83,14 @@ fun main() = application {
 
     // Tray management
     val trayState = rememberTrayState()
-    val icon = painterResource(com.aura.music.shared.generated.resources.Res.drawable.outfit) // using outfit resource as icon for demo
+    val icon = remember {
+        object : androidx.compose.ui.graphics.painter.Painter() {
+            override val intrinsicSize = androidx.compose.ui.geometry.Size(32f, 32f)
+            override fun androidx.compose.ui.graphics.drawscope.DrawScope.onDraw() {
+                drawCircle(color = Color(0xFFFF6B00)) // BlazeOrange brand color
+            }
+        }
+    }
 
     Tray(
         state = trayState,

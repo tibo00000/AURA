@@ -5,8 +5,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.aura.music.shared.generated.resources.Res
-import com.aura.music.shared.generated.resources.outfit
+import aura.shared.generated.resources.Res
+import aura.shared.generated.resources.outfit
 import org.jetbrains.compose.resources.Font
 import androidx.compose.runtime.Composable
 
