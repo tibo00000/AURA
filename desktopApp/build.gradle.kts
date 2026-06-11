@@ -11,7 +11,12 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(project(":shared"))
-                implementation(compose.desktop.currentOs)
+                implementation(compose.desktop.windows_x64)
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
+                implementation(compose.ui)
+                implementation(compose.components.resources)
                 
                 // JNativeHook for global OS key shortcuts
                 implementation("com.github.kwhat:jnativehook:2.2.2")
