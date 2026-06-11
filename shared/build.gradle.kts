@@ -46,18 +46,18 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
                 // Room & SQLite (Uniquement l'interface commune, sans le moteur C)
-                implementation("androidx.room3:room3-runtime:3.0.0-alpha01")
-                implementation("androidx.sqlite:sqlite:2.5.0")
+                api("androidx.room3:room3-runtime:3.0.0-alpha01")
+                api("androidx.sqlite:sqlite:2.5.0")
 
                 // Coil 3 KMP
                 implementation("io.coil-kt.coil3:coil-compose:3.0.0-alpha06")
                 implementation("io.coil-kt.coil3:coil-network-ktor:3.0.0-alpha06")
 
                 // Serialization KMP
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
                 // Ktor for network requests
-                implementation("io.ktor:ktor-client-core:3.0.0")
+                api("io.ktor:ktor-client-core:3.0.0")
                 implementation("io.ktor:ktor-client-content-negotiation:3.0.0")
                 implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.0")
             }
@@ -70,6 +70,9 @@ kotlin {
 
                 // Moteur SQLite C embarqué pour Android
                 implementation("androidx.sqlite:sqlite-bundled:2.5.0")
+
+                // Ktor client OkHttp engine for Android
+                implementation("io.ktor:ktor-client-okhttp:3.0.0")
             }
         }
 
@@ -80,6 +83,9 @@ kotlin {
 
                 // Moteur SQLite C embarqué pour le Bureau
                 implementation("androidx.sqlite:sqlite-bundled:2.5.0")
+
+                // Ktor client OkHttp engine for Desktop
+                implementation("io.ktor:ktor-client-okhttp:3.0.0")
 
                 // JavaFX Media for native JNI audio playback
                 val osName = System.getProperty("os.name").lowercase()
