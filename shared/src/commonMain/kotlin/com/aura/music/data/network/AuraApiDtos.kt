@@ -371,8 +371,8 @@ data class PullBatchResponseDto(
 // Custom BestMatch Serializer for Kotlinx Serialization
 object BestMatchSerializer : KSerializer<BestMatch> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("BestMatch") {
-        element("kind", buildClassSerialDescriptor("kind").descriptor)
-        element("item", buildClassSerialDescriptor("item").descriptor)
+        element("kind", kotlinx.serialization.descriptors.PrimitiveSerialDescriptor("kind", kotlinx.serialization.descriptors.PrimitiveKind.STRING))
+        element("item", buildClassSerialDescriptor("item"))
     }
 
     override fun deserialize(decoder: Decoder): BestMatch {
