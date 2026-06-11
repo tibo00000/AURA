@@ -75,6 +75,22 @@ kotlin {
 
                 // Moteur SQLite C embarqué pour le Bureau
                 implementation("androidx.sqlite:sqlite-bundled:2.5.0")
+
+                // JavaFX Media for native JNI audio playback
+                val osName = System.getProperty("os.name").lowercase()
+                val classifier = when {
+                    osName.contains("win") -> "win"
+                    osName.contains("mac") -> {
+                        val arch = System.getProperty("os.arch").lowercase()
+                        if (arch.contains("aarch64") || arch.contains("arm64")) "mac-aarch64" else "mac"
+                    }
+                    osName.contains("nix") || osName.contains("nux") -> "linux"
+                    else -> "win"
+                }
+                implementation("org.openjfx:javafx-graphics:21.0.1")
+                implementation("org.openjfx:javafx-graphics:21.0.1:$classifier")
+                implementation("org.openjfx:javafx-media:21.0.1")
+                implementation("org.openjfx:javafx-media:21.0.1:$classifier")
             }
         }
 

@@ -28,7 +28,9 @@ kotlin {
                     osName.contains("nix") || osName.contains("nux") -> "linux"
                     else -> "win"
                 }
+                implementation("org.openjfx:javafx-graphics:21.0.1")
                 implementation("org.openjfx:javafx-graphics:21.0.1:$classifier")
+                implementation("org.openjfx:javafx-media:21.0.1")
                 implementation("org.openjfx:javafx-media:21.0.1:$classifier")
             }
         }

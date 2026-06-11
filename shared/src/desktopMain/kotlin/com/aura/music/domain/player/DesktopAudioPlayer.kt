@@ -39,9 +39,9 @@ class DesktopAudioPlayer : AudioPlayer {
                 }
                 setOnError {
                     isPlaying = false
-                    onErrorListener?.invoke(error?.message ?: "JavaFX Media Error")
+                    onErrorListener?.invoke(getError()?.message ?: "JavaFX Media Error")
                 }
-                play()
+                this@apply.play()
             }
             isPlaying = true
         } catch (e: Exception) {
