@@ -610,6 +610,7 @@ class LocalLibraryRepository(
                     )
                 }
                 database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
+                Unit
             }
         }
 
