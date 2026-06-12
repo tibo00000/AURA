@@ -5,7 +5,7 @@ import com.aura.music.core.AuraAppContainer
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
-import coil3.network.ktor.KtorNetworkFetcherFactory
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +18,7 @@ class AuraApplication : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
             .components {
-                add(KtorNetworkFetcherFactory())
+                add(OkHttpNetworkFetcherFactory())
             }
             .build()
     }
