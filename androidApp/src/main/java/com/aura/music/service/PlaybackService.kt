@@ -243,7 +243,7 @@ class PlaybackService : MediaLibraryService() {
                     }
 
                     // Resolution de la file d'attente (reprise du contexte de navigation)
-                    if (mediaItems.size == 1) {
+                    if (mediaItems.size == 1 && controller.packageName != packageName) {
                         val targetTrackId = mediaItems[0].mediaId
                         val parentFolderId = lastBrowsedFolderId
 

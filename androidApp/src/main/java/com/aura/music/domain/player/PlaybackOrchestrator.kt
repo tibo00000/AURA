@@ -123,11 +123,13 @@ class PlaybackOrchestrator(
                     queueManager.next()
                     syncExoPlayerPlaylist()
                     saveSnapshot()
+                    syncUiState()
                 } else if (transitionedTrackIdResolved == targetPrevTrack?.trackId) {
                     android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: matches targetPrevTrack. Shifting context to previous...")
                     queueManager.previous(0L)
                     syncExoPlayerPlaylist()
                     saveSnapshot()
+                    syncUiState()
                 } else {
                     android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: external client transition detected to=$transitionedTrackIdResolved. Handling external transition...")
                     scope.launch {
@@ -674,15 +676,21 @@ class PlaybackOrchestrator(
             }
         }
 
-        val targetActiveIndex = if (desiredPrev != null) 1 else 0
-        android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: targetActiveIndex=$targetActiveIndex, currentActiveIndex=${ctrl.currentMediaItemIndex}")
-        if (ctrl.currentMediaItemIndex != targetActiveIndex || ctrl.playbackState == Player.STATE_ENDED) {
-            val seekPos = if (initialPositionMs != C.TIME_UNSET) initialPositionMs else 0L
-            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($targetActiveIndex, $seekPos) because index differs or state is ENDED")
-            ctrl.seekTo(targetActiveIndex, seekPos)
-        } else if (initialPositionMs != C.TIME_UNSET) {
-            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: calling seekTo($initialPositionMs) for initial restore")
-            ctrl.seekTo(initialPositionMs)
+        val activeMediaItem = if (ctrl.mediaItemCount > 0 && ctrl.currentMediaItemIndex in 0 until ctrl.mediaItemCount) {
+            ctrl.getMediaItemAt(ctrl.currentMediaItemIndex)
+        } else {
+            null
+        }
+        val isAlreadyPlayingCurrent = activeMediaItem?.mediaId == currentTrack_.trackId
+
+        if (initialPositionMs != C.TIME_UNSET) {
+            val targetActiveIndex = if (desiredPrev != null) 1 else 0
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: initial restore seek to index $targetActiveIndex, pos $initialPositionMs")
+            ctrl.seekTo(targetActiveIndex, initialPositionMs)
+        } else if (!isAlreadyPlayingCurrent || ctrl.playbackState == Player.STATE_ENDED) {
+            val targetActiveIndex = if (desiredPrev != null) 1 else 0
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: track changed or ended, seeking to index $targetActiveIndex")
+            ctrl.seekTo(targetActiveIndex, 0L)
         }
         
         android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: END. currentMediaItemIndex=${ctrl.currentMediaItemIndex}, mediaItemCount=${ctrl.mediaItemCount}")
@@ -742,6 +750,7 @@ class PlaybackOrchestrator(
                 saveSnapshot()
             }
         }
+        syncUiState()
     }
 
     private fun transitionReasonToString(reason: Int): String {
