@@ -21,6 +21,7 @@ import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.local.UserSettingsEntity
 import com.aura.music.data.media.MediaStoreAudioDataSource
 import androidx.room3.useWriterConnection
+import androidx.room3.immediateTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import androidx.room3.useWriterConnection
+import androidx.room3.immediateTransaction
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
