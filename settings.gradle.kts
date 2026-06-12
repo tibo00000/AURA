@@ -22,6 +22,15 @@ dependencyResolutionManagement {
                 artifact()
             }
         }
+        ivy {
+            url = java.net.URI("https://github.com/yarnpkg/yarn/releases/download")
+            patternLayout {
+                artifact("v[revision]/[artifact]-v[revision].[ext]")
+            }
+            metadataSources {
+                artifact()
+            }
+        }
     }
 }
 

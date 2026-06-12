@@ -306,9 +306,10 @@ fun PlayerScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (!track.albumTitle.isNullOrEmpty()) {
+                        val albumTitle = track.albumTitle
+                        if (!albumTitle.isNullOrEmpty()) {
                             Text(
-                                text = track.albumTitle,
+                                text = albumTitle,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 maxLines = 1,

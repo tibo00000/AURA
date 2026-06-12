@@ -20,7 +20,7 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.local.UserSettingsEntity
 import com.aura.music.data.media.MediaStoreAudioDataSource
-import androidx.room3.withTransaction
+import androidx.room3.useWriterConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -289,32 +289,34 @@ class LocalLibraryRepository(
             }
         }
 
-        database.withTransaction {
-            val existingLocalIds = database.trackDao().getLocalTrackIds()
-            val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
-            val scannedIds = scannedTracks.map { it.id }.toSet()
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val existingLocalIds = database.trackDao().getLocalTrackIds()
+                val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
+                val scannedIds = scannedTracks.map { it.id }.toSet()
 
-            val obsoleteIds = mutableListOf<String>()
-            for (id in existingLocalIds) {
-                if (id !in scannedIds) {
-                    obsoleteIds.add(id)
+                val obsoleteIds = mutableListOf<String>()
+                for (id in existingLocalIds) {
+                    if (id !in scannedIds) {
+                        obsoleteIds.add(id)
+                    }
                 }
-            }
-            for (id in existingDownloadedIds) {
-                if (id !in scannedIds) {
-                    obsoleteIds.add(id)
+                for (id in existingDownloadedIds) {
+                    if (id !in scannedIds) {
+                        obsoleteIds.add(id)
+                    }
                 }
-            }
 
-            if (obsoleteIds.isNotEmpty()) {
-                database.trackDao().deleteTracksByIds(obsoleteIds)
-            }
+                if (obsoleteIds.isNotEmpty()) {
+                    database.trackDao().deleteTracksByIds(obsoleteIds)
+                }
 
-            if (scannedTracks.isNotEmpty()) {
-                database.artistDao().upsertArtists(scannedArtists.values.toList())
-                database.albumDao().upsertAlbums(scannedAlbums.values.toList())
-                database.trackDao().upsertTracks(scannedTracks)
-                database.trackDao().upsertTrackMediaLinks(scannedMediaLinks)
+                if (scannedTracks.isNotEmpty()) {
+                    database.artistDao().upsertArtists(scannedArtists.values.toList())
+                    database.albumDao().upsertAlbums(scannedAlbums.values.toList())
+                    database.trackDao().upsertTracks(scannedTracks)
+                    database.trackDao().upsertTrackMediaLinks(scannedMediaLinks)
+                }
             }
         }
 
@@ -521,19 +523,21 @@ class LocalLibraryRepository(
         val nextPosition = database.playlistDao().getNextPlaylistPosition(playlistId)
         val now = System.currentTimeMillis()
         val itemId = "playlist-item:${UUID.randomUUID()}"
-        database.withTransaction {
-            database.playlistDao().insertPlaylistItem(
-                PlaylistItemEntity(
-                    id = itemId,
-                    playlistId = playlistId,
-                    trackId = trackId,
-                    position = nextPosition,
-                    addedAt = now,
-                    addedFromContextType = contextType,
-                    addedFromContextId = playlistId,
-                ),
-            )
-            database.playlistDao().touchPlaylist(playlistId, now)
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().insertPlaylistItem(
+                    PlaylistItemEntity(
+                        id = itemId,
+                        playlistId = playlistId,
+                        trackId = trackId,
+                        position = nextPosition,
+                        addedAt = now,
+                        addedFromContextType = contextType,
+                        addedFromContextId = playlistId,
+                    ),
+                )
+                database.playlistDao().touchPlaylist(playlistId, now)
+            }
         }
         syncRepository.recordLocalOperation(
             entityType = "playlist_item",
@@ -551,10 +555,12 @@ class LocalLibraryRepository(
     }
 
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = withContext(Dispatchers.IO) {
-        database.withTransaction {
-            database.playlistDao().deletePlaylistItem(playlistItemId)
-            normalizePlaylistPositions(playlistId)
-            database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().deletePlaylistItem(playlistItemId)
+                normalizePlaylistPositions(playlistId)
+                database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
+            }
         }
         syncRepository.recordLocalOperation(
             entityType = "playlist_item",
@@ -574,34 +580,36 @@ class LocalLibraryRepository(
         var baseOrderToken = ""
         val itemsToReorder = mutableListOf<Map<String, Any?>>()
         
-        database.withTransaction {
-            val items = database.playlistDao().getPlaylistTracks(playlistId).toMutableList()
-            val pl = database.playlistDao().getPlaylistDetail(playlistId)
-            if (pl != null) {
-                val updatedStr = formatMillisToIsoDate(pl.updatedAt)
-                val digest = java.security.MessageDigest.getInstance("MD5").digest(updatedStr.toByteArray(Charsets.UTF_8))
-                val hex = digest.joinToString("") { "%02x".format(it) }
-                baseOrderToken = "ord_${hex.take(8)}"
-            }
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val items = database.playlistDao().getPlaylistTracks(playlistId).toMutableList()
+                val pl = database.playlistDao().getPlaylistDetail(playlistId)
+                if (pl != null) {
+                    val updatedStr = formatMillisToIsoDate(pl.updatedAt)
+                    val digest = java.security.MessageDigest.getInstance("MD5").digest(updatedStr.toByteArray(Charsets.UTF_8))
+                    val hex = digest.joinToString("") { "%02x".format(it) }
+                    baseOrderToken = "ord_${hex.take(8)}"
+                }
 
-            val currentIndex = items.indexOfFirst { it.playlistItemId == playlistItemId }
-            if (currentIndex == -1) return@withTransaction
-            val targetIndex = (currentIndex + moveBy).coerceIn(0, items.lastIndex)
-            if (currentIndex == targetIndex) return@withTransaction
+                val currentIndex = items.indexOfFirst { it.playlistItemId == playlistItemId }
+                if (currentIndex == -1) return@immediateTransaction
+                val targetIndex = (currentIndex + moveBy).coerceIn(0, items.lastIndex)
+                if (currentIndex == targetIndex) return@immediateTransaction
 
-            val item = items.removeAt(currentIndex)
-            items.add(targetIndex, item)
+                val item = items.removeAt(currentIndex)
+                items.add(targetIndex, item)
 
-            items.forEachIndexed { index, row ->
-                database.playlistDao().updatePlaylistItemPosition(row.playlistItemId, index)
-                itemsToReorder.add(
-                    mapOf(
-                        "playlist_item_id" to row.playlistItemId,
-                        "position" to index
+                items.forEachIndexed { index, row ->
+                    database.playlistDao().updatePlaylistItemPosition(row.playlistItemId, index)
+                    itemsToReorder.add(
+                        mapOf(
+                            "playlist_item_id" to row.playlistItemId,
+                            "position" to index
+                        )
                     )
-                )
+                }
+                database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
             }
-            database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
         }
 
         syncRepository.recordLocalOperation(
@@ -694,20 +702,22 @@ class LocalLibraryRepository(
         contextId: String? = null,
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        database.withTransaction {
-            if (currentlyLiked) {
-                database.trackLikeDao().deleteLike(trackId)
-                database.trackLikeDao().setTrackIsLiked(trackId, liked = false, updatedAt = now)
-            } else {
-                database.trackLikeDao().insertLike(
-                    TrackLikeEntity(
-                        trackId = trackId,
-                        likedAt = now,
-                        sourceContextType = contextType,
-                        sourceContextId = contextId,
-                    ),
-                )
-                database.trackLikeDao().setTrackIsLiked(trackId, liked = true, updatedAt = now)
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                if (currentlyLiked) {
+                    database.trackLikeDao().deleteLike(trackId)
+                    database.trackLikeDao().setTrackIsLiked(trackId, liked = false, updatedAt = now)
+                } else {
+                    database.trackLikeDao().insertLike(
+                        TrackLikeEntity(
+                            trackId = trackId,
+                            likedAt = now,
+                            sourceContextType = contextType,
+                            sourceContextId = contextId,
+                        ),
+                    )
+                    database.trackLikeDao().setTrackIsLiked(trackId, liked = true, updatedAt = now)
+                }
             }
         }
         syncRepository.recordLocalOperation(
@@ -772,12 +782,14 @@ class LocalLibraryRepository(
         }
         
         if (!securityExceptionThrown) {
-            database.withTransaction {
-                database.trackDao().deleteTracksByIds(listOf(trackId))
-                val downloadsDir = java.io.File(context.filesDir, "downloads")
-                val targetFile = java.io.File(downloadsDir, "$trackId.mp3")
-                if (targetFile.exists()) {
-                    targetFile.delete()
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    database.trackDao().deleteTracksByIds(listOf(trackId))
+                    val downloadsDir = java.io.File(context.filesDir, "downloads")
+                    val targetFile = java.io.File(downloadsDir, "$trackId.mp3")
+                    if (targetFile.exists()) {
+                        targetFile.delete()
+                    }
                 }
             }
         }

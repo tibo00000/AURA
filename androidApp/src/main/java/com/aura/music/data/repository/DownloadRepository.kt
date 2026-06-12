@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import androidx.room3.withTransaction
+import androidx.room3.useWriterConnection
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -70,72 +70,74 @@ class DownloadRepository(
             val albumId = albumTitle?.let { "album:$slugArtist:${normalize(it)}" }
 
             // 1. Ensure local relational structure is satisfied (Room constraints)
-            database.withTransaction {
-                // Ensure Artist exists
-                if (database.artistDao().getArtistDetail(artistId) == null) {
-                    database.artistDao().upsertArtists(
-                        listOf(
-                            ArtistEntity(
-                                id = artistId,
-                                name = artistName,
-                                normalizedName = slugArtist,
-                                pictureUri = null,
-                                artworkOrigin = "unknown",
-                                artworkLastResolvedAt = null,
-                                summary = null,
-                                createdAt = now,
-                                updatedAt = now
-                            )
-                        )
-                    )
-                }
-
-                // Ensure Album exists if specified
-                if (albumId != null && albumTitle != null) {
-                    if (database.albumDao().getAlbumDetail(albumId) == null) {
-                        database.albumDao().upsertAlbums(
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    // Ensure Artist exists
+                    if (database.artistDao().getArtistDetail(artistId) == null) {
+                        database.artistDao().upsertArtists(
                             listOf(
-                                AlbumEntity(
-                                    id = albumId,
-                                    primaryArtistId = artistId,
-                                    title = albumTitle,
-                                    normalizedTitle = normalize(albumTitle),
-                                    coverUri = coverUri,
+                                ArtistEntity(
+                                    id = artistId,
+                                    name = artistName,
+                                    normalizedName = slugArtist,
+                                    pictureUri = null,
                                     artworkOrigin = "unknown",
                                     artworkLastResolvedAt = null,
-                                    releaseDate = null,
-                                    trackCount = null,
+                                    summary = null,
                                     createdAt = now,
                                     updatedAt = now
                                 )
                             )
                         )
                     }
-                }
 
-                // Ensure Track exists
-                if (database.trackDao().getRawTrackById(trackId) == null) {
-                    database.trackDao().upsertTrack(
-                        TrackEntity(
-                            id = trackId,
-                            primaryArtistId = artistId,
-                            albumId = albumId,
-                            title = title,
-                            normalizedTitle = normalize(title),
-                            displayArtistName = artistName,
-                            displayAlbumTitle = albumTitle,
-                            durationMs = null,
-                            coverUri = coverUri,
-                            canonicalAudioSourceType = "cloud_only",
-                            isLiked = false,
-                            isDownloadedByAura = false,
-                            isExplicit = null,
-                            popularity = null,
-                            genresJson = null,
-                            createdAt = now,
-                            updatedAt = now
+                    // Ensure Album exists if specified
+                    if (albumId != null && albumTitle != null) {
+                        if (database.albumDao().getAlbumDetail(albumId) == null) {
+                            database.albumDao().upsertAlbums(
+                                listOf(
+                                    AlbumEntity(
+                                        id = albumId,
+                                        primaryArtistId = artistId,
+                                        title = albumTitle,
+                                        normalizedTitle = normalize(albumTitle),
+                                        coverUri = coverUri,
+                                        artworkOrigin = "unknown",
+                                        artworkLastResolvedAt = null,
+                                        releaseDate = null,
+                                        trackCount = null,
+                                        createdAt = now,
+                                        updatedAt = now
+                                    )
+                                )
+                            )
+                        }
+                    }
+
+                    // Ensure Track exists
+                    if (database.trackDao().getRawTrackById(trackId) == null) {
+                        database.trackDao().upsertTrack(
+                            TrackEntity(
+                                id = trackId,
+                                primaryArtistId = artistId,
+                                albumId = albumId,
+                                title = title,
+                                normalizedTitle = normalize(title),
+                                displayArtistName = artistName,
+                                displayAlbumTitle = albumTitle,
+                                durationMs = null,
+                                coverUri = coverUri,
+                                canonicalAudioSourceType = "cloud_only",
+                                isLiked = false,
+                                isDownloadedByAura = false,
+                                isExplicit = null,
+                                popularity = null,
+                                genresJson = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -315,32 +317,34 @@ class DownloadRepository(
             val now = System.currentTimeMillis()
             val fileUri = Uri.fromFile(targetFile).toString()
 
-            database.withTransaction {
-                // 1. Create media link
-                val mockMediaStoreId = System.currentTimeMillis() // High unique ID for downloaded tracks
-                val mediaLink = TrackMediaLinkEntity(
-                    id = "media-link:$mockMediaStoreId",
-                    trackId = trackId,
-                    mediaStoreId = mockMediaStoreId,
-                    contentUri = fileUri,
-                    fileSizeBytes = targetFile.length(),
-                    mimeType = "audio/mpeg",
-                    dateModifiedEpochMs = now,
-                    availabilityStatus = "present",
-                    lastScannedAt = now
-                )
-                database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
-
-                // 2. Update TrackEntity source type to "downloaded" and denormalized flag
-                val rawTrack = database.trackDao().getRawTrackById(trackId)
-                if (rawTrack != null) {
-                    val updatedTrack = rawTrack.copy(
-                        canonicalAudioSourceType = "downloaded",
-                        isDownloadedByAura = true,
-                        updatedAt = now
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    // 1. Create media link
+                    val mockMediaStoreId = System.currentTimeMillis() // High unique ID for downloaded tracks
+                    val mediaLink = TrackMediaLinkEntity(
+                        id = "media-link:$mockMediaStoreId",
+                        trackId = trackId,
+                        mediaStoreId = mockMediaStoreId,
+                        contentUri = fileUri,
+                        fileSizeBytes = targetFile.length(),
+                        mimeType = "audio/mpeg",
+                        dateModifiedEpochMs = now,
+                        availabilityStatus = "present",
+                        lastScannedAt = now
                     )
-                    database.trackDao().upsertTrack(updatedTrack)
-                    Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
+                    database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
+
+                    // 2. Update TrackEntity source type to "downloaded" and denormalized flag
+                    val rawTrack = database.trackDao().getRawTrackById(trackId)
+                    if (rawTrack != null) {
+                        val updatedTrack = rawTrack.copy(
+                            canonicalAudioSourceType = "downloaded",
+                            isDownloadedByAura = true,
+                            updatedAt = now
+                        )
+                        database.trackDao().upsertTrack(updatedTrack)
+                        Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
+                    }
                 }
             }
         } catch (e: Exception) {
