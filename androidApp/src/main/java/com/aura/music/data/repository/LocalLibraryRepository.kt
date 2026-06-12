@@ -107,7 +107,7 @@ class LocalLibraryRepository(
                     }
 
                     val artistName = if (existingTrack != null && existingTrack.isDownloadedByAura) {
-                        existingTrack.displayArtistName
+                        existingTrack.displayArtistName ?: "Unknown artist"
                     } else {
                         rawArtist?.ifBlank { null } ?: "Unknown artist"
                     }
@@ -119,7 +119,7 @@ class LocalLibraryRepository(
                     }
 
                     val artistId = if (existingTrack != null && existingTrack.isDownloadedByAura) {
-                        existingTrack.primaryArtistId
+                        existingTrack.primaryArtistId ?: artistIdOf(artistName)
                     } else {
                         artistIdOf(artistName)
                     }
