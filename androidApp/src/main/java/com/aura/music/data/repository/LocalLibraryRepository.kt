@@ -97,16 +97,40 @@ class LocalLibraryRepository(
                     val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                     val durationMs = durationStr?.toLongOrNull()
 
-                    val title = rawTitle?.ifBlank { null } ?: file.nameWithoutExtension
-                    val artistName = rawArtist?.ifBlank { null } ?: "Unknown artist"
-                    val albumTitle = rawAlbum?.ifBlank { null }
-
                     val trackId = file.nameWithoutExtension // Typically the download trackId
-                    val artistId = artistIdOf(artistName)
-                    val albumId = albumTitle?.let { albumIdOf(artistName, it) }
-                    val fileUri = android.net.Uri.fromFile(file).toString()
-
                     val existingTrack = database.trackDao().getRawTrackById(trackId)
+
+                    val title = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                        existingTrack.title
+                    } else {
+                        rawTitle?.ifBlank { null } ?: file.nameWithoutExtension
+                    }
+
+                    val artistName = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                        existingTrack.displayArtistName
+                    } else {
+                        rawArtist?.ifBlank { null } ?: "Unknown artist"
+                    }
+
+                    val albumTitle = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                        existingTrack.displayAlbumTitle
+                    } else {
+                        rawAlbum?.ifBlank { null }
+                    }
+
+                    val artistId = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                        existingTrack.primaryArtistId
+                    } else {
+                        artistIdOf(artistName)
+                    }
+
+                    val albumId = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                        existingTrack.albumId
+                    } else {
+                        albumTitle?.let { albumIdOf(artistName, it) }
+                    }
+
+                    val fileUri = android.net.Uri.fromFile(file).toString()
                     var coverUri: String? = existingTrack?.coverUri
                     val isOnlineUri = coverUri?.startsWith("http") == true
                     if (coverUri == null || isOnlineUri) {
