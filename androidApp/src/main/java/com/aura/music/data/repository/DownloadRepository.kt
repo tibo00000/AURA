@@ -314,6 +314,32 @@ class DownloadRepository(
 
             Log.i(TAG, "Downloaded file saved successfully to ${targetFile.absolutePath} (size: ${targetFile.length()} bytes)")
 
+            // Extract embedded cover artwork if present
+            var localCoverUri: String? = null
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(targetFile.absolutePath)
+                val embeddedPicture = retriever.embeddedPicture
+                if (embeddedPicture != null) {
+                    val coversDir = File(context.filesDir, "covers")
+                    if (!coversDir.exists()) {
+                        coversDir.mkdirs()
+                    }
+                    val coverFile = File(coversDir, "$trackId.jpg")
+                    FileOutputStream(coverFile).use { fos ->
+                        fos.write(embeddedPicture)
+                    }
+                    localCoverUri = Uri.fromFile(coverFile).toString()
+                    Log.i(TAG, "Extracted embedded cover for $trackId to $localCoverUri")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to extract embedded cover for $trackId", e)
+            } finally {
+                try {
+                    retriever.release()
+                } catch (ignored: Exception) {}
+            }
+
             // Update DB values
             val now = System.currentTimeMillis()
             val fileUri = Uri.fromFile(targetFile).toString()
@@ -341,6 +367,7 @@ class DownloadRepository(
                         val updatedTrack = rawTrack.copy(
                             canonicalAudioSourceType = "downloaded",
                             isDownloadedByAura = true,
+                            coverUri = localCoverUri ?: rawTrack.coverUri,
                             updatedAt = now
                         )
                         database.trackDao().upsertTrack(updatedTrack)

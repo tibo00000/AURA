@@ -108,7 +108,8 @@ class LocalLibraryRepository(
 
                     val existingTrack = database.trackDao().getRawTrackById(trackId)
                     var coverUri: String? = existingTrack?.coverUri
-                    if (coverUri == null) {
+                    val isOnlineUri = coverUri?.startsWith("http") == true
+                    if (coverUri == null || isOnlineUri) {
                         val embeddedPicture = retriever.embeddedPicture
                         if (embeddedPicture != null) {
                             try {
