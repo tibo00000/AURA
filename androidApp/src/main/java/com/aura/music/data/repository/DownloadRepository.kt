@@ -15,6 +15,9 @@ import com.aura.music.data.network.DownloadRequestDto
 import com.aura.music.data.network.CookieUploadRequestDto
 import com.aura.music.data.network.DownloadJobListResponseData
 import com.aura.music.data.network.ResolveDownloadRequestDto
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.call.body
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.Dispatchers
@@ -338,6 +341,35 @@ class DownloadRepository(
                 try {
                     retriever.release()
                 } catch (ignored: Exception) {}
+            }
+
+            // Fallback: If no embedded cover could be extracted, download from remote coverUri if available
+            if (localCoverUri == null) {
+                val rawTrack = database.trackDao().getRawTrackById(trackId)
+                val imageUrl = rawTrack?.coverUri
+                if (imageUrl != null && imageUrl.startsWith("http")) {
+                    val client = HttpClient()
+                    try {
+                        val imageResponse = client.get(imageUrl)
+                        if (imageResponse.status.value in 200..299) {
+                            val imageBytes = imageResponse.body<ByteArray>()
+                            val coversDir = File(context.filesDir, "covers")
+                            if (!coversDir.exists()) {
+                                coversDir.mkdirs()
+                            }
+                            val coverFile = File(coversDir, "$trackId.jpg")
+                            FileOutputStream(coverFile).use { fos ->
+                                fos.write(imageBytes)
+                            }
+                            localCoverUri = Uri.fromFile(coverFile).toString()
+                            Log.i(TAG, "Downloaded remote cover from $imageUrl for $trackId to $localCoverUri")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to download remote cover fallback for $trackId", e)
+                    } finally {
+                        client.close()
+                    }
+                }
             }
 
             // Update DB values
