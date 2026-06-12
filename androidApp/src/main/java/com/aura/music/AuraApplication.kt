@@ -2,14 +2,26 @@ package com.aura.music
 
 import android.app.Application
 import com.aura.music.core.AuraAppContainer
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.network.ktor.KtorNetworkFetcherFactory
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-class AuraApplication : Application() {
+class AuraApplication : Application(), SingletonImageLoader.Factory {
     lateinit var container: AuraAppContainer
         private set
+
+    override fun newImageLoader(context: PlatformContext): ImageLoader {
+        return ImageLoader.Builder(context)
+            .components {
+                add(KtorNetworkFetcherFactory())
+            }
+            .build()
+    }
 
     override fun onCreate() {
         super.onCreate()

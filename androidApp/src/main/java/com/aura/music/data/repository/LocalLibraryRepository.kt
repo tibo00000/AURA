@@ -23,6 +23,9 @@ import com.aura.music.data.media.MediaStoreAudioDataSource
 import androidx.room3.useWriterConnection
 import androidx.room3.immediateTransaction
 import kotlinx.coroutines.Dispatchers
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.call.body
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
@@ -133,7 +136,32 @@ class LocalLibraryRepository(
                     val fileUri = android.net.Uri.fromFile(file).toString()
                     var coverUri: String? = existingTrack?.coverUri
                     val isOnlineUri = coverUri?.startsWith("http") == true
-                    if (coverUri == null || isOnlineUri) {
+                    if (isOnlineUri) {
+                        val client = HttpClient()
+                        try {
+                            val imageResponse = client.get(coverUri!!)
+                            if (imageResponse.status.value in 200..299) {
+                                val imageBytes = imageResponse.body<ByteArray>()
+                                val coversDir = java.io.File(context.filesDir, "covers")
+                                if (!coversDir.exists()) {
+                                    coversDir.mkdirs()
+                                }
+                                val coverFile = java.io.File(coversDir, "$trackId.jpg")
+                                java.io.FileOutputStream(coverFile).use { fos ->
+                                    fos.write(imageBytes)
+                                }
+                                coverUri = android.net.Uri.fromFile(coverFile).toString()
+                                android.util.Log.i("LocalLibraryRepository", "Downloaded remote cover from scan for $trackId to $coverUri")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("LocalLibraryRepository", "Failed to download remote cover fallback for $trackId", e)
+                        } finally {
+                            client.close()
+                        }
+                    }
+
+                    val finalIsOnlineUri = coverUri?.startsWith("http") == true
+                    if (coverUri == null || finalIsOnlineUri) {
                         val embeddedPicture = retriever.embeddedPicture
                         if (embeddedPicture != null) {
                             try {

@@ -317,58 +317,58 @@ class DownloadRepository(
 
             Log.i(TAG, "Downloaded file saved successfully to ${targetFile.absolutePath} (size: ${targetFile.length()} bytes)")
 
-            // Extract embedded cover artwork if present
+            // 1. Try to download official remote cover first (from DB)
             var localCoverUri: String? = null
-            val retriever = android.media.MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(targetFile.absolutePath)
-                val embeddedPicture = retriever.embeddedPicture
-                if (embeddedPicture != null) {
-                    val coversDir = File(context.filesDir, "covers")
-                    if (!coversDir.exists()) {
-                        coversDir.mkdirs()
-                    }
-                    val coverFile = File(coversDir, "$trackId.jpg")
-                    FileOutputStream(coverFile).use { fos ->
-                        fos.write(embeddedPicture)
-                    }
-                    localCoverUri = Uri.fromFile(coverFile).toString()
-                    Log.i(TAG, "Extracted embedded cover for $trackId to $localCoverUri")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to extract embedded cover for $trackId", e)
-            } finally {
+            val rawTrack = database.trackDao().getRawTrackById(trackId)
+            val imageUrl = rawTrack?.coverUri
+            if (imageUrl != null && imageUrl.startsWith("http")) {
+                val client = HttpClient()
                 try {
-                    retriever.release()
-                } catch (ignored: Exception) {}
+                    val imageResponse = client.get(imageUrl)
+                    if (imageResponse.status.value in 200..299) {
+                        val imageBytes = imageResponse.body<ByteArray>()
+                        val coversDir = File(context.filesDir, "covers")
+                        if (!coversDir.exists()) {
+                            coversDir.mkdirs()
+                        }
+                        val coverFile = File(coversDir, "$trackId.jpg")
+                        FileOutputStream(coverFile).use { fos ->
+                            fos.write(imageBytes)
+                        }
+                        localCoverUri = Uri.fromFile(coverFile).toString()
+                        Log.i(TAG, "Downloaded remote cover from $imageUrl for $trackId to $localCoverUri")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to download remote cover fallback for $trackId", e)
+                } finally {
+                    client.close()
+                }
             }
 
-            // Fallback: If no embedded cover could be extracted, download from remote coverUri if available
+            // 2. Fallback: Extract embedded cover artwork from MP3 (usually the YouTube thumbnail)
             if (localCoverUri == null) {
-                val rawTrack = database.trackDao().getRawTrackById(trackId)
-                val imageUrl = rawTrack?.coverUri
-                if (imageUrl != null && imageUrl.startsWith("http")) {
-                    val client = HttpClient()
-                    try {
-                        val imageResponse = client.get(imageUrl)
-                        if (imageResponse.status.value in 200..299) {
-                            val imageBytes = imageResponse.body<ByteArray>()
-                            val coversDir = File(context.filesDir, "covers")
-                            if (!coversDir.exists()) {
-                                coversDir.mkdirs()
-                            }
-                            val coverFile = File(coversDir, "$trackId.jpg")
-                            FileOutputStream(coverFile).use { fos ->
-                                fos.write(imageBytes)
-                            }
-                            localCoverUri = Uri.fromFile(coverFile).toString()
-                            Log.i(TAG, "Downloaded remote cover from $imageUrl for $trackId to $localCoverUri")
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(targetFile.absolutePath)
+                    val embeddedPicture = retriever.embeddedPicture
+                    if (embeddedPicture != null) {
+                        val coversDir = File(context.filesDir, "covers")
+                        if (!coversDir.exists()) {
+                            coversDir.mkdirs()
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to download remote cover fallback for $trackId", e)
-                    } finally {
-                        client.close()
+                        val coverFile = File(coversDir, "$trackId.jpg")
+                        FileOutputStream(coverFile).use { fos ->
+                            fos.write(embeddedPicture)
+                        }
+                        localCoverUri = Uri.fromFile(coverFile).toString()
+                        Log.i(TAG, "Extracted embedded cover for $trackId to $localCoverUri")
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to extract embedded cover for $trackId", e)
+                } finally {
+                    try {
+                        retriever.release()
+                    } catch (ignored: Exception) {}
                 }
             }
 
