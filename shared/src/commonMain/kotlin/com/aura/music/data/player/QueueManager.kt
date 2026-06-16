@@ -281,11 +281,25 @@ class QueueManager {
         }
     }
 
-    /**
-     * Restaure les modes depuis un snapshot persiste.
-     */
     fun restoreModes(shuffleEnabled: Boolean, repeatMode: RepeatMode) {
         _state.update { it.copy(shuffleEnabled = shuffleEnabled, repeatMode = repeatMode) }
+    }
+
+    /**
+     * Reinitialise completement l'etat de la file d'attente (vide le contexte, la queue de priorite, etc.).
+     */
+    fun clearQueue() {
+        _state.update {
+            QueueState(
+                context = null,
+                currentTrack = null,
+                priorityQueue = emptyList(),
+                history = emptyList(),
+                shuffleEnabled = it.shuffleEnabled,
+                repeatMode = it.repeatMode,
+                shuffledContextIndices = null
+            )
+        }
     }
 
     /**

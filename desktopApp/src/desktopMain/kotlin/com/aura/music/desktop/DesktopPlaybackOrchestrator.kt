@@ -12,6 +12,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.asCoroutineDispatcher
 import com.aura.music.data.network.AuraApiService
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -64,11 +69,13 @@ class DesktopPlaybackOrchestrator(
                 System.err.println("Failed to restore playback snapshot: ${e.message}")
             }
         }
+        startDownloadSyncLoop()
     }
 
     fun disconnect() {
         progressJob?.cancel()
         audioPlayer.stop()
+        stopDownloadSyncLoop()
     }
 
     fun playTrack(
@@ -454,14 +461,47 @@ class DesktopPlaybackOrchestrator(
                     it.isFile && it.extension.lowercase() in audioExtensions
                 }.toList()
 
+                val scannedTracks = mutableListOf<ScannedTrackInfo>()
+                val semaphore = kotlinx.coroutines.sync.Semaphore(15)
+                val resolvedCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+                coroutineScope {
+                    val jobs = files.map { file ->
+                        async {
+                            semaphore.withPermit {
+                                val (title, artist, album) = parseMp3Tags(file)
+                                val currentResolved = resolvedCount.incrementAndGet()
+                                onProgress("Scan: $currentResolved/${files.size} - Recherche de pochette...")
+                                
+                                var coverUri: String? = null
+                                try {
+                                    val response = apiService.search("$title $artist", limitTracks = 3)
+                                    val matchedTrack = response.data?.tracks?.firstOrNull()
+                                    coverUri = matchedTrack?.coverUri
+                                } catch (e: Exception) {
+                                    // Offline or search error, ignore
+                                }
+                                
+                                ScannedTrackInfo(file, title, artist, album, coverUri)
+                            }
+                        }
+                    }
+                    scannedTracks.addAll(jobs.awaitAll())
+                }
+
                 var addedCount = 0
 
                 database.useWriterConnection { transactor ->
                     transactor.immediateTransaction {
-                        for ((index, file) in files.withIndex()) {
-                            onProgress("Indexation: ${index + 1}/${files.size} - ${file.name}")
+                        for ((index, trackInfo) in scannedTracks.withIndex()) {
+                            onProgress("Sauvegarde: ${index + 1}/${scannedTracks.size} - ${trackInfo.file.name}")
                             
-                            val (title, artist, album) = parseMp3Tags(file)
+                            val file = trackInfo.file
+                            val title = trackInfo.title
+                            val artist = trackInfo.artist
+                            val album = trackInfo.album
+                            val coverUri = trackInfo.coverUri
+                            
                             val trackId = "track_${file.absolutePath.hashCode()}"
                             val artistId = "artist_${artist.hashCode()}"
                             val albumId = album?.let { "album_${(artist + "_" + it).hashCode()}" }
@@ -489,7 +529,7 @@ class DesktopPlaybackOrchestrator(
                                             primaryArtistId = artistId,
                                             title = album,
                                             normalizedTitle = album.lowercase(),
-                                            coverUri = null,
+                                            coverUri = coverUri,
                                             createdAt = now,
                                             updatedAt = now
                                         )
@@ -508,8 +548,8 @@ class DesktopPlaybackOrchestrator(
                                         normalizedTitle = title.lowercase(),
                                         displayArtistName = artist,
                                         displayAlbumTitle = album,
-                                        durationMs = 0L, // Will resolve at play time or fallback to 0
-                                        coverUri = null,
+                                        durationMs = 0L,
+                                        coverUri = coverUri,
                                         canonicalAudioSourceType = "local",
                                         isLiked = false,
                                         isDownloadedByAura = false,
@@ -592,4 +632,199 @@ class DesktopPlaybackOrchestrator(
         val displayAlbum = if (album.isBlank()) null else album
         return Triple(title, artist, displayAlbum)
     }
+
+    private var downloadSyncJob: Job? = null
+    private val isSyncingDownloads = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun startDownloadSyncLoop() {
+        downloadSyncJob?.cancel()
+        downloadSyncJob = scope.launch(loomDispatcher) {
+            while (isActive) {
+                val token = apiToken
+                if (!token.isNullOrBlank()) {
+                    try {
+                        syncActiveJobs(token)
+                    } catch (e: Exception) {
+                        System.err.println("Error syncing download jobs: ${e.message}")
+                    }
+                }
+                delay(3000)
+            }
+        }
+    }
+
+    fun stopDownloadSyncLoop() {
+        downloadSyncJob?.cancel()
+        downloadSyncJob = null
+    }
+
+    suspend fun syncActiveJobs(token: String) {
+        if (!isSyncingDownloads.compareAndSet(false, true)) return
+        try {
+            val response = apiService.listDownloads(token = token)
+            val items = response.data?.items ?: return
+            
+            val now = System.currentTimeMillis()
+            val jobs = items.map { item ->
+                val trackExists = database.trackDao().getRawTrackById(item.trackId) != null
+                if (!trackExists) {
+                    database.trackDao().upsertTracks(
+                        listOf(
+                            TrackEntity(
+                                id = item.trackId,
+                                primaryArtistId = null,
+                                albumId = null,
+                                title = "Titre ${item.trackId}",
+                                normalizedTitle = "titre ${item.trackId}",
+                                displayArtistName = "Artiste Inconnu",
+                                displayAlbumTitle = null,
+                                durationMs = 0L,
+                                coverUri = null,
+                                canonicalAudioSourceType = "cloud_only",
+                                isLiked = false,
+                                isDownloadedByAura = false,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
+                    )
+                }
+
+                DownloadJobEntity(
+                    id = item.id,
+                    trackId = item.trackId,
+                    providerName = item.providerName,
+                    status = item.status,
+                    progressPercent = item.progressPercent,
+                    errorCode = item.errorCode,
+                    errorMessage = item.errorMessage,
+                    attemptCount = item.attemptCount,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+            database.downloadJobDao().upsert(jobs)
+
+            for (item in items) {
+                if (item.status == "succeeded" || item.status == "completed") {
+                    val appDir = File(System.getProperty("user.home"), ".aura")
+                    val downloadsDir = File(appDir, "downloads")
+                    val targetFile = File(downloadsDir, "${item.trackId}.mp3")
+                    
+                    val rawTrack = database.trackDao().getRawTrackById(item.trackId)
+                    val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
+                    
+                    if (!targetFile.exists() || targetFile.length() == 0L || !isDbLinked) {
+                        fetchDownloadedFile(item.id, item.trackId, token)
+                    }
+                }
+            }
+        } finally {
+            isSyncingDownloads.set(false)
+        }
+    }
+
+    suspend fun fetchDownloadedFile(jobId: String, trackId: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            System.out.println("Fetching physical MP3 file for succeeded job $jobId...")
+            val response = apiService.downloadFile(token, jobId)
+            if (response.status.value !in 200..299) {
+                System.err.println("Failed to download physical file for job $jobId: HTTP ${response.status.value}")
+                return@withContext
+            }
+
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val downloadsDir = File(appDir, "downloads")
+            if (!downloadsDir.exists()) {
+                downloadsDir.mkdirs()
+            }
+
+            val targetFile = File(downloadsDir, "$trackId.mp3")
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+
+            val channel = response.bodyAsChannel()
+            channel.toInputStream().use { inputStream ->
+                java.io.FileOutputStream(targetFile).use { outputStream ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                    }
+                }
+            }
+
+            System.out.println("Downloaded file saved successfully to ${targetFile.absolutePath} (size: ${targetFile.length()} bytes)")
+
+            var localCoverUri: String? = null
+            val rawTrack = database.trackDao().getRawTrackById(trackId)
+            val imageUrl = rawTrack?.coverUri
+            if (imageUrl != null && imageUrl.startsWith("http")) {
+                val client = HttpClient()
+                try {
+                    val imageResponse = client.get(imageUrl)
+                    if (imageResponse.status.value in 200..299) {
+                        val imageBytes = imageResponse.body<ByteArray>()
+                        val coversDir = File(appDir, "covers")
+                        if (!coversDir.exists()) {
+                            coversDir.mkdirs()
+                        }
+                        val coverFile = File(coversDir, "$trackId.jpg")
+                        java.io.FileOutputStream(coverFile).use { fos ->
+                            fos.write(imageBytes)
+                        }
+                        localCoverUri = coverFile.toURI().toString()
+                        System.out.println("Downloaded remote cover from $imageUrl for $trackId to $localCoverUri")
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Failed to download remote cover fallback for $trackId: ${e.message}")
+                } finally {
+                    client.close()
+                }
+            }
+
+            val now = System.currentTimeMillis()
+            val fileUri = targetFile.toURI().toString()
+
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    val mockMediaStoreId = System.currentTimeMillis()
+                    val mediaLink = TrackMediaLinkEntity(
+                        id = "media-link:$mockMediaStoreId",
+                        trackId = trackId,
+                        mediaStoreId = mockMediaStoreId,
+                        contentUri = fileUri,
+                        fileSizeBytes = targetFile.length(),
+                        mimeType = "audio/mpeg",
+                        dateModifiedEpochMs = now,
+                        availabilityStatus = "present",
+                        lastScannedAt = now
+                    )
+                    database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
+
+                    if (rawTrack != null) {
+                        val updatedTrack = rawTrack.copy(
+                            canonicalAudioSourceType = "downloaded",
+                            isDownloadedByAura = true,
+                            coverUri = localCoverUri ?: rawTrack.coverUri,
+                            updatedAt = now
+                        )
+                        database.trackDao().upsertTracks(listOf(updatedTrack))
+                        System.out.println("Updated local TrackEntity $trackId to downloaded state")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            System.err.println("Failed to retrieve physical file for job $jobId: ${e.message}")
+        }
+    }
 }
+
+private data class ScannedTrackInfo(
+    val file: File,
+    val title: String,
+    val artist: String,
+    val album: String?,
+    val coverUri: String?
+)

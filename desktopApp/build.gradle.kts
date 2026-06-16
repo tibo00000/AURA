@@ -19,6 +19,7 @@ kotlin {
                 implementation(compose.materialIconsExtended)
                 implementation(compose.ui)
                 implementation(compose.components.resources)
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
                 
                 // JNativeHook for global OS key shortcuts
                 implementation("com.github.kwhat:jnativehook:2.2.2")

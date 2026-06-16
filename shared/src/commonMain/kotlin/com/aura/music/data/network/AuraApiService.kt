@@ -70,4 +70,20 @@ interface AuraApiService {
     suspend fun updatePlaybackSnapshot(token: String, snapshot: PlaybackSnapshotResponse): AuraResponse<PlaybackSnapshotResponse>
 
     suspend fun getHistory(token: String): AuraResponse<HistoryResponseData>
+
+    suspend fun createPlaylist(token: String, request: PlaylistCreate): AuraResponse<PlaylistResponse>
+
+    suspend fun deletePlaylist(token: String, id: String): AuraResponse<PlaylistResponse>
+
+    suspend fun appendTrackToPlaylist(
+        token: String,
+        id: String,
+        request: PlaylistItemCreate
+    ): AuraResponse<PlaylistItemResponse>
+
+    suspend fun removeTrackFromPlaylist(
+        token: String,
+        id: String,
+        trackId: String
+    ): AuraResponse<List<PlaylistItemResponse>>
 }

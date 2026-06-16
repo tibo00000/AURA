@@ -158,6 +158,34 @@ class KtorAuraApiService(
         header("Authorization", token)
     }.body()
 
+    override suspend fun createPlaylist(token: String, request: PlaylistCreate): AuraResponse<PlaylistResponse> = client.post("$cleanBaseUrl/me/playlists") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
+
+    override suspend fun deletePlaylist(token: String, id: String): AuraResponse<PlaylistResponse> = client.delete("$cleanBaseUrl/me/playlists/$id") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun appendTrackToPlaylist(
+        token: String,
+        id: String,
+        request: PlaylistItemCreate
+    ): AuraResponse<PlaylistItemResponse> = client.post("$cleanBaseUrl/me/playlists/$id/tracks") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
+
+    override suspend fun removeTrackFromPlaylist(
+        token: String,
+        id: String,
+        trackId: String
+    ): AuraResponse<List<PlaylistItemResponse>> = client.delete("$cleanBaseUrl/me/playlists/$id/tracks/$trackId") {
+        header("Authorization", token)
+    }.body()
+
 
     companion object {
         /**

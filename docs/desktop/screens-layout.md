@@ -38,6 +38,7 @@ The interface uses a **3-pane vertical structure** optimized for widescreen layo
     - **Accueil (Home)**: High-level overview, statistics, and quick-access items.
     - **Recherche (Search)**: Hybrid search input and results dashboard.
     - **Bibliothèque (Library)**: Local track tables, album/artist grids, and playlists.
+    - **Favoris (Favorites)**: Quick access to the user's liked tracks.
     - **Paramètres (Settings)**: Supabase login panel, Loom-powered local scanner.
   - **Library Playlists Section**:
     - "MES PLAYLISTS" label with a "+" button to quick-create local playlists.
@@ -56,6 +57,7 @@ The interface uses a **3-pane vertical structure** optimized for widescreen layo
     - *Artists Rail*
     - *Online Tracks* vs *Local Tracks*
   - **Bibliothèque**: Nested tabs/categories (Titres, Albums, Artistes, Playlists). When clicking a card, details are pushed onto the view stack.
+  - **Favoris**: Lists all liked tracks with quick play actions.
   - **Détail Artiste/Album/Playlist**: Hero banner with title, artwork, and full track table listing tracks with index, title, artist, album, duration, and custom actions.
   - **Paramètres**: Panel for account management (email/password form, status) and background directory indexer.
 

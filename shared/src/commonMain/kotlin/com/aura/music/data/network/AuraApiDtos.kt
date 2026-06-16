@@ -464,3 +464,20 @@ data class HistoryItemResponse(
 data class HistoryResponseData(
     @SerialName("items") val items: List<HistoryItemResponse>
 )
+
+@Serializable
+data class PlaylistCreate(
+    @SerialName("id") val id: String,
+    @SerialName("name") val name: String,
+    @SerialName("cover_uri") val coverUri: String? = null,
+    @SerialName("is_pinned") val isPinned: Boolean = false
+)
+
+@Serializable
+data class PlaylistItemCreate(
+    @SerialName("id") val id: String,
+    @SerialName("track_id") val trackId: String,
+    @SerialName("position") val position: Int,
+    @SerialName("added_from_context_type") val addedFromContextType: String? = null,
+    @SerialName("added_from_context_id") val addedFromContextId: String? = null
+)

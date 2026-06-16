@@ -52,6 +52,12 @@ import java.util.logging.Level
 import java.util.logging.Logger
 import javax.swing.JFileChooser
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import coil3.compose.AsyncImage
+import coil3.compose.setSingletonImageLoaderFactory
+import coil3.ImageLoader
+import coil3.network.ktor.KtorNetworkFetcherFactory
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.ImageVector
 
 fun main() = application {
     var isVisible by remember { mutableStateOf(true) }
@@ -128,6 +134,10 @@ fun main() = application {
     // Browse items for local tabs
     var localAlbums by remember { mutableStateOf<List<AlbumBrowseRow>>(emptyList()) }
     var localArtists by remember { mutableStateOf<List<ArtistBrowseRow>>(emptyList()) }
+
+    val downloadJobs by remember(database) {
+        database.downloadJobDao().getAllJobsWithTrackFlow()
+    }.collectAsState(initial = emptyList())
 
     // Recently played items (listen history)
     var listenHistory by remember { mutableStateOf<List<HistoryItemResponse>>(emptyList()) }
@@ -273,6 +283,13 @@ fun main() = application {
             undecorated = false
         ) {
             AuraTheme {
+                setSingletonImageLoaderFactory { context ->
+                    ImageLoader.Builder(context)
+                        .components {
+                            add(KtorNetworkFetcherFactory())
+                        }
+                        .build()
+                }
                 val playerState by playbackOrchestrator.uiState.collectAsState()
                 
                 // Dialogs and temp states
@@ -290,7 +307,7 @@ fun main() = application {
                 // Hybrid Search handler
                 LaunchedEffect(searchInput) {
                     val query = searchInput.trim()
-                    if (query.length >= 2) {
+                    if (query.length >= 3) {
                         isSearching = true
                         searchError = null
                         coroutineScope.launch(Dispatchers.IO) {
@@ -355,6 +372,7 @@ fun main() = application {
                                     Triple("home", "Accueil", Icons.Rounded.Home),
                                     Triple("search", "Recherche", Icons.Rounded.Search),
                                     Triple("library", "Bibliothèque", Icons.Rounded.List),
+                                    Triple("favorites", "Favoris", Icons.Rounded.Favorite),
                                     Triple("settings", "Paramètres", Icons.Rounded.Settings)
                                 )
 
@@ -477,6 +495,7 @@ fun main() = application {
                                                 "album_detail" -> "Album"
                                                 "artist_detail" -> "Artiste"
                                                 "playlist_detail" -> "Détails de la Playlist"
+                                                "favorites" -> "Favoris"
                                                 else -> ""
                                             },
                                             style = MaterialTheme.typography.headlineMedium,
@@ -488,6 +507,14 @@ fun main() = application {
                                     // Render active screen
                                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                                         when (currentScreen) {
+                                            "favorites" -> {
+                                                FavoritesScreen(
+                                                    likedTracks = likedTracks,
+                                                    orchestrator = playbackOrchestrator,
+                                                    onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
                                             "home" -> {
                                                 HomeScreen(
                                                     allTracksCount = allTracks.size,
@@ -530,6 +557,7 @@ fun main() = application {
                                                     albums = localAlbums,
                                                     artists = localArtists,
                                                     playlists = playlists,
+                                                    downloadJobs = downloadJobs,
                                                     orchestrator = playbackOrchestrator,
                                                     onNavigateToAlbum = { id ->
                                                         selectedAlbumId = id
@@ -1043,9 +1071,9 @@ fun SearchScreen(
             Box(modifier = Modifier.fillMaxWidth().padding(16.dp).background(SemanticError.copy(alpha = 0.1f)).clip(RoundedCornerShape(8.dp))) {
                 Text("Erreur recherche : $error", modifier = Modifier.padding(16.dp), color = SemanticError)
             }
-        } else if (searchInput.isBlank()) {
+        } else if (searchInput.trim().length < 3) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Entrez au moins 2 caractères pour rechercher.", color = TextMuted)
+                Text("Entrez au moins 3 caractères pour rechercher.", color = TextMuted)
             }
         } else {
             LazyColumn(
@@ -1073,28 +1101,23 @@ fun SearchScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
-                            Box(
+                            val imageUrl = when (val item = best.item) {
+                                is com.aura.music.data.network.TrackSummary -> item.coverUri
+                                is com.aura.music.data.network.ArtistSummary -> item.pictureUri
+                                is com.aura.music.data.network.AlbumSummary -> item.coverUri
+                                else -> null
+                            }
+                            CoverImage(
+                                url = imageUrl,
+                                fallbackIcon = when (best.kind) {
+                                    "artist" -> Icons.Rounded.Person
+                                    "album" -> Icons.Rounded.List
+                                    else -> Icons.Rounded.PlayArrow
+                                },
                                 modifier = Modifier
                                     .size(96.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            colors = listOf(BlazeOrange, DarkGraphite)
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = when (best.kind) {
-                                        "artist" -> Icons.Rounded.Person
-                                        "album" -> Icons.Rounded.List
-                                        else -> Icons.Rounded.PlayArrow
-                                    },
-                                    contentDescription = null,
-                                    tint = TextPrimary,
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            }
+                                    .clip(if (best.kind == "artist") CircleShape else RoundedCornerShape(8.dp))
+                            )
                             Column {
                                 val titleText = when (val item = best.item) {
                                     is com.aura.music.data.network.TrackSummary -> item.title
@@ -1205,6 +1228,60 @@ fun SearchScreen(
                                                 isDownloading = track.id
                                                 coroutineScope.launch(Dispatchers.IO) {
                                                     try {
+                                                        val now = System.currentTimeMillis()
+                                                        val artistId = "artist_${track.displayArtistName.hashCode()}"
+                                                        val albumId = track.displayAlbumTitle?.let { "album_${(track.displayArtistName + "_" + it).hashCode()}" }
+                                                        
+                                                        database.artistDao().upsertArtists(
+                                                            listOf(
+                                                                ArtistEntity(
+                                                                    id = artistId,
+                                                                    name = track.displayArtistName,
+                                                                    normalizedName = track.displayArtistName.lowercase(),
+                                                                    pictureUri = null,
+                                                                    createdAt = now,
+                                                                    updatedAt = now
+                                                                )
+                                                            )
+                                                        )
+                                                        
+                                                        if (albumId != null && track.displayAlbumTitle != null) {
+                                                            database.albumDao().upsertAlbums(
+                                                                listOf(
+                                                                    AlbumEntity(
+                                                                        id = albumId,
+                                                                        primaryArtistId = artistId,
+                                                                        title = track.displayAlbumTitle,
+                                                                        normalizedTitle = track.displayAlbumTitle.lowercase(),
+                                                                        coverUri = track.coverUri,
+                                                                        createdAt = now,
+                                                                        updatedAt = now
+                                                                    )
+                                                                )
+                                                            )
+                                                        }
+                                                        
+                                                        database.trackDao().upsertTracks(
+                                                            listOf(
+                                                                TrackEntity(
+                                                                    id = track.id,
+                                                                    primaryArtistId = artistId,
+                                                                    albumId = albumId,
+                                                                    title = track.title,
+                                                                    normalizedTitle = track.title.lowercase(),
+                                                                    displayArtistName = track.displayArtistName,
+                                                                    displayAlbumTitle = track.displayAlbumTitle,
+                                                                    durationMs = track.durationMs.toLong(),
+                                                                    coverUri = track.coverUri,
+                                                                    canonicalAudioSourceType = "cloud_only",
+                                                                    isLiked = false,
+                                                                    isDownloadedByAura = false,
+                                                                    createdAt = now,
+                                                                    updatedAt = now
+                                                                )
+                                                            )
+                                                        )
+
                                                         apiService.createDownload(token, DownloadRequestDto(trackId = track.id))
                                                     } catch (e: Exception) {
                                                         System.err.println("Download trigger failed: ${e.message}")
@@ -1219,7 +1296,7 @@ fun SearchScreen(
                                         if (isThisDownloading) {
                                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = BlazeOrange)
                                         } else {
-                                            Icon(Icons.Rounded.List, contentDescription = "Télécharger", tint = TextMuted)
+                                            Icon(Icons.Rounded.GetApp, contentDescription = "Télécharger", tint = TextMuted)
                                         }
                                     }
                                 }
@@ -1248,15 +1325,13 @@ fun SearchScreen(
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Box(
+                                    CoverImage(
+                                        url = album.coverUri,
+                                        fallbackIcon = Icons.Rounded.List,
                                         modifier = Modifier
                                             .size(116.dp)
                                             .clip(RoundedCornerShape(4.dp))
-                                            .background(DarkGraphite),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted)
-                                    }
+                                    )
                                     Text(album.title, color = TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(album.primaryArtistName, color = TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -1286,15 +1361,13 @@ fun SearchScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Box(
+                                    CoverImage(
+                                        url = artist.pictureUri,
+                                        fallbackIcon = Icons.Rounded.Person,
                                         modifier = Modifier
                                             .size(80.dp)
                                             .clip(CircleShape)
-                                            .background(DarkGraphite),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.Person, contentDescription = null, tint = TextMuted)
-                                    }
+                                    )
                                     Text(artist.name, color = TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
@@ -1314,6 +1387,7 @@ fun LibraryScreen(
     albums: List<AlbumBrowseRow>,
     artists: List<ArtistBrowseRow>,
     playlists: List<PlaylistListRow>,
+    downloadJobs: List<DownloadJobRowModel>,
     orchestrator: DesktopPlaybackOrchestrator,
     onNavigateToAlbum: (String) -> Unit,
     onNavigateToArtist: (String) -> Unit,
@@ -1328,7 +1402,8 @@ fun LibraryScreen(
                 "tracks" -> 0
                 "albums" -> 1
                 "artists" -> 2
-                else -> 3
+                "playlists" -> 3
+                else -> 4
             },
             containerColor = Color.Transparent,
             contentColor = BlazeOrange,
@@ -1338,7 +1413,8 @@ fun LibraryScreen(
                         "tracks" -> 0
                         "albums" -> 1
                         "artists" -> 2
-                        else -> 3
+                        "playlists" -> 3
+                        else -> 4
                     }]),
                     color = BlazeOrange
                 )
@@ -1348,6 +1424,7 @@ fun LibraryScreen(
             Tab(selected = activeTab == "albums", onClick = { onTabChange("albums") }, text = { Text("Albums") })
             Tab(selected = activeTab == "artists", onClick = { onTabChange("artists") }, text = { Text("Artistes") })
             Tab(selected = activeTab == "playlists", onClick = { onTabChange("playlists") }, text = { Text("Playlists") })
+            Tab(selected = activeTab == "downloads", onClick = { onTabChange("downloads") }, text = { Text("Téléchargements") })
         }
 
         when (activeTab) {
@@ -1417,15 +1494,13 @@ fun LibraryScreen(
                                 colors = CardDefaults.cardColors(containerColor = OffBlack)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(
+                                    CoverImage(
+                                        url = album.coverUri,
+                                        fallbackIcon = Icons.Rounded.List,
                                         modifier = Modifier
                                             .aspectRatio(1f)
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(DarkGraphite),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
-                                    }
+                                    )
                                     Text(album.title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(album.artistName ?: "Artiste inconnu", color = TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -1458,15 +1533,13 @@ fun LibraryScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Box(
+                                    CoverImage(
+                                        url = artist.pictureUri,
+                                        fallbackIcon = Icons.Rounded.Person,
                                         modifier = Modifier
                                             .size(80.dp)
                                             .clip(CircleShape)
-                                            .background(DarkGraphite),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.Person, contentDescription = null, tint = TextMuted, modifier = Modifier.size(28.dp))
-                                    }
+                                    )
                                     Text(artist.name, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("${artist.trackCount} titre(s)", color = TextMuted, style = MaterialTheme.typography.bodySmall)
                                 }
@@ -1506,6 +1579,88 @@ fun LibraryScreen(
                                     }
                                     Text(pl.name, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("Playlist AURA", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "downloads" -> {
+                if (downloadJobs.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Aucun téléchargement en cours ou complété.", color = TextMuted)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(downloadJobs, key = { it.jobId }) { job ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(OffBlack)
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CoverImage(
+                                    url = job.coverUri,
+                                    fallbackIcon = Icons.Rounded.GetApp,
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(job.title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(job.artistName, color = TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    
+                                    if (!job.errorMessage.isNullOrBlank()) {
+                                        Text(
+                                            text = "Erreur: ${job.errorMessage}",
+                                            color = SemanticError,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.width(16.dp))
+                                
+                                Column(horizontalAlignment = Alignment.End) {
+                                    val statusLabel = when (job.status) {
+                                        "pending" -> "En attente"
+                                        "queued" -> "En attente"
+                                        "running" -> "Téléchargement..."
+                                        "downloading" -> "Téléchargement..."
+                                        "succeeded" -> "Terminé"
+                                        "completed" -> "Terminé"
+                                        "failed" -> "Échoué"
+                                        "cancelled" -> "Annulé"
+                                        else -> job.status.replaceFirstChar { it.uppercase() }
+                                    }
+                                    
+                                    val statusColor = when (job.status) {
+                                        "succeeded", "completed" -> Color.Green
+                                        "failed" -> SemanticError
+                                        "running", "downloading" -> BlazeOrange
+                                        else -> TextMuted
+                                    }
+                                    
+                                    Text(statusLabel, color = statusColor, fontWeight = FontWeight.SemiBold)
+                                    
+                                    if ((job.status == "running" || job.status == "downloading") && job.progressPercent != null) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        val progress = job.progressPercent
+                                        Text(
+                                            text = "${(progress * 100).toInt()}%",
+                                            color = TextPrimary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1746,17 +1901,14 @@ fun AlbumDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
+                    val albumCoverUrl = onlineAlbum?.coverUri ?: localTracks.firstOrNull()?.coverUri
+                    CoverImage(
+                        url = albumCoverUrl,
+                        fallbackIcon = Icons.Rounded.List,
                         modifier = Modifier
                             .size(120.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Brush.linearGradient(colors = listOf(BlazeOrange, DarkGraphite))
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(48.dp))
-                    }
+                    )
                     Column {
                         Text(albumTitle, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(artistName, style = MaterialTheme.typography.titleLarge, color = TextSecondary)
@@ -1916,17 +2068,14 @@ fun ArtistDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
+                    val artistPictureUrl = onlineArtist?.pictureUri ?: localTracks.firstOrNull()?.coverUri
+                    CoverImage(
+                        url = artistPictureUrl,
+                        fallbackIcon = Icons.Rounded.Person,
                         modifier = Modifier
                             .size(100.dp)
                             .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(colors = listOf(BlazeOrange, DarkGraphite))
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Person, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(40.dp))
-                    }
+                    )
                     Column {
                         Text(artistName, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text("Artiste AURA", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
@@ -2240,34 +2389,69 @@ fun TrackListItem(
                 )
             }
 
-            // Add to Queue Button
-            IconButton(onClick = onAddToQueue) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "Ajouter à la file",
-                    tint = TextMuted
-                )
-            }
+            var showMenu by remember { mutableStateOf(false) }
 
-            // Add to Playlist Button
-            if (onAddToPlaylist != null) {
-                IconButton(onClick = { onAddToPlaylist(track.id) }) {
+            Box {
+                IconButton(onClick = { showMenu = true }) {
                     Icon(
-                        imageVector = Icons.Rounded.List,
-                        contentDescription = "Ajouter à la playlist",
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Options",
                         tint = TextMuted
                     )
                 }
-            }
 
-            // Remove Button
-            if (onRemove != null) {
-                IconButton(onClick = onRemove) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = "Supprimer",
-                        tint = SemanticError
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Ajouter à la file d'attente") },
+                        onClick = {
+                            showMenu = false
+                            onAddToQueue()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Queue,
+                                contentDescription = null,
+                                tint = TextPrimary
+                            )
+                        }
                     )
+                    
+                    if (onAddToPlaylist != null) {
+                        DropdownMenuItem(
+                            text = { Text("Ajouter à une playlist") },
+                            onClick = {
+                                showMenu = false
+                                onAddToPlaylist(track.id)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlaylistAdd,
+                                    contentDescription = null,
+                                    tint = TextPrimary
+                                )
+                            }
+                        )
+                    }
+                    
+                    if (onRemove != null) {
+                        DropdownMenuItem(
+                            text = { Text("Supprimer", color = SemanticError) },
+                            onClick = {
+                                showMenu = false
+                                onRemove()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = null,
+                                    tint = SemanticError
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -2293,16 +2477,13 @@ fun QueueItemRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Mini cover or placeholder
-            Box(
+            CoverImage(
+                url = track.coverUri,
+                fallbackIcon = Icons.Rounded.PlayArrow,
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(OffBlack),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = TextMuted)
-            }
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.title,
@@ -2393,15 +2574,13 @@ fun PlayerBottomBar(
         ) {
             val track = state.currentTrack
             if (track != null) {
-                Box(
+                CoverImage(
+                    url = track.coverUri,
+                    fallbackIcon = Icons.Rounded.PlayArrow,
                     modifier = Modifier
                         .size(56.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(DarkGraphite),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = TextMuted)
-                }
+                )
                 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -2596,3 +2775,95 @@ fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
     createdAt = addedAt,
     updatedAt = addedAt
 )
+
+@Composable
+fun CoverImage(
+    url: String?,
+    fallbackIcon: ImageVector,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null
+) {
+    if (!url.isNullOrBlank()) {
+        AsyncImage(
+            model = url,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+        )
+    } else {
+        Box(
+            modifier = modifier.background(DarkGraphite),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = fallbackIcon,
+                contentDescription = contentDescription,
+                tint = TextMuted
+            )
+        }
+    }
+}
+
+@Composable
+fun FavoritesScreen(
+    likedTracks: List<TrackListRow>,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onAddToPlaylist: (String) -> Unit,
+    onReload: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Titres favoris", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("${likedTracks.size} titre(s) aimé(s).", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (likedTracks.isNotEmpty()) {
+                Button(
+                    onClick = {
+                        val queued = likedTracks.map { it.toQueued() }
+                        orchestrator.playTrack(queued[0].trackId, "favorites", "favorites", queued, 0)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Tout lire", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Divider(color = HairlineDark)
+        TrackListHeader()
+
+        if (likedTracks.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Aucun titre favori. Aimez des titres pour les voir apparaître ici.", color = TextMuted)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(likedTracks, key = { _, t -> t.id }) { index, track ->
+                    val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.id
+                    TrackListItem(
+                        index = index,
+                        track = track,
+                        isPlaying = isPlaying,
+                        onPlay = {
+                            val queued = likedTracks.map { it.toQueued() }
+                            orchestrator.playTrack(track.id, "favorites", "favorites", queued, index)
+                        },
+                        onLike = { orchestrator.toggleLike(track.id); onReload() },
+                        onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
+                        onAddToPlaylist = onAddToPlaylist
+                    )
+                }
+            }
+        }
+    }
+}
