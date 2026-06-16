@@ -51,6 +51,7 @@ import java.util.UUID
 import java.util.logging.Level
 import java.util.logging.Logger
 import javax.swing.JFileChooser
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 
 fun main() = application {
     var isVisible by remember { mutableStateOf(true) }
@@ -517,7 +518,8 @@ fun main() = application {
                                                         navigateTo("artist_detail")
                                                     },
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
-                                                    onReload = { reloadDbData() }
+                                                    onReload = { reloadDbData() },
+                                                    database = database
                                                 )
                                             }
                                             "library" -> {
@@ -957,7 +959,7 @@ fun HomeScreen(
                         .background(OffBlack)
                         .clickable {
                             if (matchedLocal != null) {
-                                orchestrator.playTrack(matchedLocal.id, "history", "all", allTracks.map { it.toQueued() }, allTracks.indexOf(matchedLocal))
+                                orchestrator.playTrack(matchedLocal.id, "history", "all", allTracks.map { t: TrackListRow -> t.toQueued() }, allTracks.indexOf(matchedLocal))
                             }
                         }
                         .padding(16.dp),
@@ -1010,7 +1012,8 @@ fun SearchScreen(
     onNavigateToAlbum: (String) -> Unit,
     onNavigateToArtist: (String) -> Unit,
     onAddToPlaylist: (String) -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    database: AuraDatabase
 ) {
     val coroutineScope = rememberCoroutineScope()
     var isDownloading by remember { mutableStateOf<String?>(null) }
@@ -1143,7 +1146,7 @@ fun SearchScreen(
                             track = track,
                             isPlaying = isPlaying,
                             onPlay = {
-                                orchestrator.playTrack(track.id, "search_local", searchInput, localTracks.map { it.toQueued() }, index)
+                                orchestrator.playTrack(track.id, "search_local", searchInput, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                             },
                             onLike = { orchestrator.toggleLike(track.id); onReload() },
                             onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
@@ -1354,7 +1357,7 @@ fun LibraryScreen(
                         Button(
                             onClick = {
                                 if (allTracks.isNotEmpty()) {
-                                    val queued = allTracks.map { it.toQueued() }
+                                    val queued = allTracks.map { t: TrackListRow -> t.toQueued() }
                                     orchestrator.playTrack(queued[0].trackId, "library_tracks", "all", queued, 0)
                                 }
                             },
@@ -1382,7 +1385,7 @@ fun LibraryScreen(
                                     track = track,
                                     isPlaying = isPlaying,
                                     onPlay = {
-                                        val queued = allTracks.map { it.toQueued() }
+                                        val queued = allTracks.map { t: TrackListRow -> t.toQueued() }
                                         orchestrator.playTrack(track.id, "library_tracks", "all", queued, index)
                                     },
                                     onLike = { orchestrator.toggleLike(track.id); onReload() },
@@ -1770,7 +1773,7 @@ fun AlbumDetailScreen(
                             if (albumId != null) {
                                 if (albumId.startsWith("album_")) {
                                     if (localTracks.isNotEmpty()) {
-                                        orchestrator.playTrack(localTracks[0].id, "album", albumId, localTracks.map { it.toQueued() }, 0)
+                                        orchestrator.playTrack(localTracks[0].id, "album", albumId, localTracks.map { t: TrackListRow -> t.toQueued() }, 0)
                                     }
                                 } else {
                                     // Play online tracks if available
@@ -1809,7 +1812,7 @@ fun AlbumDetailScreen(
                         track = track,
                         isPlaying = isPlaying,
                         onPlay = {
-                            orchestrator.playTrack(track.id, "album", albumId, localTracks.map { it.toQueued() }, index)
+                            orchestrator.playTrack(track.id, "album", albumId, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                         },
                         onLike = { orchestrator.toggleLike(track.id); onReload() },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
@@ -1943,7 +1946,7 @@ fun ArtistDetailScreen(
                         track = track,
                         isPlaying = isPlaying,
                         onPlay = {
-                            orchestrator.playTrack(track.id, "artist", artistId, localTracks.map { it.toQueued() }, index)
+                            orchestrator.playTrack(track.id, "artist", artistId, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                         },
                         onLike = { orchestrator.toggleLike(track.id); onReload() },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
@@ -2058,7 +2061,7 @@ fun PlaylistDetailScreen(
             if (tracks.isNotEmpty()) {
                 Button(
                     onClick = {
-                        val queued = tracks.map { it.toQueued() }
+                        val queued = tracks.map { t: PlaylistTrackRow -> t.toQueued() }
                         orchestrator.playTrack(queued[0].trackId, "playlist", playlistId ?: "", queued, 0)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
@@ -2086,7 +2089,7 @@ fun PlaylistDetailScreen(
                         track = track.toTrackListRow(),
                         isPlaying = isPlaying,
                         onPlay = {
-                            val queued = tracks.map { it.toQueued() }
+                            val queued = tracks.map { t: PlaylistTrackRow -> t.toQueued() }
                             orchestrator.playTrack(track.trackId, "playlist", playlistId ?: "", queued, index)
                         },
                         onLike = { orchestrator.toggleLike(track.trackId); onReload() },
@@ -2149,3 +2152,447 @@ fun PlaylistDetailScreen(
         }
     }
 }
+
+@Composable
+fun TrackListHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("#", modifier = Modifier.width(30.dp), color = TextMuted, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Text("Titre", modifier = Modifier.weight(1f), color = TextMuted, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Text("Album", modifier = Modifier.weight(1f), color = TextMuted, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.width(120.dp))
+    }
+}
+
+@Composable
+fun TrackListItem(
+    index: Int,
+    track: TrackListRow,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
+    onLike: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAddToPlaylist: ((String) -> Unit)? = null,
+    onRemove: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isPlaying) DarkGraphite else Color.Transparent)
+            .clickable { onPlay() }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Index / Play Icon
+        Text(
+            text = (index + 1).toString(),
+            modifier = Modifier.width(30.dp),
+            color = if (isPlaying) BlazeOrange else TextMuted,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
+        )
+
+        // Title & Artist
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                color = if (isPlaying) BlazeOrange else TextPrimary,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = track.artistName,
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // Album Title
+        Text(
+            text = track.albumTitle ?: "Sans Album",
+            modifier = Modifier.weight(1f),
+            color = TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        // Actions Row
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Like Button
+            IconButton(onClick = onLike) {
+                Icon(
+                    imageVector = if (track.isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = "Aimer",
+                    tint = if (track.isLiked) BlazeOrange else TextMuted
+                )
+            }
+
+            // Add to Queue Button
+            IconButton(onClick = onAddToQueue) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = "Ajouter à la file",
+                    tint = TextMuted
+                )
+            }
+
+            // Add to Playlist Button
+            if (onAddToPlaylist != null) {
+                IconButton(onClick = { onAddToPlaylist(track.id) }) {
+                    Icon(
+                        imageVector = Icons.Rounded.List,
+                        contentDescription = "Ajouter à la playlist",
+                        tint = TextMuted
+                    )
+                }
+            }
+
+            // Remove Button
+            if (onRemove != null) {
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = "Supprimer",
+                        tint = SemanticError
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun QueueItemRow(
+    track: QueuedTrack,
+    onRemove: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(DarkGraphite)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Mini cover or placeholder
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(OffBlack),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = TextMuted)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.title,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = track.artistName,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        IconButton(onClick = onRemove) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Retirer de la file",
+                tint = TextMuted,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun StatBox(
+    label: String,
+    value: String
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(DarkGraphite)
+            .padding(16.dp)
+            .width(120.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = value,
+            color = BlazeOrange,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = label,
+            color = TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+fun PlayerBottomBar(
+    state: PlayerUiState,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onLikeToggle: (String) -> Unit
+) {
+    var volume by remember { mutableStateOf(0.8f) }
+    
+    fun formatTime(ms: Long): String {
+        val totalSecs = ms / 1000
+        val mins = totalSecs / 60
+        val secs = totalSecs % 60
+        return "${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(100.dp)
+            .background(OffBlack)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Left Section (Metadata & Like)
+        Row(
+            modifier = Modifier.width(260.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val track = state.currentTrack
+            if (track != null) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(DarkGraphite),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = TextMuted)
+                }
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = track.artistName,
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(onClick = { onLikeToggle(track.trackId) }) {
+                    Icon(
+                        imageVector = if (state.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        contentDescription = "Aimer",
+                        tint = if (state.isCurrentTrackLiked) BlazeOrange else TextMuted
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.size(56.dp))
+                Text("Aucun titre", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        // Center Section (Playback Controls & Timeline)
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { orchestrator.toggleShuffle() }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Shuffle,
+                        contentDescription = "Aléatoire",
+                        tint = if (state.shuffleEnabled) BlazeOrange else TextMuted
+                    )
+                }
+
+                IconButton(onClick = { orchestrator.previous() }) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipPrevious,
+                        contentDescription = "Précédent",
+                        tint = TextPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                val isPlaying = state.playbackState == PlaybackState.Playing
+                Button(
+                    onClick = { orchestrator.togglePlayPause() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BlazeOrange,
+                        contentColor = TextPrimary
+                    ),
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Lecture",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                IconButton(onClick = { orchestrator.next() }) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipNext,
+                        contentDescription = "Suivant",
+                        tint = TextPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                val isRepeatOne = state.repeatMode == RepeatMode.One
+                val isRepeatAll = state.repeatMode == RepeatMode.All
+                IconButton(onClick = { orchestrator.cycleRepeatMode() }) {
+                    Icon(
+                        imageVector = if (isRepeatOne) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                        contentDescription = "Répéter",
+                        tint = if (isRepeatOne || isRepeatAll) BlazeOrange else TextMuted
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formatTime(state.positionMs),
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                
+                Slider(
+                    value = if (state.durationMs > 0) state.positionMs.toFloat() else 0f,
+                    onValueChange = { pos -> orchestrator.seekTo(pos.toLong()) },
+                    valueRange = 0f..(if (state.durationMs > 0) state.durationMs.toFloat() else 1f),
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = BlazeOrange,
+                        inactiveTrackColor = DarkGraphite,
+                        thumbColor = BlazeOrange
+                    )
+                )
+
+                Text(
+                    text = formatTime(state.durationMs),
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        // Right Section (Volume)
+        Row(
+            modifier = Modifier.width(200.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.VolumeUp,
+                contentDescription = "Volume",
+                tint = TextMuted
+            )
+            
+            Slider(
+                value = volume,
+                onValueChange = { vol ->
+                    volume = vol
+                    orchestrator.setVolume(vol)
+                },
+                valueRange = 0f..1f,
+                modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(
+                    activeTrackColor = BlazeOrange,
+                    inactiveTrackColor = DarkGraphite,
+                    thumbColor = BlazeOrange
+                )
+            )
+        }
+    }
+}
+
+fun TrackListRow.toQueued(): QueuedTrack = QueuedTrack(
+    trackId = id,
+    title = title,
+    artistName = artistName,
+    albumTitle = albumTitle,
+    contentUri = contentUri,
+    durationMs = durationMs ?: 0L,
+    coverUri = coverUri,
+    source = TrackSource.CONTEXT
+)
+
+fun PlaylistTrackRow.toQueued(): QueuedTrack = QueuedTrack(
+    trackId = trackId,
+    title = title,
+    artistName = artistName,
+    albumTitle = albumTitle,
+    contentUri = contentUri,
+    durationMs = durationMs ?: 0L,
+    coverUri = coverUri,
+    source = TrackSource.CONTEXT
+)
+
+fun PlaylistTrackRow.toTrackListRow(): TrackListRow = TrackListRow(
+    id = trackId,
+    artistId = artistId,
+    albumId = albumId,
+    title = title,
+    artistName = artistName,
+    albumTitle = albumTitle,
+    contentUri = contentUri,
+    durationMs = durationMs,
+    coverUri = coverUri,
+    isLiked = isLiked,
+    createdAt = addedAt,
+    updatedAt = addedAt
+)
