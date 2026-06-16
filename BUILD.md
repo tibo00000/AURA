@@ -158,21 +158,17 @@ Resultat attendu :
 
 ### Phase 7 - Client Bureau & Web (Compose Multiplatform)
 Objectif :
-- Développer le client Bureau et Web léger et performant en partageant le code UI/Métier
+- Développer le client Bureau (JVM) de manière complète et performante. Note : La cible webApp (WasmJs) est mise en stand-by.
 
 Priorite :
-- `DSK-001`
-- `DSK-002`
-- `DSK-003`
-- `DSK-004`
-- `DSK-006`
+- `DSK-008`
+- `DSK-009`
+- `DSK-007`
 
 Resultat attendu :
-- Build gradle multiplateforme fonctionnel (JVM et Wasm)
-- Base Room Multiplatform branchée sur le Bureau
-- Moteur audio natif JNI/HTML5 opérationnel
-- Interface partagée adaptée aux formats Bureau et Web
-- Réduction System Tray et suspension de rendu Skia câblée
+- Layout Desktop complet (Sidebar, grilles responsive, Bottom Bar, Queue à droite) spécifié et implémenté avec thème sombre forcé.
+- Connexion de tous les écrans Desktop aux API du backend (Search, Playlists, Likes, Historique).
+- Synchronisation physique des fichiers audios locaux fonctionnelle.
 
 ### Ce qu'il ne faut pas faire trop tot
 - ne pas commencer par la sync cloud avant le coeur local
@@ -201,6 +197,7 @@ Resultat attendu :
 | AND-013 | android | Spécifier et implémenter le menu contextuel complet de SharedTrackRowItem et SelectPlaylistDialog | completed | AND-005, AND-007 | `docs/android/ui/components.md`, `docs/android/ui/component-states.md` | menu contextuel dynamique mémorisé, dialogue réutilisable purement UI et launchSingleTop raccordé |
 | AND-014 | android | Ajouter le support Android Auto pour rendre AURA selectionnable et pilotable en voiture | completed | AND-004, AND-007 | `docs/android/player/architecture.md`, `docs/android/player/states-and-events.md`, `docs/android/navigation.md` | MediaLibraryService integre, browse tree structure (Favoris, Telechargements, Playlists, Albums, Titres), pagination, toMediaItem() centralise, validation de confiance, et gestion robuste de onAddMediaItems |
 | AND-015 | android | Implémenter l'upload des fichiers audio locaux et le téléchargement depuis le cloud | not_started | AND-012 | `docs/server/api-contract.md` | Option d'upload dans le menu contextuel, et récupération automatique |
+| AND-016 | android | Raccorder l'application Android aux nouveaux endpoints REST /me (Likes, détails playlists, historique d'écoute, snapshots) | not_started | AND-007, AND-012 | `docs/server/api-contract.md` | Utilisation des nouveaux endpoints REST /me en complément de la synchronisation batch |
 
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -217,13 +214,16 @@ Resultat attendu :
 
 ### Desktop & Web
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
+|---|---|---|---|---|---|---|
 | DSK-001 | desktop | Initialiser le build multiplateforme Gradle (Kotlin/JVM et Kotlin/Wasm) | completed | none | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | squelette CMP, cibles desktop (JVM 17) et web (Wasm) définies |
 | DSK-002 | desktop | Porter le schéma Room vers Room Multiplatform pour Desktop | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/room-schema.md` | persistance locale unifiée sur SQLite |
 | DSK-003 | desktop | Implémenter le décodage et la lecture audio locale native Bureau et Web | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/domain/playback-model.md` | JavaFX Media pour Bureau, HTML5 Audio pour Web |
 | DSK-004 | desktop | Adapter et partager les composants graphiques Compose (Thème, listes, player) | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/ui/components.md` | design system unifié réutilisé sur Desktop et Web |
 | DSK-005 | desktop | Connecter le client multiplateforme aux API du serveur FastAPI | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/server/api-contract.md` | recherche online et requêtes de téléchargement reliées |
 | DSK-006 | desktop | Implémenter le System Tray, la suspension de rendu Skia et le packaging JRE 21 | completed | DSK-001, DSK-004 | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | réduction zone de notification, suspension canevas et JRE 21 (ZGC) |
-| DSK-007 | desktop | Implémenter la synchronisation des fichiers audio locaux via le backend | not_started | DSK-001, DSK-002 | `docs/server/api-contract.md` | Upload de sons locaux et récupération automatique sur PC |
+| DSK-008 | desktop | Concevoir et implémenter les layouts d'écrans du bureau (Sidebar, grilles responsive, Bottom Bar, Queue à droite) | completed | DSK-004, DSK-006 | `docs/desktop/screens-layout.md` | Layout 3 volets avec queue à droite et thème sombre forcé |
+| DSK-009 | desktop | Connecter l'application bureau à l'ensemble des endpoints API du backend (Recherche, Playlists, Likes, Historique) | completed | DSK-005, DSK-008 | `docs/server/api-contract.md` | Raccordement complet du client aux services distants FastAPI avec gestion de token |
+| DSK-007 | desktop | Implémenter la synchronisation des fichiers audio locaux via le backend | not_started | DSK-009 | `docs/server/api-contract.md` | Upload de sons locaux et récupération automatique sur PC |
 
 ### Infrastructure et gouvernance
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -285,6 +285,10 @@ Resultat attendu :
 - Gestion des cookies YouTube : l'utilisateur pourra soumettre ses cookies Netscape via un endpoint sécurisé `POST /admin/cookies` (protégé par un secret admin) pour mettre à jour le fichier `cookies.txt` partagé, ou via une variable d'environnement/paramètre utilisateur.
 
 ## Journal des changements
+- 2026-06-16T01:21:00+02:00 | code | `server/app/api/routes/me.py`, `server/app/schemas/me.py`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt` | DSK-008 & DSK-009 : Implémentation du layout 3 volets Desktop complet avec stack navigation, connexion à tous les endpoints API backend (Search, Playlists, Likes, Historique) et Loom virtual thread scanner.
+- 2026-06-16T01:17:00+02:00 | code, docs | `BUILD.md`, `docs/desktop/screens-layout.md` | DSK-008 & DSK-009 : Début des travaux d'intégration Desktop UI et réseau. Création de la spécification de layout `screens-layout.md` et ajout de l'étape `AND-016` pour la future mise en conformité de l'application Android avec les endpoints REST individuels.
+- 2026-06-16T01:05:00+02:00 | decision | `BUILD.md` | Ajout des étapes DSK-008 et DSK-009 pour spécifier le design d'écran Desktop (avec Sidebar, Queue à droite, thème sombre forcé et onglets de paramètres) et la connexion complète du client aux endpoints backend (playlists, favoris, historique, snapshots) avant la synchronisation physique.
+- 2026-06-13T16:08:00+02:00 | code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt`, `BUILD.md` | DSK-004 & DSK-006 : Implémentation du DesktopPlaybackOrchestrator pilotant QueueManager et JavaFX Media, raccordement de JNativeHook et intégration du tableau de bord complet avec bibliothèque locale, favoris, playlists et importation.
 - 2026-06-13T15:20:00+02:00 | decision | `BUILD.md` | Mise en stand-by de la cible webApp (WasmJs) pour se concentrer sur le développement approfondi de l'application Desktop (JVM).
 - 2026-06-13T00:30:00+02:00 | code, config | `gradle.properties`, `BUILD.md` | Configuration de la mémoire du démon Gradle (Xmx 4GB) et désactivation de KSP2 (`ksp.useKSP2=false`) pour forcer le compilateur à utiliser le moteur stable KSP1, résolvant ainsi l'erreur de compilation de la webApp (`java.lang.AssertionError: Built-in class kotlin.Number is not found`) liée à l'incompatibilité de KSP2 et du compilateur Room 3.0.0-alpha01 sur la cible Web WasmJs.
 - 2026-06-12T23:59:00+02:00 | code, config | `androidApp/build.gradle.kts`, `androidApp/src/main/java/com/aura/music/AuraApplication.kt`, `BUILD.md` | Remplacement du moteur réseau de Coil 3 par `coil-network-okhttp` au lieu de `coil-network-ktor` pour éliminer le conflit binaire à l'exécution entre le Ktor fetcher de Coil (compilé contre Ktor 2.x) et Ktor 3.0.0 utilisé dans l'application, ce qui permet l'affichage correct des images d'illustration en ligne (Artistes, Albums et Titres) sur l'écran de recherche.

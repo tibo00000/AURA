@@ -7,6 +7,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.delete
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
@@ -112,6 +114,50 @@ class KtorAuraApiService(
         contentType(ContentType.Application.Json)
         setBody(request)
     }.body()
+
+    override suspend fun getPlaylists(token: String): AuraResponse<List<PlaylistResponse>> = client.get("$cleanBaseUrl/me/playlists") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = client.get("$cleanBaseUrl/me/likes") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun likeTrack(
+        token: String,
+        trackId: String,
+        sourceContextType: String?,
+        sourceContextId: String?
+    ): AuraResponse<LikeResponse> = client.put("$cleanBaseUrl/me/tracks/$trackId/like") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(mapOf(
+            "source_context_type" to sourceContextType,
+            "source_context_id" to sourceContextId
+        ))
+    }.body()
+
+    override suspend fun unlikeTrack(token: String, trackId: String): AuraResponse<LikeResponse> = client.delete("$cleanBaseUrl/me/tracks/$trackId/like") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun getPlaybackSnapshot(token: String): AuraResponse<PlaybackSnapshotResponse?> = client.get("$cleanBaseUrl/me/playback-snapshot") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun updatePlaybackSnapshot(
+        token: String,
+        snapshot: PlaybackSnapshotResponse
+    ): AuraResponse<PlaybackSnapshotResponse> = client.put("$cleanBaseUrl/me/playback-snapshot") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(snapshot)
+    }.body()
+
+    override suspend fun getHistory(token: String): AuraResponse<HistoryResponseData> = client.get("$cleanBaseUrl/me/history") {
+        header("Authorization", token)
+    }.body()
+
 
     companion object {
         /**

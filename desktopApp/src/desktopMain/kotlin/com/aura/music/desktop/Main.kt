@@ -1,34 +1,62 @@
 package com.aura.music.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
-import com.aura.music.data.local.AuraDatabase
-import com.aura.music.domain.player.DesktopAudioPlayer
-import com.aura.music.ui.theme.AuraTheme
-import com.aura.music.ui.theme.DeepBlack
+import com.aura.music.data.local.*
+import com.aura.music.data.player.QueueManager
+import com.aura.music.domain.player.*
+import com.aura.music.ui.theme.*
+import com.aura.music.data.network.KtorAuraApiService
+import com.aura.music.data.network.AuraApiService
+import com.aura.music.data.network.DownloadRequestDto
+import com.aura.music.data.network.HistoryItemResponse
+import com.aura.music.data.network.SearchResponseData
+import com.aura.music.data.network.AlbumDetailResponseData
+import com.aura.music.data.network.ArtistDetailResponseData
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import org.jetbrains.compose.resources.painterResource
+import java.io.File
+import java.util.UUID
 import java.util.logging.Level
 import java.util.logging.Logger
+import javax.swing.JFileChooser
 
 fun main() = application {
     var isVisible by remember { mutableStateOf(true) }
     val windowState = rememberWindowState(
         position = WindowPosition(Alignment.Center),
-        size = DpSize(1024.dp, 768.dp)
+        size = DpSize(1280.dp, 800.dp)
     )
 
     // DB Initialization helper
@@ -36,12 +64,126 @@ fun main() = application {
         AuraDatabase.getInstance(null)
     }
 
-    // Native JNI Audio Player
+    // Native JVM Audio Player
     val audioPlayer = remember { DesktopAudioPlayer() }
+
+    // Queue Manager (in memory queue engine)
+    val queueManager = remember { QueueManager() }
+
+    // Ktor Api Service Client
+    val apiService = remember { KtorAuraApiService.createDefault() }
+
+    // Playback Orchestrator
+    val playbackOrchestrator = remember {
+        DesktopPlaybackOrchestrator(database, audioPlayer, queueManager, apiService)
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    // Screen navigation stack
+    var screenStack by remember { mutableStateOf(listOf("home")) }
+    val currentScreen = screenStack.last()
+
+    // Details navigation IDs
+    var selectedPlaylistId by remember { mutableStateOf<String?>(null) }
+    var selectedAlbumId by remember { mutableStateOf<String?>(null) }
+    var selectedArtistId by remember { mutableStateOf<String?>(null) }
+
+    // Auth & settings token states
+    var apiToken by remember { mutableStateOf("Bearer 12345678-1234-1234-1234-1234567890ab") }
+    var downloadsToken by remember { mutableStateOf("Bearer test_user_token") }
+    var userEmail by remember { mutableStateOf("") }
+    var userPassword by remember { mutableStateOf("") }
+    var loginStatus by remember { mutableStateOf("Connecté (Profil Test)") }
+    var autoSyncEnabled by remember { mutableStateOf(true) }
+
+    // Sync tokens to orchestrator
+    LaunchedEffect(apiToken) {
+        playbackOrchestrator.apiToken = apiToken
+    }
+
+    // Navigation helper functions
+    fun navigateTo(screen: String) {
+        screenStack = screenStack + screen
+    }
+
+    fun navigateBack() {
+        if (screenStack.size > 1) {
+            screenStack = screenStack.dropLast(1)
+        }
+    }
+
+    fun navigateToRoot(screen: String) {
+        screenStack = listOf(screen)
+    }
+
+    // Database reactive UI state lists
+    var allTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
+    var likedTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
+    var playlists by remember { mutableStateOf<List<PlaylistListRow>>(emptyList()) }
+    var playlistTracks by remember { mutableStateOf<List<PlaylistTrackRow>>(emptyList()) }
+    var currentPlaylistName by remember { mutableStateOf("") }
+
+    // Browse items for local tabs
+    var localAlbums by remember { mutableStateOf<List<AlbumBrowseRow>>(emptyList()) }
+    var localArtists by remember { mutableStateOf<List<ArtistBrowseRow>>(emptyList()) }
+
+    // Recently played items (listen history)
+    var listenHistory by remember { mutableStateOf<List<HistoryItemResponse>>(emptyList()) }
+
+    // Reusable data reloader
+    fun reloadDbData() {
+        coroutineScope.launch(Dispatchers.IO) {
+            allTracks = database.trackDao().getAllTracks()
+            likedTracks = database.trackDao().getLikedTracks()
+            playlists = database.playlistDao().getPlaylists()
+            localAlbums = database.albumDao().getAllBrowseAlbums()
+            localArtists = database.artistDao().getAllBrowseArtists()
+            
+            selectedPlaylistId?.let { id ->
+                val pl = database.playlistDao().getPlaylistDetail(id)
+                if (pl != null) {
+                    currentPlaylistName = pl.name
+                    playlistTracks = database.playlistDao().getPlaylistTracks(id)
+                }
+            }
+
+            // Sync history from remote
+            if (apiToken.isNotBlank()) {
+                try {
+                    val response = apiService.getHistory(apiToken)
+                    if (response.data != null) {
+                        listenHistory = response.data!!.items
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Failed to fetch history on reload: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // Initialize playback orchestrator and JNativeHook listeners
+    LaunchedEffect(Unit) {
+        playbackOrchestrator.connect()
+        reloadDbData()
+    }
+
+    // Periodic history reloader
+    LaunchedEffect(apiToken) {
+        if (apiToken.isNotBlank()) {
+            try {
+                val response = apiService.getHistory(apiToken)
+                if (response.data != null) {
+                    listenHistory = response.data!!.items
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to fetch history: ${e.message}")
+            }
+        }
+    }
 
     // Initialize JNativeHook
     DisposableEffect(Unit) {
-        // Suppress JNativeHook default console logs
         val logger = Logger.getLogger(GlobalScreen::class.java.getPackage().name)
         logger.level = Level.OFF
         logger.useParentHandlers = false
@@ -53,15 +195,24 @@ fun main() = application {
                     when (e.keyCode) {
                         NativeKeyEvent.VC_MEDIA_PLAY, NativeKeyEvent.VC_MEDIA_STOP -> {
                             println("JNativeHook: Global Play/Pause event detected")
-                            // Here we would call playbackOrchestrator.onEvent(PlayerEvent.TogglePlayPause)
+                            javafx.application.Platform.runLater {
+                                playbackOrchestrator.togglePlayPause()
+                                reloadDbData()
+                            }
                         }
                         NativeKeyEvent.VC_MEDIA_NEXT -> {
                             println("JNativeHook: Global Next event detected")
-                            // Here we would call playbackOrchestrator.onEvent(PlayerEvent.Next)
+                            javafx.application.Platform.runLater {
+                                playbackOrchestrator.next()
+                                reloadDbData()
+                            }
                         }
                         NativeKeyEvent.VC_MEDIA_PREVIOUS -> {
                             println("JNativeHook: Global Previous event detected")
-                            // Here we would call playbackOrchestrator.onEvent(PlayerEvent.Previous)
+                            javafx.application.Platform.runLater {
+                                playbackOrchestrator.previous()
+                                reloadDbData()
+                            }
                         }
                     }
                 }
@@ -75,6 +226,7 @@ fun main() = application {
         onDispose {
             try {
                 GlobalScreen.unregisterNativeHook()
+                playbackOrchestrator.disconnect()
             } catch (ex: Exception) {
                 // Ignore
             }
@@ -120,59 +272,1876 @@ fun main() = application {
             undecorated = false
         ) {
             AuraTheme {
-                val apiService = remember { com.aura.music.data.network.KtorAuraApiService.createDefault() }
-                var pingStatus by remember { mutableStateOf("En attente de connexion...") }
-                LaunchedEffect(Unit) {
-                    pingStatus = try {
-                        val response = apiService.search("test", limitTracks = 1)
-                        if (response.data != null) {
-                            "Connecté (FastAPI: OK)"
-                        } else {
-                            "Connecté (Erreur API: ${response.error?.message})"
+                val playerState by playbackOrchestrator.uiState.collectAsState()
+                
+                // Dialogs and temp states
+                var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+                var playlistNameInput by remember { mutableStateOf("") }
+                var showAddPlaylistMenuForTrack by remember { mutableStateOf<String?>(null) }
+                var searchInput by remember { mutableStateOf("") }
+                var localSearchResults by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
+                var onlineSearchResults by remember { mutableStateOf<SearchResponseData?>(null) }
+                var isSearching by remember { mutableStateOf(false) }
+                var searchError by remember { mutableStateOf<String?>(null) }
+                var scanProgressMsg by remember { mutableStateOf("Prêt pour le scan.") }
+                var libraryTab by remember { mutableStateOf("tracks") } // "tracks", "albums", "artists", "playlists"
+
+                // Hybrid Search handler
+                LaunchedEffect(searchInput) {
+                    val query = searchInput.trim()
+                    if (query.length >= 2) {
+                        isSearching = true
+                        searchError = null
+                        coroutineScope.launch(Dispatchers.IO) {
+                            try {
+                                localSearchResults = database.trackDao().searchTracks(query, 50)
+                                val response = apiService.search(query)
+                                if (response.error != null) {
+                                    searchError = response.error?.message
+                                } else {
+                                    onlineSearchResults = response.data
+                                }
+                            } catch (e: Exception) {
+                                searchError = e.message
+                                System.err.println("Hybrid search failed: ${e.message}")
+                            } finally {
+                                isSearching = false
+                            }
                         }
-                    } catch (e: Exception) {
-                        "Erreur de connexion: ${e.message}"
+                    } else {
+                        localSearchResults = emptyList()
+                        onlineSearchResults = null
+                        searchError = null
                     }
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = DeepBlack
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "AURA Client Bureau",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Une compilation JDK 17 avec exécution JVM 21, Generational ZGC (-XX:+UseZGC) et threads virtuels.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Main Layout (Sidebar + Content + Queue)
+                        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            // 1. Sidebar Panel
+                            Column(
+                                modifier = Modifier
+                                    .width(260.dp)
+                                    .fillMaxHeight()
+                                    .background(OffBlack)
+                                    .padding(vertical = 24.dp)
+                            ) {
+                                // Brand Title
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 24.dp).fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(16.dp).clip(CircleShape).background(BlazeOrange)
+                                    )
+                                    Text(
+                                        text = "AURA",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(32.dp))
 
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("État de l'application", style = MaterialTheme.typography.titleMedium)
+                                // Navigation Items
+                                val navItems = listOf(
+                                    Triple("home", "Accueil", Icons.Rounded.Home),
+                                    Triple("search", "Recherche", Icons.Rounded.Search),
+                                    Triple("library", "Bibliothèque", Icons.Rounded.List),
+                                    Triple("settings", "Paramètres", Icons.Rounded.Settings)
+                                )
+
+                                navItems.forEach { (route, label, icon) ->
+                                    val isSelected = currentScreen == route || 
+                                        (route == "library" && (currentScreen == "playlist_detail" || currentScreen == "album_detail" || currentScreen == "artist_detail"))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                navigateToRoot(route)
+                                                selectedPlaylistId = null
+                                                reloadDbData()
+                                            }
+                                            .background(if (isSelected) DarkGraphite else Color.Transparent)
+                                            .padding(horizontal = 24.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            tint = if (isSelected) BlazeOrange else TextSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) TextPrimary else TextSecondary
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Divider(color = HairlineDark, modifier = Modifier.padding(horizontal = 24.dp))
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                // Playlists section header
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "MES PLAYLISTS",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextMuted
+                                    )
+                                    IconButton(
+                                        onClick = { showCreatePlaylistDialog = true },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Add, contentDescription = null, tint = BlazeOrange)
+                                    }
+                                }
+
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("Base de données Room: Connectée (SQLite Bundled)")
-                                Text("Moteur Audio: JavaFX Media (JNI Native Bridge)")
-                                Text("Clavier Global (OS Hooks): JNativeHook Actif")
-                                Text("Réduction System Tray: Configurée (Minimiser suspend Skia)")
-                                Text("Serveur API: $pingStatus")
+
+                                // Playlist list
+                                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                                    items(playlists, key = { it.id }) { pl ->
+                                        val isSelected = currentScreen == "playlist_detail" && selectedPlaylistId == pl.id
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedPlaylistId = pl.id
+                                                    navigateTo("playlist_detail")
+                                                    reloadDbData()
+                                                }
+                                                .background(if (isSelected) DarkGraphite else Color.Transparent)
+                                                .padding(horizontal = 24.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted)
+                                            Text(
+                                                text = pl.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = if (isSelected) TextPrimary else TextSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 2. Main Content area
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(DeepBlack)
+                                    .padding(horizontal = 32.dp, vertical = 24.dp)
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    // Stack Navigation Header
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        if (screenStack.size > 1) {
+                                            IconButton(
+                                                onClick = { navigateBack() },
+                                                modifier = Modifier.size(36.dp).clip(CircleShape).background(DarkGraphite)
+                                            ) {
+                                                Icon(Icons.Rounded.KeyboardArrowLeft, contentDescription = "Retour", tint = TextPrimary)
+                                            }
+                                        }
+                                        Text(
+                                            text = when (currentScreen) {
+                                                "home" -> "Accueil"
+                                                "search" -> "Recherche hybride"
+                                                "library" -> "Bibliothèque"
+                                                "settings" -> "Paramètres & Scanner"
+                                                "album_detail" -> "Album"
+                                                "artist_detail" -> "Artiste"
+                                                "playlist_detail" -> "Détails de la Playlist"
+                                                else -> ""
+                                            },
+                                            style = MaterialTheme.typography.headlineMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                    }
+
+                                    // Render active screen
+                                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        when (currentScreen) {
+                                            "home" -> {
+                                                HomeScreen(
+                                                    allTracksCount = allTracks.size,
+                                                    likedTracksCount = likedTracks.size,
+                                                    playlistsCount = playlists.size,
+                                                    history = listenHistory,
+                                                    allTracks = allTracks,
+                                                    orchestrator = playbackOrchestrator
+                                                )
+                                            }
+                                            "search" -> {
+                                                SearchScreen(
+                                                    searchInput = searchInput,
+                                                    onSearchInputChange = { searchInput = it },
+                                                    localTracks = localSearchResults,
+                                                    onlineResults = onlineSearchResults,
+                                                    isSearching = isSearching,
+                                                    error = searchError,
+                                                    orchestrator = playbackOrchestrator,
+                                                    apiService = apiService,
+                                                    token = apiToken,
+                                                    onNavigateToAlbum = { id ->
+                                                        selectedAlbumId = id
+                                                        navigateTo("album_detail")
+                                                    },
+                                                    onNavigateToArtist = { id ->
+                                                        selectedArtistId = id
+                                                        navigateTo("artist_detail")
+                                                    },
+                                                    onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
+                                            "library" -> {
+                                                LibraryScreen(
+                                                    activeTab = libraryTab,
+                                                    onTabChange = { libraryTab = it },
+                                                    allTracks = allTracks,
+                                                    albums = localAlbums,
+                                                    artists = localArtists,
+                                                    playlists = playlists,
+                                                    orchestrator = playbackOrchestrator,
+                                                    onNavigateToAlbum = { id ->
+                                                        selectedAlbumId = id
+                                                        navigateTo("album_detail")
+                                                    },
+                                                    onNavigateToArtist = { id ->
+                                                        selectedArtistId = id
+                                                        navigateTo("artist_detail")
+                                                    },
+                                                    onNavigateToPlaylist = { id ->
+                                                        selectedPlaylistId = id
+                                                        navigateTo("playlist_detail")
+                                                    },
+                                                    onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
+                                            "settings" -> {
+                                                SettingsScreen(
+                                                    email = userEmail,
+                                                    onEmailChange = { userEmail = it },
+                                                    password = userPassword,
+                                                    onPasswordChange = { userPassword = it },
+                                                    status = loginStatus,
+                                                    apiToken = apiToken,
+                                                    onApiTokenChange = { apiToken = it },
+                                                    downloadsToken = downloadsToken,
+                                                    onDownloadsTokenChange = { downloadsToken = it },
+                                                    onLogin = {
+                                                        if (userEmail.isNotBlank()) {
+                                                            apiToken = "Bearer ${userEmail.trim()}"
+                                                            loginStatus = "Connecté en tant que ${userEmail.trim()}"
+                                                            reloadDbData()
+                                                        }
+                                                    },
+                                                    autoSync = autoSyncEnabled,
+                                                    onAutoSyncChange = { autoSyncEnabled = it },
+                                                    scanProgress = scanProgressMsg,
+                                                    onStartScan = {
+                                                        val chooser = JFileChooser().apply {
+                                                            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                                                            dialogTitle = "Choisir le dossier de musique"
+                                                        }
+                                                        val result = chooser.showOpenDialog(null)
+                                                        if (result == JFileChooser.APPROVE_OPTION) {
+                                                            val folder = chooser.selectedFile
+                                                            scanProgressMsg = "Lancement de l'indexation Loom..."
+                                                            playbackOrchestrator.scanLocalFolder(
+                                                                folder = folder,
+                                                                onProgress = { msg -> scanProgressMsg = msg },
+                                                                onComplete = { count ->
+                                                                    scanProgressMsg = "Indexation terminée. $count titres importés."
+                                                                    reloadDbData()
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                            "album_detail" -> {
+                                                AlbumDetailScreen(
+                                                    albumId = selectedAlbumId,
+                                                    apiService = apiService,
+                                                    database = database,
+                                                    orchestrator = playbackOrchestrator,
+                                                    onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
+                                            "artist_detail" -> {
+                                                ArtistDetailScreen(
+                                                    artistId = selectedArtistId,
+                                                    apiService = apiService,
+                                                    database = database,
+                                                    orchestrator = playbackOrchestrator,
+                                                    onNavigateToAlbum = { id ->
+                                                        selectedAlbumId = id
+                                                        navigateTo("album_detail")
+                                                    },
+                                                    onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
+                                            "playlist_detail" -> {
+                                                PlaylistDetailScreen(
+                                                    playlistId = selectedPlaylistId,
+                                                    playlistName = currentPlaylistName,
+                                                    tracks = playlistTracks,
+                                                    allTracks = allTracks,
+                                                    database = database,
+                                                    orchestrator = playbackOrchestrator,
+                                                    onDeletePlaylist = {
+                                                        coroutineScope.launch(Dispatchers.IO) {
+                                                            selectedPlaylistId?.let { id ->
+                                                                database.playlistDao().deletePlaylist(id)
+                                                                selectedPlaylistId = null
+                                                                navigateBack()
+                                                                reloadDbData()
+                                                            }
+                                                        }
+                                                    },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Separator
+                            Divider(color = HairlineDark, modifier = Modifier.width(1.dp).fillMaxHeight())
+
+                            // 3. Right Queue Panel
+                            Column(
+                                modifier = Modifier
+                                    .width(300.dp)
+                                    .fillMaxHeight()
+                                    .background(OffBlack)
+                                    .padding(vertical = 24.dp, horizontal = 16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("File d'attente", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        val totalQueue = playerState.mainQueueTracks.size + playerState.priorityQueue.size
+                                        Text("$totalQueue titre(s) restant(s)", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            // Empty queue logic
+                                            queueManager.clearQueue()
+                                            playbackOrchestrator.next() // stops playback or advances
+                                            reloadDbData()
+                                        }
+                                    ) {
+                                        Text("Vider", color = BlazeOrange, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                val upcoming = playerState.mainQueueTracks
+                                val priority = playerState.priorityQueue
+
+                                if (upcoming.isEmpty() && priority.isEmpty()) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text("File vide", color = TextMuted)
+                                    }
+                                } else {
+                                    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (priority.isNotEmpty()) {
+                                            item {
+                                                Text("FILE PRIORITAIRE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = BlazeOrange)
+                                            }
+                                            itemsIndexed(priority) { idx, t ->
+                                                QueueItemRow(
+                                                    track = t,
+                                                    onRemove = { playbackOrchestrator.removeFromQueue(idx) }
+                                                )
+                                            }
+                                        }
+                                        if (upcoming.isNotEmpty()) {
+                                            item {
+                                                Text("SUITE DU CONTEXTE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextMuted)
+                                            }
+                                            items(upcoming) { t ->
+                                                QueueItemRow(
+                                                    track = t,
+                                                    onRemove = { playbackOrchestrator.removeFromMainQueue(t.internalId) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
-                        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Text("Interface active. Minimisez pour suspendre le rendu graphique.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Bottom Player Bar
+                        PlayerBottomBar(
+                            state = playerState,
+                            orchestrator = playbackOrchestrator,
+                            onLikeToggle = { trackId ->
+                                playbackOrchestrator.toggleLike(trackId)
+                                reloadDbData()
+                            }
+                        )
+                    }
+
+                    // Dialog: Create Playlist
+                    if (showCreatePlaylistDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showCreatePlaylistDialog = false },
+                            title = { Text("Nouvelle Playlist", color = TextPrimary) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Entrez le nom de la playlist :", color = TextSecondary)
+                                    OutlinedTextField(
+                                        value = playlistNameInput,
+                                        onValueChange = { playlistNameInput = it },
+                                        singleLine = true,
+                                        colors = TextFieldDefaults.colors(
+                                            focusedTextColor = TextPrimary,
+                                            unfocusedTextColor = TextPrimary,
+                                            focusedContainerColor = OffBlack,
+                                            unfocusedContainerColor = OffBlack,
+                                            focusedIndicatorColor = BlazeOrange,
+                                            cursorColor = BlazeOrange
+                                        )
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        if (playlistNameInput.isNotBlank()) {
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                val now = System.currentTimeMillis()
+                                                val id = "playlist_${UUID.randomUUID().toString().take(8)}"
+                                                database.playlistDao().insertPlaylist(
+                                                    PlaylistEntity(
+                                                        id = id,
+                                                        name = playlistNameInput.trim(),
+                                                        coverUri = null,
+                                                        isPinned = false,
+                                                        createdAt = now,
+                                                        updatedAt = now
+                                                    )
+                                                )
+                                                
+                                                // Sync playlist to backend REST
+                                                if (apiToken.isNotBlank()) {
+                                                    try {
+                                                        apiService.createPlaylist(
+                                                            apiToken,
+                                                            com.aura.music.data.network.PlaylistCreate(
+                                                                id = id,
+                                                                name = playlistNameInput.trim(),
+                                                                coverUri = null,
+                                                                isPinned = false
+                                                            )
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        System.err.println("Failed to sync new playlist: ${e.message}")
+                                                    }
+                                                }
+
+                                                playlistNameInput = ""
+                                                showCreatePlaylistDialog = false
+                                                reloadDbData()
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                                ) {
+                                    Text("Créer")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                                    Text("Annuler", color = TextSecondary)
+                                }
+                            },
+                            containerColor = OffBlack
+                        )
+                    }
+
+                    // Dialog: Add to Playlist selection
+                    showAddPlaylistMenuForTrack?.let { trackId ->
+                        AlertDialog(
+                            onDismissRequest = { showAddPlaylistMenuForTrack = null },
+                            title = { Text("Ajouter à la playlist", color = TextPrimary) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (playlists.isEmpty()) {
+                                        Text("Aucune playlist créée.", color = TextMuted)
+                                    } else {
+                                        LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
+                                            items(playlists) { pl ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            coroutineScope.launch(Dispatchers.IO) {
+                                                                val pos = database.playlistDao().getNextPlaylistPosition(pl.id)
+                                                                val itemId = "playlist-item:${UUID.randomUUID()}"
+                                                                database.playlistDao().insertPlaylistItem(
+                                                                    PlaylistItemEntity(
+                                                                        id = itemId,
+                                                                        playlistId = pl.id,
+                                                                        trackId = trackId,
+                                                                        position = pos,
+                                                                        addedAt = System.currentTimeMillis()
+                                                                    )
+                                                                )
+
+                                                                // Sync to backend REST
+                                                                if (apiToken.isNotBlank()) {
+                                                                    try {
+                                                                        apiService.appendTrackToPlaylist(
+                                                                            apiToken,
+                                                                            pl.id,
+                                                                            com.aura.music.data.network.PlaylistItemCreate(
+                                                                                id = itemId,
+                                                                                trackId = trackId,
+                                                                                position = pos
+                                                                            )
+                                                                        )
+                                                                    } catch (e: Exception) {
+                                                                        System.err.println("Failed to sync playlist item append: ${e.message}")
+                                                                    }
+                                                                }
+
+                                                                showAddPlaylistMenuForTrack = null
+                                                                reloadDbData()
+                                                            }
+                                                        }
+                                                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted)
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    Text(pl.name, color = TextPrimary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {},
+                            dismissButton = {
+                                TextButton(onClick = { showAddPlaylistMenuForTrack = null }) {
+                                    Text("Fermer", color = TextSecondary)
+                                }
+                            },
+                            containerColor = OffBlack
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------- COMPOSE SCREEN COMPONENTS ----------------
+
+@Composable
+fun HomeScreen(
+    allTracksCount: Int,
+    likedTracksCount: Int,
+    playlistsCount: Int,
+    history: List<HistoryItemResponse>,
+    allTracks: List<TrackListRow>,
+    orchestrator: DesktopPlaybackOrchestrator
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // Welcoming card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text(
+                        text = "Bonjour, AURA vous propose une expérience audio unique.",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Profitez de votre bibliothèque locale synchronisée avec le cloud, et recherchez en ligne de nouvelles musiques.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+
+        // Stats boxes row
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                StatBox(label = "Titres locaux", value = allTracksCount.toString())
+                StatBox(label = "Favoris", value = likedTracksCount.toString())
+                StatBox(label = "Playlists", value = playlistsCount.toString())
+            }
+        }
+
+        // Listen History section
+        item {
+            Text(
+                text = "Écoutés récemment",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+        }
+
+        if (history.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Aucun historique disponible pour le moment.", color = TextMuted)
+                }
+            }
+        } else {
+            items(history) { item ->
+                // Look up track in local db to get title and artist
+                val matchedLocal = allTracks.firstOrNull { it.id == item.trackId }
+                val title = matchedLocal?.title ?: "Titre Inconnu"
+                val artist = matchedLocal?.artistName ?: "Artiste Inconnu"
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(OffBlack)
+                        .clickable {
+                            if (matchedLocal != null) {
+                                orchestrator.playTrack(matchedLocal.id, "history", "all", allTracks.map { it.toQueued() }, allTracks.indexOf(matchedLocal))
+                            }
+                        }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)).background(DarkGraphite),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = BlazeOrange)
+                        }
+                        Column {
+                            Text(title, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                            Text(artist, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = if (item.wasSkipped) "Passé" else "Écouté",
+                            color = if (item.wasSkipped) SemanticError else SemanticSuccess,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        item.playedAt.take(16).replace("T", " ").let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchScreen(
+    searchInput: String,
+    onSearchInputChange: (String) -> Unit,
+    localTracks: List<TrackListRow>,
+    onlineResults: SearchResponseData?,
+    isSearching: Boolean,
+    error: String?,
+    orchestrator: DesktopPlaybackOrchestrator,
+    apiService: AuraApiService,
+    token: String,
+    onNavigateToAlbum: (String) -> Unit,
+    onNavigateToArtist: (String) -> Unit,
+    onAddToPlaylist: (String) -> Unit,
+    onReload: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var isDownloading by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        OutlinedTextField(
+            value = searchInput,
+            onValueChange = onSearchInputChange,
+            placeholder = { Text("Rechercher un titre, artiste ou album...", color = TextMuted) },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextMuted) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = TextFieldDefaults.colors(
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                focusedContainerColor = OffBlack,
+                unfocusedContainerColor = OffBlack,
+                cursorColor = BlazeOrange,
+                focusedIndicatorColor = BlazeOrange
+            )
+        )
+
+        if (isSearching) {
+            Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = BlazeOrange)
+            }
+        } else if (error != null) {
+            Box(modifier = Modifier.fillMaxWidth().padding(16.dp).background(SemanticError.copy(alpha = 0.1f)).clip(RoundedCornerShape(8.dp))) {
+                Text("Erreur recherche : $error", modifier = Modifier.padding(16.dp), color = SemanticError)
+            }
+        } else if (searchInput.isBlank()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Entrez au moins 2 caractères pour rechercher.", color = TextMuted)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // 1. Best Match (Meilleur résultat)
+                val best = onlineResults?.bestMatch
+                if (best != null && best.item != null) {
+                    item {
+                        Text("Meilleur résultat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(OffBlack)
+                                .clickable {
+                                    when (best.kind) {
+                                        "album" -> (best.item as? com.aura.music.data.network.AlbumSummary)?.id?.let { onNavigateToAlbum(it) }
+                                        "artist" -> (best.item as? com.aura.music.data.network.ArtistSummary)?.id?.let { onNavigateToArtist(it) }
+                                    }
+                                }
+                                .padding(24.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(BlazeOrange, DarkGraphite)
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = when (best.kind) {
+                                        "artist" -> Icons.Rounded.Person
+                                        "album" -> Icons.Rounded.List
+                                        else -> Icons.Rounded.PlayArrow
+                                    },
+                                    contentDescription = null,
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                            Column {
+                                val titleText = when (val item = best.item) {
+                                    is com.aura.music.data.network.TrackSummary -> item.title
+                                    is com.aura.music.data.network.ArtistSummary -> item.name
+                                    is com.aura.music.data.network.AlbumSummary -> item.title
+                                    else -> ""
+                                }
+                                val subtitleText = when (val item = best.item) {
+                                    is com.aura.music.data.network.TrackSummary -> item.displayArtistName
+                                    is com.aura.music.data.network.AlbumSummary -> item.primaryArtistName
+                                    else -> ""
+                                }
+                                Text(titleText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                if (subtitleText.isNotEmpty()) {
+                                    Text(subtitleText, style = MaterialTheme.typography.titleMedium, color = TextSecondary)
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(DarkGraphite)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = when (best.kind) {
+                                            "artist" -> "ARTISTE"
+                                            "album" -> "ALBUM"
+                                            else -> "TITRE"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Local tracks matches
+                if (localTracks.isNotEmpty()) {
+                    item {
+                        Text("Titres de votre Bibliothèque", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    }
+                    itemsIndexed(localTracks) { index, track ->
+                        val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.id
+                        TrackListItem(
+                            index = index,
+                            track = track,
+                            isPlaying = isPlaying,
+                            onPlay = {
+                                orchestrator.playTrack(track.id, "search_local", searchInput, localTracks.map { it.toQueued() }, index)
+                            },
+                            onLike = { orchestrator.toggleLike(track.id); onReload() },
+                            onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
+                            onAddToPlaylist = { onAddToPlaylist(track.id) }
+                        )
+                    }
+                }
+
+                // 3. Online tracks matches
+                val onlineTracks = onlineResults?.tracks ?: emptyList()
+                if (onlineTracks.isNotEmpty()) {
+                    item {
+                        Text("Résultats en ligne", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    }
+                    itemsIndexed(onlineTracks) { index, track ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(OffBlack)
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text((index + 1).toString(), color = TextMuted, modifier = Modifier.width(30.dp))
+                                Column {
+                                    Text(track.title, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                    Text(track.displayArtistName + (track.displayAlbumTitle?.let { " • $it" } ?: ""), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (track.isLocalAvailable) {
+                                    IconButton(
+                                        onClick = {
+                                            // Play as local track
+                                            coroutineScope.launch {
+                                                val localRow = database.trackDao().getTrackById(track.id)
+                                                if (localRow != null) {
+                                                    orchestrator.playTrack(localRow.id, "search_online", track.id, listOf(localRow.toQueued()), 0)
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Lire", tint = BlazeOrange)
+                                    }
+                                } else {
+                                    val isThisDownloading = isDownloading == track.id
+                                    IconButton(
+                                        onClick = {
+                                            if (token.isNotBlank()) {
+                                                isDownloading = track.id
+                                                coroutineScope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        apiService.createDownload(token, DownloadRequestDto(trackId = track.id))
+                                                    } catch (e: Exception) {
+                                                        System.err.println("Download trigger failed: ${e.message}")
+                                                    } finally {
+                                                        isDownloading = null
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = !isThisDownloading
+                                    ) {
+                                        if (isThisDownloading) {
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = BlazeOrange)
+                                        } else {
+                                            Icon(Icons.Rounded.List, contentDescription = "Télécharger", tint = TextMuted)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Online albums matches
+                val onlineAlbums = onlineResults?.albums ?: emptyList()
+                if (onlineAlbums.isNotEmpty()) {
+                    item {
+                        Text("Albums en ligne", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(onlineAlbums) { album ->
+                                Column(
+                                    modifier = Modifier
+                                        .width(140.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onNavigateToAlbum(album.id) }
+                                        .background(OffBlack)
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(116.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(DarkGraphite),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted)
+                                    }
+                                    Text(album.title, color = TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(album.primaryArtistName, color = TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 5. Online artists matches
+                val onlineArtists = onlineResults?.artists ?: emptyList()
+                if (onlineArtists.isNotEmpty()) {
+                    item {
+                        Text("Artistes en ligne", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(onlineArtists) { artist ->
+                                Column(
+                                    modifier = Modifier
+                                        .width(120.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onNavigateToArtist(artist.id) }
+                                        .background(OffBlack)
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(80.dp)
+                                            .clip(CircleShape)
+                                            .background(DarkGraphite),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Rounded.Person, contentDescription = null, tint = TextMuted)
+                                    }
+                                    Text(artist.name, color = TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LibraryScreen(
+    activeTab: String,
+    onTabChange: (String) -> Unit,
+    allTracks: List<TrackListRow>,
+    albums: List<AlbumBrowseRow>,
+    artists: List<ArtistBrowseRow>,
+    playlists: List<PlaylistListRow>,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onNavigateToAlbum: (String) -> Unit,
+    onNavigateToArtist: (String) -> Unit,
+    onNavigateToPlaylist: (String) -> Unit,
+    onAddToPlaylist: (String) -> Unit,
+    onReload: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // TabRow headers
+        TabRow(
+            selectedTabIndex = when (activeTab) {
+                "tracks" -> 0
+                "albums" -> 1
+                "artists" -> 2
+                else -> 3
+            },
+            containerColor = Color.Transparent,
+            contentColor = BlazeOrange,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[when (activeTab) {
+                        "tracks" -> 0
+                        "albums" -> 1
+                        "artists" -> 2
+                        else -> 3
+                    }]),
+                    color = BlazeOrange
+                )
+            }
+        ) {
+            Tab(selected = activeTab == "tracks", onClick = { onTabChange("tracks") }, text = { Text("Titres") })
+            Tab(selected = activeTab == "albums", onClick = { onTabChange("albums") }, text = { Text("Albums") })
+            Tab(selected = activeTab == "artists", onClick = { onTabChange("artists") }, text = { Text("Artistes") })
+            Tab(selected = activeTab == "playlists", onClick = { onTabChange("playlists") }, text = { Text("Playlists") })
+        }
+
+        when (activeTab) {
+            "tracks" -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Button(
+                            onClick = {
+                                if (allTracks.isNotEmpty()) {
+                                    val queued = allTracks.map { it.toQueued() }
+                                    orchestrator.playTrack(queued[0].trackId, "library_tracks", "all", queued, 0)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Tout lire", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    TrackListHeader()
+
+                    if (allTracks.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Aucune piste. Utilisez 'Paramètres' pour importer des dossiers.", color = TextMuted)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.weight(1f)) {
+                            itemsIndexed(allTracks, key = { _, t -> t.id }) { index, track ->
+                                val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.id
+                                TrackListItem(
+                                    index = index,
+                                    track = track,
+                                    isPlaying = isPlaying,
+                                    onPlay = {
+                                        val queued = allTracks.map { it.toQueued() }
+                                        orchestrator.playTrack(track.id, "library_tracks", "all", queued, index)
+                                    },
+                                    onLike = { orchestrator.toggleLike(track.id); onReload() },
+                                    onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
+                                    onAddToPlaylist = { onAddToPlaylist(track.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            "albums" -> {
+                if (albums.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Aucun album local.", color = TextMuted)
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(160.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(albums) { album ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigateToAlbum(album.id) },
+                                colors = CardDefaults.cardColors(containerColor = OffBlack)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(DarkGraphite),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
+                                    }
+                                    Text(album.title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(album.artistName ?: "Artiste inconnu", color = TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "artists" -> {
+                if (artists.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Aucun artiste local.", color = TextMuted)
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(140.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(artists) { artist ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigateToArtist(artist.id) },
+                                colors = CardDefaults.cardColors(containerColor = OffBlack)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(80.dp)
+                                            .clip(CircleShape)
+                                            .background(DarkGraphite),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Rounded.Person, contentDescription = null, tint = TextMuted, modifier = Modifier.size(28.dp))
+                                    }
+                                    Text(artist.name, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${artist.trackCount} titre(s)", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "playlists" -> {
+                if (playlists.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Aucune playlist. Utilisez le bouton '+' à gauche pour en créer une.", color = TextMuted)
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(160.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(playlists) { pl ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigateToPlaylist(pl.id) },
+                                colors = CardDefaults.cardColors(containerColor = OffBlack)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(DarkGraphite),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
+                                    }
+                                    Text(pl.name, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("Playlist AURA", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    email: String,
+    onEmailChange: (String) -> Unit,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    status: String,
+    apiToken: String,
+    onApiTokenChange: (String) -> Unit,
+    downloadsToken: String,
+    onDownloadsTokenChange: (String) -> Unit,
+    onLogin: () -> Unit,
+    autoSync: Boolean,
+    onAutoSyncChange: (Boolean) -> Unit,
+    scanProgress: String,
+    onStartScan: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // Auth Simulation Box
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Compte AURA & Connexion", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Statut: $status", color = BlazeOrange, fontWeight = FontWeight.Bold)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = onEmailChange,
+                            label = { Text("E-mail") },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                focusedContainerColor = DarkGraphite,
+                                unfocusedContainerColor = DarkGraphite,
+                                cursorColor = BlazeOrange,
+                                focusedIndicatorColor = BlazeOrange
+                            )
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = onPasswordChange,
+                            label = { Text("Mot de passe") },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                focusedContainerColor = DarkGraphite,
+                                unfocusedContainerColor = DarkGraphite,
+                                cursorColor = BlazeOrange,
+                                focusedIndicatorColor = BlazeOrange
+                            )
+                        )
+                    }
+
+                    Button(
+                        onClick = onLogin,
+                        colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                    ) {
+                        Text("Se connecter")
+                    }
+                }
+            }
+        }
+
+        // Credentials overview
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Configuration des Tokens REST", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    
+                    OutlinedTextField(
+                        value = apiToken,
+                        onValueChange = onApiTokenChange,
+                        label = { Text("Bearer Token Sync") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = DarkGraphite,
+                            unfocusedContainerColor = DarkGraphite,
+                            cursorColor = BlazeOrange,
+                            focusedIndicatorColor = BlazeOrange
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = downloadsToken,
+                        onValueChange = onDownloadsTokenChange,
+                        label = { Text("Bearer Token Téléchargements") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = DarkGraphite,
+                            unfocusedContainerColor = DarkGraphite,
+                            cursorColor = BlazeOrange,
+                            focusedIndicatorColor = BlazeOrange
+                        )
+                    )
+                }
+            }
+        }
+
+        // Auto sync options
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Row(
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Synchronisation automatique", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text("Synchronise vos snapshots de lecture et vos likes en arrière-plan.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                    Switch(
+                        checked = autoSync,
+                        onCheckedChange = onAutoSyncChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = TextPrimary,
+                            checkedTrackColor = BlazeOrange
+                        )
+                    )
+                }
+            }
+        }
+
+        // Project Loom local scanner
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Indexeur de fichiers locaux (Project Loom)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Sélectionnez un dossier de musique local pour l'indexation. La tâche d'importation s'exécute de manière asynchrone sur des threads virtuels Loom.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                    
+                    Button(
+                        onClick = onStartScan,
+                        colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sélectionner dossier...")
+                    }
+
+                    Text(scanProgress, color = BlazeOrange, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AlbumDetailScreen(
+    albumId: String?,
+    apiService: AuraApiService,
+    database: AuraDatabase,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onAddToPlaylist: (String) -> Unit,
+    onReload: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var onlineAlbum by remember { mutableStateOf<AlbumDetailResponseData?>(null) }
+    var localTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
+    var albumTitle by remember { mutableStateOf("Album") }
+    var artistName by remember { mutableStateOf("Artiste") }
+    var tracksCount by remember { mutableStateOf(0) }
+    var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(albumId) {
+        albumId?.let { id ->
+            loading = true
+            try {
+                if (id.startsWith("album_")) {
+                    // Local album details
+                    localTracks = database.trackDao().getTracksForAlbum(id)
+                    val first = localTracks.firstOrNull()
+                    albumTitle = first?.albumTitle ?: "Album local"
+                    artistName = first?.artistName ?: "Artiste local"
+                    tracksCount = localTracks.size
+                    onlineAlbum = null
+                } else {
+                    // Online album details
+                    val response = apiService.getAlbum(id)
+                    if (response.data != null) {
+                        onlineAlbum = response.data
+                        albumTitle = response.data!!.title
+                        artistName = response.data!!.primaryArtistName
+                        tracksCount = response.data!!.tracks.size
+                    }
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to load album details: ${e.message}")
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    if (loading) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = BlazeOrange)
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            // Header Hero
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                Brush.linearGradient(colors = listOf(BlazeOrange, DarkGraphite))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.List, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(48.dp))
+                    }
+                    Column {
+                        Text(albumTitle, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text(artistName, style = MaterialTheme.typography.titleLarge, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("$tracksCount titre(s)", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                    }
+                }
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Button(
+                        onClick = {
+                            if (albumId != null) {
+                                if (albumId.startsWith("album_")) {
+                                    if (localTracks.isNotEmpty()) {
+                                        orchestrator.playTrack(localTracks[0].id, "album", albumId, localTracks.map { it.toQueued() }, 0)
+                                    }
+                                } else {
+                                    // Play online tracks if available
+                                    onlineAlbum?.tracks?.let { tracks ->
+                                        if (tracks.isNotEmpty()) {
+                                            // Trigger play of first track (if local mapping matches)
+                                            coroutineScope.launch {
+                                                val localRow = database.trackDao().getTrackById(tracks[0].id)
+                                                if (localRow != null) {
+                                                    orchestrator.playTrack(localRow.id, "album", albumId, listOf(localRow.toQueued()), 0)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Tout lire", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            item {
+                TrackListHeader()
+            }
+
+            if (albumId != null && albumId.startsWith("album_")) {
+                itemsIndexed(localTracks) { index, track ->
+                    val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.id
+                    TrackListItem(
+                        index = index,
+                        track = track,
+                        isPlaying = isPlaying,
+                        onPlay = {
+                            orchestrator.playTrack(track.id, "album", albumId, localTracks.map { it.toQueued() }, index)
+                        },
+                        onLike = { orchestrator.toggleLike(track.id); onReload() },
+                        onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
+                        onAddToPlaylist = { onAddToPlaylist(track.id) }
+                    )
+                }
+            } else {
+                val tracks = onlineAlbum?.tracks ?: emptyList()
+                itemsIndexed(tracks) { index, track ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(OffBlack)
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text((index + 1).toString(), color = TextMuted, modifier = Modifier.width(30.dp))
+                            Column {
+                                Text(track.title, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                Text(track.displayArtistName, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val localRow = database.trackDao().getTrackById(track.id)
+                                    if (localRow != null) {
+                                        orchestrator.playTrack(localRow.id, "album", albumId ?: "", listOf(localRow.toQueued()), 0)
+                                    }
+                                }
+                            },
+                            enabled = track.isLocalAvailable
+                        ) {
+                            Icon(
+                                imageVector = if (track.isLocalAvailable) Icons.Rounded.PlayArrow else Icons.Rounded.List,
+                                contentDescription = null,
+                                tint = if (track.isLocalAvailable) BlazeOrange else TextMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ArtistDetailScreen(
+    artistId: String?,
+    apiService: AuraApiService,
+    database: AuraDatabase,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onNavigateToAlbum: (String) -> Unit,
+    onAddToPlaylist: (String) -> Unit,
+    onReload: () -> Unit
+) {
+    var onlineArtist by remember { mutableStateOf<ArtistDetailResponseData?>(null) }
+    var localTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
+    var artistName by remember { mutableStateOf("Artiste") }
+    var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(artistId) {
+        artistId?.let { id ->
+            loading = true
+            try {
+                if (id.startsWith("artist_")) {
+                    localTracks = database.trackDao().getTracksForArtist(id, 50)
+                    artistName = localTracks.firstOrNull()?.artistName ?: "Artiste local"
+                    onlineArtist = null
+                } else {
+                    val response = apiService.getArtist(id)
+                    if (response.data != null) {
+                        onlineArtist = response.data
+                        artistName = response.data!!.name
+                    }
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to load artist details: ${e.message}")
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    if (loading) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = BlazeOrange)
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(colors = listOf(BlazeOrange, DarkGraphite))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Person, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(40.dp))
+                    }
+                    Column {
+                        Text(artistName, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text("Artiste AURA", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                    }
+                }
+            }
+
+            item {
+                Text("Meilleures Pistes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+
+            if (artistId != null && artistId.startsWith("artist_")) {
+                itemsIndexed(localTracks) { index, track ->
+                    val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.id
+                    TrackListItem(
+                        index = index,
+                        track = track,
+                        isPlaying = isPlaying,
+                        onPlay = {
+                            orchestrator.playTrack(track.id, "artist", artistId, localTracks.map { it.toQueued() }, index)
+                        },
+                        onLike = { orchestrator.toggleLike(track.id); onReload() },
+                        onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
+                        onAddToPlaylist = { onAddToPlaylist(track.id) }
+                    )
+                }
+            } else {
+                val tracks = onlineArtist?.topTracks ?: emptyList()
+                itemsIndexed(tracks) { index, track ->
+                    val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(OffBlack)
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text((index + 1).toString(), color = if (isPlaying) BlazeOrange else TextMuted, modifier = Modifier.width(30.dp))
+                            Column {
+                                Text(track.title, style = MaterialTheme.typography.bodyLarge, color = if (isPlaying) BlazeOrange else TextPrimary, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                // play if local mapping matches
+                            },
+                            enabled = track.isLocalAvailable
+                        ) {
+                            Icon(
+                                imageVector = if (track.isLocalAvailable) Icons.Rounded.PlayArrow else Icons.Rounded.List,
+                                contentDescription = null,
+                                tint = if (track.isLocalAvailable) BlazeOrange else TextMuted
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Albums section
+            val albums = onlineArtist?.albums ?: emptyList()
+            if (albums.isNotEmpty()) {
+                item {
+                    Text("Albums", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        items(albums) { album ->
+                            Column(
+                                modifier = Modifier
+                                    .width(130.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(OffBlack)
+                                    .clickable { onNavigateToAlbum(album.id) }
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(106.dp).clip(RoundedCornerShape(4.dp)).background(DarkGraphite),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.List, contentDescription = null, tint = TextMuted)
+                                }
+                                Text(album.title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(album.releaseDate?.take(4) ?: "", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlaylistDetailScreen(
+    playlistId: String?,
+    playlistName: String,
+    tracks: List<PlaylistTrackRow>,
+    allTracks: List<TrackListRow>,
+    database: AuraDatabase,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onDeletePlaylist: () -> Unit,
+    onReload: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(playlistName, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("${tracks.size} titre(s) dans la playlist.", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+            }
+            IconButton(
+                onClick = onDeletePlaylist
+            ) {
+                Icon(Icons.Rounded.Delete, contentDescription = "Supprimer la playlist", tint = SemanticError)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (tracks.isNotEmpty()) {
+                Button(
+                    onClick = {
+                        val queued = tracks.map { it.toQueued() }
+                        orchestrator.playTrack(queued[0].trackId, "playlist", playlistId ?: "", queued, 0)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Tout lire", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Divider(color = HairlineDark)
+        TrackListHeader()
+
+        if (tracks.isEmpty()) {
+            Box(modifier = Modifier.weight(0.5f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("Cette playlist est vide. Ajoutez des pistes locales ci-dessous.", color = TextMuted)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(0.5f)) {
+                itemsIndexed(tracks, key = { _, t -> t.playlistItemId }) { index, track ->
+                    val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.trackId
+                    TrackListItem(
+                        index = index,
+                        track = track.toTrackListRow(),
+                        isPlaying = isPlaying,
+                        onPlay = {
+                            val queued = tracks.map { it.toQueued() }
+                            orchestrator.playTrack(track.trackId, "playlist", playlistId ?: "", queued, index)
+                        },
+                        onLike = { orchestrator.toggleLike(track.trackId); onReload() },
+                        onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
+                        onRemove = {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                database.playlistDao().deletePlaylistItem(track.playlistItemId)
+                                onReload()
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        // Section to add local tracks to playlist
+        Divider(color = HairlineDark)
+        Text("Ajouter des titres de la bibliothèque", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+
+        val candidates = allTracks.filter { t -> tracks.none { pt -> pt.trackId == t.id } }
+        if (candidates.isEmpty()) {
+            Text("Tous les titres de votre bibliothèque sont dans la playlist.", color = TextMuted, modifier = Modifier.padding(vertical = 12.dp))
+        } else {
+            LazyColumn(modifier = Modifier.weight(0.4f)) {
+                items(candidates) { candidate ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(candidate.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text(candidate.artistName, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        }
+                        Button(
+                            onClick = {
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    playlistId?.let { pid ->
+                                        val pos = database.playlistDao().getNextPlaylistPosition(pid)
+                                        database.playlistDao().insertPlaylistItem(
+                                            PlaylistItemEntity(
+                                                id = "playlist-item:${UUID.randomUUID()}",
+                                                playlistId = pid,
+                                                trackId = candidate.id,
+                                                position = pos,
+                                                addedAt = System.currentTimeMillis()
+                                            )
+                                        )
+                                        onReload()
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite, contentColor = TextPrimary)
+                        ) {
+                            Text("Ajouter")
                         }
                     }
                 }

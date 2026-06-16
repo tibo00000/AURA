@@ -64,3 +64,43 @@ class LikeResponse(BaseModel):
     liked_at: str
     source_context_type: Optional[str] = None
     source_context_id: Optional[str] = None
+
+
+class LikeRequest(BaseModel):
+    """Request model to like a track."""
+    source_context_type: Optional[str] = None
+    source_context_id: Optional[str] = None
+
+
+class HistoryItemResponse(BaseModel):
+    """History item model."""
+    id: str
+    track_id: str
+    played_at: str
+    completion_percent: Optional[float] = None
+    was_skipped: bool
+    source_context_type: Optional[str] = None
+    source_context_id: Optional[str] = None
+
+
+class HistoryResponseData(BaseModel):
+    """Envelope wrapper for history items."""
+    items: List[HistoryItemResponse]
+
+
+class PlaylistCreate(BaseModel):
+    """Request model to create a playlist."""
+    id: str
+    name: str
+    cover_uri: Optional[str] = None
+    is_pinned: bool = False
+
+
+class PlaylistItemCreate(BaseModel):
+    """Request model to append a track to a playlist."""
+    id: str
+    track_id: str
+    position: int
+    added_from_context_type: Optional[str] = None
+    added_from_context_id: Optional[str] = None
+

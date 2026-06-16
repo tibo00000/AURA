@@ -51,4 +51,23 @@ interface AuraApiService {
     suspend fun pushBatch(token: String, request: PushBatchRequestDto): AuraResponse<PushBatchResponseDto>
 
     suspend fun pullBatch(token: String, request: PullBatchRequestDto): AuraResponse<PullBatchResponseDto>
+
+    suspend fun getPlaylists(token: String): AuraResponse<List<PlaylistResponse>>
+
+    suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>>
+
+    suspend fun likeTrack(
+        token: String,
+        trackId: String,
+        sourceContextType: String? = null,
+        sourceContextId: String? = null
+    ): AuraResponse<LikeResponse>
+
+    suspend fun unlikeTrack(token: String, trackId: String): AuraResponse<LikeResponse>
+
+    suspend fun getPlaybackSnapshot(token: String): AuraResponse<PlaybackSnapshotResponse?>
+
+    suspend fun updatePlaybackSnapshot(token: String, snapshot: PlaybackSnapshotResponse): AuraResponse<PlaybackSnapshotResponse>
+
+    suspend fun getHistory(token: String): AuraResponse<HistoryResponseData>
 }

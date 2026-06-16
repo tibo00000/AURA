@@ -405,3 +405,62 @@ object BestMatchSerializer : KSerializer<BestMatch> {
         jsonEncoder.encodeJsonElement(JsonObject(map))
     }
 }
+
+@Serializable
+data class LikeResponse(
+    @SerialName("track_id") val trackId: String,
+    @SerialName("liked_at") val likedAt: String,
+    @SerialName("source_context_type") val sourceContextType: String? = null,
+    @SerialName("source_context_id") val sourceContextId: String? = null
+)
+
+@Serializable
+data class PlaylistItemResponse(
+    @SerialName("id") val id: String,
+    @SerialName("playlist_id") val playlistId: String,
+    @SerialName("track_id") val trackId: String,
+    @SerialName("position") val position: Int,
+    @SerialName("added_at") val addedAt: String,
+    @SerialName("added_from_context_type") val addedFromContextType: String? = null,
+    @SerialName("added_from_context_id") val addedFromContextId: String? = null
+)
+
+@Serializable
+data class PlaylistResponse(
+    @SerialName("id") val id: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("name") val name: String,
+    @SerialName("cover_uri") val coverUri: String? = null,
+    @SerialName("is_pinned") val isPinned: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("items") val items: List<PlaylistItemResponse> = emptyList()
+)
+
+@Serializable
+data class PlaybackSnapshotResponse(
+    @SerialName("current_track_id") val currentTrackId: String? = null,
+    @SerialName("playback_context_type") val playbackContextType: String? = null,
+    @SerialName("playback_context_id") val playbackContextId: String? = null,
+    @SerialName("playback_context_index") val playbackContextIndex: Int? = null,
+    @SerialName("position_ms") val positionMs: Long,
+    @SerialName("shuffle_enabled") val shuffleEnabled: Boolean,
+    @SerialName("repeat_mode") val repeatMode: String,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
+@Serializable
+data class HistoryItemResponse(
+    @SerialName("id") val id: String,
+    @SerialName("track_id") val trackId: String,
+    @SerialName("played_at") val playedAt: String,
+    @SerialName("completion_percent") val completionPercent: Double? = null,
+    @SerialName("was_skipped") val wasSkipped: Boolean,
+    @SerialName("source_context_type") val sourceContextType: String? = null,
+    @SerialName("source_context_id") val sourceContextId: String? = null
+)
+
+@Serializable
+data class HistoryResponseData(
+    @SerialName("items") val items: List<HistoryItemResponse>
+)
