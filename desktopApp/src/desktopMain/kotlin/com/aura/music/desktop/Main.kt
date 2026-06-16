@@ -1245,14 +1245,15 @@ fun SearchScreen(
                                                             )
                                                         )
                                                         
-                                                        if (albumId != null && track.displayAlbumTitle != null) {
+                                                        val albumTitle = track.displayAlbumTitle
+                                                        if (albumId != null && albumTitle != null) {
                                                             database.albumDao().upsertAlbums(
                                                                 listOf(
                                                                     AlbumEntity(
                                                                         id = albumId,
                                                                         primaryArtistId = artistId,
-                                                                        title = track.displayAlbumTitle,
-                                                                        normalizedTitle = track.displayAlbumTitle.lowercase(),
+                                                                        title = albumTitle,
+                                                                        normalizedTitle = albumTitle.lowercase(),
                                                                         coverUri = track.coverUri,
                                                                         createdAt = now,
                                                                         updatedAt = now
@@ -1651,9 +1652,9 @@ fun LibraryScreen(
                                     
                                     Text(statusLabel, color = statusColor, fontWeight = FontWeight.SemiBold)
                                     
-                                    if ((job.status == "running" || job.status == "downloading") && job.progressPercent != null) {
+                                    val progress = job.progressPercent
+                                    if ((job.status == "running" || job.status == "downloading") && progress != null) {
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        val progress = job.progressPercent
                                         Text(
                                             text = "${(progress * 100).toInt()}%",
                                             color = TextPrimary,

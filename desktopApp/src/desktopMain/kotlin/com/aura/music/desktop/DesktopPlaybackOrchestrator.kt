@@ -6,6 +6,8 @@ import com.aura.music.data.local.*
 import com.aura.music.data.player.QueueManager
 import com.aura.music.domain.player.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
