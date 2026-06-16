@@ -84,8 +84,8 @@ dependencies {
     implementation("androidx.sqlite:sqlite:2.5.0")
 
     // Coil3 compose KMP
-    implementation("io.coil-kt.coil3:coil-compose:3.0.0-alpha06")
-    implementation("io.coil-kt.coil3:coil-network-ktor:3.0.0-alpha06")
+    implementation("io.coil-kt.coil3:coil-compose:3.0.0-rc01")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.0-rc01")
 
     // Ktor and serialization KMP
     implementation("io.ktor:ktor-client-core:3.0.0")
