@@ -178,7 +178,7 @@ class DesktopPlaybackOrchestrator(
         saveSnapshot()
     }
 
-    fun toggleLike(trackId: String) {
+    fun toggleLike(trackId: String, onComplete: (() -> Unit)? = null) {
         scope.launch {
             val trackRow = database.trackDao().getTrackById(trackId) ?: return@launch
             val currentlyLiked = trackRow.isLiked
@@ -207,6 +207,12 @@ class DesktopPlaybackOrchestrator(
             val currentTrack = _uiState.value.currentTrack
             if (currentTrack != null && currentTrack.trackId == trackId) {
                 _uiState.update { it.copy(isCurrentTrackLiked = !currentlyLiked) }
+            }
+
+            onComplete?.let {
+                withContext(Dispatchers.Main) {
+                    it.invoke()
+                }
             }
 
             // Sync with backend API

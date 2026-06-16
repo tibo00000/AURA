@@ -51,7 +51,7 @@ kotlin {
 
                 // Coil 3 KMP
                 api("io.coil-kt.coil3:coil-compose:3.0.0-alpha06")
-                api("io.coil-kt.coil3:coil-network-ktor:3.0.0-alpha06")
+                api("io.coil-kt.coil3:coil-network-ktor3:3.0.0-alpha06")
 
                 // Serialization KMP
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

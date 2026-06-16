@@ -55,7 +55,7 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import coil3.compose.AsyncImage
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.ImageLoader
-import coil3.network.ktor.KtorNetworkFetcherFactory
+import coil3.network.ktor3.KtorNetworkFetcherFactory
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -288,6 +288,7 @@ fun main() = application {
                         .components {
                             add(KtorNetworkFetcherFactory())
                         }
+                        .logger(coil3.util.DebugLogger())
                         .build()
                 }
                 val playerState by playbackOrchestrator.uiState.collectAsState()
@@ -373,6 +374,7 @@ fun main() = application {
                                     Triple("search", "Recherche", Icons.Rounded.Search),
                                     Triple("library", "Bibliothèque", Icons.Rounded.List),
                                     Triple("favorites", "Favoris", Icons.Rounded.Favorite),
+                                    Triple("downloads", "Téléchargements", Icons.Rounded.Download),
                                     Triple("settings", "Paramètres", Icons.Rounded.Settings)
                                 )
 
@@ -496,6 +498,7 @@ fun main() = application {
                                                 "artist_detail" -> "Artiste"
                                                 "playlist_detail" -> "Détails de la Playlist"
                                                 "favorites" -> "Favoris"
+                                                "downloads" -> "Téléchargements"
                                                 else -> ""
                                             },
                                             style = MaterialTheme.typography.headlineMedium,
@@ -512,6 +515,13 @@ fun main() = application {
                                                     likedTracks = likedTracks,
                                                     orchestrator = playbackOrchestrator,
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
+                                                    onReload = { reloadDbData() }
+                                                )
+                                            }
+                                            "downloads" -> {
+                                                DownloadsScreen(
+                                                    downloadJobs = downloadJobs,
+                                                    orchestrator = playbackOrchestrator,
                                                     onReload = { reloadDbData() }
                                                 )
                                             }
@@ -557,7 +567,6 @@ fun main() = application {
                                                     albums = localAlbums,
                                                     artists = localArtists,
                                                     playlists = playlists,
-                                                    downloadJobs = downloadJobs,
                                                     orchestrator = playbackOrchestrator,
                                                     onNavigateToAlbum = { id ->
                                                         selectedAlbumId = id
@@ -1171,7 +1180,7 @@ fun SearchScreen(
                             onPlay = {
                                 orchestrator.playTrack(track.id, "search_local", searchInput, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                             },
-                            onLike = { orchestrator.toggleLike(track.id); onReload() },
+                            onLike = { orchestrator.toggleLike(track.id, onReload) },
                             onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                             onAddToPlaylist = { onAddToPlaylist(track.id) }
                         )
@@ -1388,7 +1397,6 @@ fun LibraryScreen(
     albums: List<AlbumBrowseRow>,
     artists: List<ArtistBrowseRow>,
     playlists: List<PlaylistListRow>,
-    downloadJobs: List<DownloadJobRowModel>,
     orchestrator: DesktopPlaybackOrchestrator,
     onNavigateToAlbum: (String) -> Unit,
     onNavigateToArtist: (String) -> Unit,
@@ -1403,8 +1411,7 @@ fun LibraryScreen(
                 "tracks" -> 0
                 "albums" -> 1
                 "artists" -> 2
-                "playlists" -> 3
-                else -> 4
+                else -> 3
             },
             containerColor = Color.Transparent,
             contentColor = BlazeOrange,
@@ -1414,8 +1421,7 @@ fun LibraryScreen(
                         "tracks" -> 0
                         "albums" -> 1
                         "artists" -> 2
-                        "playlists" -> 3
-                        else -> 4
+                        else -> 3
                     }]),
                     color = BlazeOrange
                 )
@@ -1425,7 +1431,6 @@ fun LibraryScreen(
             Tab(selected = activeTab == "albums", onClick = { onTabChange("albums") }, text = { Text("Albums") })
             Tab(selected = activeTab == "artists", onClick = { onTabChange("artists") }, text = { Text("Artistes") })
             Tab(selected = activeTab == "playlists", onClick = { onTabChange("playlists") }, text = { Text("Playlists") })
-            Tab(selected = activeTab == "downloads", onClick = { onTabChange("downloads") }, text = { Text("Téléchargements") })
         }
 
         when (activeTab) {
@@ -1466,7 +1471,7 @@ fun LibraryScreen(
                                         val queued = allTracks.map { t: TrackListRow -> t.toQueued() }
                                         orchestrator.playTrack(track.id, "library_tracks", "all", queued, index)
                                     },
-                                    onLike = { orchestrator.toggleLike(track.id); onReload() },
+                                    onLike = { orchestrator.toggleLike(track.id, onReload) },
                                     onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                                     onAddToPlaylist = { onAddToPlaylist(track.id) }
                                 )
@@ -1580,88 +1585,6 @@ fun LibraryScreen(
                                     }
                                     Text(pl.name, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("Playlist AURA", color = TextMuted, style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            "downloads" -> {
-                if (downloadJobs.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Aucun téléchargement en cours ou complété.", color = TextMuted)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(downloadJobs, key = { it.jobId }) { job ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(OffBlack)
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CoverImage(
-                                    url = job.coverUri,
-                                    fallbackIcon = Icons.Rounded.GetApp,
-                                    modifier = Modifier
-                                        .size(50.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(job.title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(job.artistName, color = TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    
-                                    if (!job.errorMessage.isNullOrBlank()) {
-                                        Text(
-                                            text = "Erreur: ${job.errorMessage}",
-                                            color = SemanticError,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                                
-                                Spacer(modifier = Modifier.width(16.dp))
-                                
-                                Column(horizontalAlignment = Alignment.End) {
-                                    val statusLabel = when (job.status) {
-                                        "pending" -> "En attente"
-                                        "queued" -> "En attente"
-                                        "running" -> "Téléchargement..."
-                                        "downloading" -> "Téléchargement..."
-                                        "succeeded" -> "Terminé"
-                                        "completed" -> "Terminé"
-                                        "failed" -> "Échoué"
-                                        "cancelled" -> "Annulé"
-                                        else -> job.status.replaceFirstChar { it.uppercase() }
-                                    }
-                                    
-                                    val statusColor = when (job.status) {
-                                        "succeeded", "completed" -> Color.Green
-                                        "failed" -> SemanticError
-                                        "running", "downloading" -> BlazeOrange
-                                        else -> TextMuted
-                                    }
-                                    
-                                    Text(statusLabel, color = statusColor, fontWeight = FontWeight.SemiBold)
-                                    
-                                    val progress = job.progressPercent
-                                    if ((job.status == "running" || job.status == "downloading") && progress != null) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "${(progress * 100).toInt()}%",
-                                            color = TextPrimary,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -1967,7 +1890,7 @@ fun AlbumDetailScreen(
                         onPlay = {
                             orchestrator.playTrack(track.id, "album", albumId, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                         },
-                        onLike = { orchestrator.toggleLike(track.id); onReload() },
+                        onLike = { orchestrator.toggleLike(track.id, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                         onAddToPlaylist = { onAddToPlaylist(track.id) }
                     )
@@ -2098,7 +2021,7 @@ fun ArtistDetailScreen(
                         onPlay = {
                             orchestrator.playTrack(track.id, "artist", artistId, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                         },
-                        onLike = { orchestrator.toggleLike(track.id); onReload() },
+                        onLike = { orchestrator.toggleLike(track.id, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                         onAddToPlaylist = { onAddToPlaylist(track.id) }
                     )
@@ -2242,7 +2165,7 @@ fun PlaylistDetailScreen(
                             val queued = tracks.map { t: PlaylistTrackRow -> t.toQueued() }
                             orchestrator.playTrack(track.trackId, "playlist", playlistId ?: "", queued, index)
                         },
-                        onLike = { orchestrator.toggleLike(track.trackId); onReload() },
+                        onLike = { orchestrator.toggleLike(track.trackId, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                         onRemove = {
                             coroutineScope.launch(Dispatchers.IO) {
@@ -2859,10 +2782,110 @@ fun FavoritesScreen(
                             val queued = likedTracks.map { it.toQueued() }
                             orchestrator.playTrack(track.id, "favorites", "favorites", queued, index)
                         },
-                        onLike = { orchestrator.toggleLike(track.id); onReload() },
+                        onLike = { orchestrator.toggleLike(track.id, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                         onAddToPlaylist = onAddToPlaylist
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DownloadsScreen(
+    downloadJobs: List<DownloadJobRowModel>,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onReload: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Téléchargements", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("${downloadJobs.size} tâche(s) de téléchargement.", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+            }
+        }
+
+        Divider(color = HairlineDark)
+
+        if (downloadJobs.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Aucun téléchargement en cours ou complété.", color = TextMuted)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(downloadJobs, key = { it.jobId }) { job ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(OffBlack)
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CoverImage(
+                            url = job.coverUri,
+                            fallbackIcon = Icons.Rounded.Download,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(job.title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(job.artistName, color = TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            
+                            if (!job.errorMessage.isNullOrBlank()) {
+                                Text(
+                                    text = "Erreur: ${job.errorMessage}",
+                                    color = SemanticError,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
+                        
+                        Column(horizontalAlignment = Alignment.End) {
+                            val statusLabel = when (job.status) {
+                                "pending", "queued" -> "En attente"
+                                "running", "downloading" -> "Téléchargement..."
+                                "succeeded", "completed" -> "Terminé"
+                                "failed" -> "Échoué"
+                                "cancelled" -> "Annulé"
+                                else -> job.status.replaceFirstChar { it.uppercase() }
+                            }
+                            
+                            val statusColor = when (job.status) {
+                                "succeeded", "completed" -> Color.Green
+                                "failed" -> SemanticError
+                                "running", "downloading" -> BlazeOrange
+                                else -> TextMuted
+                            }
+                            
+                            Text(statusLabel, color = statusColor, fontWeight = FontWeight.SemiBold)
+                            
+                            val progress = job.progressPercent
+                            if ((job.status == "running" || job.status == "downloading") && progress != null) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${progress.toInt()}%",
+                                    color = TextPrimary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
