@@ -673,42 +673,51 @@ class DesktopPlaybackOrchestrator(
             val items = response.data?.items ?: return
             
             val now = System.currentTimeMillis()
-            val jobs = items.map { item ->
+            val jobs = mutableListOf<DownloadJobEntity>()
+            for (item in items) {
                 val trackExists = database.trackDao().getRawTrackById(item.trackId) != null
+                val isFinished = item.status == "succeeded" || item.status == "completed" || item.status == "failed"
+                
                 if (!trackExists) {
-                    database.trackDao().upsertTracks(
-                        listOf(
-                            TrackEntity(
-                                id = item.trackId,
-                                primaryArtistId = null,
-                                albumId = null,
-                                title = "Titre ${item.trackId}",
-                                normalizedTitle = "titre ${item.trackId}",
-                                displayArtistName = "Artiste Inconnu",
-                                displayAlbumTitle = null,
-                                durationMs = 0L,
-                                coverUri = null,
-                                canonicalAudioSourceType = "cloud_only",
-                                isLiked = false,
-                                isDownloadedByAura = false,
-                                createdAt = now,
-                                updatedAt = now
+                    if (isFinished) {
+                        continue
+                    } else {
+                        database.trackDao().upsertTracks(
+                            listOf(
+                                TrackEntity(
+                                    id = item.trackId,
+                                    primaryArtistId = null,
+                                    albumId = null,
+                                    title = "Titre ${item.trackId}",
+                                    normalizedTitle = "titre ${item.trackId}",
+                                    displayArtistName = "Artiste Inconnu",
+                                    displayAlbumTitle = null,
+                                    durationMs = 0L,
+                                    coverUri = null,
+                                    canonicalAudioSourceType = "cloud_only",
+                                    isLiked = false,
+                                    isDownloadedByAura = false,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
                             )
                         )
-                    )
+                    }
                 }
 
-                DownloadJobEntity(
-                    id = item.id,
-                    trackId = item.trackId,
-                    providerName = item.providerName,
-                    status = item.status,
-                    progressPercent = item.progressPercent,
-                    errorCode = item.errorCode,
-                    errorMessage = item.errorMessage,
-                    attemptCount = item.attemptCount,
-                    createdAt = now,
-                    updatedAt = now
+                jobs.add(
+                    DownloadJobEntity(
+                        id = item.id,
+                        trackId = item.trackId,
+                        providerName = item.providerName,
+                        status = item.status,
+                        progressPercent = item.progressPercent,
+                        errorCode = item.errorCode,
+                        errorMessage = item.errorMessage,
+                        attemptCount = item.attemptCount,
+                        createdAt = now,
+                        updatedAt = now
+                    )
                 )
             }
             database.downloadJobDao().upsert(jobs)
@@ -723,7 +732,9 @@ class DesktopPlaybackOrchestrator(
                     val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
                     
                     if (!targetFile.exists() || targetFile.length() == 0L || !isDbLinked) {
-                        fetchDownloadedFile(item.id, item.trackId, token)
+                        if (rawTrack != null) {
+                            fetchDownloadedFile(item.id, item.trackId, token)
+                        }
                     }
                 }
             }
