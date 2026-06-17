@@ -670,7 +670,12 @@ fun main() = application {
                                                     database = database,
                                                     orchestrator = playbackOrchestrator,
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
-                                                    onReload = { reloadDbData() }
+                                                    onReload = { reloadDbData() },
+                                                    likedTracks = likedTracks,
+                                                    onDeleteLocal = { track ->
+                                                        trackToDelete = track
+                                                        showDeleteConfirmDialog = true
+                                                    }
                                                 )
                                             }
                                             "artist_detail" -> {
