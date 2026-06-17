@@ -299,7 +299,7 @@ fun SettingsScreen(
                             uploadStatus = "Envoi en cours..."
                             isSuccess = null
                             scope.launch {
-                                downloadRepository.uploadCookies(cookiesText, "Bearer test_user_token")
+                                downloadRepository.uploadCookies(cookiesText, com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
                                     .collect { result ->
                                         isUploading = false
                                         result.fold(
@@ -336,7 +336,7 @@ fun SettingsScreen(
                             uploadStatus = "Envoi des cookies WebView..."
                             isSuccess = null
                             scope.launch {
-                                downloadRepository.uploadCookies(netscapeCookies, "Bearer test_user_token")
+                                downloadRepository.uploadCookies(netscapeCookies, com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
                                     .collect { result ->
                                         isUploading = false
                                         result.fold(

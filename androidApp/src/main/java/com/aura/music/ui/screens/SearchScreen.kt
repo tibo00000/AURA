@@ -332,7 +332,7 @@ fun SearchScreen(
                                             artistName = track.displayArtistName,
                                             albumTitle = track.displayAlbumTitle,
                                             coverUri = track.coverUri,
-                                            userToken = "Bearer test_user_token"
+                                            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
                                         ).collect { result ->
                                             if (result.isSuccess) {
                                                 scope.launch {
@@ -346,7 +346,7 @@ fun SearchScreen(
                                                     }
                                                 }
                                                 scope.launch {
-                                                    downloadRepository.startPolling("Bearer test_user_token")
+                                                    downloadRepository.startPolling(com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
                                                 }
                                             }
                                         }

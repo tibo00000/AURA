@@ -33,6 +33,7 @@ class AuraAppContainer(context: Context) {
             database = database,
             mediaStoreAudioDataSource = mediaStoreAudioDataSource,
             syncRepositoryProvider = { syncRepository },
+            apiService = auraApiService,
             context = appContext
         )
     }
@@ -68,14 +69,19 @@ class AuraAppContainer(context: Context) {
     val downloadsViewModelFactory by lazy {
         DownloadsViewModel.Factory(
             downloadRepository = downloadRepository,
-            userToken = "Bearer test_user_token"
+            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
         )
     }
 
     val queueManager by lazy { QueueManager() }
 
     val playbackStateStore by lazy {
-        PlaybackStateStore(database.playbackSnapshotDao())
+        PlaybackStateStore(
+            snapshotDao = database.playbackSnapshotDao(),
+            database = database,
+            apiService = auraApiService,
+            context = appContext
+        )
     }
 
     val playbackOrchestrator by lazy {

@@ -91,6 +91,14 @@ class PlaybackOrchestrator(
                 scope.launch {
                     val fresh = repository.getTrackById(trackId)
                     updateLikedState(fresh?.isLiked ?: false)
+                    
+                    // Log to sync outbox for incremental history synchronization
+                    val activeContext = queueManager.state.value.context
+                    repository.recordHistoryItem(
+                        trackId = trackId,
+                        contextType = activeContext?.type,
+                        contextId = activeContext?.id
+                    )
                 }
             } else {
                 updateLikedState(false)

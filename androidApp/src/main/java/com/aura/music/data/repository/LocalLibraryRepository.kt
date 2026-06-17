@@ -20,6 +20,9 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.local.UserSettingsEntity
 import com.aura.music.data.media.MediaStoreAudioDataSource
+import com.aura.music.data.network.AuraApiService
+import com.aura.music.data.network.NetworkPolicyChecker
+import android.util.Log
 import androidx.room3.useWriterConnection
 import androidx.room3.immediateTransaction
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +63,7 @@ class LocalLibraryRepository(
     private val database: AuraDatabase,
     private val mediaStoreAudioDataSource: MediaStoreAudioDataSource,
     private val syncRepositoryProvider: () -> SyncRepository,
+    private val apiService: AuraApiService,
     private val context: android.content.Context,
 ) {
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
@@ -76,6 +80,11 @@ class LocalLibraryRepository(
                 ),
             )
         }
+    }
+
+    private suspend fun shouldSyncDirectly(): Boolean {
+        val settings = database.userSettingsDao().getSettings()
+        return settings != null && settings.syncEnabled && NetworkPolicyChecker.isConnected(context)
     }
 
     suspend fun refreshLocalMediaIndex(): Int = withContext(Dispatchers.IO) {
@@ -404,6 +413,47 @@ class LocalLibraryRepository(
     suspend fun getRecentTracks(limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getRecentTracks(limit) }
 
+    suspend fun recordHistoryItem(
+        trackId: String,
+        contextType: String? = null,
+        contextId: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val historyId = "history_item:${UUID.randomUUID()}"
+        syncRepository.recordLocalOperation(
+            entityType = "history_item",
+            entityId = historyId,
+            operationType = "create",
+            payload = mapOf(
+                "track_id" to trackId,
+                "played_at" to formatMillisToIsoDate(now),
+                "completion_percent" to 1.0,
+                "was_skipped" to false,
+                "source_context_type" to contextType,
+                "source_context_id" to contextId
+            )
+        )
+    }
+
+    suspend fun getRecentPlaybackHistory(limit: Int = 12): List<TrackListRow> = withContext(Dispatchers.IO) {
+        if (shouldSyncDirectly()) {
+            try {
+                val response = apiService.getHistory(SyncRepository.AUTH_TOKEN)
+                val data = response.data
+                if (response.error == null && data != null) {
+                    val historyItems = data.items.take(limit)
+                    val tracks = historyItems.mapNotNull { item ->
+                        database.trackDao().getTrackById(item.trackId)
+                    }
+                    return@withContext tracks
+                }
+            } catch (e: Exception) {
+                Log.e("LocalLibraryRepository", "Failed to fetch live playback history: ${e.message}", e)
+            }
+        }
+        database.trackDao().getRecentTracks(limit)
+    }
+
     suspend fun getAllTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getAllTracks() }
 
@@ -526,6 +576,29 @@ class LocalLibraryRepository(
                 updatedAt = now,
             ),
         )
+        if (shouldSyncDirectly()) {
+            try {
+                apiService.createPlaylist(
+                    token = SyncRepository.AUTH_TOKEN,
+                    request = com.aura.music.data.network.PlaylistCreate(
+                        id = playlistId,
+                        name = name.trim(),
+                        isPinned = false,
+                        coverUri = null
+                    )
+                )
+                Log.i("LocalLibraryRepository", "Successfully synced created playlist $playlistId in real-time")
+            } catch (e: Exception) {
+                Log.w("LocalLibraryRepository", "Direct playlist creation REST failed: ${e.message}. Falling back to outbox.", e)
+                recordCreatePlaylistOutbox(playlistId, name, now)
+            }
+        } else {
+            recordCreatePlaylistOutbox(playlistId, name, now)
+        }
+        playlistId
+    }
+
+    private suspend fun recordCreatePlaylistOutbox(playlistId: String, name: String, now: Long) {
         syncRepository.recordLocalOperation(
             entityType = "playlist",
             entityId = playlistId,
@@ -538,7 +611,6 @@ class LocalLibraryRepository(
                 "updated_at" to formatMillisToIsoDate(now)
             )
         )
-        playlistId
     }
 
     suspend fun renamePlaylist(playlistId: String, name: String) = withContext(Dispatchers.IO) {
@@ -561,6 +633,20 @@ class LocalLibraryRepository(
 
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         database.playlistDao().deletePlaylist(playlistId)
+        if (shouldSyncDirectly()) {
+            try {
+                apiService.deletePlaylist(SyncRepository.AUTH_TOKEN, playlistId)
+                Log.i("LocalLibraryRepository", "Successfully synced deleted playlist $playlistId in real-time")
+            } catch (e: Exception) {
+                Log.w("LocalLibraryRepository", "Direct playlist deletion REST failed: ${e.message}. Falling back to outbox.", e)
+                recordDeletePlaylistOutbox(playlistId)
+            }
+        } else {
+            recordDeletePlaylistOutbox(playlistId)
+        }
+    }
+
+    private suspend fun recordDeletePlaylistOutbox(playlistId: String) {
         syncRepository.recordLocalOperation(
             entityType = "playlist",
             entityId = playlistId,
@@ -593,6 +679,37 @@ class LocalLibraryRepository(
                 database.playlistDao().touchPlaylist(playlistId, now)
             }
         }
+        if (shouldSyncDirectly()) {
+            try {
+                apiService.appendTrackToPlaylist(
+                    token = SyncRepository.AUTH_TOKEN,
+                    id = playlistId,
+                    request = com.aura.music.data.network.PlaylistItemCreate(
+                        id = itemId,
+                        trackId = trackId,
+                        position = nextPosition,
+                        addedFromContextType = contextType,
+                        addedFromContextId = playlistId
+                    )
+                )
+                Log.i("LocalLibraryRepository", "Successfully synced appended track $trackId to playlist $playlistId in real-time")
+            } catch (e: Exception) {
+                Log.w("LocalLibraryRepository", "Direct append track REST failed: ${e.message}. Falling back to outbox.", e)
+                recordAppendTrackOutbox(itemId, playlistId, trackId, nextPosition, now, contextType)
+            }
+        } else {
+            recordAppendTrackOutbox(itemId, playlistId, trackId, nextPosition, now, contextType)
+        }
+    }
+
+    private suspend fun recordAppendTrackOutbox(
+        itemId: String,
+        playlistId: String,
+        trackId: String,
+        position: Int,
+        now: Long,
+        contextType: String
+    ) {
         syncRepository.recordLocalOperation(
             entityType = "playlist_item",
             entityId = itemId,
@@ -600,7 +717,7 @@ class LocalLibraryRepository(
             payload = mapOf(
                 "playlist_id" to playlistId,
                 "track_id" to trackId,
-                "position" to nextPosition,
+                "position" to position,
                 "added_at" to formatMillisToIsoDate(now),
                 "added_from_context_type" to contextType,
                 "added_from_context_id" to playlistId
@@ -609,6 +726,9 @@ class LocalLibraryRepository(
     }
 
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = withContext(Dispatchers.IO) {
+        val item = database.playlistDao().getPlaylistItem(playlistItemId)
+        val trackId = item?.trackId
+
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
                 database.playlistDao().deletePlaylistItem(playlistItemId)
@@ -616,6 +736,20 @@ class LocalLibraryRepository(
                 database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
             }
         }
+        if (shouldSyncDirectly() && trackId != null) {
+            try {
+                apiService.removeTrackFromPlaylist(SyncRepository.AUTH_TOKEN, playlistId, trackId)
+                Log.i("LocalLibraryRepository", "Successfully synced removed track $trackId from playlist $playlistId in real-time")
+            } catch (e: Exception) {
+                Log.w("LocalLibraryRepository", "Direct remove track REST failed: ${e.message}. Falling back to outbox.", e)
+                recordRemoveTrackOutbox(playlistId, playlistItemId)
+            }
+        } else {
+            recordRemoveTrackOutbox(playlistId, playlistItemId)
+        }
+    }
+
+    private suspend fun recordRemoveTrackOutbox(playlistId: String, playlistItemId: String) {
         syncRepository.recordLocalOperation(
             entityType = "playlist_item",
             entityId = playlistItemId,
@@ -775,6 +909,30 @@ class LocalLibraryRepository(
                 }
             }
         }
+        if (shouldSyncDirectly()) {
+            try {
+                if (currentlyLiked) {
+                    apiService.unlikeTrack(SyncRepository.AUTH_TOKEN, trackId)
+                } else {
+                    apiService.likeTrack(SyncRepository.AUTH_TOKEN, trackId, contextType, contextId)
+                }
+                Log.i("LocalLibraryRepository", "Successfully synced like/unlike for $trackId in real-time")
+            } catch (e: Exception) {
+                Log.w("LocalLibraryRepository", "Direct like/unlike REST failed: ${e.message}. Falling back to outbox.", e)
+                recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
+            }
+        } else {
+            recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
+        }
+    }
+
+    private suspend fun recordLikeOutbox(
+        trackId: String,
+        currentlyLiked: Boolean,
+        now: Long,
+        contextType: String?,
+        contextId: String?
+    ) {
         syncRepository.recordLocalOperation(
             entityType = "track_like",
             entityId = trackId,

@@ -48,7 +48,7 @@ fun HomeScreen(
         value = repository.getLibraryDashboardSummary()
     }
     val recentTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
-        value = repository.getRecentTracks()
+        value = repository.getRecentPlaybackHistory()
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
         value = repository.getPlaylists().take(8)
@@ -71,7 +71,7 @@ fun HomeScreen(
             }
             
             item {
-                DownloadsSection(
+                RecentTracksSection(
                     tracks = recentTracksState.value, 
                     onPlayTrackInList = onPlayTrackInList
                 )
@@ -168,10 +168,10 @@ private fun ResumeRail(playlists: List<PlaylistListRow>, onOpenPlaylist: (String
 }
 
 @Composable
-private fun DownloadsSection(tracks: List<TrackListRow>, onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit) {
+private fun RecentTracksSection(tracks: List<TrackListRow>, onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
-            text = "Derniers téléchargements",
+            text = "Écoutés récemment",
             style = MaterialTheme.typography.titleMedium,
             color = TextPrimary,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -179,7 +179,7 @@ private fun DownloadsSection(tracks: List<TrackListRow>, onPlayTrackInList: (Tra
         
         if (tracks.isEmpty()) {
             Text(
-                text = "Vos pistes locales téléchargées apparaitront ici.",
+                text = "Votre historique d'écoute apparaîtra ici.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -187,7 +187,7 @@ private fun DownloadsSection(tracks: List<TrackListRow>, onPlayTrackInList: (Tra
         } else {
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 tracks.take(4).forEach { track ->
-                    DenseTrackRow(track = track, onClick = { onPlayTrackInList(track, tracks.take(4), "recent_downloads") })
+                    DenseTrackRow(track = track, onClick = { onPlayTrackInList(track, tracks.take(4), "recent_playback") })
                 }
             }
         }
