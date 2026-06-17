@@ -538,7 +538,11 @@ fun main() = application {
                                                     likedTracks = likedTracks,
                                                     orchestrator = playbackOrchestrator,
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
-                                                    onReload = { reloadDbData() }
+                                                    onReload = { reloadDbData() },
+                                                    onDeleteLocal = { track ->
+                                                        trackToDelete = track
+                                                        showDeleteConfirmDialog = true
+                                                    }
                                                 )
                                             }
                                             "downloads" -> {
@@ -579,7 +583,12 @@ fun main() = application {
                                                     },
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
                                                     onReload = { reloadDbData() },
-                                                    database = database
+                                                    database = database,
+                                                    likedTracks = likedTracks,
+                                                    onDeleteLocal = { track ->
+                                                        trackToDelete = track
+                                                        showDeleteConfirmDialog = true
+                                                    }
                                                 )
                                             }
                                             "library" -> {
@@ -604,7 +613,12 @@ fun main() = application {
                                                         navigateTo("playlist_detail")
                                                     },
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
-                                                    onReload = { reloadDbData() }
+                                                    onReload = { reloadDbData() },
+                                                    likedTracks = likedTracks,
+                                                    onDeleteLocal = { track ->
+                                                        trackToDelete = track
+                                                        showDeleteConfirmDialog = true
+                                                    }
                                                 )
                                             }
                                             "settings" -> {
@@ -670,7 +684,12 @@ fun main() = application {
                                                         navigateTo("album_detail")
                                                     },
                                                     onAddToPlaylist = { showAddPlaylistMenuForTrack = it },
-                                                    onReload = { reloadDbData() }
+                                                    onReload = { reloadDbData() },
+                                                    likedTracks = likedTracks,
+                                                    onDeleteLocal = { track ->
+                                                        trackToDelete = track
+                                                        showDeleteConfirmDialog = true
+                                                    }
                                                 )
                                             }
                                             "playlist_detail" -> {
@@ -691,7 +710,12 @@ fun main() = application {
                                                             }
                                                         }
                                                     },
-                                                    onReload = { reloadDbData() }
+                                                    onReload = { reloadDbData() },
+                                                    likedTracks = likedTracks,
+                                                    onDeleteLocal = { track ->
+                                                        trackToDelete = track
+                                                        showDeleteConfirmDialog = true
+                                                    }
                                                 )
                                             }
                                         }
@@ -1171,7 +1195,9 @@ fun SearchScreen(
     onNavigateToArtist: (String) -> Unit,
     onAddToPlaylist: (String) -> Unit,
     onReload: () -> Unit,
-    database: AuraDatabase
+    database: AuraDatabase,
+    likedTracks: List<TrackListRow>,
+    onDeleteLocal: (TrackListRow) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var isDownloading by remember { mutableStateOf<String?>(null) }
@@ -1306,8 +1332,7 @@ fun SearchScreen(
                             onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                             onAddToPlaylist = { onAddToPlaylist(track.id) },
                             onDeleteLocal = {
-                                trackToDelete = track
-                                showDeleteConfirmDialog = true
+                                onDeleteLocal(track)
                             }
                         )
                     }
@@ -1535,7 +1560,9 @@ fun LibraryScreen(
     onNavigateToArtist: (String) -> Unit,
     onNavigateToPlaylist: (String) -> Unit,
     onAddToPlaylist: (String) -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    likedTracks: List<TrackListRow>,
+    onDeleteLocal: (TrackListRow) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // TabRow headers
@@ -1609,8 +1636,7 @@ fun LibraryScreen(
                                     onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
                                     onAddToPlaylist = { onAddToPlaylist(track.id) },
                                     onDeleteLocal = {
-                                        trackToDelete = track
-                                        showDeleteConfirmDialog = true
+                                        onDeleteLocal(track)
                                     }
                                 )
                             }
@@ -1910,7 +1936,9 @@ fun AlbumDetailScreen(
     database: AuraDatabase,
     orchestrator: DesktopPlaybackOrchestrator,
     onAddToPlaylist: (String) -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    likedTracks: List<TrackListRow>,
+    onDeleteLocal: (TrackListRow) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var onlineAlbum by remember { mutableStateOf<AlbumDetailResponseData?>(null) }
@@ -2034,8 +2062,7 @@ fun AlbumDetailScreen(
                         onAddToPlaylist = { onAddToPlaylist(track.id) },
                         onDeleteLocal = if (track.contentUri?.startsWith("file:") == true) {
                             {
-                                trackToDelete = track
-                                showDeleteConfirmDialog = true
+                                onDeleteLocal(track)
                             }
                         } else null
                     )
@@ -2095,7 +2122,9 @@ fun ArtistDetailScreen(
     orchestrator: DesktopPlaybackOrchestrator,
     onNavigateToAlbum: (String) -> Unit,
     onAddToPlaylist: (String) -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    likedTracks: List<TrackListRow>,
+    onDeleteLocal: (TrackListRow) -> Unit
 ) {
     var onlineArtist by remember { mutableStateOf<ArtistDetailResponseData?>(null) }
     var localTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
@@ -2172,8 +2201,7 @@ fun ArtistDetailScreen(
                         onAddToPlaylist = { onAddToPlaylist(track.id) },
                         onDeleteLocal = if (track.contentUri?.startsWith("file:") == true) {
                             {
-                                trackToDelete = track
-                                showDeleteConfirmDialog = true
+                                onDeleteLocal(track)
                             }
                         } else null
                     )
@@ -2261,7 +2289,9 @@ fun PlaylistDetailScreen(
     database: AuraDatabase,
     orchestrator: DesktopPlaybackOrchestrator,
     onDeletePlaylist: () -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    likedTracks: List<TrackListRow>,
+    onDeleteLocal: (TrackListRow) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -2329,8 +2359,7 @@ fun PlaylistDetailScreen(
                         },
                         onDeleteLocal = if (trackRow.contentUri?.startsWith("file:") == true) {
                             {
-                                trackToDelete = trackRow
-                                showDeleteConfirmDialog = true
+                                onDeleteLocal(trackRow)
                             }
                         } else null
                     )
@@ -2931,7 +2960,8 @@ fun FavoritesScreen(
     likedTracks: List<TrackListRow>,
     orchestrator: DesktopPlaybackOrchestrator,
     onAddToPlaylist: (String) -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    onDeleteLocal: (TrackListRow) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
@@ -2986,8 +3016,7 @@ fun FavoritesScreen(
                         onAddToPlaylist = onAddToPlaylist,
                         onDeleteLocal = if (track.contentUri?.startsWith("file:") == true) {
                             {
-                                trackToDelete = track
-                                showDeleteConfirmDialog = true
+                                onDeleteLocal(track)
                             }
                         } else null
                     )
