@@ -193,6 +193,27 @@ fun main() = application {
         }
     }
 
+    // Observe local playback to append to listenHistory reactively
+    LaunchedEffect(playbackOrchestrator) {
+        playbackOrchestrator.uiState.collect { state ->
+            val current = state.currentTrack
+            if (current != null) {
+                val alreadyExists = listenHistory.firstOrNull()?.trackId == current.trackId
+                if (!alreadyExists) {
+                    val newItem = HistoryItemResponse(
+                        id = "local_hist_${System.currentTimeMillis()}",
+                        trackId = current.trackId,
+                        playedAt = java.time.Instant.now().toString(),
+                        wasSkipped = false,
+                        sourceContextType = state.contextType,
+                        sourceContextId = state.contextId
+                    )
+                    listenHistory = (listOf(newItem) + listenHistory).take(20)
+                }
+            }
+        }
+    }
+
     // Initialize JNativeHook
     DisposableEffect(Unit) {
         val logger = Logger.getLogger(GlobalScreen::class.java.getPackage().name)
@@ -295,6 +316,8 @@ fun main() = application {
                 
                 // Dialogs and temp states
                 var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+                var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+                var showDeleteConfirmDialog by remember { mutableStateOf(false) }
                 var playlistNameInput by remember { mutableStateOf("") }
                 var showAddPlaylistMenuForTrack by remember { mutableStateOf<String?>(null) }
                 var searchInput by remember { mutableStateOf("") }
@@ -907,6 +930,104 @@ fun main() = application {
                             containerColor = OffBlack
                         )
                     }
+
+                    // Dialog: Delete Track Confirmation
+                    if (showDeleteConfirmDialog && trackToDelete != null) {
+                        val track = trackToDelete!!
+                        var isDownloaded by remember { mutableStateOf(false) }
+                        LaunchedEffect(track.id) {
+                            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                                val raw = database.trackDao().getRawTrackById(track.id)
+                                if (raw != null) {
+                                    isDownloaded = raw.isDownloadedByAura || raw.canonicalAudioSourceType == "downloaded"
+                                }
+                            }
+                        }
+                        
+                        val titleStr = if (isDownloaded) "Supprimer le téléchargement" else "Supprimer de l'ordinateur"
+                        val fileUrl = track.contentUri ?: ""
+                        val filePath = if (fileUrl.startsWith("file:")) {
+                            try {
+                                File(java.net.URI(fileUrl)).absolutePath
+                            } catch (e: Exception) {
+                                fileUrl
+                            }
+                        } else {
+                            fileUrl
+                        }
+                        
+                        val messageStr = if (isDownloaded) {
+                            "Voulez-vous supprimer le fichier téléchargé pour \"${track.title}\" ?\nLe fichier sera supprimé et ce titre ne sera plus disponible hors-ligne."
+                        } else {
+                            "Attention : Vous allez supprimer définitivement le fichier physique de votre ordinateur.\n\nFichier : $filePath\n\nSouhaitez-vous continuer ?"
+                        }
+
+                        AlertDialog(
+                            onDismissRequest = {
+                                showDeleteConfirmDialog = false
+                                trackToDelete = null
+                            },
+                            title = { Text(titleStr, color = TextPrimary, fontWeight = FontWeight.Bold) },
+                            text = {
+                                Text(messageStr, color = TextSecondary)
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            try {
+                                                // Delete physical file
+                                                val contentUri = track.contentUri
+                                                if (contentUri != null && contentUri.startsWith("file:")) {
+                                                    try {
+                                                        val file = File(java.net.URI(contentUri))
+                                                        if (file.exists()) {
+                                                            file.delete()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        System.err.println("Error deleting physical file: ${e.message}")
+                                                    }
+                                                }
+                                                
+                                                // Delete cover if downloaded
+                                                val appDir = File(System.getProperty("user.home"), ".aura")
+                                                val coverFile = File(appDir, "covers/${track.id}.jpg")
+                                                if (coverFile.exists()) {
+                                                    coverFile.delete()
+                                                }
+                                                
+                                                // Delete from DB
+                                                database.trackDao().deleteTracksByIds(listOf(track.id))
+                                                
+                                                reloadDbData()
+                                            } catch (e: Exception) {
+                                                System.err.println("Failed to delete track: ${e.message}")
+                                            } finally {
+                                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                                    showDeleteConfirmDialog = false
+                                                    trackToDelete = null
+                                                }
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SemanticError)
+                                ) {
+                                    Text("Supprimer", color = Color.White)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = {
+                                        showDeleteConfirmDialog = false
+                                        trackToDelete = null
+                                    }
+                                ) {
+                                    Text("Annuler", color = TextSecondary)
+                                }
+                            },
+                            containerColor = OffBlack
+                        )
+                    }
                 }
             }
         }
@@ -1176,13 +1297,18 @@ fun SearchScreen(
                         TrackListItem(
                             index = index,
                             track = track,
+                            isLiked = likedTracks.any { it.id == track.id },
                             isPlaying = isPlaying,
                             onPlay = {
                                 orchestrator.playTrack(track.id, "search_local", searchInput, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                             },
                             onLike = { orchestrator.toggleLike(track.id, onReload) },
                             onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
-                            onAddToPlaylist = { onAddToPlaylist(track.id) }
+                            onAddToPlaylist = { onAddToPlaylist(track.id) },
+                            onDeleteLocal = {
+                                trackToDelete = track
+                                showDeleteConfirmDialog = true
+                            }
                         )
                     }
                 }
@@ -1209,6 +1335,13 @@ fun SearchScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text((index + 1).toString(), color = TextMuted, modifier = Modifier.width(30.dp))
+                                CoverImage(
+                                    url = track.coverUri,
+                                    fallbackIcon = Icons.Rounded.MusicNote,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                )
                                 Column {
                                     Text(track.title, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, fontWeight = FontWeight.SemiBold)
                                     Text(track.displayArtistName + (track.displayAlbumTitle?.let { " • $it" } ?: ""), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
@@ -1466,6 +1599,7 @@ fun LibraryScreen(
                                 TrackListItem(
                                     index = index,
                                     track = track,
+                                    isLiked = likedTracks.any { it.id == track.id },
                                     isPlaying = isPlaying,
                                     onPlay = {
                                         val queued = allTracks.map { t: TrackListRow -> t.toQueued() }
@@ -1473,7 +1607,11 @@ fun LibraryScreen(
                                     },
                                     onLike = { orchestrator.toggleLike(track.id, onReload) },
                                     onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
-                                    onAddToPlaylist = { onAddToPlaylist(track.id) }
+                                    onAddToPlaylist = { onAddToPlaylist(track.id) },
+                                    onDeleteLocal = {
+                                        trackToDelete = track
+                                        showDeleteConfirmDialog = true
+                                    }
                                 )
                             }
                         }
@@ -1886,13 +2024,20 @@ fun AlbumDetailScreen(
                     TrackListItem(
                         index = index,
                         track = track,
+                        isLiked = likedTracks.any { it.id == track.id },
                         isPlaying = isPlaying,
                         onPlay = {
                             orchestrator.playTrack(track.id, "album", albumId, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                         },
                         onLike = { orchestrator.toggleLike(track.id, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
-                        onAddToPlaylist = { onAddToPlaylist(track.id) }
+                        onAddToPlaylist = { onAddToPlaylist(track.id) },
+                        onDeleteLocal = if (track.contentUri?.startsWith("file:") == true) {
+                            {
+                                trackToDelete = track
+                                showDeleteConfirmDialog = true
+                            }
+                        } else null
                     )
                 }
             } else {
@@ -2017,13 +2162,20 @@ fun ArtistDetailScreen(
                     TrackListItem(
                         index = index,
                         track = track,
+                        isLiked = likedTracks.any { it.id == track.id },
                         isPlaying = isPlaying,
                         onPlay = {
                             orchestrator.playTrack(track.id, "artist", artistId, localTracks.map { t: TrackListRow -> t.toQueued() }, index)
                         },
                         onLike = { orchestrator.toggleLike(track.id, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
-                        onAddToPlaylist = { onAddToPlaylist(track.id) }
+                        onAddToPlaylist = { onAddToPlaylist(track.id) },
+                        onDeleteLocal = if (track.contentUri?.startsWith("file:") == true) {
+                            {
+                                trackToDelete = track
+                                showDeleteConfirmDialog = true
+                            }
+                        } else null
                     )
                 }
             } else {
@@ -2157,9 +2309,11 @@ fun PlaylistDetailScreen(
             LazyColumn(modifier = Modifier.weight(0.5f)) {
                 itemsIndexed(tracks, key = { _, t -> t.playlistItemId }) { index, track ->
                     val isPlaying = orchestrator.uiState.collectAsState().value.currentTrack?.trackId == track.trackId
+                    val trackRow = track.toTrackListRow()
                     TrackListItem(
                         index = index,
-                        track = track.toTrackListRow(),
+                        track = trackRow,
+                        isLiked = likedTracks.any { it.id == trackRow.id },
                         isPlaying = isPlaying,
                         onPlay = {
                             val queued = tracks.map { t: PlaylistTrackRow -> t.toQueued() }
@@ -2172,7 +2326,13 @@ fun PlaylistDetailScreen(
                                 database.playlistDao().deletePlaylistItem(track.playlistItemId)
                                 onReload()
                             }
-                        }
+                        },
+                        onDeleteLocal = if (trackRow.contentUri?.startsWith("file:") == true) {
+                            {
+                                trackToDelete = trackRow
+                                showDeleteConfirmDialog = true
+                            }
+                        } else null
                     )
                 }
             }
@@ -2245,12 +2405,14 @@ fun TrackListHeader() {
 fun TrackListItem(
     index: Int,
     track: TrackListRow,
+    isLiked: Boolean,
     isPlaying: Boolean,
     onPlay: () -> Unit,
     onLike: () -> Unit,
     onAddToQueue: () -> Unit,
     onAddToPlaylist: ((String) -> Unit)? = null,
-    onRemove: (() -> Unit)? = null
+    onRemove: (() -> Unit)? = null,
+    onDeleteLocal: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -2269,6 +2431,16 @@ fun TrackListItem(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium
         )
+
+        // Cover Image
+        CoverImage(
+            url = track.coverUri,
+            fallbackIcon = Icons.Rounded.MusicNote,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(4.dp))
+        )
+        Spacer(modifier = Modifier.width(16.dp))
 
         // Title & Artist
         Column(modifier = Modifier.weight(1f)) {
@@ -2307,9 +2479,9 @@ fun TrackListItem(
             // Like Button
             IconButton(onClick = onLike) {
                 Icon(
-                    imageVector = if (track.isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    imageVector = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = "Aimer",
-                    tint = if (track.isLiked) BlazeOrange else TextMuted
+                    tint = if (isLiked) BlazeOrange else TextMuted
                 )
             }
 
@@ -2362,10 +2534,27 @@ fun TrackListItem(
                     
                     if (onRemove != null) {
                         DropdownMenuItem(
-                            text = { Text("Supprimer", color = SemanticError) },
+                            text = { Text("Retirer", color = SemanticError) },
                             onClick = {
                                 showMenu = false
                                 onRemove()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = SemanticError
+                                )
+                            }
+                        )
+                    }
+
+                    if (onDeleteLocal != null) {
+                        DropdownMenuItem(
+                            text = { Text("Supprimer le fichier", color = SemanticError) },
+                            onClick = {
+                                showMenu = false
+                                onDeleteLocal()
                             },
                             leadingIcon = {
                                 Icon(
@@ -2708,8 +2897,17 @@ fun CoverImage(
     contentDescription: String? = null
 ) {
     if (!url.isNullOrBlank()) {
+        val model: Any = if (url.startsWith("file:")) {
+            try {
+                File(java.net.URI(url))
+            } catch (e: Exception) {
+                url
+            }
+        } else {
+            url
+        }
         AsyncImage(
-            model = url,
+            model = model,
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
             modifier = modifier
@@ -2777,6 +2975,7 @@ fun FavoritesScreen(
                     TrackListItem(
                         index = index,
                         track = track,
+                        isLiked = likedTracks.any { it.id == track.id },
                         isPlaying = isPlaying,
                         onPlay = {
                             val queued = likedTracks.map { it.toQueued() }
@@ -2784,7 +2983,13 @@ fun FavoritesScreen(
                         },
                         onLike = { orchestrator.toggleLike(track.id, onReload) },
                         onAddToQueue = { orchestrator.addToQueue(track.toQueued()) },
-                        onAddToPlaylist = onAddToPlaylist
+                        onAddToPlaylist = onAddToPlaylist,
+                        onDeleteLocal = if (track.contentUri?.startsWith("file:") == true) {
+                            {
+                                trackToDelete = track
+                                showDeleteConfirmDialog = true
+                            }
+                        } else null
                     )
                 }
             }
