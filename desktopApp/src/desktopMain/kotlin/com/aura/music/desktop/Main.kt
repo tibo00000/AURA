@@ -280,20 +280,19 @@ fun main() = application {
         state = trayState,
         icon = icon,
         tooltip = "AURA Music Player",
-        onAction = { isVisible = true },
+        onAction = {
+            isVisible = true
+            windowState.isMinimized = false
+        },
         menu = {
-            Item("Restaurer AURA", onClick = { isVisible = true })
+            Item("Restaurer AURA", onClick = {
+                isVisible = true
+                windowState.isMinimized = false
+            })
             Separator()
             Item("Quitter", onClick = ::exitApplication)
         }
     )
-
-    // Suspends Skia canvas rendering entirely by setting visible = false when minimized
-    LaunchedEffect(windowState.isMinimized) {
-        if (windowState.isMinimized) {
-            isVisible = false
-        }
-    }
 
     if (isVisible) {
         Window(

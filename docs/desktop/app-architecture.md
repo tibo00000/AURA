@@ -13,7 +13,7 @@
 - **Moteur Audio Natif** : Appels directs aux API audio du système d'exploitation en Bureau (Windows Media Foundation, CoreAudio, ALSA) et à l'API Web Audio / Element HTML5 Audio pour le Web.
 
 ## Principes de performance pour les joueurs
-- **Rendu suspendable** : Lorsque l'application est réduite dans la zone de notification (System Tray), les cycles de rendu de Skia sont désactivés pour annuler la consommation CPU/GPU.
+- **Rendu suspendable** : Lorsque l'application est réduite dans la zone de notification (System Tray) via le bouton de fermeture (`X`), les cycles de rendu de Skia sont désactivés pour annuler la consommation CPU/GPU. Le bouton de réduction standard (`-`) minimise normalement l'application dans la barre des tâches.
 - **ZGC Générationnel** : Utilisation du ramasse-miettes de pointe de JDK 21 pour limiter les temps de pause à moins de 1 milliseconde, éliminant tout impact sur le framerate des jeux vidéo.
 - **Virtual Threads** : Utilisation des threads virtuels de Project Loom (JDK 21) pour gérer de manière ultra-légère les accès fichiers (scan de la bibliothèque) et les transactions de base de données en arrière-plan.
 

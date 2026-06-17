@@ -13,7 +13,7 @@ AURA doit étendre ses capacités en proposant un client Bureau (Windows/macOS/L
 - La persistance locale s'appuie sur **Room Multiplatform** pour partager directement les schémas existants de la base locale.
 - **Cible Java Hybride** : La compilation du code commun cible JDK 17 pour des raisons de compatibilité d'écosystème. L'application Bureau est packagée et exécutée avec un environnement d'exécution **JDK 21** personnalisé.
 - **Optimisations de la JVM** : L'environnement JDK 21 est configuré pour activer le ramasse-miettes générationnel à très faible latence **Generational ZGC** (`-XX:+UseZGC`) et exploiter les threads virtuels (Project Loom) pour les E/S asynchrones.
-- **Réduction au System Tray** : L'application Bureau supporte la minimisation dans la zone de notification (System Tray). Lorsque l'application est réduite, le rendu graphique de l'interface (canevas Skia) est totalement suspendu, ramenant la consommation CPU/GPU à un niveau proche de zéro.
+- **Réduction au System Tray et Barre des tâches** : L'application Bureau supporte la minimisation standard dans la barre des tâches (bouton `-`) pour un accès rapide. Le bouton de fermeture (`X`) réduit l'application dans la zone de notification (System Tray) en tâche de fond, suspendant totalement le rendu graphique de l'interface (canevas Skia) pour ramener la consommation CPU/GPU à un niveau proche de zéro.
 
 ## Consequences
 - Mutualisation complète de l'interface utilisateur entre Android, le Bureau et le Web.
