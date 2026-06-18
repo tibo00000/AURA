@@ -190,7 +190,11 @@ class KtorAuraApiService(
         token: String,
         trackId: String,
         fileBytes: ByteArray,
-        mimeType: String
+        mimeType: String,
+        title: String?,
+        artistName: String?,
+        albumTitle: String?,
+        durationMs: Long?
     ): AuraResponse<SyncedFileResponseData> = client.post("$cleanBaseUrl/me/sync/files/$trackId") {
         header("Authorization", token)
         setBody(io.ktor.client.request.forms.MultiPartFormDataContent(
@@ -199,6 +203,10 @@ class KtorAuraApiService(
                     append(io.ktor.http.HttpHeaders.ContentType, mimeType)
                     append(io.ktor.http.HttpHeaders.ContentDisposition, "form-data; name=\"file\"; filename=\"$trackId.mp3\"")
                 })
+                if (title != null) append("title", title)
+                if (artistName != null) append("artist_name", artistName)
+                if (albumTitle != null) append("album_title", albumTitle)
+                if (durationMs != null) append("duration_ms", durationMs.toString())
             }
         ))
     }.body()

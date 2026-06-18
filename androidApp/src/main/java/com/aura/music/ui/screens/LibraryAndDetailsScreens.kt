@@ -288,7 +288,13 @@ fun LibraryScreen(
                         if (isCloudOnly && isPresentInCloud) {
                             scope.launch {
                                 snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                                cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                cloudFileRepository.downloadTrack(
+                                    trackId = track.id,
+                                    title = track.title,
+                                    artistName = track.artistName,
+                                    albumTitle = track.albumTitle,
+                                    durationMs = track.durationMs
+                                ).collect { res ->
                                     res.onSuccess {
                                         snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                         repository.refreshLocalMediaIndex()
@@ -581,7 +587,13 @@ fun FavoritesScreen(
                             {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                                    cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                    cloudFileRepository.downloadTrack(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artistName = track.artistName,
+                                        albumTitle = track.albumTitle,
+                                        durationMs = track.durationMs
+                                    ).collect { res ->
                                         res.onSuccess {
                                             snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                             repository.refreshLocalMediaIndex()
@@ -971,7 +983,13 @@ fun ArtistRouteScreen(
                 if (isCloudOnly && isPresentInCloud) {
                     scope.launch {
                         snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                        cloudFileRepository.downloadTrack(track.id).collect { res ->
+                        cloudFileRepository.downloadTrack(
+                            trackId = track.id,
+                            title = track.title,
+                            artistName = track.artistName,
+                            albumTitle = track.albumTitle,
+                            durationMs = track.durationMs
+                        ).collect { res ->
                             res.onSuccess {
                                 snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                 repository.refreshLocalMediaIndex()
@@ -1181,7 +1199,13 @@ fun AlbumRouteScreen(
                 if (isCloudOnly && isPresentInCloud) {
                     scope.launch {
                         snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                        cloudFileRepository.downloadTrack(track.id).collect { res ->
+                        cloudFileRepository.downloadTrack(
+                            trackId = track.id,
+                            title = track.title,
+                            artistName = track.artistName,
+                            albumTitle = track.albumTitle,
+                            durationMs = track.durationMs
+                        ).collect { res ->
                             res.onSuccess {
                                 snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                 repository.refreshLocalMediaIndex()
@@ -2181,7 +2205,13 @@ fun LibraryTracksScreen(
                             {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                                    cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                    cloudFileRepository.downloadTrack(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artistName = track.artistName,
+                                        albumTitle = track.albumTitle,
+                                        durationMs = track.durationMs
+                                    ).collect { res ->
                                         res.onSuccess {
                                             snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                             repository.refreshLocalMediaIndex()

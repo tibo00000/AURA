@@ -91,7 +91,11 @@ interface AuraApiService {
         token: String,
         trackId: String,
         fileBytes: ByteArray,
-        mimeType: String
+        mimeType: String,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null
     ): AuraResponse<SyncedFileResponseData>
 
     suspend fun downloadSyncFile(token: String, trackId: String): HttpResponse

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
@@ -56,6 +56,10 @@ def _read_metadata(path: Path) -> dict[str, Any] | None:
 async def upload_sync_file(
     track_id: str,
     file: UploadFile = File(...),
+    title: str = Form(None),
+    artist_name: str = Form(None),
+    album_title: str = Form(None),
+    duration_ms: int = Form(None),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     target_file, metadata_file = _paths(current_user.id, track_id)
@@ -78,6 +82,10 @@ async def upload_sync_file(
         "synced": True,
         "size_bytes": size,
         "mime_type": file.content_type or "application/octet-stream",
+        "title": title,
+        "artist_name": artist_name,
+        "album_title": album_title,
+        "duration_ms": duration_ms,
         "uploaded_at": uploaded_at,
         "updated_at": uploaded_at,
     }

@@ -83,7 +83,11 @@ class CloudFileRepository(
                 token = SyncRepository.AUTH_TOKEN,
                 trackId = trackId,
                 fileBytes = fileBytes,
-                mimeType = mimeType
+                mimeType = mimeType,
+                title = trackRow.title,
+                artistName = trackRow.artistName,
+                albumTitle = trackRow.albumTitle,
+                durationMs = trackRow.durationMs
             )
 
             val data = response.data
@@ -105,7 +109,13 @@ class CloudFileRepository(
     /**
      * Downloads a track from the cloud to the local device downloads folder.
      */
-    fun downloadTrack(trackId: String): Flow<Result<File>> = flow {
+    fun downloadTrack(
+        trackId: String,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null
+    ): Flow<Result<File>> = flow {
         try {
             Log.i(TAG, "Downloading track $trackId from cloud...")
             val response = apiService.downloadSyncFile(SyncRepository.AUTH_TOKEN, trackId)
@@ -149,25 +159,28 @@ class CloudFileRepository(
                     // Reconstruct parent TrackEntity if deleted/missing
                     var rawTrack = database.trackDao().getRawTrackById(trackId)
                     if (rawTrack == null) {
-                        var fileTitle = "Piste Cloud $trackId"
-                        var artistName = "Artiste Inconnu"
-                        var albumTitle = "Album Inconnu"
-                        var durationMs = 0L
+                        var fileTitle = title ?: "Piste Cloud $trackId"
+                        var artist = artistName ?: "Artiste Inconnu"
+                        var album = albumTitle ?: "Album Inconnu"
+                        var duration = durationMs ?: 0L
 
-                        val retriever = android.media.MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(targetFile.absolutePath)
-                            fileTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: fileTitle
-                            artistName = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artistName
-                            albumTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: albumTitle
-                            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                            durationMs = durationStr?.toLongOrNull() ?: 0L
-                        } catch (retrieverEx: Exception) {
-                            Log.w(TAG, "Could not extract ID3 metadata from $trackId", retrieverEx)
-                        } finally {
+                        // Fallback to ID3 tags if metadata parameters are missing
+                        if (title == null || artistName == null || albumTitle == null || durationMs == null) {
+                            val retriever = android.media.MediaMetadataRetriever()
                             try {
-                                retriever.release()
-                            } catch (e: Exception) {}
+                                retriever.setDataSource(targetFile.absolutePath)
+                                fileTitle = title ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: fileTitle
+                                artist = artistName ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artist
+                                album = albumTitle ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: album
+                                val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                duration = durationMs ?: durationStr?.toLongOrNull() ?: duration
+                            } catch (retrieverEx: Exception) {
+                                Log.w(TAG, "Could not extract ID3 metadata from $trackId", retrieverEx)
+                            } finally {
+                                try {
+                                    retriever.release()
+                                } catch (e: Exception) {}
+                            }
                         }
 
                         val newTrack = com.aura.music.data.local.TrackEntity(
@@ -176,9 +189,9 @@ class CloudFileRepository(
                             albumId = null,
                             title = fileTitle,
                             normalizedTitle = fileTitle.lowercase().trim(),
-                            displayArtistName = artistName,
-                            displayAlbumTitle = albumTitle,
-                            durationMs = durationMs,
+                            displayArtistName = artist,
+                            displayAlbumTitle = album,
+                            durationMs = duration,
                             coverUri = null,
                             canonicalAudioSourceType = "downloaded",
                             isLiked = false,

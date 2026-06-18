@@ -287,8 +287,8 @@ fun CloudSyncScreen(
 
                         items(cloudOnlyFiles, key = { "cloud-only-${it.trackId}" }) { cloudItem ->
                             val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                            val title = trackMeta?.title ?: "Titre inconnu"
-                            val subtitle = trackMeta?.artistName ?: "Artiste inconnu"
+                            val title = trackMeta?.title ?: cloudItem.title ?: "Titre inconnu"
+                            val subtitle = trackMeta?.artistName ?: cloudItem.artistName ?: "Artiste inconnu"
                             val sizeMb = String.format("%.2f MB", cloudItem.sizeBytes.toDouble() / (1024 * 1024))
                             
                             Card(
@@ -326,7 +326,13 @@ fun CloudSyncScreen(
                                         onClick = {
                                             activeOperations[cloudItem.trackId] = "Téléchargement..."
                                             scope.launch {
-                                                cloudFileRepository.downloadTrack(cloudItem.trackId).collect { res ->
+                                                cloudFileRepository.downloadTrack(
+                                                    trackId = cloudItem.trackId,
+                                                    title = trackMeta?.title ?: cloudItem.title,
+                                                    artistName = trackMeta?.artistName ?: cloudItem.artistName,
+                                                    albumTitle = trackMeta?.albumTitle ?: cloudItem.albumTitle,
+                                                    durationMs = trackMeta?.durationMs ?: cloudItem.durationMs
+                                                ).collect { res ->
                                                     activeOperations.remove(cloudItem.trackId)
                                                     res.onSuccess {
                                                         snackbarHostState.showSnackbar("Téléchargement réussi : $title")
@@ -397,8 +403,8 @@ fun CloudSyncScreen(
                     } else {
                         items(recentSyncedFiles, key = { "recent-${it.trackId}" }) { cloudItem ->
                             val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                            val title = trackMeta?.title ?: "Titre inconnu"
-                            val subtitle = trackMeta?.artistName ?: "Artiste inconnu"
+                            val title = trackMeta?.title ?: cloudItem.title ?: "Titre inconnu"
+                            val subtitle = trackMeta?.artistName ?: cloudItem.artistName ?: "Artiste inconnu"
                             val sizeMb = String.format("%.2f MB", cloudItem.sizeBytes.toDouble() / (1024 * 1024))
                             val isLocal = trackMeta?.contentUri?.isNotBlank() == true
 

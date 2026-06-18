@@ -379,7 +379,13 @@ private fun PlaylistTrackRowItem(
             {
                 scope.launch {
                     snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                    cloudFileRepository.downloadTrack(track.trackId).collect { res ->
+                    cloudFileRepository.downloadTrack(
+                        trackId = track.trackId,
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumTitle = track.albumTitle,
+                        durationMs = track.durationMs
+                    ).collect { res ->
                         res.onSuccess {
                             snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                             repository.refreshLocalMediaIndex()

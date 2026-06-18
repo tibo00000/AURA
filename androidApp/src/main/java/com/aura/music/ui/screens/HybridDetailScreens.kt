@@ -179,7 +179,13 @@ fun HybridArtistScreen(
                     if (isCloudOnly && isPresentInCloud) {
                         scope.launch {
                             snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                            cloudFileRepository.downloadTrack(track.id).collect { res ->
+                            cloudFileRepository.downloadTrack(
+                                trackId = track.id,
+                                title = track.title,
+                                artistName = track.artistName,
+                                albumTitle = track.albumTitle,
+                                durationMs = track.durationMs
+                            ).collect { res ->
                                 res.onSuccess {
                                     snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                     appContainer.localLibraryRepository.refreshLocalMediaIndex()
@@ -451,7 +457,13 @@ fun HybridAlbumScreen(
                     if (isCloudOnly && isPresentInCloud) {
                         scope.launch {
                             snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                            cloudFileRepository.downloadTrack(track.id).collect { res ->
+                            cloudFileRepository.downloadTrack(
+                                trackId = track.id,
+                                title = track.title,
+                                artistName = track.artistName,
+                                albumTitle = track.albumTitle,
+                                durationMs = track.durationMs
+                            ).collect { res ->
                                 res.onSuccess {
                                     snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
                                     appContainer.localLibraryRepository.refreshLocalMediaIndex()
