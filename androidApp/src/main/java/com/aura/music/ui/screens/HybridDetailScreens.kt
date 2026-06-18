@@ -64,6 +64,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.domain.player.PlayerEvent
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 // =============================================================================
 // HybridArtistScreen (AND-010)
@@ -97,7 +100,18 @@ fun HybridArtistScreen(
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
 
-    RouteScaffold(title = null, onNavigateBack = onNavigateBack) {
+    val context = LocalContext.current
+    val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val cloudFileRepository = appContainer.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    RouteScaffold(
+        title = null,
+        onNavigateBack = onNavigateBack,
+        snackbarHostState = snackbarHostState
+    ) {
         if (state.isLocalLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = BlazeOrange)
@@ -141,6 +155,43 @@ fun HybridArtistScreen(
             // Prefer local tracks; fall back to online top_tracks summary if local is empty
             val localTracks = artist?.topTracks ?: emptyList()
             if (localTracks.isNotEmpty()) {
+                val onUploadToCloudLambda = { track: TrackListRow ->
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true
+                    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+                    if (isLocalScanned && !isAlreadySynced) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                            cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                res.onSuccess {
+                                    snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                    cloudFileRepository.refreshSyncedTrackIds()
+                                    viewModel.refreshLocal()
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+                val onDownloadFromCloudLambda = { track: TrackListRow ->
+                    val isCloudOnly = track.contentUri.isNullOrBlank()
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+                    if (isCloudOnly && isPresentInCloud) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                            cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                res.onSuccess {
+                                    snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                                    appContainer.localLibraryRepository.refreshLocalMediaIndex()
+                                    viewModel.refreshLocal()
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 trackList(
                     title = "Titres populaires",
                     tracks = localTracks,
@@ -152,7 +203,9 @@ fun HybridArtistScreen(
                     onAddToQueue = onAddToQueue,
                     onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
                     onLikeTrack = onLikeTrack,
-                    onDeleteDownload = { track -> trackToDelete = track }
+                    onDeleteDownload = { track -> trackToDelete = track },
+                    onUploadToCloud = onUploadToCloudLambda,
+                    onDownloadFromCloud = onDownloadFromCloudLambda
                 )
             } else if (onlineData != null && onlineData.topTracks.isNotEmpty()) {
                 item(key = "online_tracklist_header") {
@@ -285,7 +338,18 @@ fun HybridAlbumScreen(
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
 
-    RouteScaffold(title = screenTitle, onNavigateBack = onNavigateBack) {
+    val context = LocalContext.current
+    val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val cloudFileRepository = appContainer.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    RouteScaffold(
+        title = screenTitle,
+        onNavigateBack = onNavigateBack,
+        snackbarHostState = snackbarHostState
+    ) {
         if (state.isLocalLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = BlazeOrange)
@@ -363,6 +427,43 @@ fun HybridAlbumScreen(
 
             // ---- TRACKLIST (local only) ----
             if (localTracks.isNotEmpty()) {
+                val onUploadToCloudLambda = { track: TrackListRow ->
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true
+                    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+                    if (isLocalScanned && !isAlreadySynced) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                            cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                res.onSuccess {
+                                    snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                    cloudFileRepository.refreshSyncedTrackIds()
+                                    viewModel.refreshLocal()
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+                val onDownloadFromCloudLambda = { track: TrackListRow ->
+                    val isCloudOnly = track.contentUri.isNullOrBlank()
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+                    if (isCloudOnly && isPresentInCloud) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                            cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                res.onSuccess {
+                                    snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                                    appContainer.localLibraryRepository.refreshLocalMediaIndex()
+                                    viewModel.refreshLocal()
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 trackList(
                     title = "",
                     tracks = localTracks,
@@ -375,7 +476,9 @@ fun HybridAlbumScreen(
                     onAddToQueue = onAddToQueue,
                     onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
                     onLikeTrack = onLikeTrack,
-                    onDeleteDownload = { track -> trackToDelete = track }
+                    onDeleteDownload = { track -> trackToDelete = track },
+                    onUploadToCloud = onUploadToCloudLambda,
+                    onDownloadFromCloud = onDownloadFromCloudLambda
                 )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 items(onlineData.tracks, key = { "online_album_track_${it.id}" }) { track ->

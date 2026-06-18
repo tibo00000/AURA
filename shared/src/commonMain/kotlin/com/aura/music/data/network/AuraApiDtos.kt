@@ -24,11 +24,11 @@ import kotlinx.serialization.json.doubleOrNull
 @Serializable
 data class AuraResponse<T>(
     @SerialName("data")
-    val data: T?,
+    val data: T? = null,
     @SerialName("error")
-    val error: ApiError?,
+    val error: ApiError? = null,
     @SerialName("meta")
-    val meta: ResponseMeta?
+    val meta: ResponseMeta? = null
 )
 
 @Serializable
@@ -46,7 +46,7 @@ data class ApiError(
 @Serializable
 data class ResponseMeta(
     @SerialName("request_id")
-    val requestId: String?,
+    val requestId: String? = null,
     @SerialName("partial_failure")
     val partialFailure: Boolean = false,
     @SerialName("provider_status")
