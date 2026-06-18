@@ -144,8 +144,66 @@ class CloudFileRepository(
 
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
-                    // Create media link
                     val mockMediaStoreId = System.currentTimeMillis()
+                    
+                    // Reconstruct parent TrackEntity if deleted/missing
+                    var rawTrack = database.trackDao().getRawTrackById(trackId)
+                    if (rawTrack == null) {
+                        var fileTitle = "Piste Cloud $trackId"
+                        var artistName = "Artiste Inconnu"
+                        var albumTitle = "Album Inconnu"
+                        var durationMs = 0L
+
+                        val retriever = android.media.MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(targetFile.absolutePath)
+                            fileTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: fileTitle
+                            artistName = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artistName
+                            albumTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: albumTitle
+                            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            durationMs = durationStr?.toLongOrNull() ?: 0L
+                        } catch (retrieverEx: Exception) {
+                            Log.w(TAG, "Could not extract ID3 metadata from $trackId", retrieverEx)
+                        } finally {
+                            try {
+                                retriever.release()
+                            } catch (e: Exception) {}
+                        }
+
+                        val newTrack = com.aura.music.data.local.TrackEntity(
+                            id = trackId,
+                            primaryArtistId = null,
+                            albumId = null,
+                            title = fileTitle,
+                            normalizedTitle = fileTitle.lowercase().trim(),
+                            displayArtistName = artistName,
+                            displayAlbumTitle = albumTitle,
+                            durationMs = durationMs,
+                            coverUri = null,
+                            canonicalAudioSourceType = "downloaded",
+                            isLiked = false,
+                            isDownloadedByAura = true,
+                            isExplicit = false,
+                            popularity = 0,
+                            genresJson = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                        database.trackDao().upsertTrack(newTrack)
+                        Log.d(TAG, "Dynamically reconstructed and saved TrackEntity for deleted/missing track $trackId")
+                        rawTrack = newTrack
+                    } else {
+                        // Update Track status to downloaded
+                        val updatedTrack = rawTrack.copy(
+                            canonicalAudioSourceType = "downloaded",
+                            isDownloadedByAura = true,
+                            updatedAt = now
+                        )
+                        database.trackDao().upsertTrack(updatedTrack)
+                        Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
+                    }
+
+                    // Create media link
                     val mediaLink = TrackMediaLinkEntity(
                         id = "media-link:$mockMediaStoreId",
                         trackId = trackId,
@@ -158,18 +216,6 @@ class CloudFileRepository(
                         lastScannedAt = now
                     )
                     database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
-
-                    // Update Track status
-                    val rawTrack = database.trackDao().getRawTrackById(trackId)
-                    if (rawTrack != null) {
-                        val updatedTrack = rawTrack.copy(
-                            canonicalAudioSourceType = "downloaded",
-                            isDownloadedByAura = true,
-                            updatedAt = now
-                        )
-                        database.trackDao().upsertTrack(updatedTrack)
-                        Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
-                    }
                 }
             }
 
