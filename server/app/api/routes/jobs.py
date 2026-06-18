@@ -54,6 +54,7 @@ async def get_job_status(
             status=job.status,
             progress_percent=job.progress_percent,
             error=error_payload,
+            candidates=job.candidates or None,
             created_at=job.created_at,
             updated_at=job.updated_at,
         )
