@@ -197,7 +197,7 @@ class KtorAuraApiService(
             io.ktor.client.request.forms.formData {
                 append("file", fileBytes, io.ktor.http.Headers.build {
                     append(io.ktor.http.HttpHeaders.ContentType, mimeType)
-                    append(io.ktor.http.HttpHeaders.ContentDisposition, "filename=\"$trackId.mp3\"")
+                    append(io.ktor.http.HttpHeaders.ContentDisposition, "form-data; name=\"file\"; filename=\"$trackId.mp3\"")
                 })
             }
         ))
