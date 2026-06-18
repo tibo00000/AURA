@@ -39,7 +39,7 @@ class SyncRepository(
 ) {
     companion object {
         private const val TAG = "SyncRepository"
-        private const val AUTH_TOKEN = "Bearer 12345678-1234-1234-1234-1234567890ab"
+        const val AUTH_TOKEN = "Bearer 12345678-1234-1234-1234-1234567890ab"
         private const val WORK_NAME_PERIODIC = "aura_periodic_sync"
         private const val WORK_NAME_ONETIME = "aura_onetime_sync"
 

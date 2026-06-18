@@ -42,6 +42,14 @@ class AuraAppContainer(context: Context) {
         com.aura.music.data.network.KtorAuraApiService.createDefault()
     }
 
+    val cloudFileRepository by lazy {
+        com.aura.music.data.repository.CloudFileRepository(
+            database = database,
+            apiService = auraApiService,
+            context = appContext
+        )
+    }
+
     val enrichmentRepository by lazy {
         EnrichmentRepository(
             database = database,

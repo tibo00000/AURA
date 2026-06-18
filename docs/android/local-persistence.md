@@ -331,3 +331,21 @@ Aucune limite arbitraire n'est appliquee au nombre de fichiers retournes.
 - `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : singleton Room database, version 1
 - `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore, filtre duree >= 30s
 - `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot, generation d'ID
+
+## Synchronisation Fichiers Cloud
+
+- Les fichiers personnels uploadés par l'utilisateur sont indexés sur le serveur cloud.
+- `CloudFileRepository` est le point d'entrée pour interroger cet index (`/me/sync/files`) et gérer l'upload/téléchargement.
+- **État cloud_only** : Une piste est considérée comme présente uniquement sur le cloud si :
+  - Elle est présente dans la liste des fichiers cloud synchronisés (`syncedTrackIds`).
+  - Son `contentUri` local dans `track_media_links` (ou la table locale) est nul ou vide.
+- **Processus d'Upload** :
+  1. Récupération du `contentUri` local (ex: `content://media/external/audio/media/...`).
+  2. Ouverture du flux via `ContentResolver`.
+  3. Envoi multipart via Ktor client à `POST /me/sync/files/{track_id}`.
+  4. Mise à jour de l'index des fichiers synchronisés localement.
+- **Processus de Récupération (Download)** :
+  1. Téléchargement du flux binaire via `GET /me/sync/files/{track_id}`.
+  2. Écriture du fichier dans le répertoire privé de l'application : `context.filesDir/downloads/{trackId}.mp3`.
+  3. Insertion ou mise à jour de `track_media_links` avec le chemin du fichier local.
+  4. Modification du type de source `canonicalAudioSourceType` en `downloaded`.

@@ -12,8 +12,12 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +35,7 @@ import com.aura.music.data.repository.LibraryDashboardSummary
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.theme.*
+import com.aura.music.AuraApplication
 
 @Composable
 fun HomeScreen(
@@ -43,7 +48,12 @@ fun HomeScreen(
     onOpenPlayer: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onOpenCloudSync: () -> Unit,
 ) {
+    val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
+    val cloudFileRepository = application.container.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+
     val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
         value = repository.getLibraryDashboardSummary()
     }
@@ -52,6 +62,15 @@ fun HomeScreen(
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
         value = repository.getPlaylists().take(8)
+    }
+    val allTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
+        value = repository.getAllTracks()
+    }
+
+    val cloudOnlyCount = remember(allTracksState.value, syncedCloudTrackIds) {
+        allTracksState.value.count { track ->
+            track.contentUri.isNullOrBlank() && syncedCloudTrackIds.contains(track.id)
+        }
     }
 
     RouteScaffold(title = "Accueil", style = MaterialTheme.typography.headlineLarge) {
@@ -64,6 +83,16 @@ fun HomeScreen(
         ) {
             item {
                 HomeHeader(summaryState.value, onRequestAudioPermission)
+            }
+            
+            if (cloudOnlyCount > 5) {
+                item {
+                    CloudRecoveryBanner(
+                        count = cloudOnlyCount,
+                        onOpenCloudSync = onOpenCloudSync,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
             
             item {
@@ -82,6 +111,76 @@ fun HomeScreen(
             }
             
             item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun CloudRecoveryBanner(
+    count: Int,
+    onOpenCloudSync: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onOpenCloudSync() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGraphite),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BlazeOrange)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(BlazeOrange.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CloudDownload,
+                    contentDescription = null,
+                    tint = BlazeOrange,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Fichiers cloud disponibles",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "$count titres sont présents sur votre cloud mais absents de cet appareil. Récupérez-les manuellement.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            }
+
+            Button(
+                onClick = onOpenCloudSync,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BlazeOrange,
+                    contentColor = TextOnAccent
+                ),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Gérer",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

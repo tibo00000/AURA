@@ -39,6 +39,9 @@ import com.aura.music.data.repository.LibraryDashboardSummary
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.data.repository.DownloadRepository
 import com.aura.music.ui.RouteScaffold
+import com.aura.music.ui.theme.ElevatedGraphite
+import com.aura.music.ui.theme.TextPrimary
+import androidx.compose.material.icons.rounded.CloudDownload
 import kotlinx.coroutines.launch
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,6 +55,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
@@ -61,6 +65,7 @@ fun SettingsScreen(
     syncRepository: com.aura.music.data.repository.SyncRepository,
     onNavigateBack: () -> Unit,
     onNavigateToSandbox: () -> Unit,
+    onNavigateToCloudSync: () -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -189,6 +194,31 @@ fun SettingsScreen(
                                 )
                                 Text(if (isSyncing) "Synchronisation..." else "Synchroniser maintenant")
                             }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = onNavigateToCloudSync,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = ElevatedGraphite,
+                            contentColor = TextPrimary
+                        ),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDownload,
+                                contentDescription = "Fichiers Cloud"
+                            )
+                            Text("Gestion des fichiers Cloud")
                         }
                     }
 

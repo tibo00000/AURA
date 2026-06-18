@@ -98,6 +98,7 @@ import com.aura.music.ui.screens.PlaylistDetailScreenNew
 import com.aura.music.ui.screens.PlaylistsListScreen
 import com.aura.music.ui.screens.SearchScreen
 import com.aura.music.ui.screens.SettingsScreen
+import com.aura.music.ui.screens.CloudSyncScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
 import com.aura.music.ui.theme.*
 
@@ -196,6 +197,7 @@ fun AuraApp() {
                     onOpenPlayer = { navController.navigate(AuraRoute.Player) },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                    onOpenCloudSync = { navController.navigate(AuraRoute.CloudSync) }
                 )
             }
             composable(AuraRoute.Search) {
@@ -442,7 +444,17 @@ fun AuraApp() {
                     downloadRepository = appContainer.downloadRepository,
                     syncRepository = appContainer.syncRepository,
                     onNavigateBack = { navController.popBackStack() },
-                    onNavigateToSandbox = { navController.navigate(AuraRoute.Sandbox) }
+                    onNavigateToSandbox = { navController.navigate(AuraRoute.Sandbox) },
+                    onNavigateToCloudSync = { navController.navigate(AuraRoute.CloudSync) }
+                )
+            }
+            composable(AuraRoute.CloudSync) {
+                val ctx = LocalContext.current
+                val appContainer = (ctx.applicationContext as com.aura.music.AuraApplication).container
+                CloudSyncScreen(
+                    cloudFileRepository = appContainer.cloudFileRepository,
+                    onNavigateBack = { navController.popBackStack() },
+                    playerViewModel = playerViewModel
                 )
             }
             composable(AuraRoute.Sandbox) {
@@ -622,6 +634,7 @@ object AuraRoute {
     const val LibraryTracks = "library_tracks"
     const val LibraryArtists = "library_artists"
     const val Sandbox = "sandbox"
+    const val CloudSync = "cloud_sync"
 
     const val ArtistIdArg = "artistId"
     const val AlbumIdArg = "albumId"
@@ -737,6 +750,8 @@ fun LazyListScope.trackList(
     onPlayNow: ((TrackListRow) -> Unit)? = null,
     onAddToQueue: ((TrackListRow) -> Unit)? = null,
     onDeleteDownload: ((TrackListRow) -> Unit)? = null,
+    onUploadToCloud: ((TrackListRow) -> Unit)? = null,
+    onDownloadFromCloud: ((TrackListRow) -> Unit)? = null,
 ) {
     if (title.isNotBlank()) {
         item(key = "tracklist_title_${title}_${contextType}") {
@@ -769,6 +784,8 @@ fun LazyListScope.trackList(
             val currentOnOpenArtist = rememberUpdatedState(onOpenArtist)
             val currentOnOpenAlbum = rememberUpdatedState(onOpenAlbum)
             val currentOnDelete = rememberUpdatedState(onDeleteDownload)
+            val currentOnUpload = rememberUpdatedState(onUploadToCloud)
+            val currentOnDownloadFromCloud = rememberUpdatedState(onDownloadFromCloud)
 
             val currentOnClick = remember(track.id, tracks, contextType) {
                 { currentOnPlay.value(track, tracks, contextType) }
@@ -809,6 +826,14 @@ fun LazyListScope.trackList(
                 val cb = currentOnDelete.value
                 if (cb != null) { { cb(track) } } else null
             }
+            val onUploadToCloudLambda = remember(track.id, currentOnUpload.value != null) {
+                val cb = currentOnUpload.value
+                if (cb != null) { { cb(track) } } else null
+            }
+            val onDownloadFromCloudLambda = remember(track.id, currentOnDownloadFromCloud.value != null) {
+                val cb = currentOnDownloadFromCloud.value
+                if (cb != null) { { cb(track) } } else null
+            }
 
             com.aura.music.ui.screens.SharedTrackRowItem(
                 title = track.title,
@@ -826,6 +851,8 @@ fun LazyListScope.trackList(
                 onViewArtist = onViewArtistLambda,
                 onViewAlbum = onViewAlbumLambda,
                 onDeleteDownload = onDeleteDownloadLambda,
+                onUploadToCloud = onUploadToCloudLambda,
+                onDownloadFromCloud = onDownloadFromCloudLambda,
             )
         }
     }

@@ -62,6 +62,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.MusicNote
@@ -347,7 +348,13 @@ fun FavoritesScreen(
     }
     val playlists = playlistsState.value
 
-    RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val cloudFileRepository = appContainer.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
         val contextTracks = remember(tracksState.value) {
             tracksState.value.map { it.toQueuedTrack() }
         }
@@ -500,6 +507,49 @@ fun FavoritesScreen(
                         track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
                     }
 
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true
+                    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+                    val onUploadToCloudLambda = remember(track.id, isLocalScanned, isAlreadySynced) {
+                        if (isLocalScanned && !isAlreadySynced) {
+                            {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                                    cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                        res.onSuccess {
+                                            snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                            cloudFileRepository.refreshSyncedTrackIds()
+                                        }.onFailure { err ->
+                                            snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                        }
+                                    }
+                                }
+                                Unit
+                            }
+                        } else null
+                    }
+
+                    val isCloudOnly = track.contentUri.isNullOrBlank()
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+                    val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
+                        if (isCloudOnly && isPresentInCloud) {
+                            {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                                    cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                        res.onSuccess {
+                                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                                            repository.refreshLocalMediaIndex()
+                                            refreshTick++
+                                        }.onFailure { err ->
+                                            snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                                        }
+                                    }
+                                }
+                                Unit
+                            }
+                        } else null
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
@@ -511,6 +561,8 @@ fun FavoritesScreen(
                         onAddToPlaylist = onAddToPlaylistClick,
                         onViewArtist = onViewArtistClick,
                         onViewAlbum = onViewAlbumClick,
+                        onUploadToCloud = onUploadToCloudLambda,
+                        onDownloadFromCloud = onDownloadFromCloudLambda,
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -1737,6 +1789,10 @@ fun LibraryTracksScreen(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
+    val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val cloudFileRepository = appContainer.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val sortingOptions = listOf("A-Z", "Récents")
     var selectedSort by remember { mutableStateOf(sharedPrefs.getString("library_tracks_sort", "A-Z") ?: "A-Z") }
@@ -1752,7 +1808,7 @@ fun LibraryTracksScreen(
         }
     }
 
-    RouteScaffold(title = "Tous les titres", onNavigateBack = onNavigateBack) {
+    RouteScaffold(title = "Tous les titres", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
         val contextTracks = remember(sortedTracks) {
             sortedTracks.map { it.toQueuedTrack() }
         }
@@ -1953,6 +2009,49 @@ fun LibraryTracksScreen(
                     }
                     val onDeleteDownloadClick = remember(track.id) { { trackToDelete = track } }
 
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true
+                    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+                    val onUploadToCloudLambda = remember(track.id, isLocalScanned, isAlreadySynced) {
+                        if (isLocalScanned && !isAlreadySynced) {
+                            {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                                    cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                        res.onSuccess {
+                                            snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                            cloudFileRepository.refreshSyncedTrackIds()
+                                        }.onFailure { err ->
+                                            snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                        }
+                                    }
+                                }
+                                Unit
+                            }
+                        } else null
+                    }
+
+                    val isCloudOnly = track.contentUri.isNullOrBlank()
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+                    val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
+                        if (isCloudOnly && isPresentInCloud) {
+                            {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                                    cloudFileRepository.downloadTrack(track.id).collect { res ->
+                                        res.onSuccess {
+                                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                                            repository.refreshLocalMediaIndex()
+                                            refreshTick++
+                                        }.onFailure { err ->
+                                            snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                                        }
+                                    }
+                                }
+                                Unit
+                            }
+                        } else null
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
@@ -1967,6 +2066,8 @@ fun LibraryTracksScreen(
                         onViewArtist = onViewArtistClick,
                         onViewAlbum = onViewAlbumClick,
                         onDeleteDownload = onDeleteDownloadClick,
+                        onUploadToCloud = onUploadToCloudLambda,
+                        onDownloadFromCloud = onDownloadFromCloudLambda,
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }

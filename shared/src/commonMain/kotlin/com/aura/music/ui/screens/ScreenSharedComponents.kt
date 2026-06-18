@@ -48,6 +48,8 @@ import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ListItem
@@ -326,6 +328,8 @@ fun SharedTrackRowItem(
     onViewAlbum: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     onDeleteDownload: (() -> Unit)? = null,
+    onUploadToCloud: (() -> Unit)? = null,
+    onDownloadFromCloud: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -341,7 +345,9 @@ fun SharedTrackRowItem(
         onViewArtist,
         onViewAlbum,
         onDownload,
-        onDeleteDownload
+        onDeleteDownload,
+        onUploadToCloud,
+        onDownloadFromCloud
     ) {
         val items = mutableListOf<ContextMenuItem>()
         when (contextType) {
@@ -489,6 +495,12 @@ fun SharedTrackRowItem(
                     items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
                 }
             }
+        }
+        if (onUploadToCloud != null) {
+            items.add(ContextMenuItem("Uploader vers le cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
+        }
+        if (onDownloadFromCloud != null) {
+            items.add(ContextMenuItem("Récupérer depuis le cloud", Icons.Rounded.CloudDownload, onDownloadFromCloud))
         }
         items
     }

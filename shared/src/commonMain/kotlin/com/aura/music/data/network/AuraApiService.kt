@@ -86,4 +86,17 @@ interface AuraApiService {
         id: String,
         trackId: String
     ): AuraResponse<List<PlaylistItemResponse>>
+
+    suspend fun uploadSyncFile(
+        token: String,
+        trackId: String,
+        fileBytes: ByteArray,
+        mimeType: String
+    ): AuraResponse<SyncedFileResponseData>
+
+    suspend fun downloadSyncFile(token: String, trackId: String): HttpResponse
+
+    suspend fun listSyncFiles(token: String): AuraResponse<SyncedFileListResponseData>
+
+    suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse>
 }

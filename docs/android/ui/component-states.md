@@ -33,6 +33,8 @@ fun SharedTrackRowItem(
     onLike: (() -> Unit)? = null,
     onUnlike: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
+    onUploadToCloud: (() -> Unit)? = null,
+    onDownloadFromCloud: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
     // ... autres parametres
 )
@@ -45,6 +47,8 @@ fun SharedTrackRowItem(
 - Actions affichees :
   - "Ajouter a une playlist" (si `onAddToPlaylist` fourni)
   - "Ajouter aux favoris" (si `onLike` fourni)
+  - "Uploader vers le cloud" (si `onUploadToCloud` fourni)
+  - "Récupérer depuis le cloud" (si `onDownloadFromCloud` fourni)
   - "Plus" (si `onMore` fourni)
 
 ```kotlin
@@ -146,6 +150,11 @@ SharedTrackRowItem(
 - `empty_provider_failure_non_blocking`
 - Mapping code : `EmptyStateSurface`.
 
+## CloudRecoveryBanner
+- `hidden` (quand le nombre de pistes cloud_only <= 5)
+- `visible` (quand le nombre de pistes cloud_only > 5)
+- Mapping code : `CloudRecoveryBanner` dans `HomeScreen.kt`.
+
 ## PlayerHero
 - `loading_track`
 - `playing`
@@ -162,6 +171,7 @@ SharedTrackRowItem(
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : etats shell actuels du mini-player et des listes principales
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : source des etats player
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `CloudRecoveryBanner`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : etats de saisie, suggestions et recherche
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : etats visuels partages (`EmptyStateSurface`, `BrowseAlbumRail`, `BrowseArtistRail`, `SectionTitle`, `FilterRow`, `SharedTrackRowItem` avec menus contextuels)
 - `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt` : implementation du contexte playlist avec menu "Retirer de playlist"

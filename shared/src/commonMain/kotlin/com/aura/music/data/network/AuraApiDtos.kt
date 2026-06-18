@@ -481,3 +481,24 @@ data class PlaylistItemCreate(
     @SerialName("added_from_context_type") val addedFromContextType: String? = null,
     @SerialName("added_from_context_id") val addedFromContextId: String? = null
 )
+
+@Serializable
+data class SyncedFileResponseData(
+    @SerialName("track_id") val trackId: String,
+    @SerialName("synced") val synced: Boolean,
+    @SerialName("size_bytes") val sizeBytes: Long,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("uploaded_at") val uploadedAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
+@Serializable
+data class SyncedFileListResponseData(
+    @SerialName("items") val items: List<SyncedFileResponseData>
+)
+
+@Serializable
+data class SyncedFileDeleteResponse(
+    @SerialName("track_id") val trackId: String,
+    @SerialName("deleted") val deleted: Boolean
+)

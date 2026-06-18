@@ -578,6 +578,9 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_items WHERE playlist_id = :playlistId")
     suspend fun getNextPlaylistPosition(playlistId: String): Int
 
+    @Query("SELECT * FROM playlist_items WHERE id = :playlistItemId LIMIT 1")
+    suspend fun getPlaylistItem(playlistItemId: String): PlaylistItemEntity?
+
     @Query("DELETE FROM playlist_items WHERE id = :playlistItemId")
     suspend fun deletePlaylistItem(playlistItemId: String): Int
 

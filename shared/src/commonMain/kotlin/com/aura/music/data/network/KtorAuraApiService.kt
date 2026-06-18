@@ -186,6 +186,35 @@ class KtorAuraApiService(
         header("Authorization", token)
     }.body()
 
+    override suspend fun uploadSyncFile(
+        token: String,
+        trackId: String,
+        fileBytes: ByteArray,
+        mimeType: String
+    ): AuraResponse<SyncedFileResponseData> = client.post("$cleanBaseUrl/me/sync/files/$trackId") {
+        header("Authorization", token)
+        setBody(io.ktor.client.request.forms.MultiPartFormDataContent(
+            io.ktor.client.request.forms.formData {
+                append("file", fileBytes, io.ktor.http.Headers.build {
+                    append(io.ktor.http.HttpHeaders.ContentType, mimeType)
+                    append(io.ktor.http.HttpHeaders.ContentDisposition, "filename=\"$trackId.mp3\"")
+                })
+            }
+        ))
+    }.body()
+
+    override suspend fun downloadSyncFile(token: String, trackId: String): HttpResponse = client.get("$cleanBaseUrl/me/sync/files/$trackId") {
+        header("Authorization", token)
+    }
+
+    override suspend fun listSyncFiles(token: String): AuraResponse<SyncedFileListResponseData> = client.get("$cleanBaseUrl/me/sync/files") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse> = client.delete("$cleanBaseUrl/me/sync/files/$trackId") {
+        header("Authorization", token)
+    }.body()
+
 
     companion object {
         /**

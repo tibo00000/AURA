@@ -54,6 +54,8 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - `Voir l'album`
   - `Telecharger` uniquement si la piste n'est pas disponible localement
   - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
+  - `Uploader vers le cloud` uniquement si la piste est locale (`contentUri` en `content://`), non téléchargée par Aura et absente du cloud
+  - `Récupérer depuis le cloud` uniquement si la piste est présente dans le cloud mais absente de l'appareil (`cloud_only` state)
   - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
 
 ## PlayerQueueRow
@@ -158,10 +160,19 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - l'action principale reste explicite
 - Mapping code : `EmptyStateSurface`.
 
+## CloudRecoveryBanner
+- Role : Avertir l'utilisateur au lancement si des fichiers cloud sont disponibles pour récupération manuelle.
+- Structure :
+  - Icône d'avertissement / CloudDownload stylisée BlazeOrange
+  - Texte indiquant le nombre de pistes prêtes pour la récupération
+  - Bouton "Gérer" menant directement à la page de gestion des fichiers cloud
+- Règles :
+  - S'affiche uniquement sur l'écran d'accueil (`HomeScreen`) si plus de 5 titres sont en mode `cloud_only` et présents sur le cloud.
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
-- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`, `CloudRecoveryBanner`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : `SearchBar`, `SegmentedTabs`, variantes `TrackRow` Search
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : `HeroIdentityCard`, `EmptyStateSurface`, `DownloadStateCard`, `FilterRow`, `SectionTitle`, `BrowseAlbumRail`, `BrowseArtistRail`
 - `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt` : composition de `SettingsCard` et usage de `HeroIdentityCard` + `EmptyStateSurface`

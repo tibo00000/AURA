@@ -38,7 +38,7 @@ object NetworkPolicyChecker {
         }
     }
 
-    private fun isConnected(context: Context): Boolean {
+    fun isConnected(context: Context): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return false
         val network = cm.activeNetwork ?: return false

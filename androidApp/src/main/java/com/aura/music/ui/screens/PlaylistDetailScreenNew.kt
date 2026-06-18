@@ -28,6 +28,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -81,7 +83,13 @@ fun PlaylistDetailScreenNew(
     }
     val playlists = playlistsState.value
 
-    RouteScaffold(title = detail?.summary?.name ?: "Playlist", onNavigateBack = onNavigateBack) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val cloudFileRepository = appContainer.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    RouteScaffold(title = detail?.summary?.name ?: "Playlist", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
         if (detail == null) {
             EmptyStateSurface("Playlist introuvable", "Cette playlist n'existe plus localement.")
         } else {
@@ -231,7 +239,10 @@ fun PlaylistDetailScreenNew(
                             onAddToPlaylist = onAddToPlaylistClick,
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
-                            onAddToQueue = onAddToQueueClick
+                            onAddToQueue = onAddToQueueClick,
+                            cloudFileRepository = cloudFileRepository,
+                            syncedCloudTrackIds = syncedCloudTrackIds,
+                            snackbarHostState = snackbarHostState
                         )
                     }
                 }
@@ -299,6 +310,9 @@ private fun PlaylistTrackRowItem(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onAddToQueue: () -> Unit,
+    cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
+    syncedCloudTrackIds: Set<String>,
+    snackbarHostState: SnackbarHostState,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -337,6 +351,49 @@ private fun PlaylistTrackRowItem(
         track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
     }
 
+    val isLocalScanned = track.contentUri?.startsWith("content://") == true
+    val isAlreadySynced = syncedCloudTrackIds.contains(track.trackId)
+    val onUploadToCloudLambda = remember(track.trackId, isLocalScanned, isAlreadySynced) {
+        if (isLocalScanned && !isAlreadySynced) {
+            {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                    cloudFileRepository.uploadTrack(track.trackId).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                            cloudFileRepository.refreshSyncedTrackIds()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                        }
+                    }
+                }
+                Unit
+            }
+        } else null
+    }
+
+    val isCloudOnly = track.contentUri.isNullOrBlank()
+    val isPresentInCloud = syncedCloudTrackIds.contains(track.trackId)
+    val onDownloadFromCloudLambda = remember(track.trackId, isCloudOnly, isPresentInCloud) {
+        if (isCloudOnly && isPresentInCloud) {
+            {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                    cloudFileRepository.downloadTrack(track.trackId).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                            repository.refreshLocalMediaIndex()
+                            onRefresh()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                        }
+                    }
+                }
+                Unit
+            }
+        } else null
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "Artiste inconnu",
@@ -351,6 +408,8 @@ private fun PlaylistTrackRowItem(
         onUnlike = onUnlikeClick,
         onViewArtist = onViewArtistClick,
         onViewAlbum = onViewAlbumClick,
+        onUploadToCloud = onUploadToCloudLambda,
+        onDownloadFromCloud = onDownloadFromCloudLambda,
     )
 }
 
