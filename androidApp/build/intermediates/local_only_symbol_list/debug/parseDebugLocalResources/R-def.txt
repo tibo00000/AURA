@@ -1,6 +1,0 @@
-R_DEF: Internal format may change without notice
-local
-font outfit
-string app_name
-style Theme.AURA
-xml automotive_app_desc

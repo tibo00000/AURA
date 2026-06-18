@@ -1,9 +1,11 @@
-# Android
-android/.gradle/
-android/**/build/
-android/local.properties
-android/.idea/
-android/.kotlin/errors/
+# Gradle
+.gradle/
+**/build/
+local.properties
+
+# IDE
+.idea/
+.kotlin/
 *.iml
 
 # Python
@@ -22,3 +24,7 @@ server/.env.local
 # OS and editors
 .DS_Store
 Thumbs.db
+
+# Node / Web
+kotlin-js-store/
+node_modules/
