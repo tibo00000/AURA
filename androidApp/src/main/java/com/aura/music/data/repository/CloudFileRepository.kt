@@ -341,4 +341,12 @@ class CloudFileRepository(
     suspend fun getLocalTracks(): List<com.aura.music.data.local.TrackListRow> = withContext(Dispatchers.IO) {
         database.trackDao().getAllTracks()
     }
+
+    suspend fun getSettings(): com.aura.music.data.local.UserSettingsEntity? = withContext(Dispatchers.IO) {
+        database.userSettingsDao().getSettings()
+    }
+
+    suspend fun updateSyncEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        database.userSettingsDao().updateSyncEnabled(enabled)
+    }
 }

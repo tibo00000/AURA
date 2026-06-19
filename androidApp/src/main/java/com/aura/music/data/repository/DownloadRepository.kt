@@ -407,6 +407,40 @@ class DownloadRepository(
                     }
                 }
             }
+
+            // Trigger background upload if auto-sync is enabled
+            val settings = database.userSettingsDao().getSettings()
+            if (settings != null && settings.syncEnabled) {
+                Log.i(TAG, "Auto-sync is enabled, uploading downloaded track $trackId to cloud...")
+                try {
+                    val fileBytes = targetFile.readBytes()
+                    val mimeType = "audio/mpeg"
+                    val finalTrack = database.trackDao().getRawTrackById(trackId)
+                    if (finalTrack != null) {
+                        val uploadResponse = apiService.uploadSyncFile(
+                            token = SyncRepository.AUTH_TOKEN,
+                            trackId = trackId,
+                            fileBytes = fileBytes,
+                            mimeType = mimeType,
+                            title = finalTrack.title,
+                            artistName = finalTrack.displayArtistName,
+                            albumTitle = finalTrack.displayAlbumTitle,
+                            durationMs = finalTrack.durationMs,
+                            artistId = finalTrack.primaryArtistId,
+                            albumId = finalTrack.albumId,
+                            coverUri = finalTrack.coverUri
+                        )
+                        val uploadError = uploadResponse.error
+                        if (uploadError != null) {
+                            Log.e(TAG, "Auto-sync upload failed for $trackId: ${uploadError.message}")
+                        } else {
+                            Log.i(TAG, "Auto-sync upload succeeded for $trackId")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to auto-sync upload track $trackId to cloud", e)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to retrieve physical file for job $jobId", e)
         }
