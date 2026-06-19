@@ -60,6 +60,9 @@ async def upload_sync_file(
     artist_name: str = Form(None),
     album_title: str = Form(None),
     duration_ms: int = Form(None),
+    artist_id: str = Form(None),
+    album_id: str = Form(None),
+    cover_uri: str = Form(None),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     target_file, metadata_file = _paths(current_user.id, track_id)
@@ -86,6 +89,9 @@ async def upload_sync_file(
         "artist_name": artist_name,
         "album_title": album_title,
         "duration_ms": duration_ms,
+        "artist_id": artist_id,
+        "album_id": album_id,
+        "cover_uri": cover_uri,
         "uploaded_at": uploaded_at,
         "updated_at": uploaded_at,
     }

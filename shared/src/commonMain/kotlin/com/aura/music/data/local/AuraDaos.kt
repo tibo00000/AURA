@@ -11,6 +11,9 @@ interface ArtistDao {
     @Upsert
     suspend fun upsertArtists(items: List<ArtistEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertArtistsIgnore(items: List<ArtistEntity>)
+
     @Query(
         """
         SELECT
@@ -115,6 +118,9 @@ interface ArtistDao {
 interface AlbumDao {
     @Upsert
     suspend fun upsertAlbums(items: List<AlbumEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAlbumsIgnore(items: List<AlbumEntity>)
 
     @Query(
         """

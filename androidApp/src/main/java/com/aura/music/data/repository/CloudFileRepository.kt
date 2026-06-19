@@ -87,7 +87,10 @@ class CloudFileRepository(
                 title = trackRow.title,
                 artistName = trackRow.artistName,
                 albumTitle = trackRow.albumTitle,
-                durationMs = trackRow.durationMs
+                durationMs = trackRow.durationMs,
+                artistId = trackRow.artistId,
+                albumId = trackRow.albumId,
+                coverUri = trackRow.coverUri
             )
 
             val data = response.data
@@ -114,7 +117,10 @@ class CloudFileRepository(
         title: String? = null,
         artistName: String? = null,
         albumTitle: String? = null,
-        durationMs: Long? = null
+        durationMs: Long? = null,
+        artistId: String? = null,
+        albumId: String? = null,
+        coverUri: String? = null
     ): Flow<Result<File>> = flow {
         try {
             Log.i(TAG, "Downloading track $trackId from cloud...")
@@ -185,14 +191,14 @@ class CloudFileRepository(
 
                         val newTrack = com.aura.music.data.local.TrackEntity(
                             id = trackId,
-                            primaryArtistId = null,
-                            albumId = null,
+                            primaryArtistId = artistId,
+                            albumId = albumId,
                             title = fileTitle,
                             normalizedTitle = fileTitle.lowercase().trim(),
                             displayArtistName = artist,
                             displayAlbumTitle = album,
                             durationMs = duration,
-                            coverUri = null,
+                            coverUri = coverUri,
                             canonicalAudioSourceType = "downloaded",
                             isLiked = false,
                             isDownloadedByAura = true,
@@ -202,6 +208,43 @@ class CloudFileRepository(
                             createdAt = now,
                             updatedAt = now
                         )
+
+                        // Ensure Artist exists to satisfy Foreign Key constraint
+                        if (artistId != null) {
+                            val placeholderArtist = com.aura.music.data.local.ArtistEntity(
+                                id = artistId,
+                                name = artist,
+                                normalizedName = artist.lowercase().trim(),
+                                pictureUri = null,
+                                artworkOrigin = null,
+                                artworkLastResolvedAt = null,
+                                summary = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                            database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
+                            Log.d(TAG, "Created placeholder ArtistEntity for constraint: $artistId")
+                        }
+
+                        // Ensure Album exists to satisfy Foreign Key constraint
+                        if (albumId != null) {
+                            val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
+                                id = albumId,
+                                primaryArtistId = artistId,
+                                title = album,
+                                normalizedTitle = album.lowercase().trim(),
+                                coverUri = coverUri,
+                                artworkOrigin = null,
+                                artworkLastResolvedAt = null,
+                                releaseDate = null,
+                                trackCount = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                            database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
+                            Log.d(TAG, "Created placeholder AlbumEntity for constraint: $albumId")
+                        }
+
                         database.trackDao().upsertTrack(newTrack)
                         Log.d(TAG, "Dynamically reconstructed and saved TrackEntity for deleted/missing track $trackId")
                         rawTrack = newTrack

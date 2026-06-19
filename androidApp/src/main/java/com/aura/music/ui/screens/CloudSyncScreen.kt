@@ -334,7 +334,10 @@ fun CloudSyncScreen(
                                                     title = trackMeta?.title ?: cloudItem.title,
                                                     artistName = trackMeta?.artistName ?: cloudItem.artistName,
                                                     albumTitle = trackMeta?.albumTitle ?: cloudItem.albumTitle,
-                                                    durationMs = trackMeta?.durationMs ?: cloudItem.durationMs
+                                                    durationMs = trackMeta?.durationMs ?: cloudItem.durationMs,
+                                                    artistId = trackMeta?.artistId ?: cloudItem.artistId,
+                                                    albumId = trackMeta?.albumId ?: cloudItem.albumId,
+                                                    coverUri = trackMeta?.coverUri ?: cloudItem.coverUri
                                                 ).collect { res ->
                                                     activeOperations.remove(cloudItem.trackId)
                                                     res.onSuccess {

@@ -384,7 +384,10 @@ private fun PlaylistTrackRowItem(
                         title = track.title,
                         artistName = track.artistName,
                         albumTitle = track.albumTitle,
-                        durationMs = track.durationMs
+                        durationMs = track.durationMs,
+                        artistId = track.artistId,
+                        albumId = track.albumId,
+                        coverUri = track.coverUri
                     ).collect { res ->
                         res.onSuccess {
                             snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
