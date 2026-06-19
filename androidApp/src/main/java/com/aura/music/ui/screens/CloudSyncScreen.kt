@@ -219,7 +219,10 @@ fun CloudSyncScreen(
                                     modifier = Modifier.padding(bottom = 8.dp)
                                 )
                                 activeOperations.forEach { (trackId, status) ->
-                                    val trackName = localTracks.find { it.id == trackId }?.title ?: "Piste #$trackId"
+                                    val cloudItem = cloudFiles.find { it.trackId == trackId }
+                                    val trackName = localTracks.find { it.id == trackId }?.title
+                                        ?: cloudItem?.title
+                                        ?: "Piste #${trackId.substringAfterLast(":")}"
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -287,7 +290,7 @@ fun CloudSyncScreen(
 
                         items(cloudOnlyFiles, key = { "cloud-only-${it.trackId}" }) { cloudItem ->
                             val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                            val title = trackMeta?.title ?: cloudItem.title ?: "Titre inconnu"
+                            val title = trackMeta?.title ?: cloudItem.title ?: "Piste #${cloudItem.trackId.substringAfterLast(":")}"
                             val subtitle = trackMeta?.artistName ?: cloudItem.artistName ?: "Artiste inconnu"
                             val sizeMb = String.format("%.2f MB", cloudItem.sizeBytes.toDouble() / (1024 * 1024))
                             
@@ -403,7 +406,7 @@ fun CloudSyncScreen(
                     } else {
                         items(recentSyncedFiles, key = { "recent-${it.trackId}" }) { cloudItem ->
                             val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                            val title = trackMeta?.title ?: cloudItem.title ?: "Titre inconnu"
+                            val title = trackMeta?.title ?: cloudItem.title ?: "Piste #${cloudItem.trackId.substringAfterLast(":")}"
                             val subtitle = trackMeta?.artistName ?: cloudItem.artistName ?: "Artiste inconnu"
                             val sizeMb = String.format("%.2f MB", cloudItem.sizeBytes.toDouble() / (1024 * 1024))
                             val isLocal = trackMeta?.contentUri?.isNotBlank() == true
