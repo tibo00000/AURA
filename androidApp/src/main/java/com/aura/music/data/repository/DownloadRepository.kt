@@ -262,7 +262,7 @@ class DownloadRepository(
             for (item in items) {
                 if (item.status == "succeeded") {
                     val downloadsDir = File(context.filesDir, "downloads")
-                    val targetFile = File(downloadsDir, "${item.trackId}.mp3")
+                    val targetFile = File(downloadsDir, "${item.trackId.replace(':', ';')}.mp3")
                     
                     // Verify database link is correct and points to "downloaded" status
                     val rawTrack = database.trackDao().getRawTrackById(item.trackId)
@@ -298,7 +298,7 @@ class DownloadRepository(
                 downloadsDir.mkdirs()
             }
 
-            val targetFile = File(downloadsDir, "$trackId.mp3")
+            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
             if (targetFile.exists()) {
                 targetFile.delete()
             }
@@ -331,7 +331,7 @@ class DownloadRepository(
                         if (!coversDir.exists()) {
                             coversDir.mkdirs()
                         }
-                        val coverFile = File(coversDir, "$trackId.jpg")
+                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
                         FileOutputStream(coverFile).use { fos ->
                             fos.write(imageBytes)
                         }
@@ -356,7 +356,7 @@ class DownloadRepository(
                         if (!coversDir.exists()) {
                             coversDir.mkdirs()
                         }
-                        val coverFile = File(coversDir, "$trackId.jpg")
+                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
                         FileOutputStream(coverFile).use { fos ->
                             fos.write(embeddedPicture)
                         }

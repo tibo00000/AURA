@@ -1019,7 +1019,7 @@ fun main() = application {
                                                 
                                                 // Delete cover if downloaded
                                                 val appDir = File(System.getProperty("user.home"), ".aura")
-                                                val coverFile = File(appDir, "covers/${track.id}.jpg")
+                                                val coverFile = File(appDir, "covers/${track.id.replace(':', ';')}.jpg")
                                                 if (coverFile.exists()) {
                                                     coverFile.delete()
                                                 }

@@ -136,7 +136,7 @@ class CloudFileRepository(
                 downloadsDir.mkdirs()
             }
 
-            val targetFile = File(downloadsDir, "$trackId.mp3")
+            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
             if (targetFile.exists()) {
                 targetFile.delete()
             }

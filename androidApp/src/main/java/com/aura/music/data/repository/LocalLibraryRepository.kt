@@ -109,7 +109,7 @@ class LocalLibraryRepository(
                     val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                     val durationMs = durationStr?.toLongOrNull()
 
-                    val trackId = file.nameWithoutExtension // Typically the download trackId
+                    val trackId = file.nameWithoutExtension.replace(';', ':')
                     val existingTrack = database.trackDao().getRawTrackById(trackId)
 
                     val title = if (existingTrack != null && existingTrack.isDownloadedByAura) {
@@ -155,7 +155,7 @@ class LocalLibraryRepository(
                                 if (!coversDir.exists()) {
                                     coversDir.mkdirs()
                                 }
-                                val coverFile = java.io.File(coversDir, "$trackId.jpg")
+                                val coverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
                                 java.io.FileOutputStream(coverFile).use { fos ->
                                     fos.write(imageBytes)
                                 }
@@ -178,7 +178,7 @@ class LocalLibraryRepository(
                                 if (!coversDir.exists()) {
                                     coversDir.mkdirs()
                                 }
-                                val coverFile = java.io.File(coversDir, "$trackId.jpg")
+                                val coverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
                                 java.io.FileOutputStream(coverFile).use { fos ->
                                     fos.write(embeddedPicture)
                                 }
@@ -999,7 +999,7 @@ class LocalLibraryRepository(
                 transactor.immediateTransaction {
                     database.trackDao().deleteTracksByIds(listOf(trackId))
                     val downloadsDir = java.io.File(context.filesDir, "downloads")
-                    val targetFile = java.io.File(downloadsDir, "$trackId.mp3")
+                    val targetFile = java.io.File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
                     if (targetFile.exists()) {
                         targetFile.delete()
                     }

@@ -1401,7 +1401,7 @@ fun DownloadsScreen(
                             },
                             onPlay = {
                                 val downloadsDir = File(context.filesDir, "downloads")
-                                val targetFile = File(downloadsDir, "${job.trackId}.mp3")
+                                val targetFile = File(downloadsDir, "${job.trackId.replace(':', ';')}.mp3")
                                 val resolvedUri = if (targetFile.exists() && targetFile.length() > 0L) {
                                     android.net.Uri.fromFile(targetFile).toString()
                                 } else {

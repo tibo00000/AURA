@@ -726,7 +726,7 @@ class DesktopPlaybackOrchestrator(
                 if (item.status == "succeeded" || item.status == "completed") {
                     val appDir = File(System.getProperty("user.home"), ".aura")
                     val downloadsDir = File(appDir, "downloads")
-                    val targetFile = File(downloadsDir, "${item.trackId}.mp3")
+                    val targetFile = File(downloadsDir, "${item.trackId.replace(':', ';')}.mp3")
                     
                     val rawTrack = database.trackDao().getRawTrackById(item.trackId)
                     val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
@@ -758,7 +758,7 @@ class DesktopPlaybackOrchestrator(
                 downloadsDir.mkdirs()
             }
 
-            val targetFile = File(downloadsDir, "$trackId.mp3")
+            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
             if (targetFile.exists()) {
                 targetFile.delete()
             }
@@ -789,7 +789,7 @@ class DesktopPlaybackOrchestrator(
                         if (!coversDir.exists()) {
                             coversDir.mkdirs()
                         }
-                        val coverFile = File(coversDir, "$trackId.jpg")
+                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
                         java.io.FileOutputStream(coverFile).use { fos ->
                             fos.write(imageBytes)
                         }
