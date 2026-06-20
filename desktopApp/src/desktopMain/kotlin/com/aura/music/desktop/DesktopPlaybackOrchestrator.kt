@@ -971,7 +971,7 @@ class DesktopPlaybackOrchestrator(
             if (resolvedCoverUri.isNullOrBlank() || !resolvedCoverUri.startsWith("http")) {
                 try {
                     val searchResult = apiService.search("$title $artistName", limitTracks = 3)
-                    val resolved = searchResult.data?.tracks?.firstOrNull { !it.coverUri.isNullOrBlank() && it.coverUri.startsWith("http") }?.coverUri
+                    val resolved = searchResult.data?.tracks?.firstOrNull { it.coverUri?.startsWith("http") == true }?.coverUri
                     if (resolved != null) {
                         resolvedCoverUri = resolved
                     }
@@ -1112,7 +1112,7 @@ class DesktopPlaybackOrchestrator(
         if (uploadCoverUri.isNullOrBlank() || !uploadCoverUri.startsWith("http")) {
             try {
                 val searchResult = apiService.search("${trackRow.title} ${trackRow.artistName}", limitTracks = 3)
-                val resolved = searchResult.data?.tracks?.firstOrNull { !it.coverUri.isNullOrBlank() && it.coverUri.startsWith("http") }?.coverUri
+                val resolved = searchResult.data?.tracks?.firstOrNull { it.coverUri?.startsWith("http") == true }?.coverUri
                 if (resolved != null) {
                     uploadCoverUri = resolved
                     // Update Room local entry to preserve the resolved HTTPS cover (if it was null/empty)
