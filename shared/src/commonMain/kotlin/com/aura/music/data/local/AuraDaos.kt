@@ -24,7 +24,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id AND tracks.canonical_audio_source_type != 'cloud_only'
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         GROUP BY artists.id
         ORDER BY COUNT(DISTINCT tracks.id) DESC, artists.name ASC
@@ -43,7 +43,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id AND tracks.canonical_audio_source_type != 'cloud_only'
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         GROUP BY artists.id
         ORDER BY lower(artists.name) ASC
@@ -61,7 +61,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        LEFT JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id AND tracks.canonical_audio_source_type != 'cloud_only'
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         WHERE lower(artists.name) LIKE '%' || lower(:query) || '%'
         GROUP BY artists.id
@@ -133,7 +133,7 @@ interface AlbumDao {
             COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
         FROM albums
         LEFT JOIN artists ON artists.id = albums.primary_artist_id
-        LEFT JOIN tracks ON tracks.album_id = albums.id
+        INNER JOIN tracks ON tracks.album_id = albums.id AND tracks.canonical_audio_source_type != 'cloud_only'
         GROUP BY albums.id
         ORDER BY albums.updated_at DESC, albums.title ASC
         LIMIT :limit
@@ -152,7 +152,7 @@ interface AlbumDao {
             COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
         FROM albums
         LEFT JOIN artists ON artists.id = albums.primary_artist_id
-        LEFT JOIN tracks ON tracks.album_id = albums.id
+        INNER JOIN tracks ON tracks.album_id = albums.id AND tracks.canonical_audio_source_type != 'cloud_only'
         GROUP BY albums.id
         ORDER BY albums.title ASC
         """,
@@ -170,7 +170,7 @@ interface AlbumDao {
             COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
         FROM albums
         LEFT JOIN artists ON artists.id = albums.primary_artist_id
-        LEFT JOIN tracks ON tracks.album_id = albums.id
+        INNER JOIN tracks ON tracks.album_id = albums.id AND tracks.canonical_audio_source_type != 'cloud_only'
         WHERE lower(albums.title) LIKE '%' || lower(:query) || '%'
            OR lower(artists.name) LIKE '%' || lower(:query) || '%'
         GROUP BY albums.id
@@ -191,7 +191,7 @@ interface AlbumDao {
             COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
         FROM albums
         LEFT JOIN artists ON artists.id = albums.primary_artist_id
-        LEFT JOIN tracks ON tracks.album_id = albums.id
+        INNER JOIN tracks ON tracks.album_id = albums.id AND tracks.canonical_audio_source_type != 'cloud_only'
         WHERE albums.primary_artist_id = :artistId
         GROUP BY albums.id
         ORDER BY albums.updated_at DESC, albums.title ASC
@@ -280,7 +280,7 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getRawTrackById(trackId: String): TrackEntity?
 
-    @Query("SELECT COUNT(*) FROM tracks")
+    @Query("SELECT COUNT(*) FROM tracks WHERE canonical_audio_source_type != 'cloud_only'")
     suspend fun getTrackCount(): Int
 
     @Query("SELECT id FROM tracks WHERE canonical_audio_source_type = 'local'")
@@ -309,6 +309,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.canonical_audio_source_type != 'cloud_only'
         ORDER BY tracks.created_at DESC
         LIMIT :limit
         """,
@@ -355,9 +356,10 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE lower(tracks.title) LIKE '%' || lower(:query) || '%'
+        WHERE (lower(tracks.title) LIKE '%' || lower(:query) || '%'
            OR lower(tracks.display_artist_name) LIKE '%' || lower(:query) || '%'
-           OR lower(COALESCE(tracks.display_album_title, '')) LIKE '%' || lower(:query) || '%'
+           OR lower(COALESCE(tracks.display_album_title, '')) LIKE '%' || lower(:query) || '%')
+          AND tracks.canonical_audio_source_type != 'cloud_only'
         ORDER BY tracks.created_at DESC
         LIMIT :limit
         """,
@@ -381,6 +383,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.canonical_audio_source_type != 'cloud_only'
         ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
         """,
     )
@@ -403,7 +406,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.primary_artist_id = :artistId
+        WHERE tracks.primary_artist_id = :artistId AND tracks.canonical_audio_source_type != 'cloud_only'
         ORDER BY tracks.created_at DESC, tracks.title ASC
         LIMIT :limit
         """,
@@ -427,7 +430,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.album_id = :albumId
+        WHERE tracks.album_id = :albumId AND tracks.canonical_audio_source_type != 'cloud_only'
         ORDER BY tracks.title ASC, tracks.created_at DESC
         """,
     )
@@ -452,6 +455,7 @@ interface TrackDao {
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE lower(tracks.display_album_title) = lower(:albumTitle)
           AND lower(tracks.display_artist_name) = lower(:artistName)
+          AND tracks.canonical_audio_source_type != 'cloud_only'
         ORDER BY tracks.title ASC, tracks.created_at DESC
         """
     )

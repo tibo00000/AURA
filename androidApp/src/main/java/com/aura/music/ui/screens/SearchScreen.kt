@@ -71,6 +71,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
+import com.aura.music.ui.theme.BlazeOrange
 import coil3.compose.AsyncImage
 import com.aura.music.AuraApplication
 import com.aura.music.data.local.TrackListRow
@@ -99,6 +101,7 @@ fun SearchScreen(
     onOpenDownloads: () -> Unit,
     playerViewModel: PlayerViewModel,
 ) {
+    val focusManager = LocalFocusManager.current
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
     val searchRepository = application.container.searchRepository
     val enrichmentRepository = application.container.enrichmentRepository
@@ -177,24 +180,42 @@ fun SearchScreen(
                 SearchBarInput(
                     query = uiState.query,
                     onQueryChange = viewModel::updateQuery,
-                    onSubmit = viewModel::submitSearch,
+                    onSubmit = {
+                        focusManager.clearFocus()
+                        viewModel.submitSearch()
+                    },
                     onClear = viewModel::clearQuery,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
 
-            // Local suggestions dropdown (only during typing with 3+ chars)
+            // Local and Online suggestions dropdown (only during typing with 3+ chars)
             if (uiState.shouldShowSuggestions) {
                 item {
                     LocalSuggestionsSection(
                         result = uiState.localSuggestions,
                         onSelectTrack = { track ->
+                            focusManager.clearFocus()
                             viewModel.selectSuggestion(track.title)
                         },
                         onSelectArtist = { artist ->
+                            focusManager.clearFocus()
                             viewModel.selectSuggestion(artist.name)
                         },
                         onSelectAlbum = { album ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(album.title)
+                        },
+                        onSelectOnlineTrack = { track ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(track.title)
+                        },
+                        onSelectOnlineArtist = { artist ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(artist.name)
+                        },
+                        onSelectOnlineAlbum = { album ->
+                            focusManager.clearFocus()
                             viewModel.selectSuggestion(album.title)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp)
@@ -207,7 +228,10 @@ fun SearchScreen(
                 item {
                     RecentSearchesSection(
                         queries = uiState.recentQueries,
-                        onSelectQuery = viewModel::selectRecentQuery,
+                        onSelectQuery = { query ->
+                            focusManager.clearFocus()
+                            viewModel.selectRecentQuery(query)
+                        },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -252,12 +276,18 @@ fun SearchScreen(
                     ) {
                         androidx.compose.material3.Tab(
                             selected = uiState.selectedTab == 0,
-                            onClick = { viewModel.selectTab(0) },
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(0)
+                            },
                             text = { Text("Bibliothèque") }
                         )
                         androidx.compose.material3.Tab(
                             selected = uiState.selectedTab == 1,
-                            onClick = { viewModel.selectTab(1) },
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(1)
+                            },
                             text = { Text("En ligne") }
                         )
                     }
@@ -272,14 +302,21 @@ fun SearchScreen(
                                 artists = result.localArtists,
                                 albums = result.localAlbums,
                                 onPlayTrack = { track, allTracks ->
+                                    focusManager.clearFocus()
                                     onPlayTrackInList(track, allTracks, "search_local")
                                 },
                                 onLikeTrack = { trackId, isLiked ->
                                     viewModel.likeLocalTrack(trackId, isLiked)
                                 },
                                 onAddToPlaylist = { track -> activeTrackForPlaylist = track },
-                                onOpenArtist = onOpenArtist,
-                                onOpenAlbum = onOpenAlbum,
+                                onOpenArtist = { artistId ->
+                                    focusManager.clearFocus()
+                                    onOpenArtist(artistId)
+                                },
+                                onOpenAlbum = { albumId ->
+                                    focusManager.clearFocus()
+                                    onOpenAlbum(albumId)
+                                },
                                 onDeleteTrack = { track ->
                                     trackToDelete = track
                                 },
@@ -315,6 +352,7 @@ fun SearchScreen(
                                 artists = result.onlineArtists,
                                 albums = result.onlineAlbums,
                                 onPlayTrack = { track ->
+                                    focusManager.clearFocus()
                                     onPlayTrackInList(
                                         TrackListRow(
                                             id = track.id,
@@ -374,8 +412,14 @@ fun SearchScreen(
                                         isLiked = track.isLiked
                                     )
                                 },
-                                onOpenArtist = onOpenArtist,
-                                onOpenAlbum = onOpenAlbum,
+                                onOpenArtist = { artistId ->
+                                    focusManager.clearFocus()
+                                    onOpenArtist(artistId)
+                                },
+                                onOpenAlbum = { albumId ->
+                                    focusManager.clearFocus()
+                                    onOpenAlbum(albumId)
+                                },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -683,6 +727,9 @@ private fun LocalSuggestionsSection(
     onSelectTrack: (TrackListRow) -> Unit,
     onSelectArtist: (com.aura.music.data.local.ArtistBrowseRow) -> Unit,
     onSelectAlbum: (com.aura.music.data.local.AlbumBrowseRow) -> Unit,
+    onSelectOnlineTrack: (TrackSummary) -> Unit,
+    onSelectOnlineArtist: (ArtistSummary) -> Unit,
+    onSelectOnlineAlbum: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (result == null) return
@@ -730,6 +777,49 @@ private fun LocalSuggestionsSection(
             }
         }
 
+        // Online Tracks (Suggestions)
+        if (result.onlineTracks.isNotEmpty()) {
+            result.onlineTracks.take(3).forEach { track ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectOnlineTrack(track)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BlazeOrange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                track.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "Titre • ${track.displayArtistName} (En ligne)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Artists
         if (result.localArtists.isNotEmpty()) {
             result.localArtists.take(2).forEach { artist ->
@@ -753,6 +843,49 @@ private fun LocalSuggestionsSection(
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.weight(1f)
                         )
+                    }
+                }
+            }
+        }
+
+        // Online Artists (Suggestions)
+        if (result.onlineArtists.isNotEmpty()) {
+            result.onlineArtists.take(2).forEach { artist ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectOnlineArtist(artist)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BlazeOrange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                artist.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "Artiste en ligne",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -785,6 +918,49 @@ private fun LocalSuggestionsSection(
                             )
                             Text(
                                 album.artistName ?: "Artiste inconnu",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Online Albums (Suggestions)
+        if (result.onlineAlbums.isNotEmpty()) {
+            result.onlineAlbums.take(2).forEach { album ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectOnlineAlbum(album)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BlazeOrange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                album.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "Album • ${album.primaryArtistName} (En ligne)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,

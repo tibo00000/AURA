@@ -474,6 +474,18 @@ class DownloadService:
             logger.error("Failed to update job status for %s in Supabase: %s", job_id, e)
 
     async def _run_download_job(self, job_id: str, source_hint: Optional[dict] = None) -> None:
+        try:
+            await self._run_download_job_impl(job_id, source_hint)
+        except Exception as e:
+            logger.exception("Unexpected error in download worker for job %s", job_id)
+            self._update_job_status(
+                job_id,
+                status="failed",
+                error_code="unexpected_error",
+                error_message=str(e),
+            )
+
+    async def _run_download_job_impl(self, job_id: str, source_hint: Optional[dict] = None) -> None:
         """
         Background download worker task using yt-dlp.
 

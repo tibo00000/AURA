@@ -49,6 +49,7 @@ class DownloadRepository(
     private val context: Context
 ) {
     private var isPolling = false
+    private val consecutiveFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     companion object {
         private const val TAG = "DownloadRepository"
@@ -197,7 +198,10 @@ class DownloadRepository(
                     try {
                         val response = apiService.getJobStatus(userToken, job.id)
                         val jobData = response.data
-                        if (jobData != null) {
+                        if (jobData != null && response.error == null) {
+                            // Reset the failure counter for this job on success
+                            consecutiveFailures.remove(job.id)
+
                             val updatedJob = job.copy(
                                 status = jobData.status,
                                 progressPercent = jobData.progressPercent,
@@ -212,9 +216,12 @@ class DownloadRepository(
                                 // Transition to downloading the physical file
                                 fetchDownloadedFile(job.id, job.trackId, userToken)
                             }
+                        } else {
+                            handlePollingFailure(job)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to poll status for job ${job.id}", e)
+                        handlePollingFailure(job)
                     }
                 }
                 delay(2000) // Poll interval of 2 seconds
@@ -222,6 +229,22 @@ class DownloadRepository(
         } finally {
             isPolling = false
             Log.d(TAG, "Stopped download jobs polling loop")
+        }
+    }
+
+    private suspend fun handlePollingFailure(job: DownloadJobEntity) {
+        val currentFailures = (consecutiveFailures[job.id] ?: 0) + 1
+        consecutiveFailures[job.id] = currentFailures
+        if (currentFailures >= 5) {
+            consecutiveFailures.remove(job.id)
+            val failedJob = job.copy(
+                status = "failed",
+                errorCode = "polling_failed",
+                errorMessage = "Le serveur ne répond pas. Veuillez réessayer.",
+                updatedAt = System.currentTimeMillis()
+            )
+            database.downloadJobDao().upsert(failedJob)
+            Log.e(TAG, "Job ${job.id} marked as failed after 5 consecutive polling failures.")
         }
     }
 
@@ -289,6 +312,7 @@ class DownloadRepository(
             val response = apiService.downloadFile(userToken, jobId)
             if (response.status.value !in 200..299) {
                 Log.e(TAG, "Failed to download physical file for job $jobId: HTTP ${response.status.value}")
+                markJobAsFetchFailed(jobId)
                 return@withContext
             }
 
@@ -443,6 +467,25 @@ class DownloadRepository(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to retrieve physical file for job $jobId", e)
+            markJobAsFetchFailed(jobId)
+        }
+    }
+
+    private suspend fun markJobAsFetchFailed(jobId: String) {
+        try {
+            val localJob = database.downloadJobDao().getJobById(jobId)
+            if (localJob != null) {
+                val updatedJob = localJob.copy(
+                    status = "failed",
+                    errorCode = "FETCH_ERROR",
+                    errorMessage = "Impossible de récupérer le fichier audio du serveur.",
+                    updatedAt = System.currentTimeMillis()
+                )
+                database.downloadJobDao().upsert(updatedJob)
+                Log.d(TAG, "Marked job $jobId as failed with FETCH_ERROR")
+            }
+        } catch (dbEx: Exception) {
+            Log.e(TAG, "Failed to update job status to failed for $jobId", dbEx)
         }
     }
 

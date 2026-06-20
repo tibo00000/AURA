@@ -164,13 +164,22 @@ class SearchViewModel(
     }
 
     /**
-     * Load local suggestions only (for display during typing).
+     * Load suggestions (local + online if allowed) for display during typing.
      */
     private fun loadLocalSuggestions(query: String) {
         viewModelScope.launch {
             try {
+                val settings = withContext(Dispatchers.IO) { searchRepository.getSettings() }
+                val onlineSearchEnabled = settings?.onlineSearchEnabled ?: true
+                val networkPolicy = settings?.onlineSearchNetworkPolicy ?: "wifi_only"
+
                 val result = withContext(Dispatchers.IO) {
-                    searchRepository.getLocalSuggestions(query)
+                    searchRepository.getSuggestions(
+                        query = query,
+                        onlineSearchEnabled = onlineSearchEnabled,
+                        networkPolicy = networkPolicy,
+                        context = appContext
+                    )
                 }
                 _uiState.update { it.copy(localSuggestions = result) }
             } catch (e: Exception) {

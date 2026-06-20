@@ -753,7 +753,7 @@ private fun PlaybackProgressBlock(
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
-        Slider(
+        SleekSlider(
             value = sliderValue.coerceIn(0f, uiState.durationMs.toFloat().coerceAtLeast(0f)),
             onValueChange = { seekDraft = it },
             onValueChangeFinished = {
@@ -762,11 +762,8 @@ private fun PlaybackProgressBlock(
                 seekDraft = null
             },
             valueRange = 0f..uiState.durationMs.toFloat().coerceAtLeast(1f),
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            activeColor = MaterialTheme.colorScheme.primary,
+            inactiveColor = MaterialTheme.colorScheme.surfaceVariant
         )
         Row(
             modifier = Modifier.fillMaxWidth(),

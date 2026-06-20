@@ -197,7 +197,8 @@ fun AuraApp() {
                     onOpenPlayer = { navController.navigate(AuraRoute.Player) },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
-                    onOpenCloudSync = { navController.navigate(AuraRoute.CloudSync) }
+                    onOpenCloudSync = { navController.navigate(AuraRoute.CloudSync) },
+                    onOpenFavorites = { navController.navigate(AuraRoute.Favorites) }
                 )
             }
             composable(AuraRoute.Search) {

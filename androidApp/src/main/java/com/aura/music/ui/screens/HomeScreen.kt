@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aura.music.data.local.AlbumBrowseRow
+import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.repository.LibraryDashboardSummary
@@ -36,6 +37,15 @@ import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.theme.*
 import com.aura.music.AuraApplication
+import coil3.compose.AsyncImage
+import androidx.compose.material.icons.rounded.Favorite
+
+sealed interface ResumeItem {
+    object Favorites : ResumeItem
+    data class Playlist(val playlist: PlaylistListRow) : ResumeItem
+    data class Album(val album: AlbumBrowseRow) : ResumeItem
+    data class Artist(val artist: ArtistBrowseRow) : ResumeItem
+}
 
 @Composable
 fun HomeScreen(
@@ -49,6 +59,7 @@ fun HomeScreen(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenCloudSync: () -> Unit,
+    onOpenFavorites: () -> Unit,
 ) {
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
     val cloudFileRepository = application.container.cloudFileRepository
@@ -57,11 +68,20 @@ fun HomeScreen(
     val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
         value = repository.getLibraryDashboardSummary()
     }
-    val recentTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
-        value = repository.getRecentPlaybackHistory()
+    val recentDownloadedTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
+        value = repository.getDownloadedTracks().take(4)
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
         value = repository.getPlaylists().take(8)
+    }
+    val albumsState = produceState(initialValue = emptyList<AlbumBrowseRow>(), repository, refreshToken) {
+        value = repository.getBrowseAlbums(limit = 8)
+    }
+    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository, refreshToken) {
+        value = repository.getBrowseArtists(limit = 8)
+    }
+    val likedCountState = produceState(initialValue = 0, repository, refreshToken) {
+        value = repository.getLikedTracks().size
     }
     val allTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
         value = repository.getAllTracks()
@@ -71,6 +91,15 @@ fun HomeScreen(
         allTracksState.value.count { track ->
             track.contentUri.isNullOrBlank() && syncedCloudTrackIds.contains(track.id)
         }
+    }
+
+    val resumeItems = remember(playlistsState.value, albumsState.value, artistsState.value) {
+        val items = mutableListOf<ResumeItem>()
+        items.add(ResumeItem.Favorites)
+        playlistsState.value.forEach { items.add(ResumeItem.Playlist(it)) }
+        albumsState.value.forEach { items.add(ResumeItem.Album(it)) }
+        artistsState.value.forEach { items.add(ResumeItem.Artist(it)) }
+        items
     }
 
     RouteScaffold(title = "Accueil", style = MaterialTheme.typography.headlineLarge) {
@@ -96,12 +125,19 @@ fun HomeScreen(
             }
             
             item {
-                ResumeRail(playlists = playlistsState.value, onOpenPlaylist = onOpenPlaylist)
+                ResumeRail(
+                    items = resumeItems,
+                    likedCount = likedCountState.value,
+                    onOpenPlaylist = onOpenPlaylist,
+                    onOpenAlbum = onOpenAlbum,
+                    onOpenArtist = onOpenArtist,
+                    onOpenFavorites = onOpenFavorites
+                )
             }
             
             item {
                 RecentTracksSection(
-                    tracks = recentTracksState.value, 
+                    tracks = recentDownloadedTracksState.value, 
                     onPlayTrackInList = onPlayTrackInList
                 )
             }
@@ -203,7 +239,14 @@ private fun HomeHeader(summary: LibraryDashboardSummary?, onRequestAudioPermissi
 }
 
 @Composable
-private fun ResumeRail(playlists: List<PlaylistListRow>, onOpenPlaylist: (String) -> Unit) {
+private fun ResumeRail(
+    items: List<ResumeItem>,
+    likedCount: Int,
+    onOpenPlaylist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenFavorites: () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
             text = "Reprendre",
@@ -212,9 +255,9 @@ private fun ResumeRail(playlists: List<PlaylistListRow>, onOpenPlaylist: (String
             modifier = Modifier.padding(horizontal = 16.dp)
         )
         
-        if (playlists.isEmpty()) {
+        if (items.isEmpty()) {
             Text(
-                text = "Cree une playlist pour commencer.",
+                text = "Votre activité récente apparaîtra ici.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -226,39 +269,185 @@ private fun ResumeRail(playlists: List<PlaylistListRow>, onOpenPlaylist: (String
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(horizontal = 16.dp)
         ) {
-            items(playlists, key = { it.id }) { playlist ->
-                Column(
-                    modifier = Modifier
-                        .width(140.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(DarkGraphite)
-                        .clickable { onOpenPlaylist(playlist.id) }
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PlaceholderCover(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(12.dp)),
-                        icon = Icons.Rounded.QueueMusic,
-                        gradient = Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF111111)))
-                    )
-                    Column {
-                        Text(
-                            text = playlist.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Playlist • ${playlist.itemCount} titres",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+            items(items, key = { item ->
+                when (item) {
+                    is ResumeItem.Favorites -> "favorites"
+                    is ResumeItem.Playlist -> "playlist_${item.playlist.id}"
+                    is ResumeItem.Album -> "album_${item.album.id}"
+                    is ResumeItem.Artist -> "artist_${item.artist.id}"
+                }
+            }) { item ->
+                when (item) {
+                    is ResumeItem.Favorites -> {
+                        Column(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(DarkGraphite)
+                                .clickable { onOpenFavorites() }
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            PlaceholderCover(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                icon = Icons.Rounded.Favorite,
+                                gradient = Brush.linearGradient(listOf(RoseSignal, DeepViolet))
+                            )
+                            Column {
+                                Text(
+                                    text = "Coups de coeur",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Favoris • $likedCount titres",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    is ResumeItem.Playlist -> {
+                        val playlist = item.playlist
+                        Column(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(DarkGraphite)
+                                .clickable { onOpenPlaylist(playlist.id) }
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            PlaceholderCover(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                icon = Icons.Rounded.QueueMusic,
+                                gradient = Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF111111)))
+                            )
+                            Column {
+                                Text(
+                                    text = playlist.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Playlist • ${playlist.itemCount} titres",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    is ResumeItem.Album -> {
+                        val album = item.album
+                        Column(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(DarkGraphite)
+                                .clickable { onOpenAlbum(album.id) }
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (!album.coverUri.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = album.coverUri,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            } else {
+                                PlaceholderCover(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    icon = Icons.Rounded.Album,
+                                    gradient = Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF111111)))
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = album.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Album • ${album.artistName ?: "Inconnu"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    is ResumeItem.Artist -> {
+                        val artist = item.artist
+                        Column(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(DarkGraphite)
+                                .clickable { onOpenArtist(artist.id) }
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (!artist.pictureUri.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = artist.pictureUri,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            } else {
+                                PlaceholderCover(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    icon = Icons.Rounded.MusicNote,
+                                    gradient = Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF111111)))
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = artist.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Artiste",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -270,7 +459,7 @@ private fun ResumeRail(playlists: List<PlaylistListRow>, onOpenPlaylist: (String
 private fun RecentTracksSection(tracks: List<TrackListRow>, onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
-            text = "Écoutés récemment",
+            text = "Téléchargés récemment",
             style = MaterialTheme.typography.titleMedium,
             color = TextPrimary,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -278,7 +467,7 @@ private fun RecentTracksSection(tracks: List<TrackListRow>, onPlayTrackInList: (
         
         if (tracks.isEmpty()) {
             Text(
-                text = "Votre historique d'écoute apparaîtra ici.",
+                text = "Vos téléchargements récents apparaîtront ici.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -286,7 +475,7 @@ private fun RecentTracksSection(tracks: List<TrackListRow>, onPlayTrackInList: (
         } else {
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 tracks.take(4).forEach { track ->
-                    DenseTrackRow(track = track, onClick = { onPlayTrackInList(track, tracks.take(4), "recent_playback") })
+                    DenseTrackRow(track = track, onClick = { onPlayTrackInList(track, tracks.take(4), "recent_downloads") })
                 }
             }
         }

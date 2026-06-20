@@ -34,6 +34,7 @@ import com.aura.music.data.local.*
 import com.aura.music.data.player.QueueManager
 import com.aura.music.domain.player.*
 import com.aura.music.ui.theme.*
+import com.aura.music.ui.screens.SleekSlider
 import com.aura.music.data.network.KtorAuraApiService
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.DownloadRequestDto
@@ -2873,16 +2874,13 @@ fun PlayerBottomBar(
                     style = MaterialTheme.typography.bodySmall
                 )
                 
-                Slider(
+                SleekSlider(
                     value = if (state.durationMs > 0) state.positionMs.toFloat() else 0f,
                     onValueChange = { pos -> orchestrator.seekTo(pos.toLong()) },
                     valueRange = 0f..(if (state.durationMs > 0) state.durationMs.toFloat() else 1f),
                     modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(
-                        activeTrackColor = BlazeOrange,
-                        inactiveTrackColor = DarkGraphite,
-                        thumbColor = BlazeOrange
-                    )
+                    activeColor = BlazeOrange,
+                    inactiveColor = DarkGraphite
                 )
 
                 Text(
@@ -2905,7 +2903,7 @@ fun PlayerBottomBar(
                 tint = TextMuted
             )
             
-            Slider(
+            SleekSlider(
                 value = volume,
                 onValueChange = { vol ->
                     volume = vol
@@ -2913,11 +2911,8 @@ fun PlayerBottomBar(
                 },
                 valueRange = 0f..1f,
                 modifier = Modifier.weight(1f),
-                colors = SliderDefaults.colors(
-                    activeTrackColor = BlazeOrange,
-                    inactiveTrackColor = DarkGraphite,
-                    thumbColor = BlazeOrange
-                )
+                activeColor = BlazeOrange,
+                inactiveColor = DarkGraphite
             )
         }
     }

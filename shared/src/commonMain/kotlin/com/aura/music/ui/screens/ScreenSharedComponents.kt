@@ -63,6 +63,15 @@ import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.HairlineDark
+import com.aura.music.ui.theme.RoseSignal
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import com.aura.music.ui.theme.TextMuted
 
 @Composable
@@ -73,6 +82,79 @@ fun PlaceholderCover(modifier: Modifier = Modifier, icon: ImageVector = Icons.Ro
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = null, tint = TextMuted, modifier = Modifier.size(24.dp))
+    }
+}
+
+@Composable
+fun SleekSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    onValueChangeFinished: (() -> Unit)? = null,
+    activeColor: Color = Color(0xFFFF6B00), // BlazeOrange
+    inactiveColor: Color = Color(0xFF1A1A1A), // DarkGraphite
+) {
+    val density = LocalDensity.current
+    var width by remember { mutableStateOf(1) }
+    val rangeLength = valueRange.endInclusive - valueRange.start
+    val fraction = ((value - valueRange.start) / if (rangeLength > 0f) rangeLength else 1f).coerceIn(0f, 1f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(18.dp)
+            .onSizeChanged { width = it.width.coerceAtLeast(1) }
+            .pointerInput(valueRange, rangeLength) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        val frac = (offset.x / size.width).coerceIn(0f, 1f)
+                        onValueChange(valueRange.start + frac * rangeLength)
+                        if (onValueChangeFinished != null) {
+                            tryAwaitRelease()
+                            onValueChangeFinished()
+                        }
+                    }
+                )
+            }
+            .pointerInput(valueRange, rangeLength) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { onValueChangeFinished?.invoke() },
+                    onHorizontalDrag = { change, _ ->
+                        val frac = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onValueChange(valueRange.start + frac * rangeLength)
+                    }
+                )
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        // Track Background
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(inactiveColor, shape = RoundedCornerShape(1.5.dp))
+        )
+        // Active Track
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction)
+                .height(3.dp)
+                .background(activeColor, shape = RoundedCornerShape(1.5.dp))
+        )
+        
+        // Thumb (small dot)
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .graphicsLayer {
+                    val thumbSizePx = with(density) { 8.dp.toPx() }
+                    val maxOffset = width - thumbSizePx
+                    translationX = (maxOffset * fraction).coerceAtLeast(0f)
+                }
+                .size(8.dp)
+                .background(activeColor, shape = CircleShape)
+        )
     }
 }
 
@@ -557,38 +639,62 @@ fun SharedTrackRowItem(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
-            if (trailingIcon != null) {
-                trailingIcon()
-            } else if (menuItems.isNotEmpty()) {
-                Box {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (onLike != null || onUnlike != null) {
                     IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.size(32.dp),
+                        onClick = {
+                            if (isLiked) {
+                                onUnlike?.invoke()
+                            } else {
+                                onLike?.invoke()
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            Icons.Rounded.MoreVert,
-                            contentDescription = "Menu contextuel",
-                            modifier = Modifier.size(20.dp),
+                            imageVector = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            contentDescription = if (isLiked) "Retirer des favoris" else "Ajouter aux favoris",
+                            tint = if (isLiked) RoseSignal else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        menuItems.forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text(item.text) },
-                                onClick = {
-                                    item.onClick()
-                                    menuExpanded = false
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = item.icon,
-                                        contentDescription = null,
-                                    )
-                                },
+                }
+                if (trailingIcon != null) {
+                    trailingIcon()
+                } else if (menuItems.isNotEmpty()) {
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.MoreVert,
+                                contentDescription = "Menu contextuel",
+                                modifier = Modifier.size(20.dp),
                             )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            menuItems.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item.text) },
+                                    onClick = {
+                                        item.onClick()
+                                        menuExpanded = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = item.icon,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 }

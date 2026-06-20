@@ -159,6 +159,69 @@ class SearchRepository(
     }
 
     /**
+     * Get hybrid suggestions (local + online) during typing.
+     * Online query is limited to 3 tracks, 2 artists, 2 albums and gated by network policy.
+     */
+    suspend fun getSuggestions(
+        query: String,
+        onlineSearchEnabled: Boolean = true,
+        networkPolicy: String = "wifi_only",
+        context: Context? = null
+    ): HybridSearchResult = withContext(Dispatchers.IO) {
+        coroutineScope {
+            // Launch local searches in parallel
+            val localTracksAsync = async { localLibraryRepository.searchLocalTracks(query) }
+            val localArtistsAsync = async { localLibraryRepository.searchLocalArtists(query) }
+            val localAlbumsAsync = async { localLibraryRepository.searchLocalAlbums(query) }
+
+            // Check if online suggestions are allowed
+            val networkAllowed = context != null &&
+                    NetworkPolicyChecker.isAllowed(
+                        onlineSearchEnabled = onlineSearchEnabled,
+                        policy = networkPolicy,
+                        context = context,
+                    )
+
+            val onlineSearchAsync = if (networkAllowed) {
+                async {
+                    runCatching {
+                        auraApiService.search(
+                            query = query,
+                            limitTracks = 3,
+                            limitArtists = 2,
+                            limitAlbums = 2
+                        )
+                    }
+                }
+            } else null
+
+            val localTracks = localTracksAsync.await()
+            val localArtists = localArtistsAsync.await()
+            val localAlbums = localAlbumsAsync.await()
+            val onlineResult = onlineSearchAsync?.await()
+
+            val onlineData = onlineResult?.getOrNull()?.data
+            val onlineError = when {
+                !networkAllowed -> null
+                onlineResult?.isFailure == true -> "Suggestions en ligne indisponibles."
+                else -> null
+            }
+
+            HybridSearchResult(
+                query = query,
+                bestMatch = null,
+                localTracks = localTracks,
+                localArtists = localArtists,
+                localAlbums = localAlbums,
+                onlineTracks = onlineData?.tracks ?: emptyList(),
+                onlineArtists = onlineData?.artists ?: emptyList(),
+                onlineAlbums = onlineData?.albums ?: emptyList(),
+                onlineError = onlineError
+            )
+        }
+    }
+
+    /**
      * Determine the best match from local and online results.
      *
      * Priority:
