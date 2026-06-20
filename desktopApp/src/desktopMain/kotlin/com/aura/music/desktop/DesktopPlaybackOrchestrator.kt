@@ -999,14 +999,17 @@ class DesktopPlaybackOrchestrator(
                     var primaryArtistId: String? = null
                     if (artistName.isNotBlank()) {
                         primaryArtistId = "artist:${artistName.lowercase().trim().replace(" ", "_")}"
-                        database.artistDao().insertArtist(
-                            ArtistEntity(
-                                id = primaryArtistId,
-                                name = artistName,
-                                pictureUri = null,
-                                summary = null,
-                                createdAt = now,
-                                updatedAt = now
+                        database.artistDao().insertArtistsIgnore(
+                            listOf(
+                                ArtistEntity(
+                                    id = primaryArtistId,
+                                    name = artistName,
+                                    normalizedName = artistName.lowercase(),
+                                    pictureUri = null,
+                                    summary = null,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
                             )
                         )
                     }
@@ -1015,16 +1018,19 @@ class DesktopPlaybackOrchestrator(
                     var albumId: String? = null
                     if (!albumTitle.isNullOrBlank()) {
                         albumId = "album:${albumTitle.lowercase().trim().replace(" ", "_")}"
-                        database.albumDao().insertAlbum(
-                            AlbumEntity(
-                                id = albumId,
-                                title = albumTitle,
-                                artistId = primaryArtistId,
-                                coverUri = localCoverUri ?: coverUri,
-                                releaseDate = null,
-                                trackCount = null,
-                                createdAt = now,
-                                updatedAt = now
+                        database.albumDao().insertAlbumsIgnore(
+                            listOf(
+                                AlbumEntity(
+                                    id = albumId,
+                                    primaryArtistId = primaryArtistId,
+                                    title = albumTitle,
+                                    normalizedTitle = albumTitle.lowercase(),
+                                    coverUri = localCoverUri ?: coverUri,
+                                    releaseDate = null,
+                                    trackCount = null,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
                             )
                         )
                     }
@@ -1106,7 +1112,7 @@ class DesktopPlaybackOrchestrator(
         if (response.data != null) {
             System.out.println("Track $trackId uploaded successfully to cloud.")
         } else {
-            System.err.println("Failed to upload track $trackId: ${response.meta?.errorMessage}")
+            System.err.println("Failed to upload track $trackId: ${response.error?.message}")
         }
     }
 

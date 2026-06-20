@@ -3206,9 +3206,10 @@ fun CloudSyncScreen(
     // 1. À uploader (local files not on cloud)
     val pendingUploadTracks = remember(localTracks, syncedTrackIds) {
         localTracks.filter { track ->
-            val isLocal = track.contentUri?.startsWith("file://") == true && 
-                !track.contentUri.contains(".aura/downloads") && 
-                !track.contentUri.contains(".aura\\downloads")
+            val uri = track.contentUri
+            val isLocal = uri?.startsWith("file://") == true && 
+                !uri.contains(".aura/downloads") && 
+                !uri.contains(".aura\\downloads")
             isLocal && !syncedTrackIds.contains(track.id)
         }
     }
@@ -3217,11 +3218,12 @@ fun CloudSyncScreen(
     val cloudOnlyFiles = remember(cloudFiles, localTracks) {
         cloudFiles.filter { cloudFile ->
             val localTrack = localTracks.find { it.id == cloudFile.trackId }
+            val localUri = localTrack?.contentUri
             val appDir = File(System.getProperty("user.home"), ".aura")
             val downloadsDir = File(appDir, "downloads")
             val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
             
-            localTrack == null || localTrack.contentUri.isNullOrBlank() || !targetFile.exists() || targetFile.length() == 0L
+            localTrack == null || localUri.isNullOrBlank() || !targetFile.exists() || targetFile.length() == 0L
         }
     }
 
