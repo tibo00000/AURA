@@ -967,11 +967,24 @@ class DesktopPlaybackOrchestrator(
             System.out.println("Downloaded cloud file saved to ${targetFile.absolutePath}")
 
             // Download cover artwork
+            var resolvedCoverUri = coverUri
+            if (resolvedCoverUri.isNullOrBlank() || !resolvedCoverUri.startsWith("http")) {
+                try {
+                    val searchResult = apiService.search("$title $artistName", limitTracks = 3)
+                    val resolved = searchResult.data?.tracks?.firstOrNull { !it.coverUri.isNullOrBlank() && it.coverUri.startsWith("http") }?.coverUri
+                    if (resolved != null) {
+                        resolvedCoverUri = resolved
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Failed to resolve cover online for download of cloud track $trackId: ${e.message}")
+                }
+            }
+
             var localCoverUri: String? = null
-            if (coverUri != null && coverUri.startsWith("http")) {
+            if (resolvedCoverUri != null && resolvedCoverUri.startsWith("http")) {
                 val client = HttpClient()
                 try {
-                    val imageResponse = client.get(coverUri)
+                    val imageResponse = client.get(resolvedCoverUri)
                     if (imageResponse.status.value in 200..299) {
                         val imageBytes = imageResponse.body<ByteArray>()
                         val coversDir = File(appDir, "covers")
@@ -1026,7 +1039,7 @@ class DesktopPlaybackOrchestrator(
                                     primaryArtistId = primaryArtistId,
                                     title = albumTitle,
                                     normalizedTitle = albumTitle.lowercase(),
-                                    coverUri = localCoverUri ?: coverUri,
+                                    coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri,
                                     releaseDate = null,
                                     trackCount = null,
                                     createdAt = now,
@@ -1047,7 +1060,7 @@ class DesktopPlaybackOrchestrator(
                         displayArtistName = artistName,
                         displayAlbumTitle = albumTitle,
                         durationMs = durationMs,
-                        coverUri = localCoverUri ?: coverUri ?: existingTrack?.coverUri,
+                        coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri ?: existingTrack?.coverUri,
                         canonicalAudioSourceType = "downloaded",
                         isLiked = existingTrack?.isLiked ?: false,
                         isDownloadedByAura = true,
@@ -1095,6 +1108,28 @@ class DesktopPlaybackOrchestrator(
             return@withContext
         }
 
+        var uploadCoverUri = rawTrack.coverUri
+        if (uploadCoverUri.isNullOrBlank() || !uploadCoverUri.startsWith("http")) {
+            try {
+                val searchResult = apiService.search("${trackRow.title} ${trackRow.artistName}", limitTracks = 3)
+                val resolved = searchResult.data?.tracks?.firstOrNull { !it.coverUri.isNullOrBlank() && it.coverUri.startsWith("http") }?.coverUri
+                if (resolved != null) {
+                    uploadCoverUri = resolved
+                    // Update Room local entry to preserve the resolved HTTPS cover (if it was null/empty)
+                    if (rawTrack.coverUri.isNullOrBlank()) {
+                        database.useWriterConnection { transactor ->
+                            transactor.immediateTransaction {
+                                val updatedTrack = rawTrack.copy(coverUri = resolved)
+                                database.trackDao().upsertTracks(listOf(updatedTrack))
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to resolve cover online for upload of track $trackId: ${e.message}")
+            }
+        }
+
         val fileBytes = file.readBytes()
         val response = apiService.uploadSyncFile(
             token = token,
@@ -1107,7 +1142,7 @@ class DesktopPlaybackOrchestrator(
             durationMs = trackRow.durationMs,
             artistId = rawTrack.primaryArtistId,
             albumId = rawTrack.albumId,
-            coverUri = rawTrack.coverUri
+            coverUri = uploadCoverUri
         )
 
         if (response.data != null) {

@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.call.body
 import java.io.File
 import java.io.FileOutputStream
 
@@ -79,6 +82,29 @@ class CloudFileRepository(
 
             val mimeType = contentResolver.getType(uri) ?: "audio/mpeg"
 
+            var uploadCoverUri = trackRow.coverUri
+            if (uploadCoverUri.isNullOrBlank() || !uploadCoverUri.startsWith("http")) {
+                try {
+                    val searchResult = apiService.search("${trackRow.title} ${trackRow.artistName}", limitTracks = 3)
+                    val resolved = searchResult.data?.tracks?.firstOrNull { !it.coverUri.isNullOrBlank() && it.coverUri.startsWith("http") }?.coverUri
+                    if (resolved != null) {
+                        uploadCoverUri = resolved
+                        // Update Room local entry to preserve the resolved HTTPS cover (if it was null/empty)
+                        val rawTrack = database.trackDao().getRawTrackById(trackId)
+                        if (rawTrack != null && rawTrack.coverUri.isNullOrBlank()) {
+                            database.useWriterConnection { transactor ->
+                                transactor.immediateTransaction {
+                                    val updatedTrack = rawTrack.copy(coverUri = resolved)
+                                    database.trackDao().upsertTrack(updatedTrack)
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to resolve cover online for upload of track $trackId", e)
+                }
+            }
+
             val response = apiService.uploadSyncFile(
                 token = SyncRepository.AUTH_TOKEN,
                 trackId = trackId,
@@ -90,7 +116,7 @@ class CloudFileRepository(
                 durationMs = trackRow.durationMs,
                 artistId = trackRow.artistId,
                 albumId = trackRow.albumId,
-                coverUri = trackRow.coverUri
+                coverUri = uploadCoverUri
             )
 
             val data = response.data
@@ -154,6 +180,49 @@ class CloudFileRepository(
 
             Log.i(TAG, "Saved cloud file to ${targetFile.absolutePath} (${targetFile.length()} bytes)")
 
+            // 1. Resolve online cover if needed
+            var resolvedCoverUri = coverUri
+            if (resolvedCoverUri.isNullOrBlank() || !resolvedCoverUri.startsWith("http")) {
+                try {
+                    val query = "${title ?: ""} ${artistName ?: ""}".trim()
+                    if (query.isNotEmpty()) {
+                        val searchResult = apiService.search(query, limitTracks = 3)
+                        val resolved = searchResult.data?.tracks?.firstOrNull { !it.coverUri.isNullOrBlank() && it.coverUri.startsWith("http") }?.coverUri
+                        if (resolved != null) {
+                            resolvedCoverUri = resolved
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to resolve cover online for cloud track $trackId", e)
+                }
+            }
+
+            // 2. Download cover to local covers cache for offline-first use
+            var localCoverUri: String? = null
+            if (resolvedCoverUri != null && resolvedCoverUri.startsWith("http")) {
+                val client = HttpClient()
+                try {
+                    val imageResponse = client.get(resolvedCoverUri)
+                    if (imageResponse.status.value in 200..299) {
+                        val imageBytes = imageResponse.body<ByteArray>()
+                        val coversDir = File(context.filesDir, "covers")
+                        if (!coversDir.exists()) {
+                            coversDir.mkdirs()
+                        }
+                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
+                        FileOutputStream(coverFile).use { fos ->
+                            fos.write(imageBytes)
+                        }
+                        localCoverUri = Uri.fromFile(coverFile).toString()
+                        Log.i(TAG, "Downloaded remote cover from $resolvedCoverUri for $trackId to $localCoverUri")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to download remote cover fallback for $trackId", e)
+                } finally {
+                    client.close()
+                }
+            }
+
             // Link in local DB
             val now = System.currentTimeMillis()
             val fileUri = Uri.fromFile(targetFile).toString()
@@ -198,7 +267,7 @@ class CloudFileRepository(
                             displayArtistName = artist,
                             displayAlbumTitle = album,
                             durationMs = duration,
-                            coverUri = coverUri,
+                            coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri,
                             canonicalAudioSourceType = "downloaded",
                             isLiked = false,
                             isDownloadedByAura = true,
@@ -233,7 +302,7 @@ class CloudFileRepository(
                                 primaryArtistId = artistId,
                                 title = album,
                                 normalizedTitle = album.lowercase().trim(),
-                                coverUri = coverUri,
+                                coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri,
                                 artworkOrigin = null,
                                 artworkLastResolvedAt = null,
                                 releaseDate = null,
@@ -253,6 +322,7 @@ class CloudFileRepository(
                         val updatedTrack = rawTrack.copy(
                             canonicalAudioSourceType = "downloaded",
                             isDownloadedByAura = true,
+                            coverUri = localCoverUri ?: resolvedCoverUri ?: rawTrack.coverUri,
                             updatedAt = now
                         )
                         database.trackDao().upsertTrack(updatedTrack)
