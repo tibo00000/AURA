@@ -168,7 +168,7 @@ fun CloudSyncScreen(
     // 3. VPS Storage calculation
     val totalSizeBytes = remember(cloudFiles) { cloudFiles.sumOf { it.sizeBytes } }
     val totalSizeMb = remember(totalSizeBytes) { String.format("%.2f MB", totalSizeBytes.toDouble() / (1024 * 1024)) }
-    val maxVpsLimitBytes = 5L * 1024L * 1024L * 1024L // 5 GB limit representation
+    val maxVpsLimitBytes = 20L * 1024L * 1024L * 1024L // 20 GB limit representation
     val storageFraction = remember(totalSizeBytes) { (totalSizeBytes.toFloat() / maxVpsLimitBytes.toFloat()).coerceIn(0f, 1f) }
 
     // 4. Sorted cloud inventory
@@ -251,7 +251,7 @@ fun CloudSyncScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    "Limite : 5.0 GB",
+                                    "Limite : 20.0 GB",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = TextSecondary
                                 )
