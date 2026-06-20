@@ -124,18 +124,44 @@ fun CloudSyncScreen(
     val syncedTrackIds = remember(cloudFiles) { cloudFiles.map { it.trackId }.toSet() }
 
     // 1. Local tracks not yet synced to cloud (Pending upload)
-    val pendingUploadTracks = remember(localTracks, syncedTrackIds) {
+    val pendingUploadTracks = remember(localTracks, cloudFiles) {
         localTracks.filter { track ->
             val isLocal = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true
-            isLocal && !syncedTrackIds.contains(track.id)
+            if (!isLocal) return@filter false
+            
+            // Check if synced by ID
+            val isSyncedById = cloudFiles.any { it.trackId == track.id }
+            if (isSyncedById) return@filter false
+            
+            // Check if synced by metadata (Title + Artist)
+            val normTitle = track.title.lowercase().trim()
+            val normArtist = track.artistName.lowercase().trim()
+            val isSyncedByMetadata = cloudFiles.any { cloud ->
+                val cTitle = cloud.title?.lowercase()?.trim() ?: ""
+                val cArtist = cloud.artistName?.lowercase()?.trim() ?: ""
+                cTitle == normTitle && cArtist == normArtist
+            }
+            !isSyncedByMetadata
         }
     }
 
     // 2. Cloud files missing locally (Available for download)
     val cloudOnlyFiles = remember(cloudFiles, localTracks) {
         cloudFiles.filter { cloudFile ->
+            // Check if local track exists by ID and has file
             val localTrack = localTracks.find { it.id == cloudFile.trackId }
-            localTrack == null || localTrack.contentUri.isNullOrBlank()
+            val hasLocalFileById = localTrack != null && !localTrack.contentUri.isNullOrBlank()
+            if (hasLocalFileById) return@filter false
+            
+            // Check if local track exists by metadata (Title + Artist) and has file
+            val normTitle = cloudFile.title?.lowercase()?.trim() ?: ""
+            val normArtist = cloudFile.artistName?.lowercase()?.trim() ?: ""
+            val hasLocalByMetadata = localTracks.any { local ->
+                val lTitle = local.title.lowercase().trim()
+                val lArtist = local.artistName.lowercase().trim()
+                lTitle == normTitle && lArtist == normArtist && !local.contentUri.isNullOrBlank()
+            }
+            !hasLocalByMetadata
         }
     }
 

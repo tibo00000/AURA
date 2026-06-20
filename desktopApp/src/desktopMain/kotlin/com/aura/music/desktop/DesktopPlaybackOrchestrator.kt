@@ -868,6 +868,7 @@ class DesktopPlaybackOrchestrator(
     }
 
     suspend fun performCloudSync(token: String) {
+        if (!autoSyncEnabled) return
         if (!isSyncingCloud.compareAndSet(false, true)) return
         try {
             System.out.println("Starting background Cloud Sync...")
@@ -1035,21 +1036,6 @@ class DesktopPlaybackOrchestrator(
                         )
                     }
 
-                    // Media Link
-                    val mockMediaStoreId = System.currentTimeMillis()
-                    val mediaLink = TrackMediaLinkEntity(
-                        id = "media-link:$mockMediaStoreId",
-                        trackId = trackId,
-                        mediaStoreId = mockMediaStoreId,
-                        contentUri = fileUri,
-                        fileSizeBytes = targetFile.length(),
-                        mimeType = "audio/mpeg",
-                        dateModifiedEpochMs = now,
-                        availabilityStatus = "present",
-                        lastScannedAt = now
-                    )
-                    database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
-
                     // Track
                     val existingTrack = database.trackDao().getRawTrackById(trackId)
                     val trackEntity = TrackEntity(
@@ -1069,6 +1055,21 @@ class DesktopPlaybackOrchestrator(
                         updatedAt = now
                     )
                     database.trackDao().upsertTracks(listOf(trackEntity))
+
+                    // Media Link
+                    val mockMediaStoreId = System.currentTimeMillis()
+                    val mediaLink = TrackMediaLinkEntity(
+                        id = "media-link:$mockMediaStoreId",
+                        trackId = trackId,
+                        mediaStoreId = mockMediaStoreId,
+                        contentUri = fileUri,
+                        fileSizeBytes = targetFile.length(),
+                        mimeType = "audio/mpeg",
+                        dateModifiedEpochMs = now,
+                        availabilityStatus = "present",
+                        lastScannedAt = now
+                    )
+                    database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
                 }
             }
         } catch (e: Exception) {

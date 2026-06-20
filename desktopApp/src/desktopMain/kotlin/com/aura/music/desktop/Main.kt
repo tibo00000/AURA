@@ -670,6 +670,8 @@ fun main() = application {
                                             "cloud_sync" -> {
                                                 CloudSyncScreen(
                                                     orchestrator = playbackOrchestrator,
+                                                    autoSyncEnabled = autoSyncEnabled,
+                                                    onAutoSyncChange = { autoSyncEnabled = it },
                                                     onNavigateBack = { navigateBack() }
                                                 )
                                             }
@@ -3169,6 +3171,8 @@ fun DownloadsScreen(
 @Composable
 fun CloudSyncScreen(
     orchestrator: DesktopPlaybackOrchestrator,
+    autoSyncEnabled: Boolean,
+    onAutoSyncChange: (Boolean) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -3202,29 +3206,68 @@ fun CloudSyncScreen(
     }
 
     val syncedTrackIds = remember(cloudFiles) { cloudFiles.map { it.trackId }.toSet() }
-
+ 
     // Filter tracks
     // 1. À uploader (local files not on cloud)
-    val pendingUploadTracks = remember(localTracks, syncedTrackIds) {
+    val pendingUploadTracks = remember(localTracks, cloudFiles) {
         localTracks.filter { track ->
             val uri = track.contentUri
             val isLocal = uri?.startsWith("file://") == true && 
                 !uri.contains(".aura/downloads") && 
                 !uri.contains(".aura\\downloads")
-            isLocal && !syncedTrackIds.contains(track.id)
+            if (!isLocal) return@filter false
+            
+            // Check if synced by ID
+            val isSyncedById = cloudFiles.any { it.trackId == track.id }
+            if (isSyncedById) return@filter false
+            
+            // Check if synced by metadata (Title + Artist)
+            val normTitle = track.title.lowercase().trim()
+            val normArtist = track.artistName.lowercase().trim()
+            val isSyncedByMetadata = cloudFiles.any { cloud ->
+                val cTitle = cloud.title?.lowercase()?.trim() ?: ""
+                val cArtist = cloud.artistName?.lowercase()?.trim() ?: ""
+                cTitle == normTitle && cArtist == normArtist
+            }
+            !isSyncedByMetadata
         }
     }
-
+ 
     // 2. À récupérer (cloud files missing locally or not downloaded)
     val cloudOnlyFiles = remember(cloudFiles, localTracks) {
         cloudFiles.filter { cloudFile ->
+            // Check if local track exists by ID and has physical file
             val localTrack = localTracks.find { it.id == cloudFile.trackId }
-            val localUri = localTrack?.contentUri
-            val appDir = File(System.getProperty("user.home"), ".aura")
-            val downloadsDir = File(appDir, "downloads")
-            val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
+            val hasLocalFileById = if (localTrack != null) {
+                val localUri = localTrack.contentUri
+                val appDir = File(System.getProperty("user.home"), ".aura")
+                val downloadsDir = File(appDir, "downloads")
+                val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
+                !localUri.isNullOrBlank() && targetFile.exists() && targetFile.length() > 0L
+            } else false
             
-            localTrack == null || localUri.isNullOrBlank() || !targetFile.exists() || targetFile.length() == 0L
+            if (hasLocalFileById) return@filter false
+            
+            // Check if local track exists by metadata (Title + Artist)
+            val normTitle = cloudFile.title?.lowercase()?.trim() ?: ""
+            val normArtist = cloudFile.artistName?.lowercase()?.trim() ?: ""
+            val hasLocalByMetadata = localTracks.any { local ->
+                val lTitle = local.title.lowercase().trim()
+                val lArtist = local.artistName.lowercase().trim()
+                val localUri = local.contentUri
+                val isFileExists = if (localUri?.startsWith("file://") == true) {
+                    try {
+                        val f = File(java.net.URI(localUri))
+                        f.exists() && f.length() > 0L
+                    } catch (e: Exception) {
+                        false
+                    }
+                } else {
+                    !localUri.isNullOrBlank()
+                }
+                lTitle == normTitle && lArtist == normArtist && isFileExists
+            }
+            !hasLocalByMetadata
         }
     }
 
@@ -3405,8 +3448,8 @@ fun CloudSyncScreen(
                             Text("Envoie et télécharge en arrière-plan.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                         }
                         Switch(
-                            checked = orchestrator.autoSyncEnabled,
-                            onCheckedChange = { orchestrator.autoSyncEnabled = it },
+                            checked = autoSyncEnabled,
+                            onCheckedChange = onAutoSyncChange,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = TextPrimary,
                                 checkedTrackColor = BlazeOrange
