@@ -325,6 +325,17 @@ La query MediaStore applique deux filtres :
 
 Aucune limite arbitraire n'est appliquee au nombre de fichiers retournes.
 
+## Sanitisation des Noms de Fichiers Locaux (Colon-to-Semicolon)
+
+Pour les fichiers stockés physiquement en local (audios MP3 et pochettes d'albums JPG), un schéma de sanitisation strict est appliqué pour résoudre deux limitations techniques :
+1. **Contraintes de Systèmes de Fichiers (ex: Windows)** : Les deux-points (`:`) sont des caractères interdits sous Windows pour les noms de fichiers.
+2. **Bug de Résolution de Protocole URI sur Android** : L'analyseur `MediaMetadataRetriever` d'Android interprète le caractère `:` dans un chemin de fichier comme le préfixe d'un schéma de protocole réseau, causant des échecs d'analyse de métadonnées locales.
+
+### Règle de Transformation
+- Lors de l'écriture physique d'un fichier audio ou d'une couverture, les deux-points (`:`) présents dans l'identifiant unique (ex: ID Deezer ou YTM) sont remplacés par des points-virgules (`;`).
+- *Exemple* : L'ID de piste `track:deezer:12345` est écrit localement sous le nom `track;deezer;12345.mp3`.
+- Lors du scan local ou de l'indexation de la bibliothèque, le scanner effectue la conversion inverse (`replace(';', ':')`) afin de reconstruire l'ID Room exact et de maintenir la cohérence référentielle avec les identifiants distants.
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room pour toutes les tables (tracks, artists, albums, playlists, snapshots, settings, etc.)
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les operations de base

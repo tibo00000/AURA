@@ -59,7 +59,10 @@ The interface uses a **3-pane vertical structure** optimized for widescreen layo
   - **Bibliothèque**: Nested tabs/categories (Titres, Albums, Artistes, Playlists). When clicking a card, details are pushed onto the view stack.
   - **Favoris**: Lists all liked tracks with quick play actions.
   - **Détail Artiste/Album/Playlist**: Hero banner with title, artwork, and full track table listing tracks with index, title, artist, album, duration, and custom actions.
-  - **Paramètres**: Panel for account management (email/password form, status) and background directory indexer.
+  - **Paramètres**: Panel for account management (email/password form, status) and background directory indexer. Contient un bouton d'accès vers l'écran dédié de gestion du cloud.
+  - **Gestion Fichiers Cloud (CloudSyncScreen)** : Écran avec disposition split double colonne optimisée pour écran large :
+    - *Colonne Gauche* (~320dp) : Jauge d'occupation du stockage VPS AURA (barre de progression orange `BlazeOrange` sur 5 Go), bouton de rafraîchissement manuel, et commutateur pour la synchronisation automatique en arrière-plan.
+    - *Colonne Droite* (flexible) : Onglets de filtrage (« À récupérer », « À uploader », « Tout le Cloud »), actions globales en lot (Tout récupérer / Tout sauvegarder), et liste de pistes avec actions contextuelles (Télécharger, Envoyer, Supprimer) et suivi d'opérations asynchrones en cours.
 
 ---
 

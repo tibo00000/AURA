@@ -62,9 +62,12 @@ Android
 - `docs/android/screens/downloads.md`: suivi des jobs de telechargement.
 - `docs/android/screens/downloads-layout.md`: layout canonique de Downloads, filtres, jobs et resolution YTM.
 - `docs/android/screens/settings.md`: reglages, sync et diagnostics.
+- `docs/android/screens/cloud-sync.md`: gestion du stockage cloud VPS.
+- `docs/android/screens/cloud-sync-layout.md`: layout mobile de la gestion du cloud.
 
 Desktop & Web
 - `docs/desktop/app-architecture.md`: couches, dependances et principes de performance de l'application Bureau et Web Compose Multiplatform.
+- `docs/desktop/screens-layout.md`: specifications et zoning des ecrans sur Desktop.
 
 Server
 - `docs/server/architecture.md`: architecture du backend.

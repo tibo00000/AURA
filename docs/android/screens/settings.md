@@ -15,8 +15,9 @@ Permettre la configuration de l'application sans complexifier les ecrans media.
 - `Diagnostics`
 
 ## Compte et sync
-- etat de connexion
-- bascule de sync si la fonction est active
+- état de connexion
+- bouton "Gérer le stockage cloud" redirigeant vers l'écran dédié Stockage Cloud (CloudSyncScreen)
+
 
 ## Stockage local
 - informations sur le cache

@@ -30,6 +30,7 @@ class DesktopPlaybackOrchestrator(
     val apiService: AuraApiService
 ) {
     var apiToken: String? = null
+    var autoSyncEnabled: Boolean = true
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val loomDispatcher = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
@@ -72,12 +73,14 @@ class DesktopPlaybackOrchestrator(
             }
         }
         startDownloadSyncLoop()
+        startCloudFileSyncLoop()
     }
 
     fun disconnect() {
         progressJob?.cancel()
         audioPlayer.stop()
         stopDownloadSyncLoop()
+        stopCloudFileSyncLoop()
     }
 
     fun playTrack(
@@ -836,6 +839,284 @@ class DesktopPlaybackOrchestrator(
             }
         } catch (e: Exception) {
             System.err.println("Failed to retrieve physical file for job $jobId: ${e.message}")
+        }
+    }
+
+    private var cloudSyncJob: Job? = null
+    private val isSyncingCloud = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun startCloudFileSyncLoop() {
+        cloudSyncJob?.cancel()
+        cloudSyncJob = scope.launch(loomDispatcher) {
+            while (isActive) {
+                val token = apiToken
+                if (!token.isNullOrBlank()) {
+                    try {
+                        performCloudSync(token)
+                    } catch (e: Exception) {
+                        System.err.println("Error in cloud sync loop: ${e.message}")
+                    }
+                }
+                delay(60000) // Every 60 seconds
+            }
+        }
+    }
+
+    fun stopCloudFileSyncLoop() {
+        cloudSyncJob?.cancel()
+        cloudSyncJob = null
+    }
+
+    suspend fun performCloudSync(token: String) {
+        if (!isSyncingCloud.compareAndSet(false, true)) return
+        try {
+            System.out.println("Starting background Cloud Sync...")
+            val response = apiService.listSyncFiles(token)
+            val cloudFiles = response.data?.items ?: return
+            val syncedTrackIds = cloudFiles.map { it.trackId }.toSet()
+
+            // 1. Cloud -> PC: Download missing files
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val downloadsDir = File(appDir, "downloads")
+            for (cloudFile in cloudFiles) {
+                val rawTrack = database.trackDao().getRawTrackById(cloudFile.trackId)
+                val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
+                
+                val existsLocally = targetFile.exists() && targetFile.length() > 0L
+                val isDbDownloaded = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded"
+                
+                if (!existsLocally || !isDbDownloaded) {
+                    try {
+                        downloadCloudTrack(
+                            token = token,
+                            trackId = cloudFile.trackId,
+                            title = cloudFile.title ?: "Titre inconnu",
+                            artistName = cloudFile.artistName ?: "Artiste inconnu",
+                            albumTitle = cloudFile.albumTitle,
+                            durationMs = cloudFile.durationMs ?: 0L,
+                            coverUri = cloudFile.coverUri
+                        )
+                    } catch (e: Exception) {
+                        System.err.println("Auto-download failed for ${cloudFile.trackId}: ${e.message}")
+                    }
+                }
+            }
+
+            // 2. PC -> Cloud: Auto-upload local files if autoSyncEnabled
+            if (autoSyncEnabled) {
+                val localTracks = database.trackDao().getAllTracks()
+                for (track in localTracks) {
+                    val rawTrack = database.trackDao().getRawTrackById(track.id)
+                    if (rawTrack != null && rawTrack.canonicalAudioSourceType == "local") {
+                        if (!syncedTrackIds.contains(track.id)) {
+                            try {
+                                uploadCloudTrack(token, track.id)
+                            } catch (e: Exception) {
+                                System.err.println("Auto-upload failed for ${track.id}: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }
+            System.out.println("Background Cloud Sync finished.")
+        } finally {
+            isSyncingCloud.set(false)
+        }
+    }
+
+    suspend fun downloadCloudTrack(
+        token: String,
+        trackId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String?,
+        durationMs: Long,
+        coverUri: String?
+    ) = withContext(Dispatchers.IO) {
+        try {
+            System.out.println("Downloading cloud file for $trackId...")
+            val response = apiService.downloadSyncFile(token, trackId)
+            if (response.status.value !in 200..299) {
+                System.err.println("Failed to download cloud file $trackId: HTTP ${response.status.value}")
+                return@withContext
+            }
+
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val downloadsDir = File(appDir, "downloads")
+            if (!downloadsDir.exists()) {
+                downloadsDir.mkdirs()
+            }
+
+            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+
+            val channel = response.bodyAsChannel()
+            channel.toInputStream().use { inputStream ->
+                java.io.FileOutputStream(targetFile).use { outputStream ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                    }
+                }
+            }
+
+            System.out.println("Downloaded cloud file saved to ${targetFile.absolutePath}")
+
+            // Download cover artwork
+            var localCoverUri: String? = null
+            if (coverUri != null && coverUri.startsWith("http")) {
+                val client = HttpClient()
+                try {
+                    val imageResponse = client.get(coverUri)
+                    if (imageResponse.status.value in 200..299) {
+                        val imageBytes = imageResponse.body<ByteArray>()
+                        val coversDir = File(appDir, "covers")
+                        if (!coversDir.exists()) {
+                            coversDir.mkdirs()
+                        }
+                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
+                        java.io.FileOutputStream(coverFile).use { fos ->
+                            fos.write(imageBytes)
+                        }
+                        localCoverUri = coverFile.toURI().toString()
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Failed to download cover for cloud track $trackId: ${e.message}")
+                } finally {
+                    client.close()
+                }
+            }
+
+            val now = System.currentTimeMillis()
+            val fileUri = targetFile.toURI().toString()
+
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    // Artist
+                    var primaryArtistId: String? = null
+                    if (artistName.isNotBlank()) {
+                        primaryArtistId = "artist:${artistName.lowercase().trim().replace(" ", "_")}"
+                        database.artistDao().insertArtist(
+                            ArtistEntity(
+                                id = primaryArtistId,
+                                name = artistName,
+                                pictureUri = null,
+                                summary = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
+                    }
+
+                    // Album
+                    var albumId: String? = null
+                    if (!albumTitle.isNullOrBlank()) {
+                        albumId = "album:${albumTitle.lowercase().trim().replace(" ", "_")}"
+                        database.albumDao().insertAlbum(
+                            AlbumEntity(
+                                id = albumId,
+                                title = albumTitle,
+                                artistId = primaryArtistId,
+                                coverUri = localCoverUri ?: coverUri,
+                                releaseDate = null,
+                                trackCount = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
+                    }
+
+                    // Media Link
+                    val mockMediaStoreId = System.currentTimeMillis()
+                    val mediaLink = TrackMediaLinkEntity(
+                        id = "media-link:$mockMediaStoreId",
+                        trackId = trackId,
+                        mediaStoreId = mockMediaStoreId,
+                        contentUri = fileUri,
+                        fileSizeBytes = targetFile.length(),
+                        mimeType = "audio/mpeg",
+                        dateModifiedEpochMs = now,
+                        availabilityStatus = "present",
+                        lastScannedAt = now
+                    )
+                    database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
+
+                    // Track
+                    val existingTrack = database.trackDao().getRawTrackById(trackId)
+                    val trackEntity = TrackEntity(
+                        id = trackId,
+                        primaryArtistId = primaryArtistId,
+                        albumId = albumId,
+                        title = title,
+                        normalizedTitle = title.lowercase(),
+                        displayArtistName = artistName,
+                        displayAlbumTitle = albumTitle,
+                        durationMs = durationMs,
+                        coverUri = localCoverUri ?: coverUri ?: existingTrack?.coverUri,
+                        canonicalAudioSourceType = "downloaded",
+                        isLiked = existingTrack?.isLiked ?: false,
+                        isDownloadedByAura = true,
+                        createdAt = existingTrack?.createdAt ?: now,
+                        updatedAt = now
+                    )
+                    database.trackDao().upsertTracks(listOf(trackEntity))
+                }
+            }
+        } catch (e: Exception) {
+            System.err.println("Failed to download cloud track $trackId: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun uploadCloudTrack(token: String, trackId: String) = withContext(Dispatchers.IO) {
+        val trackRow = database.trackDao().getTrackById(trackId) ?: return@withContext
+        val rawTrack = database.trackDao().getRawTrackById(trackId) ?: return@withContext
+        val uriStr = trackRow.contentUri ?: return@withContext
+
+        System.out.println("Uploading track $trackId ($uriStr) to cloud...")
+        val file = if (uriStr.startsWith("file:/")) {
+            File(java.net.URI(uriStr))
+        } else {
+            File(uriStr)
+        }
+
+        if (!file.exists() || !file.isFile) {
+            System.err.println("File does not exist: ${file.absolutePath}")
+            return@withContext
+        }
+
+        val fileBytes = file.readBytes()
+        val response = apiService.uploadSyncFile(
+            token = token,
+            trackId = trackId,
+            fileBytes = fileBytes,
+            mimeType = "audio/mpeg",
+            title = trackRow.title,
+            artistName = trackRow.artistName,
+            albumTitle = trackRow.albumTitle,
+            durationMs = trackRow.durationMs,
+            artistId = rawTrack.primaryArtistId,
+            albumId = rawTrack.albumId,
+            coverUri = rawTrack.coverUri
+        )
+
+        if (response.data != null) {
+            System.out.println("Track $trackId uploaded successfully to cloud.")
+        } else {
+            System.err.println("Failed to upload track $trackId: ${response.meta?.errorMessage}")
+        }
+    }
+
+    suspend fun deleteCloudTrack(token: String, trackId: String) = withContext(Dispatchers.IO) {
+        System.out.println("Deleting track $trackId from cloud...")
+        val response = apiService.deleteSyncFile(token, trackId)
+        if (response.data?.deleted == true) {
+            System.out.println("Track $trackId deleted successfully from cloud.")
+        } else {
+            System.err.println("Failed to delete track $trackId from cloud.")
         }
     }
 }

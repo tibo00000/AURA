@@ -1,10 +1,10 @@
-﻿# FILE: AGENTS.md
+# FILE: AGENTS.md
 # AGENTS.md - Aura Music Player
 
 ## Role And Identity
 Tu es un expert Android senior specialise en Kotlin, Jetpack Compose, architecture MVVM et integration d'API audio hors-ligne avec Media3/ExoPlayer. Ton objectif est de produire un code propre, modulaire et performant.
-Toute la trajectoire de developpement et les rÃ¨gles Ã  suivre en buildant sont dÃ©crites dans `BUILD.md`.
-Tu as accÃ¨s Ã  une documentation complÃ¨te de l'architecture et du code dans le dossier `docs` indexÃ©e par llms.txt
+Toute la trajectoire de developpement et les règles à suivre en buildant sont décrites dans `BUILD.md`.
+Tu as accès à une documentation complète de l'architecture et du code dans le dossier `docs` indexée par llms.txt
 
 ## Build And Compilation Rules
 - L'utilisateur gere les builds et la compilation manuellement.
@@ -95,7 +95,7 @@ Contraintes :
 
 ## Etat global actuel
 - La base documentaire de reference est en place.
-- Le code applicatif Android ou backend a Ã©tÃ© commencÃ©, se rÃ©fÃ©rer au code workboard pour l'Ã©tat actuel.
+- Le code applicatif Android ou backend a été commencé, se référer au code workboard pour l'état actuel.
 
 ## Trajectoire globale
 
@@ -211,6 +211,20 @@ Resultat attendu :
 - mappings piste et payload vectoriel exploitables
 - socle pret pour des recommandations futures
 
+### Phase 7 - Client Bureau & Web (Compose Multiplatform)
+Objectif :
+- Développer le client Bureau (JVM) de manière complète et performante. Note : La cible webApp (WasmJs) est mise en stand-by.
+
+Priorite :
+- `DSK-008`
+- `DSK-009`
+- `DSK-007`
+
+Resultat attendu :
+- Layout Desktop complet (Sidebar, grilles responsive, Bottom Bar, Queue à droite) spécifié et implémenté avec thème sombre forcé.
+- Connexion de tous les écrans Desktop aux API du backend (Search, Playlists, Likes, Historique).
+- Synchronisation physique des fichiers audios locaux fonctionnelle.
+
 ### Ce qu'il ne faut pas faire trop tot
 - ne pas commencer par la sync cloud avant le coeur local
 - ne pas commencer par `Qdrant` avant la recherche online et le modele cloud
@@ -229,14 +243,16 @@ Resultat attendu :
 | AND-004 | android | Implementer le moteur player Media3 et les regles de queue | completed | AND-001 | `docs/android/player/architecture.md`, `docs/android/player/queue-rules.md`, `docs/domain/playback-model.md` | priority queue en memoire, PlaybackService + QueueManager + Orchestrator + PlayerViewModel poses, ecran Player minimal fonctionnel |
 | AND-005 | android | Implementer l'ecran `Search` avec orchestration local + online | completed | AND-002, AND-003, SRV-002 | `docs/android/screens/search.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md` | UX validee avec TabRow Bibliotheque/En ligne, fusion local-first et integration detail/artist/album online |
 | AND-006 | android | Implementer la gestion des playlists locales et leur UI | completed | AND-002, AND-003 | `docs/android/screens/playlists.md`, `docs/product/user-flows.md` | create, rename, delete, add local track, remove, reorder et lecture contexte playlist poses |
-| AND-007 | android | Implementer les ecrans `Home`, `Library`, `Downloads`, `Settings`, `Player` complet et refonte UI Playlists | completed | AND-002, AND-003, AND-004 | `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md`, `docs/android/screens/player.md`, `docs/android/screens/player-layout.md`, `docs/android/screens/playlists-layout.md` | briques techniques posÃ©es avec succÃ¨s (tÃ©lÃ©chargements asynchrones, flux de secours 5 choix YTM et cookies WebView YouTube), hors finitions de l'interface graphique |
+| AND-007 | android | Implementer les ecrans `Home`, `Library`, `Downloads`, `Settings`, `Player` complet et refonte UI Playlists | completed | AND-002, AND-003, AND-004 | `docs/android/screens/home.md`, `docs/android/screens/library.md`, `docs/android/screens/downloads.md`, `docs/android/screens/settings.md`, `docs/android/screens/player.md`, `docs/android/screens/player-layout.md`, `docs/android/screens/playlists-layout.md` | briques techniques posées avec succès (téléchargements asynchrones, flux de secours 5 choix YTM et cookies WebView YouTube), hors finitions de l'interface graphique |
 | AND-008 | android | Coder le Theme.kt (police Outfit, Couleurs) et l'appliquer au shell, Home et Library | completed | DOC-006 | `docs/android/screens/home-layout.md`, `docs/android/screens/library-layout.md`, `docs/android/ui/design-system.md` | Theme.kt, Color.kt, Type.kt poses avec police Outfit. Applique a AuraApp (NavBar 4 onglets), HomeScreen et LibraryScreen. RouteScaffold enrichi (actions, style). Recherche locale filtree artistes/albums ajoutee. |
 | AND-009 | android | Faire respecter les preferences reseau pour Search, enrichissements metadata et details media | completed | AND-003, AND-005 | `docs/android/screens/settings.md`, `docs/android/screens/search.md`, `docs/android/local-persistence.md`, `docs/android/room-schema.md` | `NetworkPolicyChecker` cree, `hybridSearch` parametre avec context+settings, `EnrichmentRepository` gate reseau + TTL 7j |
 | AND-010 | android | Implementer les ecrans `Artist` et `Album` hybrides avec heroes locaux/online et cache d'images | completed | AND-003, AND-009, SRV-008 | `docs/android/screens/artist.md`, `docs/android/screens/artist-layout.md`, `docs/android/screens/album.md`, `docs/android/screens/album-layout.md`, `docs/android/room-schema.md` | `HybridArtistScreen` + `HybridAlbumScreen` + ViewModels avec chargement Room immediat + enrichissement asynchrone non-bloquant |
 | AND-011 | android | Affiner les cartes hero/rails `Search`, `Artist` et `Album` local/online | completed | AND-005, AND-010 | `docs/android/screens/search.md`, `docs/android/screens/search-layout.md`, `docs/android/screens/artist-layout.md`, `docs/android/screens/album-layout.md` | hauteur des cartes partagees corrigee et images online branchees via `pictureUri` / `coverUri` |
 | AND-012 | android | Implementer la synchronisation cloud offline-first / batch sync cote client Android | completed | AND-003, SRV-007 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md`, `docs/android/room-schema.md` | Room v4, outbox DAO, retrofits API, SyncRepository, SyncWorker, injection DI, et bouton Settings + lastSyncAt |
-| AND-013 | android | SpÃ©cifier et implÃ©menter le menu contextuel complet de SharedTrackRowItem et SelectPlaylistDialog | completed | AND-005, AND-007 | `docs/android/ui/components.md`, `docs/android/ui/component-states.md` | menu contextuel dynamique mÃ©morisÃ©, dialogue rÃ©utilisable purement UI et launchSingleTop raccordÃ© |
-
+| AND-013 | android | Spécifier et implémenter le menu contextuel complet de SharedTrackRowItem et SelectPlaylistDialog | completed | AND-005, AND-007 | `docs/android/ui/components.md`, `docs/android/ui/component-states.md` | menu contextuel dynamique mémorisé, dialogue réutilisable purement UI et launchSingleTop raccordé |
+| AND-014 | android | Ajouter le support Android Auto pour rendre AURA selectionnable et pilotable en voiture | completed | AND-004, AND-007 | `docs/android/player/architecture.md`, `docs/android/player/states-and-events.md`, `docs/android/navigation.md` | MediaLibraryService integre, browse tree structure (Favoris, Telechargements, Playlists, Albums, Titres), pagination, toMediaItem() centralise, validation de confiance, et gestion robuste de onAddMediaItems |
+| AND-015 | android | Implémenter l'upload des fichiers audio locaux et le téléchargement depuis le cloud | completed | AND-012 | `docs/server/api-contract.md` | Routes Ktor, CloudFileRepository, menu contextuel (Uploader/Récupérer), écran de gestion cloud et bannière Home |
+| AND-016 | android | Raccorder l'application Android aux nouveaux endpoints REST /me (Likes, détails playlists, historique d'écoute, snapshots) | not_started | AND-007, AND-012 | `docs/server/api-contract.md` | Utilisation des nouveaux endpoints REST /me en complément de la synchronisation batch |
 
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -249,6 +265,20 @@ Resultat attendu :
 | SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
 | SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | completed | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | Faisabilite yt-dlp validee sur VPS et persistance PostgreSQL/Supabase OK |
 | SRV-008 | backend | Exposer la resolution metadata pour entites locales et completer les payloads detail `artist` / `album` | completed | SRV-002 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | `GET /resolve/artist` et `GET /resolve/album` implementes via `resolve_service.py` + `routes/resolve.py`, score textuel [0,1], ID AURA opaque retourne |
+| SRV-009 | backend | Implémenter les routes d'upload/download direct de fichiers audio physiques | not_started | SRV-004 | `docs/server/api-contract.md` | Stockage sur disque local VPS ou Supabase Storage |
+
+### Desktop & Web
+| ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
+|---|---|---|---|---|---|---|
+| DSK-001 | desktop | Initialiser le build multiplateforme Gradle (Kotlin/JVM et Kotlin/Wasm) | completed | none | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | squelette CMP, cibles desktop (JVM 17) et web (Wasm) définies |
+| DSK-002 | desktop | Porter le schéma Room vers Room Multiplatform pour Desktop | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/room-schema.md` | persistance locale unifiée sur SQLite |
+| DSK-003 | desktop | Implémenter le décodage et la lecture audio locale native Bureau et Web | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/domain/playback-model.md` | JavaFX Media pour Bureau, HTML5 Audio pour Web |
+| DSK-004 | desktop | Adapter et partager les composants graphiques Compose (Thème, listes, player) | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/android/ui/components.md` | design system unifié réutilisé sur Desktop et Web |
+| DSK-005 | desktop | Connecter le client multiplateforme aux API du serveur FastAPI | completed | DSK-001 | `docs/desktop/app-architecture.md`, `docs/server/api-contract.md` | recherche online et requêtes de téléchargement reliées |
+| DSK-006 | desktop | Implémenter le System Tray, la suspension de rendu Skia et le packaging JRE 21 | completed | DSK-001, DSK-004 | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | réduction zone de notification, suspension canevas et JRE 21 (ZGC) |
+| DSK-008 | desktop | Concevoir et implémenter les layouts d'écrans du bureau (Sidebar, grilles responsive, Bottom Bar, Queue à droite) | completed | DSK-004, DSK-006 | `docs/desktop/screens-layout.md` | Layout 3 volets avec queue à droite et thème sombre forcé |
+| DSK-009 | desktop | Connecter l'application bureau à l'ensemble des endpoints API du backend (Recherche, Playlists, Likes, Historique) | completed | DSK-005, DSK-008 | `docs/server/api-contract.md` | Raccordement complet du client aux services distants FastAPI avec gestion de token |
+| DSK-007 | desktop | Implémenter la synchronisation des fichiers audio locaux via le backend | not_started | DSK-009 | `docs/server/api-contract.md` | Upload de sons locaux et récupération automatique sur PC |
 
 ### Infrastructure et gouvernance
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
@@ -303,79 +333,128 @@ Resultat attendu :
 - Utiliser `artist_source_links` et `album_source_links` pour memoriser les resolutions backend associees aux entites locales.
 
 ## Handoff cible SRV-006
-- Concevoir et implÃ©menter le systÃ¨me de jobs asynchrones dans le backend (avec tÃ©lÃ©chargement temporairement simulÃ©/stub).
+- Concevoir et implémenter le système de jobs asynchrones dans le backend (avec téléchargement temporairement simulé/stub).
 - La persistance des jobs se fera dans PostgreSQL (via Supabase ou SQLAlchemy, selon SRV-004).
-- ImplÃ©menter les routes d'API canoniques : `POST /downloads` (crÃ©e le job asynchrone), `GET /downloads` (liste les jobs), `POST /downloads/{id}/retry`, et `GET /jobs/{id}`.
-- Toutes les routes de tÃ©lÃ©chargement requiÃ¨rent une authentification par Bearer token.
-- Gestion des cookies YouTube : l'utilisateur pourra soumettre ses cookies Netscape via un endpoint sÃ©curisÃ© `POST /admin/cookies` (protÃ©gÃ© par un secret admin) pour mettre Ã  jour le fichier `cookies.txt` partagÃ©, ou via une variable d'environnement/paramÃ¨tre utilisateur.
+- Implémenter les routes d'API canoniques : `POST /downloads` (crée le job asynchrone), `GET /downloads` (liste les jobs), `POST /downloads/{id}/retry`, et `GET /jobs/{id}`.
+- Toutes les routes de téléchargement requièrent une authentification par Bearer token.
+- Gestion des cookies YouTube : l'utilisateur pourra soumettre ses cookies Netscape via un endpoint sécurisé `POST /admin/cookies` (protégé par un secret admin) pour mettre à jour le fichier `cookies.txt` partagé, ou via une variable d'environnement/paramètre utilisateur.
 
 ## Journal des changements
+- 2026-06-20T13:54:00+02:00 | bugfix | `androidApp/src/main/java/com/aura/music/data/repository/CloudFileRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt` | Correction du bug de disparition des titres téléchargés depuis le cloud : remplacement des deux-points (`:`) par des points-virgules (`;`) dans les noms de fichiers locaux (MP3 et pochettes JPG) pour éliminer les échecs d'écriture sous Windows (interdiction du `:`) et les erreurs d'interprétation de protocole URI d'Android `MediaMetadataRetriever` lors du scan, puis reconstruction inverse (`replace(';', ':')`) dans le scanner pour préserver l'intégrité de l'index Room.
+- 2026-06-20T01:38:00+02:00 | bugfix | `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt` | Correction d'une erreur de compilation Kotlin empêchant le smart-cast d'une propriété d'API publique déclarée dans un module externe (`uploadResponse.error`).
+- 2026-06-20T00:46:00+02:00 | code, ui, api, bugfix | `androidApp/src/main/java/com/aura/music/data/repository/CloudFileRepository.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/CloudSyncScreen.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `server/app/api/routes/sync_files.py`, `shared/src/commonMain/kotlin/com/aura/music/data/local/AuraDaos.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/network/AuraApiDtos.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/network/AuraApiService.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/network/KtorAuraApiService.kt` | AND-015 : Intégration complète de la restauration des liaisons artiste, album et pochette lors de la récupération cloud d'un titre supprimé localement. Ajout des paramètres artist_id, album_id et cover_uri à la route d'upload du serveur et aux DTOs/méthodes du client Ktor. Insertion de placeholders d'artistes et d'albums avec OnConflictStrategy.IGNORE pour préserver l'intégrité référentielle SQLite locale sans écraser les données existantes.
+- 2026-06-19T00:52:00+02:00 | code, ui, bugfix | `androidApp/src/main/java/com/aura/music/ui/screens/CloudSyncScreen.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` | AND-015 : Correction de la perte de métadonnées lors de la récupération depuis le cloud. Fallback sur les métadonnées distantes du cloud si la piste a été supprimée localement (évitant l'affichage 'Titre inconnu' dans la gestion), et transmission systématique des métadonnées (titre, artiste, album, durée) lors du téléchargement pour reconstruire proprement la `TrackEntity` locale.
+- 2026-06-18T19:55:00+02:00 | bugfix | `server/app/api/routes/jobs.py` | Fix du chargement infini du dialogue de choix YTM (YtmProposalsDialog) sur Android : la route GET /jobs/{id} ne transmettait pas le champ `candidates` du modèle `DownloadJob` dans la réponse `JobStatusResponse`, causant un retour systématique de `candidates: null` côté client et empêchant l'affichage de la liste de choix vidéo.
+- 2026-06-17T23:59:00+02:00 | code, ui, api | `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `androidApp/src/main/java/com/aura/music/data/player/PlaybackStateStore.kt`, `androidApp/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/HomeScreen.kt`, `androidApp/src/main/java/com/aura/music/core/AuraAppContainer.kt` | AND-016 : Raccordement de l'application Android aux endpoints REST /me (Likes, playlists, historique et snapshots de lecture) en temps réel avec fallback transparent vers la boîte d'envoi Room en cas de déconnexion.
+- 2026-06-17T22:18:00+02:00 | code, docs | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt`, `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md` | Changement du comportement de réduction de l'application (le bouton Réduire minimise vers la barre des tâches, le bouton Fermer masque vers la zone de notification/System Tray) et mise à jour de la documentation associée (ADR 007 et architecture).
+- 2026-06-17T22:04:00+02:00 | code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt` | DSK-008 & DSK-009 : Correction du bug de re-téléchargement automatique des titres supprimés par la boucle de synchronisation d'arrière-plan (syncActiveJobs ignore les tâches réussies dont les pistes ont été supprimées localement).
+- 2026-06-17T21:50:00+02:00 | code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt` | DSK-008 & DSK-009 : Intégration de la suppression physique et DB des fichiers audio locaux/téléchargés, affichage des pochettes dans les trackrows via la résolution locale Coil 3 (conversion file: URI en java.io.File), synchronisation réactive de l'état "liké" (coeur) et gestion locale de l'historique d'écoute.
+- 2026-06-17T00:47:00+02:00 | code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt` | DSK-008 & DSK-009 : Configuration de Coil 3 avec Ktor fetcher, scraper de pochettes Deezer asynchrone lors du scan local, intégration de l'onglet Téléchargements (collecte et téléchargement de MP3s physiques + images locales), et remplacement des boutons d'actions inline par un menu contextuel Dropdown.
+- 2026-06-16T23:45:00+02:00 | code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt` | DSK-008 & DSK-009 : Correction des erreurs de compilation dans Main.kt (imports de tabIndicatorOffset, typage strict des lambdas de toQueued(), ajout du paramètre database à SearchScreen, et implémentation des composants Composable manquants).
+- 2026-06-16T01:21:00+02:00 | code | `server/app/api/routes/me.py`, `server/app/schemas/me.py`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt` | DSK-008 & DSK-009 : Implémentation du layout 3 volets Desktop complet avec stack navigation, connexion à tous les endpoints API backend (Search, Playlists, Likes, Historique) et Loom virtual thread scanner.
+- 2026-06-16T01:17:00+02:00 | code, docs | `BUILD.md`, `docs/desktop/screens-layout.md` | DSK-008 & DSK-009 : Début des travaux d'intégration Desktop UI et réseau. Création de la spécification de layout `screens-layout.md` et ajout de l'étape `AND-016` pour la future mise en conformité de l'application Android avec les endpoints REST individuels.
+- 2026-06-16T01:05:00+02:00 | decision | `BUILD.md` | Ajout des étapes DSK-008 et DSK-009 pour spécifier le design d'écran Desktop (avec Sidebar, Queue à droite, thème sombre forcé et onglets de paramètres) et la connexion complète du client aux endpoints backend (playlists, favoris, historique, snapshots) avant la synchronisation physique.
+- 2026-06-13T16:08:00+02:00 | code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/DesktopPlaybackOrchestrator.kt`, `BUILD.md` | DSK-004 & DSK-006 : Implémentation du DesktopPlaybackOrchestrator pilotant QueueManager et JavaFX Media, raccordement de JNativeHook et intégration du tableau de bord complet avec bibliothèque locale, favoris, playlists et importation.
+- 2026-06-13T15:20:00+02:00 | decision | `BUILD.md` | Mise en stand-by de la cible webApp (WasmJs) pour se concentrer sur le développement approfondi de l'application Desktop (JVM).
+- 2026-06-18T22:45:00+02:00 | code, ui, docs | `androidApp/src/main/java/com/aura/music/ui/screens/HomeScreen.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `androidApp/src/main/java/com/aura/music/ui/AuraApp.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `docs/android/local-persistence.md`, `docs/android/ui/components.md`, `docs/android/ui/component-states.md`, `BUILD.md` | AND-015 : Finalisation de l'implémentation complète des fonctionnalités d'upload et de récupération de fichiers cloud personnels. Raccordement de l'écran SearchScreen aux actions d'upload/récupération, création de la bannière dynamique d'avertissement de récupération manuelle CloudRecoveryBanner sur l'écran d'accueil s'il y a plus de 5 titres cloud-only, correction de la compilation dans SettingsScreen et mise à jour de la documentation d'architecture de persistance locale et des spécifications d'état de composants UI.
+- 2026-06-13T00:30:00+02:00 | code, config | `gradle.properties`, `BUILD.md` | Configuration de la mémoire du démon Gradle (Xmx 4GB) et désactivation de KSP2 (`ksp.useKSP2=false`) pour forcer le compilateur à utiliser le moteur stable KSP1, résolvant ainsi l'erreur de compilation de la webApp (`java.lang.AssertionError: Built-in class kotlin.Number is not found`) liée à l'incompatibilité de KSP2 et du compilateur Room 3.0.0-alpha01 sur la cible Web WasmJs.
+- 2026-06-12T23:59:00+02:00 | code, config | `androidApp/build.gradle.kts`, `androidApp/src/main/java/com/aura/music/AuraApplication.kt`, `BUILD.md` | Remplacement du moteur réseau de Coil 3 par `coil-network-okhttp` au lieu de `coil-network-ktor` pour éliminer le conflit binaire à l'exécution entre le Ktor fetcher de Coil (compilé contre Ktor 2.x) et Ktor 3.0.0 utilisé dans l'application, ce qui permet l'affichage correct des images d'illustration en ligne (Artistes, Albums et Titres) sur l'écran de recherche.
+- 2026-06-12T23:45:00+02:00 | code | `androidApp/src/main/java/com/aura/music/AuraApplication.kt`, `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Configuration de Coil 3 avec `KtorNetworkFetcherFactory` pour corriger l'affichage des images en ligne (Artistes, Albums, Pistes), et inversion de la priorité d'acquisition des couvertures de téléchargement pour toujours essayer de télécharger d'abord l'image officielle Deezer (depuis l'URL stockée en DB) avant de se replier sur l'extraction de l'image intégrée (miniature YouTube) du MP3.
+- 2026-06-12T23:25:00+02:00 | code | `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `BUILD.md` | Ajout d'une stratégie de repli (fallback) de téléchargement de couverture HTTP : si l'extraction d'image intégrée dans le MP3 téléchargé échoue (notamment pour les anciens fichiers du cache VPS n'ayant pas d'image encapsulée), le téléphone télécharge l'image directement depuis l'URL distante (Deezer) via Ktor HttpClient et la persiste localement dans `filesDir/covers/` pour garantir son affichage hors-ligne.
+- 2026-06-12T23:12:00+02:00 | code | `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Protection des métadonnées de bibliothèque contre la pollution de YouTube : préservation des métadonnées canoniques clean de Room (Titre, Artiste, Album, relation IDs) pour les pistes téléchargées par l'application, empêchant qu'elles ne soient écrasées par les tags ID3 approximatifs (comme Clip Officiel) issus de la vidéo YouTube lors des scans de bibliothèque.
+- 2026-06-12T22:32:00+02:00 | code | `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Extraction et persistance locale de l'image de couverture (cover artwork) intégrée dans les fichiers MP3 téléchargés (via `MediaMetadataRetriever` enregistrant sous `filesDir/covers/` et modifiant `coverUri` dans Room en local `file:///` URI) pour permettre l'affichage offline-first et corriger l'absence d'image pour les musiques téléchargées.
+- 2026-06-12T22:20:00+02:00 | code | `shared/src/commonMain/kotlin/com/aura/music/ui/theme/Type.kt`, `androidApp/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `androidApp/src/main/java/com/aura/music/service/PlaybackService.kt`, `BUILD.md` | Restauration de la police Outfit (Option A) depuis les ressources Compose, et correction du bug de double skip de la file d'attente (remplacement de la comparaison d'index par une comparaison de `mediaId` dans `syncExoPlayerPlaylist()`, restauration des handlers de transition `targetNextTrack`/`targetPrevTrack` dans `onMediaItemTransition()`, filtrage de la reprise de contexte externe dans `PlaybackService` et ajout des appels `syncUiState()` sur les événements clés).
+- 2026-06-12T20:30:00+02:00 | code | `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Ajout de l'import manquant `androidx.room3.immediateTransaction` dans `DownloadRepository` et `LocalLibraryRepository`, et unification du type de retour à `Unit` (ajout de la valeur `Unit` en fin de bloc transactionnel de `reorderPlaylistTrack`) pour résoudre les erreurs de compilation de Room 3 (inférence de type et contexte suspendu).
+- 2026-06-12T00:35:00+02:00 | code, config | `settings.gradle.kts`, `DownloadRepository.kt`, `LocalLibraryRepository.kt`, `PlayerScreen.kt`, `BUILD.md` | Ajout du dépôt Ivy Yarn dans `settings.gradle.kts` pour la compilation Web, migration des transactions vers l'API connection-based `useWriterConnection`/`immediateTransaction` de Room 3 dans les dépôts Android, et correction de l'erreur de smart-cast restante sur `albumTitle` dans `PlayerScreen.kt`.
+- 2026-06-12T00:25:00+02:00 | code, config | `settings.gradle.kts`, `androidApp/build.gradle.kts`, `SyncRepository.kt`, `PlaybackOrchestrator.kt`, `HybridDetailScreens.kt`, `LibraryAndDetailsScreens.kt`, `PlayerScreen.kt`, `SandboxScreen.kt`, `SearchScreen.kt`, `BUILD.md` | Correction du patron Ivy pour Node.js sur Web, déclaration des dépendances explicites Room3, Coil3 et Ktor dans `:androidApp`, et résolution des erreurs de smart cast Kotlin (variables capturées localement) et des imports Coil obsolètes dans les écrans Android.
+- 2026-06-12T00:15:00+02:00 | code, config | `shared/build.gradle.kts`, `settings.gradle.kts`, `BUILD.md` | Résolution des dépendances transitives de `:shared` vers `:androidApp` en exposant `room3`, `sqlite`, `ktor-client-core` et `kotlinx-serialization` via des déclarations `api`, ajout du moteur `ktor-client-okhttp` pour Desktop/Android, et déclaration du dépôt Ivy Node.js dans `settings.gradle.kts` pour le build Web.
+- 2026-06-11T23:48:00+02:00 | code, config | `shared/src/commonMain/kotlin/com/aura/music/data/network/AuraApiDtos.kt`, `settings.gradle.kts`, `BUILD.md` | Correction de la construction du descripteur dans `BestMatchSerializer` (retrait de la propriété `.descriptor` invalide sur `SerialDescriptor`), et changement du mode de dépôt Gradle en `PREFER_SETTINGS` pour permettre au plugin Kotlin de configurer Node.js/Yarn et de résoudre la compilation Web.
+- 2026-06-11T23:35:00+02:00 | code, config | `shared/src/commonMain/kotlin/com/aura/music/data/network/AuraApiDtos.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/network/AuraApiService.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/network/KtorAuraApiService.kt`, `shared/build.gradle.kts`, `build.gradle.kts`, `androidApp/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `androidApp/src/main/java/com/aura/music/data/repository/SyncRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/Main.kt`, `webApp/src/wasmJsMain/kotlin/com/aura/music/web/Main.kt`, `BUILD.md` | DSK-005 : Création de la couche réseau Ktor / kotlinx.serialization unifiée dans `:shared`, suppression de la couche Retrofit/Moshi Android obsolète, adaptation des dépôts Android, et intégration avec ping de statut API sur Desktop et Web.
+- 2026-06-11T22:28:00+02:00 | code, config | `shared/build.gradle.kts`, `desktopApp/build.gradle.kts`, `BUILD.md` | Ajout de la dépendance runtime Skiko pour Windows ARM64 (`skiko-awt-runtime-windows-arm64:0.8.15`) aux côtés du ciblage Compose `windows_x64` pour permettre l'exécution sur une JVM ARM64 native Windows sans LibraryLoadException.
+- 2026-06-11T22:12:00+02:00 | code, config | `desktopApp/build.gradle.kts`, `BUILD.md` | Ajout des dépendances Compose Multiplatform explicites (`runtime`, `foundation`, `material3`, `ui`, `components.resources`) dans le module `desktopApp` pour résoudre les erreurs d'import de Compose lors de la compilation de `Main.kt`.
+- 2026-06-11T20:32:00+02:00 | code, config | `desktopApp/src/desktopMain`, `BUILD.md` | Renommage du dossier `desktopApp/src/jvmMain` en `desktopMain` pour s'aligner sur le target name Gradle "desktop" de `desktopApp` et résoudre le problème de classe principale introuvable (`ClassNotFoundException: com.aura.music.desktop.MainKt`).
+- 2026-06-11T02:30:00+02:00 | code, config | `shared/src/desktopMain/kotlin/com/aura/music/domain/player/DesktopAudioPlayer.kt`, `shared/build.gradle.kts`, `desktopApp/build.gradle.kts`, `BUILD.md` | Nettoyage complet des imports de `javafx.util.Duration` dans `DesktopAudioPlayer.kt`, remplacement par `kotlin.time.Duration` et conversion aux limites de l'API JavaFX MediaPlayer, et ajout explicite de la dépendance `javafx-base` dans Gradle.
+- 2026-06-11T02:24:00+02:00 | code, config | `shared/build.gradle.kts`, `desktopApp/build.gradle.kts`, `shared/src/desktopMain/kotlin/com/aura/music/domain/player/DesktopAudioPlayer.kt`, `BUILD.md` | Ajout des dépendances JavaFX de base sans classifier pour corriger l'absence de classes JavaFX à la compilation, et résolution des erreurs de shadowing et de portée dans `DesktopAudioPlayer.kt`.
+- 2026-06-11T02:20:00+02:00 | code, config | `shared/src/desktopMain`, `BUILD.md` | Renommage du dossier `jvmMain` en `desktopMain` dans le module `shared` pour s'aligner sur la cible Gradle \"desktop\" et corriger les déclarations `actual` manquantes lors de la compilation JVM.
+- 2026-06-11T02:15:00+02:00 | code, config | `build.gradle.kts`, `BUILD.md` | Montée de version de Kotlin et du compilateur Compose à 2.1.0 et de KSP à 2.1.0-1.0.29 pour corriger le crash du backend de compilation (KT-71260 / KT-71161) lors du portage de Room Multiplatform 3.0.0-alpha01 sur la cible Desktop.
+- 2026-06-11T02:05:00+02:00 | code | `shared/src/commonMain/kotlin/com/aura/music/ui/theme/Type.kt`, `desktopApp/src/jvmMain/kotlin/com/aura/music/desktop/Main.kt`, `BUILD.md` | Correction des imports du package de ressources générées par Compose Multiplatform (`com.aura.music.shared.generated.resources` -> `aura.shared.generated.resources`) et remplacement de l'utilisation de `painterResource` d'icône de police inexistante par un `Painter` de cercle de couleur `BlazeOrange` personnalisé sur Desktop.
+- 2026-06-11T01:30:00+02:00 | code, config | `shared/build.gradle.kts`, `build.gradle.kts`, `shared/src/commonMain/kotlin/com/aura/music/data/local/AuraDatabase.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/local/AuraDaos.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/local/LocalEntities.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/local/DatabaseFactory.kt`, `shared/src/androidMain/kotlin/com/aura/music/data/local/DatabaseFactory.android.kt`, `shared/src/jvmMain/kotlin/com/aura/music/data/local/DatabaseFactory.desktop.kt`, `shared/src/wasmJsMain/kotlin/com/aura/music/data/local/DatabaseFactory.wasmJs.kt`, `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Migration vers Room 3.0.0-alpha01 and Ktor 3.0.0 pour le support Kotlin/WasmJs : application du plugin `androidx.room3`, mise à jour des dépendances Room et SQLite vers la v3.0.0-alpha01 et Ktor vers la v3.0.0, et remplacement de tous les imports `import androidx.room.*` par `import androidx.room3.*` dans l'ensemble des modules.
+- 2026-06-11T01:05:00+02:00 | code, config | `webApp/build.gradle.kts`, `webApp/src/wasmJsMain/resources/index.html`, `webApp/src/wasmJsMain/kotlin/com/aura/music/web/Main.kt`, `androidApp/build.gradle.kts`, `shared/src/commonMain/kotlin/com/aura/music/data/local/AuraDatabase.kt`, `desktopApp/src/jvmMain/kotlin/com/aura/music/desktop/Main.kt`, `BUILD.md` | Phase 7 : Initialisation du client Web (Kotlin/Wasm), configuration de ComposeViewport et du canevas Skia, mise en commun de l'instanciation singleton de AuraDatabase (getInstance) avec le pilote Bundled SQLite sur toutes les cibles (Android/Desktop/Web), mise à jour de la liaison du module `:shared` dans `androidApp` et nettoyage des dépendances obsolètes (Room, Coil).
+- 2026-06-11T00:25:00+02:00 | docs, api, decision | `docs/server/api-contract.md`, `BUILD.md` | Spécification de la synchronisation directe des fichiers audio locaux via le stockage du backend (upload/download direct sans limitation de bande passante).
+- 2026-06-10T20:25:00+02:00 | docs, decision | `docs/adrs/007-desktop-client-cmp.md`, `docs/desktop/app-architecture.md`, `BUILD.md` | ADR 007 : Ajout de la Phase 7 (Client Bureau & Web via Compose Multiplatform) au plan de développement avec ciblage JDK 17 en compilation, packaging JDK 21 avec Generational ZGC, et minimisation au System Tray pour suspendre Skia.
+- 2026-06-09T23:56:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Refactoring des contrôles manuels Next et Previous pour utiliser les méthodes de transition de playlist natives de Media3/ExoPlayer, et suppression du flag temporaire `isManualTransition`.
+- 2026-06-08T16:50:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Correction du bouton précédent (retour à 0 si historique vide ou position > 3s) et du bug de double skip (ignorance de la logique de mismatch lors des transitions manuelles de seek initiées par le lecteur).
+- 2026-06-08T16:37:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Correction du bug de double appui pour sauter un morceau (skip) : ignorance des événements de transition d'ExoPlayer générés par une modification structurelle de la playlist (`PLAYLIST_CHANGED`), filtrage des doublons adjacents dans la playlist d'ExoPlayer, correction de la résolution d'index actif, et restauration atomique de la position de session.
+- 2026-06-08T16:28:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Ajout de logs de diagnostic détaillés sur les transitions de pistes et la synchronisation de la file d'attente d'ExoPlayer afin de cerner l'origine du bug de saut (skip) de piste.
+- 2026-06-08T13:40:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `BUILD.md` | Correction du bug de double appui pour sauter un morceau après restauration de session : forçage de la synchronisation de l'index actif d'ExoPlayer (`seekTo`) pour qu'il s'aligne sur l'index de la file glissante (`targetActiveIndex`) si l'index courant diffère.
+- 2026-06-07T01:05:00+02:00 | code, config | `android/app/src/main/java/com/aura/music/service/PlaybackService.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/res/xml/automotive_app_desc.xml`, `BUILD.md` | AND-014 : Implémentation du support Android Auto via MediaLibraryService, avec contrôle de confiance des clients (isTrusted/packageName), gestion de la pagination dans le browse tree, définition des métadonnées premium (toMediaItem), et gestion asynchrone robuste de l'ajout/lecture de file d'attente (onAddMediaItems).
+- 2026-06-07T00:27:47+02:00 | decision | `BUILD.md` | Ajout de `AND-014` comme future etape Android Auto pour rendre AURA selectionnable et pilotable en voiture.
 - 2026-06-06T00:05:12+02:00 | docs | `docs/android/screens/player.md`, `docs/android/screens/player-layout.md`, `docs/android/screens/downloads.md`, `docs/android/screens/downloads-layout.md`, `docs/README.md`, `llms.txt`, `llms-full.txt`, `BUILD.md` | DOC-006 complete : layouts Player et Downloads alignes sur le code actuel et index documentaire etendu aux specs `*-layout.md`.
-- 2026-06-04T14:20:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | AmÃ©lioration visuelle et fonctionnelle des pages Titres et Favoris : harmonisation de l'en-tÃªte (dÃ©gradÃ© BlazeOrange), stylisation premium des boutons de lecture (Play/Shuffle) et du bouton de tri, persistance du tri via SharedPreferences, et tri chronologique par date d'ajout rÃ©elle (`created_at`) pour le tri "RÃ©cents".
-- 2026-06-04T02:05:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt`, `BUILD.md` | Correction du bouton prÃ©cÃ©dent d'ExoPlayer et de la restauration de session : implÃ©mentation d'une fenÃªtre glissante Ã  3 items [prÃ©cÃ©dent, courant, suivant] dans ExoPlayer, reconstruction de l'historique de contexte avant `startIndex` lors de la restauration, et persistance automatique de la session Ã  chaque transition de morceau.
-- 2026-06-04T00:20:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | AmÃ©lioration de l'UX de la barre de navigation : rÃ©-affichage de l'Ã©cran racine de l'onglet actif (via popBackStack vers la racine du tab) et rechargement de l'Ã©cran s'il est dÃ©jÃ  affichÃ©, et persistance du highlight sÃ©lectionnÃ© lors de la navigation dans les sous-Ã©crans.
-- 2026-06-03T23:51:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Correction du flux de suppression physique sous Android 10+ : conservation visuelle du morceau pendant la demande de permission et rÃ©-exÃ©cution rÃ©elle de la suppression de Room/MP3 suite Ã  l'autorisation de l'utilisateur.
-- 2026-06-03T23:26:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Correction du bug de disparition des covers de musiques tÃ©lÃ©chargÃ©es au bout de 2 jours : dÃ©placement du stockage physique des pochettes JPEG extraites du cache temporaire de l'application (context.cacheDir) vers le stockage persistant garanti (context.filesDir/covers/).
-- 2026-06-03T02:10:00+02:00 | code, ui, compile | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | RÃ©solution des erreurs de compilation Kotlin : typage strict Unit des lambdas coroutines/safe-calls, qualification de PlayerEvent, et correction de signature de SearchOnlineTrackRowItem.
-- 2026-06-03T02:05:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Stabilisation et mÃ©morisation (via remember et rememberUpdatedState) de toutes les lambdas d'actions Ã©vÃ©nementielles passÃ©es Ã  SharedTrackRowItem, et ajout de contentType pour le recyclage matÃ©riel dans Favorites, LibraryTracks, Playlists et Search (RÃ©solution cause lag #1).
-- 2026-06-03T01:40:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | Correction des 3 causes critiques de lag : (1) Transformation de `TrackList` en extension `LazyListScope` pour virtualiser l'affichage des titres, (2) Optimisation des boucles O(NÂ²) de favoris et titres locaux via `itemsIndexed` et pre-map `contextTracks`, (3) Scission de l'Ã©tat du lecteur collectÃ© par `AuraApp` (seuls `currentTrack` et `playbackState` distincts sont Ã©coutÃ©s) afin d'Ã©viter la recomposition totale lors des ticks de progression.
-- 2026-06-02T23:42:00+02:00 | code, ui, layout | `android/app/src/main/java/com/aura/music/ui/screens/SandboxScreen.kt`, `BUILD.md` | IntÃ©gration du panneau de rÃ©glages et de la banniÃ¨re d'information directement dans le conteneur LazyColumn pour rendre l'ensemble de l'Ã©cran Sandbox entiÃ¨rement scrollable, et ajustement de l'espacement infÃ©rieur (bottom content padding Ã  120.dp) pour Ã©viter toute obstruction par le lecteur rÃ©duit.
-- 2026-06-02T23:25:00+02:00 | code, ui, debug | `android/app/src/main/java/com/aura/music/ui/screens/SandboxScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Raccordement de la page Sandbox Ã  la base de donnÃ©es Room (LocalLibraryRepository) avec un commutateur permettant d'afficher et de rÃ©organiser les pistes rÃ©elles de l'utilisateur pour tester les performances de requÃªtes locales et de chargement de pochettes rÃ©elles.
-- 2026-06-02T22:20:00+02:00 | code, ui, debug | `android/app/src/main/java/com/aura/music/ui/screens/SandboxScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | CrÃ©ation d'une page Sandbox de performance accessible depuis les paramÃ¨tres pour isoler la source de lag des listes rÃ©organisables en modifiant Ã  chaud leurs spÃ©cificitÃ©s (reorderable, headers, covers, clÃ©s stables et contentTypes).
-- 2026-06-02T22:00:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Ajout d'un sÃ©lecteur d'onglets (Lecteur / File) dans la TopBar et d'un bouton de redirection, permettant d'afficher sÃ©parÃ©ment les contrÃ´les et la file d'attente en pleine hauteur, ce qui rÃ©sout le problÃ¨me de masquage de la file d'attente sur petit Ã©cran tout en prÃ©servant l'isolation de performance du Drag & Drop.
-- 2026-06-02T02:32:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Refonte architecturale de PlayerScreen en isolant la section statique (artwork, contrÃ´les) dans un Column racine et en plaÃ§ant la file d'attente rÃ©organisable dans un LazyColumn avec weight(1f), Ã©liminant complÃ¨tement les calculs de coordonnÃ©es superflus lors des dÃ©filements rapides.
-- 2026-06-02T02:20:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | IntÃ©gration du paramÃ¨tre `contentType` sur l'ensemble de la `LazyColumn` du lecteur pour sÃ©parer les pools de recyclage matÃ©riel et Ã©viter les freezes lors des flings violents, et ajout de clÃ©s stables explicites Ã  tous les composants.
-- 2026-06-02T02:15:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | CrÃ©ation de la branche `test/queue-perf-v2` et implÃ©mentation de l'optimisation des lambdas d'Ã©vÃ©nements mÃ©morisÃ©es via remember (onRemoveFromQueue/onRemoveFromMainQueue) et du cache derivedStateOf sur les listes de file d'attente pour stabiliser les identitÃ©s de recomposition.
-- 2026-06-02T01:50:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Restauration des pochettes d'albums (covers) et du drag & drop sur l'ensemble de la file d'attente, tout en prÃ©servant l'extraction des lignes en Composables dÃ©diÃ©s et l'isolation recompositionnelle de la progression (Optimisations 1 & 2 retenues).
-- 2026-06-02T00:55:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Extraction des composants de ligne de file d'attente (PriorityQueueItemRow, MainQueueItemRow) en fonctions Composable dÃ©diÃ©es et isolÃ©es pour optimiser la recomposition et Ã©liminer les saccades de dÃ©filement (scrolling stutters).
-- 2026-06-02T00:45:00+02:00 | code, ui, test | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | CrÃ©ation de la branche `test/remove-queue-covers` pour Ã©valuer l'impact de la suppression des visuels d'albums (covers) dans la file d'attente \"Ã€ suivre\" sur la fluiditÃ© et les performances de dÃ©filement (scrolling lag).
-- 2026-06-02T00:36:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | RÃ©solution du bug de perte d'Ã©tat favori dans le lecteur lors du lancement d'une piste depuis n'importe oÃ¹ en dÃ©plaÃ§ant l'interrogation et la mise Ã  jour de l'Ã©tat \"liked\" dans le cycle de transition Media3 (onMediaItemTransition) du PlaybackOrchestrator.
-- 2026-06-02T00:29:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Nettoyage du menu contextuel du lecteur en enlevant la redondance \"Aimer\" pour garder l'option conditionnelle \"Ajouter/Retirer des favoris\", et rÃ©solution du bug de perte de l'Ã©tat favori (cÅ“ur non rempli) lors des rafraÃ®chissements de l'index en prÃ©servant le boolÃ©en `isLiked` de l'entitÃ© Room existante.
-- 2026-06-02T00:09:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Ajout de l'option \"Ajouter Ã  la file d'attente\" dans tous les menus contextuels locaux : intÃ©gration dans ScreenSharedComponents (playlist/favorites), propagation dans PlaylistDetailScreenNew et LibraryAndDetailsScreens (favoris/titres), et injection de playerViewModel dans SearchScreen.kt (recherche locale) depuis AuraApp.kt. Les rÃ©sultats en ligne sont exclus comme demandÃ©.
-- 2026-06-01T19:27:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Ajout d'une notification visuelle (Snackbar) cliquable lors du lancement d'un tÃ©lÃ©chargement : intÃ©gration du support de snackbar dans RouteScaffold (AuraApp.kt) stylisÃ© aux couleurs de la charte graphique et configuration de SearchScreen.kt pour afficher une notification avec action de redirection instantanÃ©e vers l'Ã©cran des tÃ©lÃ©chargements.
-- 2026-06-01T16:32:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | Correction de la lecture des morceaux tÃ©lÃ©chargÃ©s : renforcement de la synchronisation avec vÃ©rification triple (\"self-healing\") automatique (intÃ©gritÃ© du fichier physique, taille > 0 et indexation Room \"downloaded\") afin de rÃ©parer les tÃ©lÃ©chargements dont le rapatriement a Ã©tÃ© bypassÃ© par la synchronisation, et correction du callback onPlay de DownloadsScreen pour rÃ©soudre dynamiquement l'URI de fichier valide de la piste locale Ã  la place de l'URI nulle codÃ©e en dur.
-- 2026-06-01T15:05:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | RÃ©solution de la perte d'image de couverture (coverUri) lors du rafraÃ®chissement d'indexation locale : prÃ©servation automatique de l'URL de couverture existante de l'entitÃ© de base de donnÃ©es, et extraction de secours intelligente de l'image intÃ©grÃ©e (embedded picture) via MediaMetadataRetriever enregistrÃ©e sous cacheDir/covers/ si la base de donnÃ©es Room locale a Ã©tÃ© vidÃ©e ou rÃ©initialisÃ©e.
-- 2026-06-01T00:58:52+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailViewModels.kt`, `BUILD.md` | Correction des erreurs de compilation de AuraApp.kt en ajoutant les imports Jetpack Compose (produceState, rememberCoroutineScope) et coroutine (launch) manquants, puis intÃ©gration robuste du lanceur d'intent pour la suppression physique et du rafraÃ®chissement manuel de l'UI locale aprÃ¨s suppression dans les Ã©crans hybrides Artiste et Album.
-- 2026-06-01T00:52:00+02:00 | code, ui, schema | `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | RÃ©solution complÃ¨te des points non aboutis : support du Like dans les playlists locales ( Room v4 / jointures), propagation et raccordement intÃ©gral de toutes les actions contextuelles manquantes (Like, Playlist, Supprimer) sur les rÃ©sultats de BibliothÃ¨que et sur les Ã©crans hybrides Artiste & Album, matching textuel d'IDs en ligne intelligent dans l'onglet recherche pour navigation en ligne, et suppression physique MediaStore robuste via ContentResolver assistÃ©e du PendingIntent systÃ¨me native d'Android.
-- 2026-05-31T22:26:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Alignement du menu contextuel de SharedTrackRowItem avec la source de vÃ©ritÃ©, implÃ©mentation du dialogue purement UI SelectPlaylistDialog et raccordement de launchSingleTop=true sur la navigation.
-- 2026-05-31T20:56:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `BUILD.md` | Ajout du bouton "RafraÃ®chir l'index local" dans la carte de diagnostics de l'Ã©cran des paramÃ¨tres, permettant de forcer manuellement le re-scan complet de l'appareil et la purge des anciens audios obsolÃ¨tes de la base Room.
-- 2026-05-31T20:53:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Exclusion totale et stricte de tous les fichiers au format `.opus` (MIME audio/opus ou extension) de l'indexation de l'application pour empÃªcher dÃ©finitivement les notes vocales WhatsApp et autres enregistrements de parasiter la bibliothÃ¨que musicale.
-- 2026-05-31T20:50:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Ajout du support complet du format `.opus` (et autres formats audio courants comme `.m4a` et `.wav`) pour l'indexation locale des fichiers stockÃ©s dans le rÃ©pertoire de tÃ©lÃ©chargement privÃ©, avec dÃ©tection dynamique du type MIME.
-- 2026-05-31T19:35:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Ajout du filtrage par nom d'album "WhatsApp Audio" et amÃ©lioration de la prÃ©cision du tri "RÃ©cents" (utilisation des dates rÃ©elles d'Ã©criture ou modification des fichiers Ã  la place de l'horodatage courant du scan).
-- 2026-05-31T19:15:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `BUILD.md` | RÃ©solution de l'exclusion des fichiers WhatsApp (filtrage de l'arborescence dans MediaStore) et de l'indexation des musiques privÃ©es tÃ©lÃ©chargÃ©es hors-ligne de l'application (analyse automatique de filesDir/downloads/ avec extraction de mÃ©tadonnÃ©es de secours via MediaMetadataRetriever).
-- 2026-05-29T23:25:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Ajout des pages locales Titres (tri A-Z, RÃ©cents, Favoris) et Artistes (tri A-Z, Plus de titres, RÃ©cents) Ã  la BibliothÃ¨que, et dÃ©placement du bouton TÃ©lÃ©chargements vers l'onglet Recherche.
-- 2026-05-29T22:49:00+02:00 | code | `android/app/...`, `BUILD.md` | Correction de la persistance rÃ©seau des modifications de rÃ©glages utilisateur : intÃ©gration de l'enregistrement automatique des mutations 'user_settings' dans 'sync_outbox' lors de chaque appel Ã  setSyncEnabled, setOnlineSearchEnabled, setOnlineSearchNetworkPolicy et setStatsSyncNetworkPolicy (ce qui Ã©vite que le pull du serveur n'Ã©crase les valeurs locales).
-- 2026-05-29T22:45:00+02:00 | code | `android/app/...`, `BUILD.md` | RÃ©solution de la violation de clÃ© Ã©trangÃ¨re SQLite (code 787) lors de l'intÃ©gration des favoris et Ã©lÃ©ments de playlists synchronisÃ©s, via l'ajout d'une mÃ©thode 'ensureTrackStub' dans SyncRepository.kt insÃ©rant un track virtuel minimal si l'ID n'existe pas localement.
-- 2026-05-29T22:42:00+02:00 | code | `android/app/...`, `BUILD.md` | Ajout d'un paramÃ¨tre 'force = true' Ã  performSync pour contourner la politique restrictive 'wifi_only' lors d'un dÃ©clenchement manuel depuis les paramÃ¨tres (Ã©vitant le skip sur Ã©mulateur/mobile sans logs VPS).
-- 2026-05-29T22:33:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/repository/SyncRepository.kt`, `BUILD.md` | Correction des erreurs de compilation Android : ajout de la dÃ©pendance gradle 'androidx.work:work-runtime-ktx' manquante et ajout de l'import de 'ServerChangeDto' dans SyncRepository.kt.
-- 2026-05-29T22:25:00+02:00 | code, ui, schema | `android/app/...`, `BUILD.md` | AND-012 : ImplÃ©mentation complÃ¨te de la synchronisation client Android (Room v4 avec outbox, Retrofit API endpoints, SyncRepository, SyncWorker, et intÃ©gration UI dans SettingsScreen avec bouton de synchronisation manuelle et date/heure de derniÃ¨re sync).
-- 2026-05-29T21:59:00+02:00 | code, schema, api | `server/app/api/routes/me.py`, `server/app/api/routes/sync.py`, `server/app/services/sync_service.py`, `server/app/schemas/sync.py`, `server/app/schemas/me.py`, `server/scratch_sync_test.py`, `BUILD.md` | SRV-003 & SRV-007 : ImplÃ©mentation complÃ¨te de la Phase 4 (Cloud Sync Durable) avec crÃ©ation des tables de sync reliÃ©es, endpoints REST /me (rÃ©glages, favoris, playlists, snapshot) et moteur batch robuste (idempotence processed_operations, LWW occurred_at, dÃ©calage position et validation de token reorder).
+- 2026-06-04T14:20:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | Amélioration visuelle et fonctionnelle des pages Titres et Favoris : harmonisation de l'en-tête (dégradé BlazeOrange), stylisation premium des boutons de lecture (Play/Shuffle) et du bouton de tri, persistance du tri via SharedPreferences, et tri chronologique par date d'ajout réelle (`created_at`) pour le tri "Récents".
+- 2026-06-04T02:05:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt`, `BUILD.md` | Correction du bouton précédent d'ExoPlayer et de la restauration de session : implémentation d'une fenêtre glissante à 3 items [précédent, courant, suivant] dans ExoPlayer, reconstruction de l'historique de contexte avant `startIndex` lors de la restauration, et persistance automatique de la session à chaque transition de morceau.
+- 2026-06-04T00:20:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Amélioration de l'UX de la barre de navigation : ré-affichage de l'écran racine de l'onglet actif (via popBackStack vers la racine du tab) et rechargement de l'écran s'il est déjà affiché, et persistance du highlight sélectionné lors de la navigation dans les sous-écrans.
+- 2026-06-03T23:51:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Correction du flux de suppression physique sous Android 10+ : conservation visuelle du morceau pendant la demande de permission et ré-exécution réelle de la suppression de Room/MP3 suite à l'autorisation de l'utilisateur.
+- 2026-06-03T23:26:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Correction du bug de disparition des covers de musiques téléchargées au bout de 2 jours : déplacement du stockage physique des pochettes JPEG extraites du cache temporaire de l'application (context.cacheDir) vers le stockage persistant garanti (context.filesDir/covers/).
+- 2026-06-03T02:10:00+02:00 | code, ui, compile | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Résolution des erreurs de compilation Kotlin : typage strict Unit des lambdas coroutines/safe-calls, qualification de PlayerEvent, et correction de signature de SearchOnlineTrackRowItem.
+- 2026-06-03T02:05:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Stabilisation et mémorisation (via remember et rememberUpdatedState) de toutes les lambdas d'actions événementielles passées à SharedTrackRowItem, et ajout de contentType pour le recyclage matériel dans Favorites, LibraryTracks, Playlists et Search (Résolution cause lag #1).
+- 2026-06-03T01:40:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | Correction des 3 causes critiques de lag : (1) Transformation de `TrackList` en extension `LazyListScope` pour virtualiser l'affichage des titres, (2) Optimisation des boucles O(N²) de favoris et titres locaux via `itemsIndexed` et pre-map `contextTracks`, (3) Scission de l'état du lecteur collecté par `AuraApp` (seuls `currentTrack` et `playbackState` distincts sont écoutés) afin d'éviter la recomposition totale lors des ticks de progression.
+- 2026-06-02T23:42:00+02:00 | code, ui, layout | `android/app/src/main/java/com/aura/music/ui/screens/SandboxScreen.kt`, `BUILD.md` | Intégration du panneau de réglages et de la bannière d'information directement dans le conteneur LazyColumn pour rendre l'ensemble de l'écran Sandbox entièrement scrollable, et ajustement de l'espacement inférieur (bottom content padding à 120.dp) pour éviter toute obstruction par le lecteur réduit.
+- 2026-06-02T23:25:00+02:00 | code, ui, debug | `android/app/src/main/java/com/aura/music/ui/screens/SandboxScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Raccordement de la page Sandbox à la base de données Room (LocalLibraryRepository) avec un commutateur permettant d'afficher et de réorganiser les pistes réelles de l'utilisateur pour tester les performances de requêtes locales et de chargement de pochettes réelles.
+- 2026-06-02T22:20:00+02:00 | code, ui, debug | `android/app/src/main/java/com/aura/music/ui/screens/SandboxScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Création d'une page Sandbox de performance accessible depuis les paramètres pour isoler la source de lag des listes réorganisables en modifiant à chaud leurs spécificités (reorderable, headers, covers, clés stables et contentTypes).
+- 2026-06-02T22:00:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Ajout d'un sélecteur d'onglets (Lecteur / File) dans la TopBar et d'un bouton de redirection, permettant d'afficher séparément les contrôles et la file d'attente en pleine hauteur, ce qui résout le problème de masquage de la file d'attente sur petit écran tout en préservant l'isolation de performance du Drag & Drop.
+- 2026-06-02T02:32:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Refonte architecturale de PlayerScreen en isolant la section statique (artwork, contrôles) dans un Column racine et en plaçant la file d'attente réorganisable dans un LazyColumn avec weight(1f), éliminant complètement les calculs de coordonnées superflus lors des défilements rapides.
+- 2026-06-02T02:20:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Intégration du paramètre `contentType` sur l'ensemble de la `LazyColumn` du lecteur pour séparer les pools de recyclage matériel et éviter les freezes lors des flings violents, et ajout de clés stables explicites à tous les composants.
+- 2026-06-02T02:15:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Création de la branche `test/queue-perf-v2` et implémentation de l'optimisation des lambdas d'événements mémorisées via remember (onRemoveFromQueue/onRemoveFromMainQueue) et du cache derivedStateOf sur les listes de file d'attente pour stabiliser les identités de recomposition.
+- 2026-06-02T01:50:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Restauration des pochettes d'albums (covers) et du drag & drop sur l'ensemble de la file d'attente, tout en préservant l'extraction des lignes en Composables dédiés et l'isolation recompositionnelle de la progression (Optimisations 1 & 2 retenues).
+- 2026-06-02T00:55:00+02:00 | code, ui, performance | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Extraction des composants de ligne de file d'attente (PriorityQueueItemRow, MainQueueItemRow) en fonctions Composable dédiées et isolées pour optimiser la recomposition et éliminer les saccades de défilement (scrolling stutters).
+- 2026-06-02T00:45:00+02:00 | code, ui, test | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `BUILD.md` | Création de la branche `test/remove-queue-covers` pour évaluer l'impact de la suppression des visuels d'albums (covers) dans la file d'attente \"À suivre\" sur la fluidité et les performances de défilement (scrolling lag).
+- 2026-06-02T00:36:00+02:00 | code | `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Résolution du bug de perte d'état favori dans le lecteur lors du lancement d'une piste depuis n'importe où en déplaçant l'interrogation et la mise à jour de l'état \"liked\" dans le cycle de transition Media3 (onMediaItemTransition) du PlaybackOrchestrator.
+- 2026-06-02T00:29:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Nettoyage du menu contextuel du lecteur en enlevant la redondance \"Aimer\" pour garder l'option conditionnelle \"Ajouter/Retirer des favoris\", et résolution du bug de perte de l'état favori (cœur non rempli) lors des rafraîchissements de l'index en préservant le booléen `isLiked` de l'entité Room existante.
+- 2026-06-02T00:09:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Ajout de l'option \"Ajouter à la file d'attente\" dans tous les menus contextuels locaux : intégration dans ScreenSharedComponents (playlist/favorites), propagation dans PlaylistDetailScreenNew et LibraryAndDetailsScreens (favoris/titres), et injection de playerViewModel dans SearchScreen.kt (recherche locale) depuis AuraApp.kt. Les résultats en ligne sont exclus comme demandé.
+- 2026-06-01T19:27:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `BUILD.md` | Ajout d'une notification visuelle (Snackbar) cliquable lors du lancement d'un téléchargement : intégration du support de snackbar dans RouteScaffold (AuraApp.kt) stylisé aux couleurs de la charte graphique et configuration de SearchScreen.kt pour afficher une notification avec action de redirection instantanée vers l'écran des téléchargements.
+- 2026-06-01T16:32:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | Correction de la lecture des morceaux téléchargés : renforcement de la synchronisation avec vérification triple (\"self-healing\") automatique (intégrité du fichier physique, taille > 0 et indexation Room \"downloaded\") afin de réparer les téléchargements dont le rapatriement a été bypassé par la synchronisation, et correction du callback onPlay de DownloadsScreen pour résoudre dynamiquement l'URI de fichier valide de la piste locale à la place de l'URI nulle codée en dur.
+- 2026-06-01T15:05:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Résolution de la perte d'image de couverture (coverUri) lors du rafraîchissement d'indexation locale : préservation automatique de l'URL de couverture existante de l'entité de base de données, et extraction de secours intelligente de l'image intégrée (embedded picture) via MediaMetadataRetriever enregistrée sous cacheDir/covers/ si la base de données Room locale a été vidée ou réinitialisée.
+- 2026-06-01T00:58:52+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailViewModels.kt`, `BUILD.md` | Correction des erreurs de compilation de AuraApp.kt en ajoutant les imports Jetpack Compose (produceState, rememberCoroutineScope) et coroutine (launch) manquants, puis intégration robuste du lanceur d'intent pour la suppression physique et du rafraîchissement manuel de l'UI locale après suppression dans les écrans hybrides Artiste et Album.
+- 2026-06-01T00:52:00+02:00 | code, ui, schema | `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Résolution complète des points non aboutis : support du Like dans les playlists locales ( Room v4 / jointures), propagation et raccordement intégral de toutes les actions contextuelles manquantes (Like, Playlist, Supprimer) sur les résultats de Bibliothèque et sur les écrans hybrides Artiste & Album, matching textuel d'IDs en ligne intelligent dans l'onglet recherche pour navigation en ligne, et suppression physique MediaStore robuste via ContentResolver assistée du PendingIntent système native d'Android.
+- 2026-05-31T22:26:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Alignement du menu contextuel de SharedTrackRowItem avec la source de vérité, implémentation du dialogue purement UI SelectPlaylistDialog et raccordement de launchSingleTop=true sur la navigation.
+- 2026-05-31T20:56:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `BUILD.md` | Ajout du bouton "Rafraîchir l'index local" dans la carte de diagnostics de l'écran des paramètres, permettant de forcer manuellement le re-scan complet de l'appareil et la purge des anciens audios obsolètes de la base Room.
+- 2026-05-31T20:53:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Exclusion totale et stricte de tous les fichiers au format `.opus` (MIME audio/opus ou extension) de l'indexation de l'application pour empêcher définitivement les notes vocales WhatsApp et autres enregistrements de parasiter la bibliothèque musicale.
+- 2026-05-31T20:50:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Ajout du support complet du format `.opus` (et autres formats audio courants comme `.m4a` et `.wav`) pour l'indexation locale des fichiers stockés dans le répertoire de téléchargement privé, avec détection dynamique du type MIME.
+- 2026-05-31T19:35:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `BUILD.md` | Ajout du filtrage par nom d'album "WhatsApp Audio" et amélioration de la précision du tri "Récents" (utilisation des dates réelles d'écriture ou modification des fichiers à la place de l'horodatage courant du scan).
+- 2026-05-31T19:15:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `BUILD.md` | Résolution de l'exclusion des fichiers WhatsApp (filtrage de l'arborescence dans MediaStore) et de l'indexation des musiques privées téléchargées hors-ligne de l'application (analyse automatique de filesDir/downloads/ avec extraction de métadonnées de secours via MediaMetadataRetriever).
+- 2026-05-29T23:25:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Ajout des pages locales Titres (tri A-Z, Récents, Favoris) et Artistes (tri A-Z, Plus de titres, Récents) à la Bibliothèque, et déplacement du bouton Téléchargements vers l'onglet Recherche.
+- 2026-05-29T22:49:00+02:00 | code | `android/app/...`, `BUILD.md` | Correction de la persistance réseau des modifications de réglages utilisateur : intégration de l'enregistrement automatique des mutations 'user_settings' dans 'sync_outbox' lors de chaque appel à setSyncEnabled, setOnlineSearchEnabled, setOnlineSearchNetworkPolicy et setStatsSyncNetworkPolicy (ce qui évite que le pull du serveur n'écrase les valeurs locales).
+- 2026-05-29T22:45:00+02:00 | code | `android/app/...`, `BUILD.md` | Résolution de la violation de clé étrangère SQLite (code 787) lors de l'intégration des favoris et éléments de playlists synchronisés, via l'ajout d'une méthode 'ensureTrackStub' dans SyncRepository.kt insérant un track virtuel minimal si l'ID n'existe pas localement.
+- 2026-05-29T22:42:00+02:00 | code | `android/app/...`, `BUILD.md` | Ajout d'un paramètre 'force = true' à performSync pour contourner la politique restrictive 'wifi_only' lors d'un déclenchement manuel depuis les paramètres (évitant le skip sur émulateur/mobile sans logs VPS).
+- 2026-05-29T22:33:00+02:00 | code | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/repository/SyncRepository.kt`, `BUILD.md` | Correction des erreurs de compilation Android : ajout de la dépendance gradle 'androidx.work:work-runtime-ktx' manquante et ajout de l'import de 'ServerChangeDto' dans SyncRepository.kt.
+- 2026-05-29T22:25:00+02:00 | code, ui, schema | `android/app/...`, `BUILD.md` | AND-012 : Implémentation complète de la synchronisation client Android (Room v4 avec outbox, Retrofit API endpoints, SyncRepository, SyncWorker, et intégration UI dans SettingsScreen avec bouton de synchronisation manuelle et date/heure de dernière sync).
+- 2026-05-29T21:59:00+02:00 | code, schema, api | `server/app/api/routes/me.py`, `server/app/api/routes/sync.py`, `server/app/services/sync_service.py`, `server/app/schemas/sync.py`, `server/app/schemas/me.py`, `server/scratch_sync_test.py`, `BUILD.md` | SRV-003 & SRV-007 : Implémentation complète de la Phase 4 (Cloud Sync Durable) avec création des tables de sync reliées, endpoints REST /me (réglages, favoris, playlists, snapshot) et moteur batch robuste (idempotence processed_operations, LWW occurred_at, décalage position et validation de token reorder).
 - 2026-05-29T18:08:00+02:00 | code, schema, api | `server/app/services/download_service.py`, `server/app/db/supabase.py`, `server/app/domain/models.py`, `BUILD.md` | SRV-004 & SRV-006 : Migration complete de la persistance de l'etat des jobs et candidats vers PostgreSQL via Supabase avec integration du worker de telechargement, throttling de progression, et activation de la securite RLS (Row Level Security) sur download_jobs.
-- 2026-05-29T13:42:00+02:00 | code, api, ui | `server/app/services/download_service.py`, `server/app/api/routes/downloads.py`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/downloads/DownloadsViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `BUILD.md` | ImplÃ©mentation du flux de secours interactif fuzzy matching < 75% (5 propositions YTM, suspension de job en requires_resolution et endpoint de rÃ©solution directe) et de l'extraction automatique sÃ©curisÃ©e de cookies via WebView YouTube vers Netscape.
-- 2026-05-29T02:01:00+02:00 | code, api | `server/app/api/routes/downloads.py`, `BUILD.md` | RÃ©solution d'un bug serveur (NameError: DOWNLOADS_DIR is not defined) lors de l'appel Ã  la route `GET /downloads/{job_id}/file` en important proprement la constante depuis `download_service.py`.
-- 2026-05-29T01:53:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | IntÃ©gration de l'interface de contournement de blocage YouTube. Ajout de la mÃ©thode `uploadCookies` dans `DownloadRepository` reliÃ©e Ã  l'API, crÃ©ation de la carte d'Ã©dition de cookies Netscape dans `SettingsScreen`, et raccordement de la navigation dans `AuraApp.kt`.
-- 2026-05-29T01:44:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | RÃ©solution de la panne gÃ©nÃ©rale de compilation : ajout de la dÃ©claration de package manquante dans `AuraApiService.kt`, correction de la syntaxe/duplication Moshi dans `AuraApiDtos.kt`, et ajout des imports manquants pour `Icons.Rounded.Refresh` et `Icons.Rounded.Downloading` dans les fichiers d'interface graphique.
-- 2026-05-29T01:25:00+02:00 | code, docs, ui | `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/downloads/DownloadsViewModel.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `docs/android/screens/downloads.md`, `docs/android/screens/downloads-layout.md`, `BUILD.md` | AND-007 : ImplÃ©mentation complÃ¨te de l'intÃ©gration client Android pour les tÃ©lÃ©chargements asynchrones. Support streaming MP3 rÃ©tro-compatible dans `context.filesDir/downloads/` prÃ©servant les donnÃ©es lors des mises Ã  jour, interface rÃ©active avec barre de progression `LinearProgressIndicator` (Blaze orange), bouton de rafraÃ®chissement TopBar, et option contextuelle "TÃ©lÃ©charger" intÃ©grÃ©e sur les rÃ©sultats de recherche en ligne.
-- 2026-05-29T00:35:00+02:00 | code, docs, api | `server/app/services/download_test_service.py`, `server/app/api/routes/test_download.py`, `infra/docker-compose.vps.yml`, `infra/docker/server.Dockerfile`, `BUILD.md` | SRV-006 : validation de la faisabilitÃ© du tÃ©lÃ©chargement yt-dlp sur le VPS Contabo avec intÃ©gration de Deno, routage IPv6, PO Token provider (jim60105/bgutil-pot) et cookies Netscape. Fusion sur master.
+- 2026-05-29T13:42:00+02:00 | code, api, ui | `server/app/services/download_service.py`, `server/app/api/routes/downloads.py`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/downloads/DownloadsViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `BUILD.md` | Implémentation du flux de secours interactif fuzzy matching < 75% (5 propositions YTM, suspension de job en requires_resolution et endpoint de résolution directe) et de l'extraction automatique sécurisée de cookies via WebView YouTube vers Netscape.
+- 2026-05-29T02:01:00+02:00 | code, api | `server/app/api/routes/downloads.py`, `BUILD.md` | Résolution d'un bug serveur (NameError: DOWNLOADS_DIR is not defined) lors de l'appel à la route `GET /downloads/{job_id}/file` en important proprement la constante depuis `download_service.py`.
+- 2026-05-29T01:53:00+02:00 | code, ui | `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | Intégration de l'interface de contournement de blocage YouTube. Ajout de la méthode `uploadCookies` dans `DownloadRepository` reliée à l'API, création de la carte d'édition de cookies Netscape dans `SettingsScreen`, et raccordement de la navigation dans `AuraApp.kt`.
+- 2026-05-29T01:44:00+02:00 | code | `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | Résolution de la panne générale de compilation : ajout de la déclaration de package manquante dans `AuraApiService.kt`, correction de la syntaxe/duplication Moshi dans `AuraApiDtos.kt`, et ajout des imports manquants pour `Icons.Rounded.Refresh` et `Icons.Rounded.Downloading` dans les fichiers d'interface graphique.
+- 2026-05-29T01:25:00+02:00 | code, docs, ui | `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `android/app/src/main/java/com/aura/music/ui/downloads/DownloadsViewModel.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `docs/android/screens/downloads.md`, `docs/android/screens/downloads-layout.md`, `BUILD.md` | AND-007 : Implémentation complète de l'intégration client Android pour les téléchargements asynchrones. Support streaming MP3 rétro-compatible dans `context.filesDir/downloads/` préservant les données lors des mises à jour, interface réactive avec barre de progression `LinearProgressIndicator` (Blaze orange), bouton de rafraîchissement TopBar, et option contextuelle "Télécharger" intégrée sur les résultats de recherche en ligne.
+- 2026-05-29T00:35:00+02:00 | code, docs, api | `server/app/services/download_test_service.py`, `server/app/api/routes/test_download.py`, `infra/docker-compose.vps.yml`, `infra/docker/server.Dockerfile`, `BUILD.md` | SRV-006 : validation de la faisabilité du téléchargement yt-dlp sur le VPS Contabo avec intégration de Deno, routage IPv6, PO Token provider (jim60105/bgutil-pot) et cookies Netscape. Fusion sur master.
 - 2026-05-28T01:32:14+02:00 | code, docs, ui | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `docs/android/screens/artist-layout.md`, `docs/android/screens/search.md`, `BUILD.md` | AND-011 : page artiste online sans degrade, sorties online triees et separees albums/singles, actions artiste retirees, titre top bar artiste masque et retour Search conservant l'onglet avec refresh local.
 
 - 2026-05-28T01:42:30+02:00 | code, docs, api | `server/app/schemas/responses.py`, `server/app/api/routes/search.py`, `server/app/api/routes/artists.py`, `server/app/api/routes/albums.py`, `server/app/services/resolve_service.py`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `docs/server/api-contract.md`, `docs/android/screens/artist-layout.md`, `docs/android/screens/album.md`, `BUILD.md` | AND-011 : ajout de `release_type` aux payloads album backend/Android et separation Albums/Singles basee sur cette donnee canonique avec fallback visuel sur `track_count`.
 - 2026-05-28T01:05:42+02:00 | code, ui | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | AND-011 : correction des cartes artiste/album local et online avec hauteur suffisante pour les metadonnees et affichage des images online depuis `pictureUri` / `coverUri`.
-- 2026-04-30T00:00:00+02:00 | code, ui, refactor | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | AND-011 (Affinage UI) : Suppression totale de la section "Meilleur rÃ©sultat" (Best Match) de l'Ã©cran de recherche, ainsi que du composant `SharedHeroCard`, suite Ã  des problÃ¨mes de layout insolubles Ã  court terme (images non affichÃ©es pour l'online, sous-textes coupÃ©s). Simplification de l'affichage en gardant uniquement les rails (listes horizontales).
-- 2026-04-26T12:30:00+02:00 | code, ui, refactor | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt` | AND-011 (Affinage UI) : Uniformisation des layout Hero Cards en Row avec images, ajout appel asynchrone pour enrichir le Meilleur RÃ©sultat local s'il manque d'image, pagination avec bouton "Afficher tous les titres" pour la liste de top titres artiste en ligne, affichage de la liste de titres de l'album en ligne si local vide.
+- 2026-04-30T00:00:00+02:00 | code, ui, refactor | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `BUILD.md` | AND-011 (Affinage UI) : Suppression totale de la section "Meilleur résultat" (Best Match) de l'écran de recherche, ainsi que du composant `SharedHeroCard`, suite à des problèmes de layout insolubles à court terme (images non affichées pour l'online, sous-textes coupés). Simplification de l'affichage en gardant uniquement les rails (listes horizontales).
+- 2026-04-26T12:30:00+02:00 | code, ui, refactor | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt` | AND-011 (Affinage UI) : Uniformisation des layout Hero Cards en Row avec images, ajout appel asynchrone pour enrichir le Meilleur Résultat local s'il manque d'image, pagination avec bouton "Afficher tous les titres" pour la liste de top titres artiste en ligne, affichage de la liste de titres de l'album en ligne si local vide.
 - 2026-04-25T14:45:00+02:00 | code, schema, refactor | `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailViewModels.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` | Cloture reelle de la Phase 3 : SearchViewModel consomme les reglages reels et le context, ecrans hybrides completent le support online-first via IDs opaques (sans entree locale prealable) avec spinner correct, et ajout de la vraie migration Room v1->v2 (non destructive) pour les schemas de source links.
 - 2026-04-25T14:30:00+02:00 | code, schema, api | `server/app/services/resolve_service.py`, `server/app/api/routes/resolve.py`, `server/app/api/router.py`, `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiService.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/data/network/NetworkPolicyChecker.kt`, `android/app/src/main/java/com/aura/music/data/repository/EnrichmentRepository.kt`, `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `android/app/src/main/java/com/aura/music/core/AuraAppContainer.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailViewModels.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HybridDetailScreens.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `BUILD.md` | SRV-008 : endpoints resolve backend + ResolveService scores textuels ; AND-009 : NetworkPolicyChecker + EnrichmentRepository (TTL 7j, persistance Room) + SearchRepository hybridSearch gate reseau ; AND-010 : HybridArtistScreen + HybridAlbumScreen + ViewModels local-first + enrichissement async ; schema Room v2 (ArtistSourceLinkEntity, AlbumSourceLinkEntity, colonnes artwork_origin/artwork_last_resolved_at).
 - 2026-04-25T12:40:57+02:00 | docs, schema, api, decision | `docs/android/screens/settings.md`, `docs/android/screens/search.md`, `docs/android/screens/artist.md`, `docs/android/screens/album.md`, `docs/android/screens/artist-layout.md`, `docs/android/screens/album-layout.md`, `docs/android/local-persistence.md`, `docs/android/room-schema.md`, `docs/domain/entities.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md`, `docs/server/providers/deezer.md`, `BUILD.md` | formalisation de la gouvernance reseau et de l'enrichissement metadata : les reglages `Settings` deviennent normatifs, les images locales doivent etre persistees en `Room`, des mappings `artist` / `album` sont ajoutes au schema Android et un lot backend `SRV-008` est introduit pour la resolution metadata et les details hero-ready.
 - 2026-04-23T18:53:14+02:00 | code, docs, api | `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `server/app/providers/deezer/adapter.py`, `docs/android/screens/search.md`, `docs/android/screens/search-layout.md`, `docs/product/user-flows.md`, `docs/server/api-contract.md`, `BUILD.md` | la selection de `Meilleur resultat` est maintenant documentee et alignee : le backend choisit `best_match` parmi tracks/artists/albums par score textuel, et Android arbitre le hero final en donnant la priorite a un match local fort.
 - 2026-04-23T17:54:48+02:00 | code, docs, api | `server/app/providers/deezer/client.py`, `server/app/providers/deezer/adapter.py`, `server/app/domain/models.py`, `server/app/api/routes/search.py`, `docs/android/screens/search.md`, `docs/android/screens/search-layout.md`, `docs/android/ui/component-states.md`, `BUILD.md` | correction de la recherche online hybride : le backend alimente maintenant `artists` et `albums` via des recherches Deezer dediees, `best_match` peut representer track/artist/album, et la doc Search officialise les onglets Bibliotheque/En ligne ainsi que l'exclusion des playlists du perimetre.
-- 2026-04-23T14:30:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `BUILD.md` | AND-005 refonte UI recherche : TabRow sticky BibliothÃ¨que/En ligne, LocalLibrarySearchTab avec like/unlike + playlist (contextType='standard'), OnlineSearchTab avec playlist seulement (contextType='search_online'), suppression 3 doublons SharedTrackRowItem/BrowseArtist/AlbumRail, ajout likeLocalTrack() ViewModel et toggleLike() Repository. NB: rÃ©sultats online affichent titres uniquement, artistes/albums online non implÃ©mentÃ©s pour l'instant.
-- 2026-04-19T12:21:00+02:00 | code, api | `android/app/src/main/AndroidManifest.xml`, `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/network/BestMatchAdapter.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraHttpClientFactory.kt`, `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `BUILD.md` | AND-005 : ajout des permissions rÃ©seau et du `usesCleartextTraffic`, intÃ©gration de `moshi-adapters` et crÃ©ation de `BestMatchAdapter` pour parser l'objet polymorphe API correctement, renvoi de `onlineError` vers l'UI ; migration HTTPS repoussÃ©e Ã  SRV-003.
+- 2026-04-23T14:30:00+02:00 | code | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/search/SearchViewModel.kt`, `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `BUILD.md` | AND-005 refonte UI recherche : TabRow sticky Bibliothèque/En ligne, LocalLibrarySearchTab avec like/unlike + playlist (contextType='standard'), OnlineSearchTab avec playlist seulement (contextType='search_online'), suppression 3 doublons SharedTrackRowItem/BrowseArtist/AlbumRail, ajout likeLocalTrack() ViewModel et toggleLike() Repository. NB: résultats online affichent titres uniquement, artistes/albums online non implémentés pour l'instant.
+- 2026-04-19T12:21:00+02:00 | code, api | `android/app/src/main/AndroidManifest.xml`, `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/network/BestMatchAdapter.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraApiDtos.kt`, `android/app/src/main/java/com/aura/music/data/network/AuraHttpClientFactory.kt`, `android/app/src/main/java/com/aura/music/data/repository/SearchRepository.kt`, `BUILD.md` | AND-005 : ajout des permissions réseau et du `usesCleartextTraffic`, intégration de `moshi-adapters` et création de `BestMatchAdapter` pour parser l'objet polymorphe API correctement, renvoi de `onlineError` vers l'UI ; migration HTTPS repoussée à SRV-003.
 - 2026-04-18T23:37:59+02:00 | code, docs, api | `server/app/core/aura_id_codec.py`, `server/app/api/routes/search.py`, `server/app/api/routes/artists.py`, `server/app/api/routes/albums.py`, `server/app/providers/deezer/client.py`, `server/app/providers/deezer/adapter.py`, `server/app/services/artist_service.py`, `server/app/services/album_service.py`, `server/app/schemas/responses.py`, `docs/server/api-contract.md`, `BUILD.md` | SRV-002 complete dans le repo : reponses alignees sur des IDs backend opaques resolus cote serveur, details `Artist` et `Album` chainables depuis `Search`, envelope d'erreur canonique et handoff explicite ajoute pour `AND-005`.
 - 2026-04-18T23:22:07+02:00 | code, api | `server/app/api/router.py`, `server/app/api/routes/health.py`, `server/app/api/routes/search.py`, `server/app/api/routes/artists.py`, `server/app/api/routes/albums.py`, `server/app/services/search_service.py`, `server/app/services/artist_service.py`, `server/app/services/album_service.py`, `server/app/providers/deezer/*`, `server/app/schemas/responses.py`, `server/app/core/id_generator.py`, `server/app/db/migrations/001_create_catalog_tables.sql`, `server/app/db/migrations/002_create_mapping_tables.sql`, `BUILD.md` | SRV-002 avance : endpoints publics actifs et deployes sur VPS avec enveloppe canonique, adapter Deezer et structure catalogue/mappings ; reste a remplacer les `provider_id` exposes par des IDs AURA backend opaques dans les payloads.
 - 2026-04-18T17:38:42+02:00 | docs, schema, decision | `docs/domain/entities.md`, `docs/android/room-schema.md`, `docs/server/api-contract.md`, `docs/server/database-postgres.md`, `docs/server/sync-conflict-resolution.md`, `BUILD.md` | clarification de la strategie d'identite AURA : IDs backend opaques en `TEXT`, IDs locaux `MediaStore` gardes cote Android, matching local/online via mappings avant implementation de `SRV-002` et `SRV-004`.
 - 2026-04-18T15:30:00+02:00 | code, docs | `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `docs/android/screens/album-layout.md`, `docs/android/ui/component-states.md`, `BUILD.md` | AND-007 milestone : refactorisation complete du menu contextuel TrackRow avec variantes par contexte (standard/playlist/favorites), artiste cliquable dans AlbumScreen, test button recherche avec album reel au lieu d'ID fictif, suppression bouton Artist et titre Tracklist.
-- 2026-04-17T22:59:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlayerEvent.kt`, `docs/android/screens/player-layout.md`, `BUILD.md` | AND-007 milestones : intÃ©gration de burnoutcrew.composereorderable pour supporter le drag and drop complet et indÃ©pendant sur la Priority Queue locale et la Main Queue (Ã€ suivre). RÃ©solution des bugs de duplication d'ID internes et dÃ©calage d'offset liÃ© Ã  "spacedBy".
-- 2026-04-17T20:15:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt`, `docs/android/screens/favorites-layout.md`, `docs/android/screens/playlists-layout.md`, `BUILD.md` | AND-007 milestones : implÃ©mentation de la vue Favoris (layout canonique et listage depuis la database). Refonte du design des listes de lecture TrackRow pour intÃ©grer les covers d'album en remplacement de l'icÃ´ne statique Play/Favorite, grÃ¢ce Ã  l'apport de `io.coil-kt:coil-compose` et Ã  l'extraction de l'URI d'album de l'API MediaStore interne.
+- 2026-04-17T22:59:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/ui/screens/PlayerScreen.kt`, `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `android/app/src/main/java/com/aura/music/domain/player/PlayerEvent.kt`, `docs/android/screens/player-layout.md`, `BUILD.md` | AND-007 milestones : intégration de burnoutcrew.composereorderable pour supporter le drag and drop complet et indépendant sur la Priority Queue locale et la Main Queue (À suivre). Résolution des bugs de duplication d'ID internes et décalage d'offset lié à "spacedBy".
+- 2026-04-17T20:15:00+02:00 | code, docs | `android/app/build.gradle.kts`, `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt`, `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt`, `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt`, `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt`, `docs/android/screens/favorites-layout.md`, `docs/android/screens/playlists-layout.md`, `BUILD.md` | AND-007 milestones : implémentation de la vue Favoris (layout canonique et listage depuis la database). Refonte du design des listes de lecture TrackRow pour intégrer les covers d'album en remplacement de l'icône statique Play/Favorite, grâce à l'apport de `io.coil-kt:coil-compose` et à l'extraction de l'URI d'album de l'API MediaStore interne.
 - 2026-04-17T12:00:00+02:00 | code, docs | `android/app/src/main/java/com/aura/music/ui/screens/PlaylistsListScreen.kt`, `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt`, `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `docs/android/ui/component-states.md`, `docs/android/screens/playlists-layout.md`, `BUILD.md` | AND-007 milestones : refonte UI Playlists avec PlaylistsListScreen et PlaylistDetailScreenNew selon specification (hero card creation, playlist rows, action bar play/shuffle/menu, track rows contextuels), routes AuraApp routees vers nouveaux screens, dialogues (PlaylistNameDialog, ConfirmDialog, toTrackListRow) rendus publics, clarification etats TrackRow avec menu contextuel variant par contexte (standard/playlist/queue).
 - 2026-04-16T00:26:14+02:00 | code | `android/app/src/main/java/com/aura/music/ui/AuraApp.kt`, `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | harmonisation des `contentDescription` en francais pour les actions de navigation et de transport (retour, piste precedente/suivante, lecture/pause, reorder/suppression).
 - 2026-04-16T00:11:21+02:00 | docs | `docs/android/ui/components.md`, `docs/android/ui/component-states.md`, `docs/android/ui/design-system.md`, `docs/android/ui/screen-composition.md`, `BUILD.md` | harmonisation terminologique UI avec lexique canonique, clarification Card vs Rail et alignement des mappings code vers `ScreenSharedComponents.kt`.
@@ -529,6 +608,30 @@ La recherche online v1 d'AURA doit interroger Deezer tout en gardant un modele m
 - fallback hybride backend puis Deezer direct
   - disponibilite meilleure
   - complexite d'architecture trop elevee pour v1
+
+# FILE: docs/adrs/007-desktop-client-cmp.md
+# ADR 007 - Compose Multiplatform Desktop and Web Client
+
+## Statut
+Accepte
+
+## Contexte
+AURA doit étendre ses capacités en proposant un client Bureau (Windows/macOS/Linux) et un client Web. Le profil des utilisateurs comprend des joueurs de jeux vidéo exigeants, ce qui impose des contraintes strictes sur la consommation de ressources en arrière-plan (CPU/GPU/RAM) pour éviter toute baisse de framerate ou saccade audio. De plus, pour des raisons de maintenance, le projet vise une réutilisation maximale du code UI et de la logique métier.
+
+## Decision
+- Le développement des clients Bureau et Web repose sur **Compose Multiplatform** (CMP).
+- Le client Bureau cible **Kotlin/JVM** et le client Web cible **Kotlin/Wasm**.
+- L'interface utilisateur (Compose) et la logique métier sont communes à Android, au Bureau et au Web.
+- La persistance locale s'appuie sur **Room Multiplatform** pour partager directement les schémas existants de la base locale.
+- **Cible Java Hybride** : La compilation du code commun cible JDK 17 pour des raisons de compatibilité d'écosystème. L'application Bureau est packagée et exécutée avec un environnement d'exécution **JDK 21** personnalisé.
+- **Optimisations de la JVM** : L'environnement JDK 21 est configuré pour activer le ramasse-miettes générationnel à très faible latence **Generational ZGC** (`-XX:+UseZGC`) et exploiter les threads virtuels (Project Loom) pour les E/S asynchrones.
+- **Réduction au System Tray et Barre des tâches** : L'application Bureau supporte la minimisation standard dans la barre des tâches (bouton `-`) pour un accès rapide. Le bouton de fermeture (`X`) réduit l'application dans la zone de notification (System Tray) en tâche de fond, suspendant totalement le rendu graphique de l'interface (canevas Skia) pour ramener la consommation CPU/GPU à un niveau proche de zéro.
+
+## Consequences
+- Mutualisation complète de l'interface utilisateur entre Android, le Bureau et le Web.
+- Élimination de la surcharge mémoire liée aux navigateurs intégrés (type Electron) au profit de Skia (rendu accéléré matériellement) et d'un JRE modulaire.
+- Garantie de pauses de ramasse-miettes sub-millisecondes grâce à Generational ZGC pour préserver les performances en jeu.
+- Création de la section documentaire `docs/desktop/` pour détailler l'architecture.
 
 # FILE: docs/documentation/style-guide.md
 # Documentation Style Guide
@@ -1818,12 +1921,41 @@ La query MediaStore applique deux filtres :
 
 Aucune limite arbitraire n'est appliquee au nombre de fichiers retournes.
 
+## Sanitisation des Noms de Fichiers Locaux (Colon-to-Semicolon)
+
+Pour les fichiers stockés physiquement en local (audios MP3 et pochettes d'albums JPG), un schéma de sanitisation strict est appliqué pour résoudre deux limitations techniques :
+1. **Contraintes de Systèmes de Fichiers (ex: Windows)** : Les deux-points (`:`) sont des caractères interdits sous Windows pour les noms de fichiers.
+2. **Bug de Résolution de Protocole URI sur Android** : L'analyseur `MediaMetadataRetriever` d'Android interprète le caractère `:` dans un chemin de fichier comme le préfixe d'un schéma de protocole réseau, causant des échecs d'analyse de métadonnées locales.
+
+### Règle de Transformation
+- Lors de l'écriture physique d'un fichier audio ou d'une couverture, les deux-points (`:`) présents dans l'identifiant unique (ex: ID Deezer ou YTM) sont remplacés par des points-virgules (`;`).
+- *Exemple* : L'ID de piste `track:deezer:12345` est écrit localement sous le nom `track;deezer;12345.mp3`.
+- Lors du scan local ou de l'indexation de la bibliothèque, le scanner effectue la conversion inverse (`replace(';', ':')`) afin de reconstruire l'ID Room exact et de maintenir la cohérence référentielle avec les identifiants distants.
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room pour toutes les tables (tracks, artists, albums, playlists, snapshots, settings, etc.)
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les operations de base
 - `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : singleton Room database, version 1
 - `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore, filtre duree >= 30s
 - `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot, generation d'ID
+
+## Synchronisation Fichiers Cloud
+
+- Les fichiers personnels uploadés par l'utilisateur sont indexés sur le serveur cloud.
+- `CloudFileRepository` est le point d'entrée pour interroger cet index (`/me/sync/files`) et gérer l'upload/téléchargement.
+- **État cloud_only** : Une piste est considérée comme présente uniquement sur le cloud si :
+  - Elle est présente dans la liste des fichiers cloud synchronisés (`syncedTrackIds`).
+  - Son `contentUri` local dans `track_media_links` (ou la table locale) est nul ou vide.
+- **Processus d'Upload** :
+  1. Récupération du `contentUri` local (ex: `content://media/external/audio/media/...`).
+  2. Ouverture du flux via `ContentResolver`.
+  3. Envoi multipart via Ktor client à `POST /me/sync/files/{track_id}`.
+  4. Mise à jour de l'index des fichiers synchronisés localement.
+- **Processus de Récupération (Download)** :
+  1. Téléchargement du flux binaire via `GET /me/sync/files/{track_id}`.
+  2. Écriture du fichier dans le répertoire privé de l'application : `context.filesDir/downloads/{trackId}.mp3`.
+  3. Insertion ou mise à jour de `track_media_links` avec le chemin du fichier local.
+  4. Modification du type de source `canonicalAudioSourceType` en `downloaded`.
 
 # FILE: docs/android/room-schema.md
 # Room Schema
@@ -2617,6 +2749,8 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - `Voir l'album`
   - `Telecharger` uniquement si la piste n'est pas disponible localement
   - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
+  - `Uploader vers le cloud` uniquement si la piste est locale (`contentUri` en `content://`), non téléchargée par Aura et absente du cloud
+  - `Récupérer depuis le cloud` uniquement si la piste est présente dans le cloud mais absente de l'appareil (`cloud_only` state)
   - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
 
 ## PlayerQueueRow
@@ -2721,10 +2855,19 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - l'action principale reste explicite
 - Mapping code : `EmptyStateSurface`.
 
+## CloudRecoveryBanner
+- Role : Avertir l'utilisateur au lancement si des fichiers cloud sont disponibles pour récupération manuelle.
+- Structure :
+  - Icône d'avertissement / CloudDownload stylisée BlazeOrange
+  - Texte indiquant le nombre de pistes prêtes pour la récupération
+  - Bouton "Gérer" menant directement à la page de gestion des fichiers cloud
+- Règles :
+  - S'affiche uniquement sur l'écran d'accueil (`HomeScreen`) si plus de 5 titres sont en mode `cloud_only` et présents sur le cloud.
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
-- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`, `CloudRecoveryBanner`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : `SearchBar`, `SegmentedTabs`, variantes `TrackRow` Search
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : `HeroIdentityCard`, `EmptyStateSurface`, `DownloadStateCard`, `FilterRow`, `SectionTitle`, `BrowseAlbumRail`, `BrowseArtistRail`
 - `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt` : composition de `SettingsCard` et usage de `HeroIdentityCard` + `EmptyStateSurface`
@@ -2766,6 +2909,8 @@ fun SharedTrackRowItem(
     onLike: (() -> Unit)? = null,
     onUnlike: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
+    onUploadToCloud: (() -> Unit)? = null,
+    onDownloadFromCloud: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
     // ... autres parametres
 )
@@ -2778,6 +2923,8 @@ fun SharedTrackRowItem(
 - Actions affichees :
   - "Ajouter a une playlist" (si `onAddToPlaylist` fourni)
   - "Ajouter aux favoris" (si `onLike` fourni)
+  - "Uploader vers le cloud" (si `onUploadToCloud` fourni)
+  - "Récupérer depuis le cloud" (si `onDownloadFromCloud` fourni)
   - "Plus" (si `onMore` fourni)
 
 ```kotlin
@@ -2879,6 +3026,11 @@ SharedTrackRowItem(
 - `empty_provider_failure_non_blocking`
 - Mapping code : `EmptyStateSurface`.
 
+## CloudRecoveryBanner
+- `hidden` (quand le nombre de pistes cloud_only <= 5)
+- `visible` (quand le nombre de pistes cloud_only > 5)
+- Mapping code : `CloudRecoveryBanner` dans `HomeScreen.kt`.
+
 ## PlayerHero
 - `loading_track`
 - `playing`
@@ -2895,6 +3047,7 @@ SharedTrackRowItem(
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : etats shell actuels du mini-player et des listes principales
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : source des etats player
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `CloudRecoveryBanner`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : etats de saisie, suggestions et recherche
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : etats visuels partages (`EmptyStateSurface`, `BrowseAlbumRail`, `BrowseArtistRail`, `SectionTitle`, `FilterRow`, `SharedTrackRowItem` avec menus contextuels)
 - `android/app/src/main/java/com/aura/music/ui/screens/PlaylistDetailScreenNew.kt` : implementation du contexte playlist avec menu "Retirer de playlist"
@@ -3194,15 +3347,15 @@ Point d'entree principal de l'application, centre sur la reprise d'ecoute et les
 # Home Screen Layout
 
 ## Objectif
-DÃ©finir l'architecture visuelle et le zoning de l'Ã©cran d'accueil (`Home`), mis Ã  jour avec les sections demandÃ©es (Reprendre, TÃ©lÃ©chargements, DÃ©couvertes).
+Définir l'architecture visuelle et le zoning de l'écran d'accueil (`Home`), mis à jour avec les sections demandées (Reprendre, Téléchargements, Découvertes).
 
-## SchÃ©ma Vertical
+## Schéma Vertical
 
 ```mermaid
 flowchart TD
     A["Header\nTitleLarge (TextPrimary)"] --> B["Section: Reprendre\nHorizontal Rail\nRecent Playlists, Mixes, Albums"]
-    B --> C["Section: Derniers TÃ©lÃ©chargements\nTrackRow List or Mini Cards\nBg: ElevateGraphite"]
-    C --> D["Section: Mix DÃ©couvertes\nHorizontal Rail\nLarge Hero Cards with DiscoveryGradient"]
+    B --> C["Section: Derniers Téléchargements\nTrackRow List or Mini Cards\nBg: ElevateGraphite"]
+    C --> D["Section: Mix Découvertes\nHorizontal Rail\nLarge Hero Cards with DiscoveryGradient"]
     D --> E["Bottom Navigation Bar\nHome | Search | Library | Settings"]
 ```
 
@@ -3219,16 +3372,16 @@ flowchart TD
 | | [Cover]      | | [Cover]      |                |
 | +--------------+ +--------------+                |
 |                                                  |
-| Derniers tÃ©lÃ©chargements                         |
+| Derniers téléchargements                         |
 | [Cover] Time - Pink Floyd         (DarkGraphite) |
 | [Cover] Hysteria - Muse                          |
 | [Cover] Get Lucky - Daft Punk                    |
 |                                                  |
-| Mix DÃ©couvertes                                  |
+| Mix Découvertes                                  |
 | +----------------------------------------------+ |
 | | (DiscoveryGradient)                          | |
 | | AURA Mix                                     | |
-| | BasÃ© sur vos Ã©coutes de Rock                 | |
+| | Basé sur vos écoutes de Rock                 | |
 | |                                              | |
 | | [ JOUER LE MIX (TextOnAccent) ]              | |
 | +----------------------------------------------+ |
@@ -3242,21 +3395,21 @@ flowchart TD
 ```
 
 ## Jetpack Compose Mapping (Tokens)
-- **Typographie** : `Outfit` (Google Font), avec des graisses marquÃ©es pour les titres (`FontWeight.Bold`).
-- **Background GÃ©nÃ©ral** : `DeepBlack`
+- **Typographie** : `Outfit` (Google Font), avec des graisses marquées pour les titres (`FontWeight.Bold`).
+- **Background Général** : `DeepBlack`
 - **Section Headers** : Texte `TitleMedium` (`TextPrimary`).
 - **Reprendre Cards** :
     - Arrondi : `16dp` ou `20dp`
     - Fond : `DarkGraphite`
     - Titre : `TitleMedium` (`TextPrimary`), Sous-titre : `BodyMedium` (`TextSecondary`)
-- **Derniers tÃ©lÃ©chargements (TrackRow)** :
+- **Derniers téléchargements (TrackRow)** :
     - Dense, fond transparent.
-- **Mix DÃ©couvertes (Hero Card)** :
+- **Mix Découvertes (Hero Card)** :
     - Arrondi : `28dp`
-    - Fond `DiscoveryGradient` (`DeepViolet` Ã  `ElectricCyan`).
+    - Fond `DiscoveryGradient` (`DeepViolet` à `ElectricCyan`).
     - Bouton d'action principal.
 - **NavBar** :
-    - Adaptation de la `NavigationBar` existante avec fond `OffBlack` ou `DeepBlack`, icÃ´nes non-sÃ©lectionnÃ©es en `TextSecondary`, icÃ´nes sÃ©lectionnÃ©es en `BlazeOrange`.
+    - Adaptation de la `NavigationBar` existante avec fond `OffBlack` ou `DeepBlack`, icônes non-sélectionnées en `TextSecondary`, icônes sélectionnées en `BlazeOrange`.
 
 # FILE: docs/android/screens/search.md
 # Search Screen
@@ -3298,7 +3451,7 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - toucher une suggestion remplit la requete et lance la recherche complete
 - pas de suggestions online a ce stade
 
-## Recherches rÃ©centes
+## Recherches récentes
 - affichees uniquement quand:
   - la barre est vide (query = "")
   - pas de suggestions affichees (query < 3 chars)
@@ -3712,41 +3865,41 @@ Centraliser la collection personnelle locale et les points d'entree de gestion.
 # Library Screen Layout
 
 ## Objectif
-DÃ©finir l'architecture visuelle de l'Ã©cran BibliothÃ¨que (`Library`), en s'assurant du respect strict des tokens DA (DarkTheme, typography Outfit, formes arrondies).
+Définir l'architecture visuelle de l'écran Bibliothèque (`Library`), en s'assurant du respect strict des tokens DA (DarkTheme, typography Outfit, formes arrondies).
 
-## SchÃ©ma Vertical
+## Schéma Vertical
 
 ```mermaid
 flowchart TD
     A["Header\nTitleLarge (TextPrimary)\nDownloads Icon (Right)"] --> B["Local Search Bar\nRounded (999dp)\nBg: DarkGraphite | Icon: Search\n(State: Inactive)"]
-    B --> C["Grid: EntrÃ©es Principales\n2 colonnes\nTitres, Favoris, Artistes, Playlists"]
-    C --> D["Section: Playlists rÃ©centes"]
+    B --> C["Grid: Entrées Principales\n2 colonnes\nTitres, Favoris, Artistes, Playlists"]
+    C --> D["Section: Playlists récentes"]
     D --> E["Bottom Navigation Safe Area"]
 
     B -..->|If Search is Typed| F["Local Search Results\nList of matching Tracks/Albums/Artists"]
 ```
 
-## Coupe Mobile Approximative (Ã‰tat par dÃ©faut)
+## Coupe Mobile Approximative (État par défaut)
 
 ```text
 +--------------------------------------------------+
-| BibliothÃ¨que                   [TÃ©lÃ©chargements] |
+| Bibliothèque                   [Téléchargements] |
 |                                                  |
 | ( ) Rechercher dans vos musiques locales...      |
 |                                                  |
 | +--------------------+  +--------------------+   |
 | | (Icon: Music)      |  | (Icon: Heart)      |   |
 | | Titres             |  | Favoris            |   |
-| | 425 Ã©lÃ©ments       |  | 12 Ã©lÃ©ments        |   |
+| | 425 éléments       |  | 12 éléments        |   |
 | +--------------------+  +--------------------+   |
 |                                                  |
 | +--------------------+  +--------------------+   |
 | | (Icon: Mic)        |  | (Icon: Queue)      |   |
 | | Artistes           |  | Playlists          |   |
-| | 120 Ã©lÃ©ments       |  | 5 Ã©lÃ©ments         |   |
+| | 120 éléments       |  | 5 éléments         |   |
 | +--------------------+  +--------------------+   |
 |                                                  |
-| Playlists rÃ©centes                               |
+| Playlists récentes                               |
 | +--------------+ +--------------+                |
 | | Chill Nuit   | | Electro Mix  |                |
 | | Playlist     | | Playlist     |                |
@@ -3760,11 +3913,11 @@ flowchart TD
 +--------------------------------------------------+
 ```
 
-## Coupe Mobile Approximative (Ã‰tat de Recherche)
+## Coupe Mobile Approximative (État de Recherche)
 
 ```text
 +--------------------------------------------------+
-| BibliothÃ¨que                   [TÃ©lÃ©chargements] |
+| Bibliothèque                   [Téléchargements] |
 |                                                  |
 | (x) Muse|                                        |
 |                                                  |
@@ -3793,22 +3946,22 @@ flowchart TD
 ```
 
 ## Jetpack Compose Mapping (Tokens)
-- **Background GÃ©nÃ©ral** : `DeepBlack`
+- **Background Général** : `DeepBlack`
 - **Search Bar** :
     - Arrondi maximal : `999.dp` (Pill shape)
     - Fond : `ElevatedGraphite`
     - Texte interne : `BodyLarge` (`TextSecondary`)
 - **Main Entries (Cards)** :
-    - Grille (`LazyVerticalGrid` Ã  2 colonnes) ou deux `Row` Ã©quilibrÃ©es.
+    - Grille (`LazyVerticalGrid` à 2 colonnes) ou deux `Row` équilibrées.
     - Arrondi : `20.dp`
-    - Fond : `DarkGraphite` (avec lÃ©ger hover en `ElevatedGraphite`)
-    - IcÃ´ne d'accentuation : `BlazeOrange` ou couleur dÃ©pendante de l'entrÃ©e.
+    - Fond : `DarkGraphite` (avec léger hover en `ElevatedGraphite`)
+    - Icône d'accentuation : `BlazeOrange` ou couleur dépendante de l'entrée.
     - Titre : `TitleMedium` (`TextPrimary`)
     - Sous-titre : `BodyMedium` (`TextSecondary`)
 - **Search Results** :
-    - Fait disparaÃ®tre la grille et les playlists.
+    - Fait disparaître la grille et les playlists.
     - Headers de section : `TitleMedium` (`TextPrimary`).
-    - Lignes de titres (`TrackRow`) identiques Ã  l'accueil.
+    - Lignes de titres (`TrackRow`) identiques à l'accueil.
 - **Espacements** :
     - Marges externes (`Padding` horizontal) : `16.dp`
     - Espacement entre les tuiles de la grille : `12.dp`
@@ -3818,15 +3971,15 @@ flowchart TD
 # Favorites Screen Layout
 
 ## Objectif
-DÃ©finir l'architecture visuelle de l'Ã©cran Favoris (`FavoritesScreen`), accessible depuis la grille de la BibliothÃ¨que via la tuile **Favoris**. L'Ã©cran centralise toutes les pistes que l'utilisateur a likÃ©es depuis le player, triÃ©es par date de like dÃ©croissante.
+Définir l'architecture visuelle de l'écran Favoris (`FavoritesScreen`), accessible depuis la grille de la Bibliothèque via la tuile **Favoris**. L'écran centralise toutes les pistes que l'utilisateur a likées depuis le player, triées par date de like décroissante.
 
-## SchÃ©ma Vertical
+## Schéma Vertical
 
 ```mermaid
 flowchart TD
-    A["AppBar\nâ† Retour | Titre 'Favoris'"] --> B["Hero Card\nGradient BlazeOrange â†’ Sombre\nIcone cÅ“ur + Titre + Compteur"]
-    B --> C["Action Row\nBouton Lire tout | Bouton AlÃ©atoire"]
-    C --> D["Track List\nLazyColumn de SharedTrackRowItem\n(liked_at DESC)\nLeading: cÅ“ur orange\nTrailing: MoreVert â†’ Menu contextuel Favoris"]
+    A["AppBar\n← Retour | Titre 'Favoris'"] --> B["Hero Card\nGradient BlazeOrange → Sombre\nIcone cœur + Titre + Compteur"]
+    B --> C["Action Row\nBouton Lire tout | Bouton Aléatoire"]
+    C --> D["Track List\nLazyColumn de SharedTrackRowItem\n(liked_at DESC)\nLeading: cœur orange\nTrailing: MoreVert → Menu contextuel Favoris"]
     D --> E["Bottom Navigation Safe Area"]
 ```
 
@@ -3834,20 +3987,20 @@ flowchart TD
 
 ```text
 +--------------------------------------------------+
-| â† Favoris                                        |
+| ← Favoris                                        |
 |                                                  |
 | +------------------------------------------------+|
-| | â™¥                                              ||
+| | ♥                                              ||
 | | Favoris                                        ||
-| | 12 piste(s) aimÃ©e(s)                           ||
+| | 12 piste(s) aimée(s)                           ||
 | +------------------------------------------------+|
 |                                                  |
-| [ Lire tout ]  [ AlÃ©atoire ]                     |
+| [ Lire tout ]  [ Aléatoire ]                     |
 |                                                  |
-| [cover] Hysteria            Muse | Absolution   â‹® |
-| [cover] Plug In Baby        Muse | Origin of..  â‹® |
-| [cover] Madness             Muse | The 2nd Law  â‹® |
-| [cover] Starlight           Muse | Black Holes  â‹® |
+| [cover] Hysteria            Muse | Absolution   ⋮ |
+| [cover] Plug In Baby        Muse | Origin of..  ⋮ |
+| [cover] Madness             Muse | The 2nd Law  ⋮ |
+| [cover] Starlight           Muse | Black Holes  ⋮ |
 |   ...                                            |
 |                                                  |
 |               [Mini-Player Floating]             |
@@ -3858,63 +4011,63 @@ flowchart TD
 
 ## Cas : liste vide
 
-Si aucune piste n'est likÃ©e, l'Ã©cran affiche une `EmptyStateSurface` invitant l'utilisateur Ã  ajouter des favoris depuis le player.
+Si aucune piste n'est likée, l'écran affiche une `EmptyStateSurface` invitant l'utilisateur à ajouter des favoris depuis le player.
 
 ```text
 +--------------------------------------------------+
-| â† Favoris                                        |
+| ← Favoris                                        |
 |                                                  |
 | +------------------------------------------------+|
 | | Aucun favori                                   ||
-| | Appuie sur le cÅ“ur Ã  cotÃ© de tes pistes        ||
+| | Appuie sur le cœur à coté de tes pistes        ||
 | | pour les ajouter ici.                          ||
 | +------------------------------------------------+|
 +--------------------------------------------------+
 ```
 
-## Menu Contextuel (TrackRow â€” Contexte Favoris)
+## Menu Contextuel (TrackRow — Contexte Favoris)
 
-DÃ©fini dans `docs/android/ui/component-states.md` â€” **Contexte Favoris**.
-Le `MoreVert` (â‹®) ouvre un `DropdownMenu` avec les actions suivantes :
+Défini dans `docs/android/ui/component-states.md` — **Contexte Favoris**.
+Le `MoreVert` (⋮) ouvre un `DropdownMenu` avec les actions suivantes :
 
 | Action | Condition |
 |---|---|
 | Lire maintenant | toujours |
-| Ajouter Ã  la file d'attente | toujours |
-| Ajouter Ã  une playlist | toujours |
+| Ajouter à la file d'attente | toujours |
+| Ajouter à une playlist | toujours |
 | Voir l'artiste | si `artistId != null` |
 | Voir l'album | si `albumId != null` |
-| **Retirer des favoris (unlike)** | toujours â€” action unique Ã  ce contexte |
-| TÃ©lÃ©charger | si non tÃ©lÃ©chargÃ© localement |
-| Supprimer le tÃ©lÃ©chargement | si tÃ©lÃ©chargÃ© localement |
+| **Retirer des favoris (unlike)** | toujours — action unique à ce contexte |
+| Télécharger | si non téléchargé localement |
+| Supprimer le téléchargement | si téléchargé localement |
 
 > [!NOTE]
-> Le menu contextuel n'est pas encore implÃ©mentÃ© (placeholder `MoreVert` dÃ©sactivÃ©). Il sera traitÃ© dans le sprint dÃ©diÃ© aux menus contextuels TrackRow.
+> Le menu contextuel n'est pas encore implémenté (placeholder `MoreVert` désactivé). Il sera traité dans le sprint dédié aux menus contextuels TrackRow.
 
 
-## DonnÃ©es
+## Données
 
-- Source Room : jointure `tracks INNER JOIN track_likes`, triÃ©e par `track_likes.liked_at DESC`.
-- La `TrackListRow` expose `isLiked = true` pour toutes les lignes de cet Ã©cran.
-- L'Ã©cran ne trie pas cÃ´tÃ© Kotlin â€” le ordre SQL est la source de vÃ©ritÃ©.
+- Source Room : jointure `tracks INNER JOIN track_likes`, triée par `track_likes.liked_at DESC`.
+- La `TrackListRow` expose `isLiked = true` pour toutes les lignes de cet écran.
+- L'écran ne trie pas côté Kotlin — le ordre SQL est la source de vérité.
 
 ## Contexte de lecture
 
 - `contextType = "favorites"`, `contextId = "favorites"`.
-- La totalitÃ© de la liste constitue la queue au moment de la lecture.
-- Les boutons **Lire tout** et **AlÃ©atoire** construisent la queue complÃ¨te (ordonnÃ©e ou mÃ©langÃ©e).
+- La totalité de la liste constitue la queue au moment de la lecture.
+- Les boutons **Lire tout** et **Aléatoire** construisent la queue complète (ordonnée ou mélangée).
 
 ## Jetpack Compose Mapping (Tokens)
 
 - **Background** : `DeepBlack`
-- **Hero Card** : gradient `Color(0xFFFF6B00) â†’ Color(0xFF1A0A00)`, arrondi `24.dp`, icÃ´ne blanche
-- **TrackRow** : `SharedTrackRowItem` (composant partagÃ© `ScreenSharedComponents.kt`)
+- **Hero Card** : gradient `Color(0xFFFF6B00) → Color(0xFF1A0A00)`, arrondi `24.dp`, icône blanche
+- **TrackRow** : `SharedTrackRowItem` (composant partagé `ScreenSharedComponents.kt`)
   - Leading : `Icons.Rounded.PlayArrow`, tint `TextSecondary`
-  - Trailing : `Icons.Rounded.MoreVert` â†’ menu contextuel Favoris
+  - Trailing : `Icons.Rounded.MoreVert` → menu contextuel Favoris
   - Card arrondie `12.dp`, fond `#1E1E1E`
 - **Boutons action** : `Button` Material3 standard, espacement `8.dp`
 - **Espacements** : padding horizontal `16.dp`, `contentPadding` vertical `8.dp`
-- **Ã‰tat vide** : `EmptyStateSurface` (composant partagÃ© de `ScreenSharedComponents.kt`)
+- **État vide** : `EmptyStateSurface` (composant partagé de `ScreenSharedComponents.kt`)
 
 # FILE: docs/android/screens/playlists.md
 # Playlists Screens
@@ -3986,44 +4139,44 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 # Playlists Screen Layout
 
 ## Objectif
-DÃ©finir l'architecture visuelle de l'Ã©cran Playlists (`PlaylistsScreen`) et sa dÃ©tail (`PlaylistDetailScreen`), en s'assurant du respect strict des tokens DA (DarkTheme, typography Outfit, formes arrondies) et de la cohÃ©rence avec Library Layout.
+Définir l'architecture visuelle de l'écran Playlists (`PlaylistsScreen`) et sa détail (`PlaylistDetailScreen`), en s'assurant du respect strict des tokens DA (DarkTheme, typography Outfit, formes arrondies) et de la cohérence avec Library Layout.
 
-## PlaylistsScreen - SchÃ©ma Vertical
+## PlaylistsScreen - Schéma Vertical
 
 ```mermaid
 flowchart TD
-    A["Header\nTitleLarge Playlists\n"] --> B["Hero Card - Action Bloc\n\nConstruction d'ecoute + Button CrÃ©er"]
-    B --> C["Ã‰tat: Playlists vide?"]
+    A["Header\nTitleLarge Playlists\n"] --> B["Hero Card - Action Bloc\n\nConstruction d'ecoute + Button Créer"]
+    B --> C["État: Playlists vide?"]
     C -->|Vide| D["Empty State Surface\nMessage + hint"]
-    C -->|ChargÃ©| E["LazyColumn: Playlist Rows\nKey: playlistId\nEach Row: cover + nom + count"]
+    C -->|Chargé| E["LazyColumn: Playlist Rows\nKey: playlistId\nEach Row: cover + nom + count"]
     E --> F["TouchArea:\nRow ouvre Playlist Detail"]
     F --> G["Bottom Navigation Safe Area"]
 ```
 
-## PlaylistDetailScreen - SchÃ©ma Vertical
+## PlaylistDetailScreen - Schéma Vertical
 
 ```mermaid
 flowchart TD
     A["Header Hero\nGrande cover (Gradient)\nNom Playlist + Track Count\n"] --> B["Action Bar\nPlay | Shuffle | Menu (...)\n"]
-    B --> C["Ã‰tat: Playlist vide?"]
+    B --> C["État: Playlist vide?"]
     C -->|Vide| D["Empty State Surface\nAucune piste"]
-    C -->|ChargÃ©| E["LazyColumn: Track Rows\nKey: playlistItemId\nEach Row: Like + TrackInfo + Menu\n"]
+    C -->|Chargé| E["LazyColumn: Track Rows\nKey: playlistItemId\nEach Row: Like + TrackInfo + Menu\n"]
     E --> F["TouchArea:\nTrackRow lance lecture"]
     F --> G["Context Menu:\nPlay Now | Queue | Add to... | Artists | Album | Remove | Download\n"]
 ```
 
-## PlaylistsScreen State - Coupe Mobile (Ã‰tat par dÃ©faut)
+## PlaylistsScreen State - Coupe Mobile (État par défaut)
 
 ```text
 +--------------------------------------------------+
-| [Retour FlÃ¨che]         Playlists                |
+| [Retour Flèche]         Playlists                |
 |                                                  |
 | +--------------------+                           |
 | | Construis tes      |                           |
 | | contextes d'ecoute |                           |
 | |                    |                           |
 | | Les playlists ...  |                           |
-| |     [+ CrÃ©er]      |                           |
+| |     [+ Créer]      |                           |
 | +--------------------+                           |
 |                                                  |
 | +----------------------------------------------+ |
@@ -4049,18 +4202,18 @@ flowchart TD
 +--------------------------------------------------+
 ```
 
-## PlaylistsScreen State - Coupe Mobile (Ã‰tat vide)
+## PlaylistsScreen State - Coupe Mobile (État vide)
 
 ```text
 +--------------------------------------------------+
-| [Retour FlÃ¨che]         Playlists                |
+| [Retour Flèche]         Playlists                |
 |                                                  |
 | +--------------------+                           |
 | | Construis tes      |                           |
 | | contextes d'ecoute |                           |
 | |                    |                           |
 | | Les playlists ...  |                           |
-| |     [+ CrÃ©er]      |                           |
+| |     [+ Créer]      |                           |
 | +--------------------+                           |
 |                                                  |
 |                                                  |
@@ -4069,7 +4222,7 @@ flowchart TD
 | Les playlists locales pilotent la lecture       |
 | et bientot la sync cloud.                        |
 |                                                  |
-| CrÃ©e ta premiÃ¨re pour commencer.                |
+| Crée ta première pour commencer.                |
 |                                                  |
 |                                                  |
 |               [Mini-Player Floating]             |
@@ -4079,25 +4232,25 @@ flowchart TD
 +--------------------------------------------------+
 ```
 
-## PlaylistDetailScreen - Coupe Mobile (Ã‰tat par dÃ©faut)
+## PlaylistDetailScreen - Coupe Mobile (État par défaut)
 
 ```text
 +--------------------------------------------------+
-| [Retour FlÃ¨che]         Chill Nuit (6 pistes)   |
+| [Retour Flèche]         Chill Nuit (6 pistes)   |
 |                                                  |
 | +----------+                                     |
 | |          |                                     |
 | | [Gradient|  Cover Hero (1:1 ratio)            |
 | |  Cover]  |  Chill Nuit                        |
-| |          |  6 pistes â€¢ Mis Ã  jour aujourd'hui|
+| |          |  6 pistes • Mis à jour aujourd'hui|
 | +----------+                                     |
 |                                                  |
 | +---------+-----------+---------+                |
 | | [Play]  | [Shuffle] | [...  ] |                |
 | +---------+-----------+---------+                |
 |              Menu (...)                          |
-|              â€¢ Renommer                          |
-|              â€¢ Supprimer                         |
+|              • Renommer                          |
+|              • Supprimer                         |
 |                                                  |
 | [Cover] Titre Track 1 - Artist           [Menu]  |
 | [Cover] Titre Track 2 - Artist           [Menu]  |
@@ -4113,11 +4266,11 @@ flowchart TD
 +--------------------------------------------------+
 ```
 
-## PlaylistDetailScreen - Coupe Mobile (Ã‰tat vide)
+## PlaylistDetailScreen - Coupe Mobile (État vide)
 
 ```text
 +--------------------------------------------------+
-| [Retour FlÃ¨che]         Ma Playlist (0 pistes)  |
+| [Retour Flèche]         Ma Playlist (0 pistes)  |
 |                                                  |
 | +----------+                                     |
 | |          |                                     |
@@ -4131,8 +4284,8 @@ flowchart TD
 | |(locked) | (locked)  |         |                |
 | +---------+-----------+---------+                |
 |              Menu (...)                          |
-|              â€¢ Renommer                          |
-|              â€¢ Supprimer                         |
+|              • Renommer                          |
+|              • Supprimer                         |
 |                                                  |
 | Aucune piste pour l'instant                      |
 |                                                  |
@@ -4150,51 +4303,51 @@ flowchart TD
 
 ### PlaylistsScreen
 
-**Background GÃ©nÃ©ral** : `DeepBlack`
+**Background Général** : `DeepBlack`
 
 **Hero Card (Action Bloc)**
 - Forme : `RoundedCornerShape(28.dp)`
-- Fond : `DarkGraphite` (lÃ©gÃ¨re Ã©lÃ©vation)
+- Fond : `DarkGraphite` (légère élévation)
 - Padding interne : `20.dp vertical + 20.dp horizontal`
 - Titre (`Text`) : `TitleLarge` (`TextPrimary`, `FontWeight.Bold`)
 - Descriptif (`Text`) : `BodyMedium` (`TextSecondary`)
-- Button (`Button`) :
-  - Label : "CrÃ©er une playlist"
+- Button (`Button`) : 
+  - Label : "Créer une playlist"
   - Icon : `Icons.Rounded.Add`
   - Style primaire (accent `BlazeOrange`)
 
 **Playlist Rows (LazyColumn)**
-- Espacements verticaux entre rangÃ©es : `12.dp`
+- Espacements verticaux entre rangées : `12.dp`
 - Padding horizontal : `16.dp`
-- Chaque rangÃ©e :
+- Chaque rangée :
   - Forme : `RoundedCornerShape(16.dp)`
-  - Fond : `DarkGraphite`
+  - Fond : `DarkGraphite` 
   - Padding : `12.dp`
   - Layout : `Row(horizontalArrangement = Arrangement.SpaceBetween)`
     - Gauche : Cover placeholder `(64.dp x 64.dp)` + Column(nom + count)
     - Droite : Icon `>` (indicateur navigation)
-  - Ã‰tat pressÃ© : fond passe Ã  `ElevatedGraphite`
+  - État pressé : fond passe à `ElevatedGraphite`
   - Cursor: pointeur de navigation
-
+  
 **Empty State**
 - Message primaire : `TitleMedium` (`TextPrimary`)
 - Message secondaire : `BodyMedium` (`TextSecondary`)
-- CentrÃ© vertical avec padding `32.dp`
+- Centré vertical avec padding `32.dp`
 
 ---
 
 ### PlaylistDetailScreen
 
-**Background GÃ©nÃ©ral** : `DeepBlack`
+**Background Général** : `DeepBlack`
 
 **Header Hero**
 - Cover box : `Modifier.fillMaxWidth().aspectRatio(1f)`
 - Gradient : palette de couleurs (eg. `BlazeOrange` + `DeepBlack`)
 - Arrondi : `RoundedCornerShape(24.dp)` (bas uniquement, si design)
 - Padding autour : `16.dp`
-- Texte superposÃ© (optionnel) : `TitleLarge` (`TextPrimary`) + `BodyMedium` (`TextSecondary`)
+- Texte superposé (optionnel) : `TitleLarge` (`TextPrimary`) + `BodyMedium` (`TextSecondary`)
 
-**Metadata Row (aprÃ¨s header)**
+**Metadata Row (après header)**
 - Nom Playlist : `HeadlineMedium` (`TextPrimary`, `FontWeight.Bold`)
 - Count + Date : `BodyMedium` (`TextSecondary`)
 - Padding : `16.dp horizontal`Menu)**
@@ -4205,17 +4358,17 @@ flowchart TD
   - Fond : `ElevatedGraphite` (normal) ou `DarkGraphite` (locked)
   - Icon + Label stacked (optionnel) ou icon seul
   - Tint : `BlazeOrange` (active) ou `TextSecondary` (locked)
-  - Ã‰tat locked si playlist vide (Play + Shuffle)
+  - État locked si playlist vide (Play + Shuffle)
 - Menu button (...) :
   - Icon : `Icons.Outlined.MoreVert` ou `Icons.Outlined.MoreHoriz`
   - Ouvre `DropdownMenu` avec items : "Renommer", "Supprimer"
   - Toujours actif (jamais lockedraphite` (locked)
   - Icon + Label stacked (optionnel) ou icon seul
   - Tint : `BlazeOrange` (active) ou `TextSecondary` (locked)
-  - Ã‰tat locked si playlist vide (Play + Shuffle)
+  - État locked si playlist vide (Play + Shuffle)
 
 **Track Rows (LazyColumn)**
-- Identique Ã  `TrackRow` standard (HomeScreen / SearchScreen)
+- Identique à `TrackRow` standard (HomeScreen / SearchScreen)
 - Spacing : `8.dp` entre les rows
 - Padding horizontal : `16.dp`
 - Key : `playlistItemId` (stable)
@@ -4226,36 +4379,36 @@ flowchart TD
 ## Dialogues
 
 ### Create / Rename Playlist Dialog
-- Title : "CrÃ©er une playlist" ou "Renommer"
+- Title : "Créer une playlist" ou "Renommer"
 - TextField : `OutlinedTextField` avec hint = "Nom de la playlist"
 - Buttons : `Annuler` | `Confirmer`
-- Validation : non-vide, max 120 caractÃ¨res
+- Validation : non-vide, max 120 caractères
 
 ### Delete Confirmation Dialog
 - Title : "Supprimer cette playlist ?"
-- Body : "Cette action est irrÃ©versible."
+- Body : "Cette action est irréversible."
 - Buttons : `Annuler` | `Supprimer` (couleur error si possible)
 
 ### Track Context Menu (Long-press ou icon Menu)
 - Items :
   1. Lire maintenant
-  2. Ajouter Ã  la file d'attente
-  3. Ajouter Ã  une autre playlist
+  2. Ajouter à la file d'attente
+  3. Ajouter à une autre playlist
   4. Voir l'artiste
   5. Voir l'album
   6. Retirer de cette playlist
-  7. TÃ©lÃ©charger / Supprimer le tÃ©lÃ©chargement
+  7. Télécharger / Supprimer le téléchargement
 
 ---
 
-## RÃ¨gles et Contraintes
+## Règles et Contraintes
 
-1. **StabilitÃ© des Keys** : `playlistId` pour chaque Playlist Row, `playlistItemId` pour TrackRow.
+1. **Stabilité des Keys** : `playlistId` pour chaque Playlist Row, `playlistItemId` pour TrackRow.
 2. **Pas de scrolling horizontal** : tout est vertical (LazyColumn).
-3. **Mini-Player** : toujours visible si une piste joue, mÃªme en dÃ©tail.
-4. **Navigation** : back button depuis PlaylistDetail ramÃ¨ne Ã  PlaylistsScreen via `onNavigateBack()`.
-5. **RafraÃ®chissement** : aprÃ¨s create/rename/delete, incrÃ©menter `refreshTick` pour notifier les `produceState`.
-6. **Empty States** : affichÃ©s avec `EmptyStateSurface` centrÃ©e, mÃªme bouton "CrÃ©er" reste visible.
+3. **Mini-Player** : toujours visible si une piste joue, même en détail.
+4. **Navigation** : back button depuis PlaylistDetail ramène à PlaylistsScreen via `onNavigateBack()`.
+5. **Rafraîchissement** : après create/rename/delete, incrémenter `refreshTick` pour notifier les `produceState`.
+6. **Empty States** : affichés avec `EmptyStateSurface` centrée, même bouton "Créer" reste visible.
 
 # FILE: docs/android/screens/player.md
 # Player Screen
@@ -4873,8 +5026,9 @@ Permettre la configuration de l'application sans complexifier les ecrans media.
 - `Diagnostics`
 
 ## Compte et sync
-- etat de connexion
-- bascule de sync si la fonction est active
+- état de connexion
+- bouton "Gérer le stockage cloud" redirigeant vers l'écran dédié Stockage Cloud (CloudSyncScreen)
+
 
 ## Stockage local
 - informations sur le cache
@@ -4916,6 +5070,131 @@ Permettre la configuration de l'application sans complexifier les ecrans media.
 - local sans compte
 - connecte avec sync active
 - options futures desactivees mais documentees proprement
+
+# FILE: docs/android/screens/cloud-sync.md
+# Cloud Sync Screen (Android)
+
+## Role
+Permettre à l'utilisateur de gérer son stockage de fichiers cloud sur le VPS personnel, de voir la jauge d'espace disque disponible, d'activer ou de désactiver la synchronisation automatique des fichiers, et de gérer manuellement le téléchargement ou l'upload direct de pistes.
+
+## Structure générale
+- Scroll vertical unique.
+- En-tête avec bouton retour et titre `Stockage Cloud`.
+- Carte Jauge de stockage VPS (espace occupé sur un quota virtuel de 5 Go).
+- Sélecteur de synchronisation automatique (switch simple).
+- Ligne d'actions en lot (boutons d'upload ou de récupération globale).
+- Chips de filtrage :
+  - `À récupérer` (Fichiers cloud absents localement).
+  - `À uploader` (Fichiers locaux non synchronisés).
+  - `Tout le Cloud` (Inventaire complet du cloud).
+- Bouton de tri (Taille / Nom).
+- Liste de pistes scrollable avec états d'opérations asynchrones en cours et actions contextuelles adaptées.
+
+## Jauge de stockage VPS
+- Représentation visuelle de la consommation disque sous forme de barre de progression orange (`BlazeOrange`).
+- Affiche la taille totale occupée en Mo/Go et la fraction par rapport au quota de 5 Go.
+
+## Actions contextuelles par piste
+- **Télécharger (Cloud -> Local)** : Télécharge le fichier MP3 physique, met à jour `canonicalAudioSourceType` en `downloaded`.
+- **Envoyer (Local -> Cloud)** : Téléverse le fichier local vers le serveur VPS via multipart.
+- **Supprimer (du Cloud)** : Supprime le fichier physique du VPS via API.
+
+## États
+- **Chargement** : Indicateur de chargement circulaire pendant la récupération de l'inventaire.
+- **Vide** : Message descriptif si aucune piste ne correspond au filtre actif.
+- **Erreur** : Notification snackbar en cas de problème de connexion ou d'échec d'API.
+
+# FILE: docs/android/screens/cloud-sync-layout.md
+# Cloud Sync Screen Layout (Android)
+
+## Objectif
+Définir l'architecture visuelle et le zoning de l'écran de synchronisation cloud (`CloudSyncScreen`) sur mobile.
+
+## Schéma Vertical
+
+```mermaid
+flowchart TD
+    A["Header: Bouton Retour + Stockage Cloud"] --> B["Jauge Stockage VPS AURA\n(LinearProgressIndicator BlazeOrange)"]
+    B --> C["Bascule: Synchronisation automatique\n(Switch Orange)"]
+    C --> D["Actions en lot\n(Boutons Tout récupérer / Tout sauvegarder)"]
+    D --> E["Chips de filtrage\n(À récupérer | À uploader | Tout le Cloud)"]
+    E --> F["Liste des pistes (LazyColumn)\n(Titre, Artiste, Taille, Action)"]
+```
+
+## Zoning Mobile Approximatif
+
+```text
++--------------------------------------------------+
+| <-  Stockage Cloud                               |
+|                                                  |
+| Espace utilisé VPS AURA                          |
+| [====================--------] 42% (2.10 Go / 5G)|
+|                                                  |
+| Synchronisation automatique                 (o)  |
+|                                                  |
+| Actions globales                                 |
+| [ TOUT RÉCUPÉRER ]      [ TOUT SAUVEGARDER ]     |
+|                                                  |
+| [ À récupérer ]  [ À uploader ]  [ Tout le Cloud]|
+|                                                  |
+| Pistes                                           |
+| [Cover] Get Lucky                                |
+| Daft Punk - 8.4 Mo               [ Télécharger ] |
+|                                                  |
+| [Cover] Time                                     |
+| Pink Floyd - 9.1 Mo                  [ Envoyer ] |
+|                                                  |
+| [Cover] Hysteria                                 |
+| Muse - 7.5 Mo                      [ Supprimer ] |
+|                                                  |
+|                                                  |
+|               [Mini-Player Floating]             |
++--------------------------------------------------+
+```
+
+## Jetpack Compose Mapping (Tokens)
+- **Background Général** : `DeepBlack` (`#050505`).
+- **Cartes & Conteneurs** : `DarkGraphite` (`#1E1E1E`) avec un arrondi de `16.dp` pour la jauge de stockage et les boutons d'action.
+- **Jauge de stockage** : `LinearProgressIndicator` avec couleur active `BlazeOrange` et couleur de piste `DarkGraphite` en sourdine.
+- **Bouton d'action contextuel** :
+  - Si l'action est requise (Télécharger / Envoyer) : Bouton stylisé avec un fond orange en sourdine ou texte coloré.
+  - Si l'action est destructive (Supprimer) : Icône `Delete` avec couleur neutre ou rouge.
+- **Commutateur** : `Switch` avec `checkedTrackColor = BlazeOrange` et `checkedThumbColor = Color.White`.
+
+# FILE: docs/desktop/app-architecture.md
+# Desktop & Web App Architecture (Compose Multiplatform)
+
+## Couches
+- `UI` : Écrans Compose partagés (`commonMain`), composants réutilisables, styles de Thème (Outfit, Blaze Orange), et intégration de la zone de notification Bureau (`jvmMain`).
+- `Presentation` : ViewModels partagés, gestion des flux d'états réactifs (`StateFlow`) et interactions utilisateur unifiées.
+- `Domain` : Logique métier partagée de lecture (priority queue, lecture directe, historiques) et de synchronisation.
+- `Data` : Base de données SQLite partagée via **Room Multiplatform** (`commonMain`). Moteurs de lecture audio natifs spécifiques à la plateforme via des implémentations ciblées (`jvmMain` utilisant des API de bas niveau du système, `wasmJsMain` utilisant l'élément HTML5 Audio).
+
+## Dépendances majeures
+- **Compose Multiplatform** pour le rendu graphique matériellement accéléré par Skia.
+- **Room Multiplatform** pour la base de données SQLite commune.
+- **Ktor HTTP Client** (ou équivalent multiplateforme) pour les requêtes au serveur FastAPI.
+- **Moteur Audio Natif** : Appels directs aux API audio du système d'exploitation en Bureau (Windows Media Foundation, CoreAudio, ALSA) et à l'API Web Audio / Element HTML5 Audio pour le Web.
+
+## Principes de performance pour les joueurs
+- **Rendu suspendable** : Lorsque l'application est réduite dans la zone de notification (System Tray) via le bouton de fermeture (`X`), les cycles de rendu de Skia sont désactivés pour annuler la consommation CPU/GPU. Le bouton de réduction standard (`-`) minimise normalement l'application dans la barre des tâches.
+- **ZGC Générationnel** : Utilisation du ramasse-miettes de pointe de JDK 21 pour limiter les temps de pause à moins de 1 milliseconde, éliminant tout impact sur le framerate des jeux vidéo.
+- **Virtual Threads** : Utilisation des threads virtuels de Project Loom (JDK 21) pour gérer de manière ultra-légère les accès fichiers (scan de la bibliothèque) et les transactions de base de données en arrière-plan.
+
+## Synchronisation Cloud et Tâches de Fond
+
+La synchronisation des fichiers locaux et cloud sur Desktop s'appuie sur une boucle périodique d'arrière-plan gérée par la JVM :
+- **Fréquence** : Exécution toutes les 60 secondes tant qu'un jeton d'API valide est configuré.
+- **Direction Cloud -> PC** : Rapatriement automatique des musiques ajoutées au cloud (via d'autres appareils) mais absentes de l'index local. Les fichiers audio MP3 et pochettes d'illustrations JPG associées sont téléchargés de manière asynchrone et enregistrés en base Room avec `canonicalAudioSourceType = "downloaded"`.
+- **Direction PC -> Cloud** : Si la synchronisation automatique est activée, téléversement automatique des pistes locales nouvellement indexées (`canonicalAudioSourceType = "local"`) qui ne sont pas encore répertoriées sur le VPS.
+- **Interface synchrone** : Le composant `DesktopPlaybackOrchestrator` centralise les méthodes manuelles d'upload, téléchargement et suppression des fichiers cloud synchronisés, invoquées directement par l'UI.
+
+## Code Mapping Cible
+- `shared/src/commonMain/kotlin/` : Code partagé contenant les composants Compose, le thème d'AURA, et les ViewModels.
+- `shared/src/jvmMain/kotlin/` : Extensions Bureau (code JNI de lecture native, hooks clavier multimédias, gestion du System Tray).
+- `shared/src/wasmJsMain/kotlin/` : Extensions Web (Service Workers, ponts JavaScript/Wasm pour la lecture audio et le stockage OPFS).
+- `desktopApp/` : Point d'entrée de l'application Bureau, configuration Gradle de la JVM 21 d'exécution et options de lancement (ZGC).
+- `webApp/` : Point d'entrée de l'application Web, ressources HTML/JS hôtes et compilation Wasm.
 
 # FILE: docs/server/architecture.md
 # Server Architecture
@@ -5013,7 +5292,7 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 - Les identifiants derives de `MediaStore` (`track:local:*`) ou des slugs `Room` locaux ne doivent pas etre envoyes aux routes online publiques comme s'ils etaient canoniques cote backend.
 - La fusion entre un resultat online et une entite deja presente localement se fait par matching de metadonnees et mappings persistants, pas par egalite d'ID.
 - Les identifiants provider (`provider_track_id`, `provider_album_id`, `provider_artist_id`) restent encapsules derriere le backend ou les tables de mapping.
-- Avant `SRV-004`, le backend peut utiliser un codec opaque stateless resolu cote serveur pour chaÃ®ner `/search` vers `/artists/{id}` et `/albums/{id}`, tant que le client traite toujours ces IDs comme opaques.
+- Avant `SRV-004`, le backend peut utiliser un codec opaque stateless resolu cote serveur pour chaîner `/search` vers `/artists/{id}` et `/albums/{id}`, tant que le client traite toujours ces IDs comme opaques.
 
 ### Timestamps
 - Tous les timestamps HTTP sont en ISO 8601 UTC.
@@ -5666,6 +5945,62 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   - un bootstrap initial apres connexion ou reinstallation
   - l'envoi idempotent d'operations issues de `sync_outbox`
   - la recuperation des changements serveur depuis un token de sync
+
+### Synchronisation des fichiers audio locaux
+
+Les routes suivantes permettent aux utilisateurs de pousser (upload) et tirer (download) des fichiers audio locaux physiques pour assurer le transfert direct entre leurs différents appareils via le backend.
+
+#### `POST /me/sync/files/{track_id}`
+- Usage : Uploader un fichier audio local physique vers le stockage du backend.
+- Auth : requise.
+- Path params :
+  - `track_id` requis.
+- Body : `multipart/form-data` contenant la clé `file` (le fichier audio).
+- Reponse `data` :
+```json
+{
+  "track_id": "track_local_123",
+  "synced": true,
+  "size_bytes": 10485760,
+  "updated_at": "2026-06-10T20:25:00Z"
+}
+```
+
+#### `GET /me/sync/files/{track_id}`
+- Usage : Télécharger le fichier audio physique précédemment poussé sur le backend.
+- Auth : requise.
+- Path params :
+  - `track_id` requis.
+- Reponse : Le flux binaire du fichier audio (`audio/mpeg` ou `audio/mp4`).
+
+#### `DELETE /me/sync/files/{track_id}`
+- Usage : Supprimer le fichier audio physique stocké sur le backend.
+- Auth : requise.
+- Path params :
+  - `track_id` requis.
+- Reponse `data` :
+```json
+{
+  "track_id": "track_local_123",
+  "deleted": true
+}
+```
+
+#### `GET /me/sync/files`
+- Usage : Lister les fichiers audio locaux stockés et synchronisés sur le cloud pour cet utilisateur.
+- Auth : requise.
+- Reponse `data` :
+```json
+{
+  "items": [
+    {
+      "track_id": "track_local_123",
+      "size_bytes": 10485760,
+      "uploaded_at": "2026-06-10T20:25:00Z"
+    }
+  ]
+}
+```
 
 ## API jobs et downloads
 
@@ -7468,4 +7803,3 @@ Definir la strategie d'hebergement requise avant l'activation de la recherche on
 - `infra/docker-compose.vps.caddy.yml` : ajout du reverse proxy TLS sur VPS
 - `infra/vps/README.md` : procedure de bootstrap et deploiement VPS
 - `server/app/config.py` : variables d'environnement utilisees par l'API
-

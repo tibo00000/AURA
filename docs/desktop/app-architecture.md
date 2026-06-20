@@ -17,6 +17,14 @@
 - **ZGC Générationnel** : Utilisation du ramasse-miettes de pointe de JDK 21 pour limiter les temps de pause à moins de 1 milliseconde, éliminant tout impact sur le framerate des jeux vidéo.
 - **Virtual Threads** : Utilisation des threads virtuels de Project Loom (JDK 21) pour gérer de manière ultra-légère les accès fichiers (scan de la bibliothèque) et les transactions de base de données en arrière-plan.
 
+## Synchronisation Cloud et Tâches de Fond
+
+La synchronisation des fichiers locaux et cloud sur Desktop s'appuie sur une boucle périodique d'arrière-plan gérée par la JVM :
+- **Fréquence** : Exécution toutes les 60 secondes tant qu'un jeton d'API valide est configuré.
+- **Direction Cloud -> PC** : Rapatriement automatique des musiques ajoutées au cloud (via d'autres appareils) mais absentes de l'index local. Les fichiers audio MP3 et pochettes d'illustrations JPG associées sont téléchargés de manière asynchrone et enregistrés en base Room avec `canonicalAudioSourceType = "downloaded"`.
+- **Direction PC -> Cloud** : Si la synchronisation automatique est activée, téléversement automatique des pistes locales nouvellement indexées (`canonicalAudioSourceType = "local"`) qui ne sont pas encore répertoriées sur le VPS.
+- **Interface synchrone** : Le composant `DesktopPlaybackOrchestrator` centralise les méthodes manuelles d'upload, téléchargement et suppression des fichiers cloud synchronisés, invoquées directement par l'UI.
+
 ## Code Mapping Cible
 - `shared/src/commonMain/kotlin/` : Code partagé contenant les composants Compose, le thème d'AURA, et les ViewModels.
 - `shared/src/jvmMain/kotlin/` : Extensions Bureau (code JNI de lecture native, hooks clavier multimédias, gestion du System Tray).

@@ -104,9 +104,12 @@ fun main() = application {
     var loginStatus by remember { mutableStateOf("Connecté (Profil Test)") }
     var autoSyncEnabled by remember { mutableStateOf(true) }
 
-    // Sync tokens to orchestrator
+    // Sync tokens and auto sync to orchestrator
     LaunchedEffect(apiToken) {
         playbackOrchestrator.apiToken = apiToken
+    }
+    LaunchedEffect(autoSyncEnabled) {
+        playbackOrchestrator.autoSyncEnabled = autoSyncEnabled
     }
 
     // Navigation helper functions
@@ -640,6 +643,7 @@ fun main() = application {
                                                     },
                                                     autoSync = autoSyncEnabled,
                                                     onAutoSyncChange = { autoSyncEnabled = it },
+                                                    onNavigateToCloudSync = { navigateTo("cloud_sync") },
                                                     scanProgress = scanProgressMsg,
                                                     onStartScan = {
                                                         val chooser = JFileChooser().apply {
@@ -660,6 +664,12 @@ fun main() = application {
                                                             )
                                                         }
                                                     }
+                                                )
+                                            }
+                                            "cloud_sync" -> {
+                                                CloudSyncScreen(
+                                                    orchestrator = playbackOrchestrator,
+                                                    onNavigateBack = { navigateBack() }
                                                 )
                                             }
                                             "album_detail" -> {
@@ -1777,6 +1787,7 @@ fun SettingsScreen(
     onLogin: () -> Unit,
     autoSync: Boolean,
     onAutoSyncChange: (Boolean) -> Unit,
+    onNavigateToCloudSync: () -> Unit,
     scanProgress: String,
     onStartScan: () -> Unit
 ) {
@@ -1902,6 +1913,30 @@ fun SettingsScreen(
                             checkedThumbColor = TextPrimary,
                             checkedTrackColor = BlazeOrange
                         )
+                    )
+                }
+            }
+        }
+
+        // Navigation to Cloud Sync screen
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToCloudSync() },
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Row(
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Gestion des fichiers Cloud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text("Gérer l'espace disque, uploader vos musiques locales et télécharger vos fichiers cloud.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = BlazeOrange
                     )
                 }
             }
@@ -3123,6 +3158,516 @@ fun DownloadsScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CloudSyncScreen(
+    orchestrator: DesktopPlaybackOrchestrator,
+    onNavigateBack: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var refreshTick by remember { mutableStateOf(0) }
+    var isLoading by remember { mutableStateOf(false) }
+    var cloudFiles by remember { mutableStateOf<List<com.aura.music.data.network.SyncedFileResponseData>>(emptyList()) }
+    var localTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
+    var selectedFilter by remember { mutableStateOf("cloud_only") } // options: "cloud_only", "pending_upload", "all_cloud"
+    var sortByFileSize by remember { mutableStateOf(false) }
+
+    // Active operations progress indicators
+    val activeOperations = remember { mutableStateMapOf<String, String>() }
+
+    // Fetch cloud files, settings, and local tracks
+    LaunchedEffect(refreshTick, orchestrator.apiToken) {
+        val token = orchestrator.apiToken
+        if (!token.isNullOrBlank()) {
+            isLoading = true
+            try {
+                val response = orchestrator.apiService.listSyncFiles(token)
+                if (response.data != null) {
+                    cloudFiles = response.data!!.items
+                }
+                localTracks = orchestrator.database.trackDao().getAllTracks()
+            } catch (e: Exception) {
+                System.err.println("Failed to fetch cloud sync status: ${e.message}")
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    val syncedTrackIds = remember(cloudFiles) { cloudFiles.map { it.trackId }.toSet() }
+
+    // Filter tracks
+    // 1. À uploader (local files not on cloud)
+    val pendingUploadTracks = remember(localTracks, syncedTrackIds) {
+        localTracks.filter { track ->
+            val isLocal = track.contentUri?.startsWith("file://") == true && 
+                !track.contentUri.contains(".aura/downloads") && 
+                !track.contentUri.contains(".aura\\downloads")
+            isLocal && !syncedTrackIds.contains(track.id)
+        }
+    }
+
+    // 2. À récupérer (cloud files missing locally or not downloaded)
+    val cloudOnlyFiles = remember(cloudFiles, localTracks) {
+        cloudFiles.filter { cloudFile ->
+            val localTrack = localTracks.find { it.id == cloudFile.trackId }
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val downloadsDir = File(appDir, "downloads")
+            val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
+            
+            localTrack == null || localTrack.contentUri.isNullOrBlank() || !targetFile.exists() || targetFile.length() == 0L
+        }
+    }
+
+    // VPS Storage calculation
+    val totalSizeBytes = remember(cloudFiles) { cloudFiles.sumOf { it.sizeBytes } }
+    val totalSizeMb = remember(totalSizeBytes) { String.format("%.2f MB", totalSizeBytes.toDouble() / (1024 * 1024)) }
+    val maxVpsLimitBytes = 5L * 1024L * 1024L * 1024L // 5 GB limit representation
+    val storageFraction = remember(totalSizeBytes) { (totalSizeBytes.toFloat() / maxVpsLimitBytes.toFloat()).coerceIn(0f, 1f) }
+
+    // Bulk upload/download actions
+    var isBulkUploading by remember { mutableStateOf(false) }
+    var isBulkDownloading by remember { mutableStateOf(false) }
+
+    fun triggerRefresh() {
+        refreshTick++
+    }
+
+    fun handleUpload(trackId: String) {
+        val token = orchestrator.apiToken ?: return
+        activeOperations[trackId] = "Envoi..."
+        coroutineScope.launch {
+            try {
+                orchestrator.uploadCloudTrack(token, trackId)
+            } catch (e: Exception) {
+                System.err.println("Upload failed: ${e.message}")
+            } finally {
+                activeOperations.remove(trackId)
+                triggerRefresh()
+            }
+        }
+    }
+
+    fun handleDownload(cloudFile: com.aura.music.data.network.SyncedFileResponseData) {
+        val token = orchestrator.apiToken ?: return
+        val trackId = cloudFile.trackId
+        activeOperations[trackId] = "Téléchargement..."
+        coroutineScope.launch {
+            try {
+                orchestrator.downloadCloudTrack(
+                    token = token,
+                    trackId = trackId,
+                    title = cloudFile.title ?: "Titre inconnu",
+                    artistName = cloudFile.artistName ?: "Artiste inconnu",
+                    albumTitle = cloudFile.albumTitle,
+                    durationMs = cloudFile.durationMs ?: 0L,
+                    coverUri = cloudFile.coverUri
+                )
+            } catch (e: Exception) {
+                System.err.println("Download failed: ${e.message}")
+            } finally {
+                activeOperations.remove(trackId)
+                triggerRefresh()
+            }
+        }
+    }
+
+    fun handleDelete(trackId: String) {
+        val token = orchestrator.apiToken ?: return
+        activeOperations[trackId] = "Suppression..."
+        coroutineScope.launch {
+            try {
+                orchestrator.deleteCloudTrack(token, trackId)
+            } catch (e: Exception) {
+                System.err.println("Delete failed: ${e.message}")
+            } finally {
+                activeOperations.remove(trackId)
+                triggerRefresh()
+            }
+        }
+    }
+
+    fun handleBulkUpload() {
+        val token = orchestrator.apiToken ?: return
+        isBulkUploading = true
+        coroutineScope.launch {
+            try {
+                pendingUploadTracks.forEach { track ->
+                    activeOperations[track.id] = "Envoi..."
+                    try {
+                        orchestrator.uploadCloudTrack(token, track.id)
+                    } catch (e: Exception) {
+                        System.err.println("Bulk upload failed for ${track.id}: ${e.message}")
+                    } finally {
+                        activeOperations.remove(track.id)
+                    }
+                }
+            } finally {
+                isBulkUploading = false
+                triggerRefresh()
+            }
+        }
+    }
+
+    fun handleBulkDownload() {
+        val token = orchestrator.apiToken ?: return
+        isBulkDownloading = true
+        coroutineScope.launch {
+            try {
+                cloudOnlyFiles.forEach { cloudFile ->
+                    activeOperations[cloudFile.trackId] = "Téléchargement..."
+                    try {
+                        orchestrator.downloadCloudTrack(
+                            token = token,
+                            trackId = cloudFile.trackId,
+                            title = cloudFile.title ?: "Titre inconnu",
+                            artistName = cloudFile.artistName ?: "Artiste inconnu",
+                            albumTitle = cloudFile.albumTitle,
+                            durationMs = cloudFile.durationMs ?: 0L,
+                            coverUri = cloudFile.coverUri
+                        )
+                    } catch (e: Exception) {
+                        System.err.println("Bulk download failed for ${cloudFile.trackId}: ${e.message}")
+                    } finally {
+                        activeOperations.remove(cloudFile.trackId)
+                    }
+                }
+            } finally {
+                isBulkDownloading = false
+                triggerRefresh()
+            }
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // --- COLONNE GAUCHE (Stockage & Options) ---
+        Column(
+            modifier = Modifier.width(320.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header Retour
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { onNavigateBack() }
+            ) {
+                Icon(Icons.Rounded.ArrowBack, contentDescription = null, tint = BlazeOrange)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Retour aux paramètres", color = BlazeOrange, fontWeight = FontWeight.Bold)
+            }
+
+            Text("Stockage Cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+
+            // VPS Space Gauge Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Storage, contentDescription = null, tint = BlazeOrange)
+                        Text("VPS personnel AURA", color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    LinearProgressIndicator(
+                        progress = storageFraction,
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                        color = BlazeOrange,
+                        trackColor = DarkGraphite
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(totalSizeMb, color = TextPrimary, fontWeight = FontWeight.Bold)
+                        Text("de 5.00 Go", color = TextMuted)
+                    }
+                }
+            }
+
+            // Sync Options Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Sync automatique", color = TextPrimary, fontWeight = FontWeight.Bold)
+                            Text("Envoie et télécharge en arrière-plan.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                        }
+                        Switch(
+                            checked = orchestrator.autoSyncEnabled,
+                            onCheckedChange = { orchestrator.autoSyncEnabled = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = TextPrimary,
+                                checkedTrackColor = BlazeOrange
+                            )
+                        )
+                    }
+
+                    Button(
+                        onClick = { triggerRefresh() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite)
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Actualiser l'index cloud", color = TextPrimary)
+                    }
+                }
+            }
+        }
+
+        // --- COLONNE DROITE (Filtres & Liste des fichiers) ---
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Navigation chips row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val filters = listOf(
+                    "cloud_only" to "À récupérer (${cloudOnlyFiles.size})",
+                    "pending_upload" to "À uploader (${pendingUploadTracks.size})",
+                    "all_cloud" to "Tout le Cloud (${cloudFiles.size})"
+                )
+                filters.forEach { (key, label) ->
+                    val selected = selectedFilter == key
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (selected) BlazeOrange else DarkGraphite,
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .clickable { selectedFilter = key }
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            label,
+                            color = if (selected) Color.White else TextSecondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // Bulk actions & Sort Bar
+            Row(
+                modifier = Modifier.fillMaxWidth().background(OffBlack, RoundedCornerShape(12.dp)).padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.clickable { sortByFileSize = !sortByFileSize },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Sort, contentDescription = null, tint = TextSecondary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (sortByFileSize) "Trié par Taille" else "Trié par Nom",
+                        color = TextSecondary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                // Bulk actions buttons
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (selectedFilter == "cloud_only" && cloudOnlyFiles.isNotEmpty()) {
+                        Button(
+                            onClick = { handleBulkDownload() },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                            enabled = !isBulkDownloading
+                        ) {
+                            if (isBulkDownloading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                            } else {
+                                Icon(Icons.Rounded.CloudDownload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Tout récupérer")
+                            }
+                        }
+                    } else if (selectedFilter == "pending_upload" && pendingUploadTracks.isNotEmpty()) {
+                        Button(
+                            onClick = { handleBulkUpload() },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                            enabled = !isBulkUploading
+                        ) {
+                            if (isBulkUploading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                            } else {
+                                Icon(Icons.Rounded.CloudUpload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Tout sauvegarder")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Lists rendering
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BlazeOrange)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (selectedFilter == "cloud_only") {
+                        if (cloudOnlyFiles.isEmpty()) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                    Text("Aucun fichier à récupérer.", color = TextMuted)
+                                }
+                            }
+                        } else {
+                            val sortedList = if (sortByFileSize) {
+                                cloudOnlyFiles.sortedByDescending { it.sizeBytes }
+                            } else {
+                                cloudOnlyFiles.sortedBy { it.title ?: "" }
+                            }
+
+                            items(sortedList) { cloudFile ->
+                                CloudTrackRow(
+                                    title = cloudFile.title ?: "Titre inconnu",
+                                    artist = cloudFile.artistName ?: "Artiste inconnu",
+                                    sizeStr = String.format("%.2f MB", cloudFile.sizeBytes.toDouble() / (1024 * 1024)),
+                                    opStatus = activeOperations[cloudFile.trackId],
+                                    actionLabel = "Télécharger",
+                                    onAction = { handleDownload(cloudFile) },
+                                    onDelete = { handleDelete(cloudFile.trackId) }
+                                )
+                            }
+                        }
+                    } else if (selectedFilter == "pending_upload") {
+                        if (pendingUploadTracks.isEmpty()) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                    Text("Tout est synchronisé sur le cloud !", color = TextMuted)
+                                }
+                            }
+                        } else {
+                            val sortedList = if (sortByFileSize) {
+                                pendingUploadTracks.sortedByDescending { it.durationMs ?: 0L }
+                            } else {
+                                pendingUploadTracks.sortedBy { it.title }
+                            }
+
+                            items(sortedList) { track ->
+                                val fileBytes = try {
+                                    val uriStr = track.contentUri ?: ""
+                                    val f = if (uriStr.startsWith("file:/")) File(java.net.URI(uriStr)) else File(uriStr)
+                                    if (f.exists()) f.length() else 0L
+                                } catch (e: Exception) {
+                                    0L
+                                }
+                                val sizeStr = String.format("%.2f MB", fileBytes.toDouble() / (1024 * 1024))
+
+                                CloudTrackRow(
+                                    title = track.title,
+                                    artist = track.artistName,
+                                    sizeStr = sizeStr,
+                                    opStatus = activeOperations[track.id],
+                                    actionLabel = "Envoyer",
+                                    onAction = { handleUpload(track.id) },
+                                    onDelete = null
+                                )
+                            }
+                        }
+                    } else { // "all_cloud"
+                        if (cloudFiles.isEmpty()) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                    Text("Le cloud est vide.", color = TextMuted)
+                                }
+                            }
+                        } else {
+                            val sortedList = if (sortByFileSize) {
+                                cloudFiles.sortedByDescending { it.sizeBytes }
+                            } else {
+                                cloudFiles.sortedBy { it.title ?: "" }
+                            }
+
+                            items(sortedList) { cloudFile ->
+                                CloudTrackRow(
+                                    title = cloudFile.title ?: "Titre inconnu",
+                                    artist = cloudFile.artistName ?: "Artiste inconnu",
+                                    sizeStr = String.format("%.2f MB", cloudFile.sizeBytes.toDouble() / (1024 * 1024)),
+                                    opStatus = activeOperations[cloudFile.trackId],
+                                    actionLabel = null,
+                                    onAction = {},
+                                    onDelete = { handleDelete(cloudFile.trackId) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CloudTrackRow(
+    title: String,
+    artist: String,
+    sizeStr: String,
+    opStatus: String?,
+    actionLabel: String?,
+    onAction: () -> Unit,
+    onDelete: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().background(OffBlack, RoundedCornerShape(8.dp)).padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$artist • $sizeStr", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (opStatus != null) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = BlazeOrange, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(opStatus, color = BlazeOrange, style = MaterialTheme.typography.bodySmall)
+            } else {
+                if (actionLabel != null) {
+                    Button(
+                        onClick = onAction,
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite)
+                    ) {
+                        Text(actionLabel, color = TextPrimary)
+                    }
+                }
+                if (onDelete != null) {
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Rounded.Delete, contentDescription = null, tint = TextMuted)
                     }
                 }
             }
