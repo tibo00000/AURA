@@ -3348,18 +3348,18 @@ fun CloudSyncScreen(
         }
     }
 
-    Row(
+    Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // --- COLONNE GAUCHE (Stockage & Options) ---
-        Column(
-            modifier = Modifier.width(320.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        // --- TOP CARDS ROW ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             // VPS Space Gauge Card
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 colors = CardDefaults.cardColors(containerColor = OffBlack)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3391,7 +3391,7 @@ fun CloudSyncScreen(
 
             // Sync Options Card
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 colors = CardDefaults.cardColors(containerColor = OffBlack)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -3426,12 +3426,6 @@ fun CloudSyncScreen(
                 }
             }
         }
-
-        // --- COLONNE DROITE (Filtres & Liste des fichiers) ---
-        Column(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
             // Navigation chips row
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -3520,12 +3514,12 @@ fun CloudSyncScreen(
 
             // Lists rendering
             if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = BlazeOrange)
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (selectedFilter == "cloud_only") {
@@ -3620,7 +3614,6 @@ fun CloudSyncScreen(
             }
         }
     }
-}
 
 @Composable
 fun CloudTrackRow(
@@ -3652,18 +3645,26 @@ fun CloudTrackRow(
                 Text(opStatus, color = BlazeOrange, style = MaterialTheme.typography.bodySmall)
             } else {
                 if (actionLabel != null) {
-                    Button(
-                        onClick = onAction,
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Text(actionLabel, color = TextPrimary, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                    val icon = when (actionLabel) {
+                        "Télécharger" -> Icons.Rounded.CloudDownload
+                        "Envoyer" -> Icons.Rounded.CloudUpload
+                        else -> null
+                    }
+                    if (icon != null) {
+                        IconButton(
+                            onClick = onAction,
+                            modifier = Modifier.size(36.dp).background(DarkGraphite, CircleShape)
+                        ) {
+                            Icon(icon, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
                 if (onDelete != null) {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Rounded.Delete, contentDescription = null, tint = TextMuted)
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp).background(DarkGraphite, CircleShape)
+                    ) {
+                        Icon(Icons.Rounded.Delete, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
                     }
                 }
             }
