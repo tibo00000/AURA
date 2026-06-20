@@ -524,6 +524,7 @@ fun main() = application {
                                                 "playlist_detail" -> "Détails de la Playlist"
                                                 "favorites" -> "Favoris"
                                                 "downloads" -> "Téléchargements"
+                                                "cloud_sync" -> "Stockage Cloud"
                                                 else -> ""
                                             },
                                             style = MaterialTheme.typography.headlineMedium,
@@ -3356,18 +3357,6 @@ fun CloudSyncScreen(
             modifier = Modifier.width(320.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header Retour
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { onNavigateBack() }
-            ) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = null, tint = BlazeOrange)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Retour aux paramètres", color = BlazeOrange, fontWeight = FontWeight.Bold)
-            }
-
-            Text("Stockage Cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-
             // VPS Space Gauge Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -3440,11 +3429,12 @@ fun CloudSyncScreen(
 
         // --- COLONNE DROITE (Filtres & Liste des fichiers) ---
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).fillMaxHeight(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Navigation chips row
-            Row(
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -3453,7 +3443,7 @@ fun CloudSyncScreen(
                     "pending_upload" to "À uploader (${pendingUploadTracks.size})",
                     "all_cloud" to "Tout le Cloud (${cloudFiles.size})"
                 )
-                filters.forEach { (key, label) ->
+                items(filters) { (key, label) ->
                     val selected = selectedFilter == key
                     Box(
                         modifier = Modifier
@@ -3467,7 +3457,9 @@ fun CloudSyncScreen(
                         Text(
                             label,
                             color = if (selected) Color.White else TextSecondary,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -3505,7 +3497,7 @@ fun CloudSyncScreen(
                             } else {
                                 Icon(Icons.Rounded.CloudDownload, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Tout récupérer")
+                                Text("Tout récupérer", maxLines = 1)
                             }
                         }
                     } else if (selectedFilter == "pending_upload" && pendingUploadTracks.isNotEmpty()) {
@@ -3519,7 +3511,7 @@ fun CloudSyncScreen(
                             } else {
                                 Icon(Icons.Rounded.CloudUpload, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Tout sauvegarder")
+                                Text("Tout sauvegarder", maxLines = 1)
                             }
                         }
                     }
@@ -3662,9 +3654,11 @@ fun CloudTrackRow(
                 if (actionLabel != null) {
                     Button(
                         onClick = onAction,
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.height(32.dp)
                     ) {
-                        Text(actionLabel, color = TextPrimary)
+                        Text(actionLabel, color = TextPrimary, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                     }
                 }
                 if (onDelete != null) {
