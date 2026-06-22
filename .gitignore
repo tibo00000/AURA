@@ -28,3 +28,7 @@ Thumbs.db
 # Node / Web
 kotlin-js-store/
 node_modules/
+
+# Generated build config containing local secrets/IPs
+shared/src/commonMain/kotlin/com/aura/music/data/network/BuildConfig.kt
+

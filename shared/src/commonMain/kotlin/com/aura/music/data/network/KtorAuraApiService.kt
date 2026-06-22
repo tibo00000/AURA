@@ -21,7 +21,7 @@ import kotlinx.serialization.json.Json
  */
 class KtorAuraApiService(
     private val client: HttpClient,
-    baseUrl: String = "http://212.90.121.80:8000"
+    baseUrl: String = BuildConfig.API_BASE_URL
 ) : AuraApiService {
 
     private val cleanBaseUrl = baseUrl.removeSuffix("/")
@@ -234,7 +234,7 @@ class KtorAuraApiService(
         /**
          * Helper to create a configured KtorAuraApiService.
          */
-        fun createDefault(baseUrl: String = "http://212.90.121.80:8000"): KtorAuraApiService {
+        fun createDefault(baseUrl: String = BuildConfig.API_BASE_URL): KtorAuraApiService {
             val json = Json {
                 ignoreUnknownKeys = true
                 coerceInputValues = true
