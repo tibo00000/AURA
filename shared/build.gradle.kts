@@ -167,8 +167,14 @@ val generateBuildConfig by tasks.registering {
     }
 }
 
-// Make all compilation tasks depend on build config generation
-tasks.matching { it.name.contains("compile", ignoreCase = true) }.configureEach {
+// Make all compilation and KSP tasks depend on build config generation
+tasks.matching { 
+    val taskName = it.name
+    (taskName.contains("compile", ignoreCase = true) || 
+     taskName.contains("ksp", ignoreCase = true) || 
+     taskName.contains("generate", ignoreCase = true)) && 
+    taskName != "generateBuildConfig"
+}.configureEach {
     dependsOn(generateBuildConfig)
 }
 
