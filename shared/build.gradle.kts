@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     kotlin("multiplatform")
     id("com.android.library")
@@ -144,7 +146,7 @@ val generateBuildConfig by tasks.registering {
     outputs.file(outputFile)
     
     doLast {
-        val localProperties = java.util.Properties()
+        val localProperties = Properties()
         val localPropertiesFile = rootProject.file("local.properties")
         if (localPropertiesFile.exists()) {
             localProperties.load(localPropertiesFile.inputStream())
