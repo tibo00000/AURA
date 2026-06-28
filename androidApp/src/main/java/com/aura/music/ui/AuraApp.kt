@@ -133,6 +133,12 @@ fun AuraApp() {
         )
     }
     var permissionRefreshTick by remember { mutableIntStateOf(0) }
+    val downloadRepository = application.container.downloadRepository
+    LaunchedEffect(downloadRepository) {
+        downloadRepository.downloadSuccessFlow.collect {
+            permissionRefreshTick++
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) {
@@ -233,6 +239,7 @@ fun AuraApp() {
                 LibraryTracksScreen(
                     repository = repository,
                     playerViewModel = playerViewModel,
+                    refreshToken = permissionRefreshTick,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
@@ -241,6 +248,7 @@ fun AuraApp() {
             composable(AuraRoute.LibraryArtists) {
                 LibraryArtistsScreen(
                     repository = repository,
+                    refreshToken = permissionRefreshTick,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                 )
@@ -248,6 +256,7 @@ fun AuraApp() {
             composable(AuraRoute.Playlists) {
                 PlaylistsListScreen(
                     repository = repository,
+                    refreshToken = permissionRefreshTick,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenPlaylist = { playlistId -> navController.navigate(AuraRoute.playlistDetail(playlistId)) },
                 )
@@ -256,6 +265,7 @@ fun AuraApp() {
                 FavoritesScreen(
                     repository = repository,
                     playerViewModel = playerViewModel,
+                    refreshToken = permissionRefreshTick,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
@@ -266,6 +276,7 @@ fun AuraApp() {
                     repository = repository,
                     playerViewModel = playerViewModel,
                     playlistId = backStackEntry.arguments?.getString(AuraRoute.PlaylistIdArg).orEmpty(),
+                    refreshToken = permissionRefreshTick,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
@@ -286,8 +297,11 @@ fun AuraApp() {
                         appContext = ctx.applicationContext,
                     )
                 )
-                val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
+                val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, permissionRefreshTick) {
                     value = repository.getPlaylists()
+                }
+                LaunchedEffect(permissionRefreshTick) {
+                    vm.refreshLocal()
                 }
                 val scope = rememberCoroutineScope()
                 var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
@@ -363,8 +377,11 @@ fun AuraApp() {
                         appContext = ctx.applicationContext,
                     )
                 )
-                val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
+                val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, permissionRefreshTick) {
                     value = repository.getPlaylists()
+                }
+                LaunchedEffect(permissionRefreshTick) {
+                    vm.refreshLocal()
                 }
                 val scope = rememberCoroutineScope()
                 var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }

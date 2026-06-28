@@ -25,6 +25,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import androidx.room3.useWriterConnection
 import androidx.room3.immediateTransaction
@@ -50,6 +52,9 @@ class DownloadRepository(
 ) {
     private var isPolling = false
     private val consecutiveFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    private val _downloadSuccessFlow = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val downloadSuccessFlow = _downloadSuccessFlow.asSharedFlow()
 
     companion object {
         private const val TAG = "DownloadRepository"
@@ -428,6 +433,7 @@ class DownloadRepository(
                         )
                         database.trackDao().upsertTrack(updatedTrack)
                         Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
+                        _downloadSuccessFlow.tryEmit(trackId)
                     }
                 }
             }

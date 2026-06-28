@@ -388,17 +388,18 @@ fun LibraryScreen(
 fun FavoritesScreen(
     repository: LocalLibraryRepository,
     playerViewModel: PlayerViewModel,
+    refreshToken: Int,
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick) {
+    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getLikedTracks()
     }
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
     val playlists = playlistsState.value
@@ -620,6 +621,7 @@ fun FavoritesScreen(
                         onClick = onPlayClick,
                         coverUri = track.coverUri,
                         contextType = "favorites",
+                        isLiked = true,
                         onAddToQueue = onAddToQueueClick,
                         onUnlike = onUnlikeClick,
                         onAddToPlaylist = onAddToPlaylistClick,
@@ -1935,12 +1937,13 @@ fun YtmProposalsDialog(
 fun LibraryTracksScreen(
     repository: LocalLibraryRepository,
     playerViewModel: PlayerViewModel,
+    refreshToken: Int,
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick) {
+    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getAllTracks()
     }
     val scope = rememberCoroutineScope()
@@ -1962,7 +1965,7 @@ fun LibraryTracksScreen(
             pendingDeleteTrackId = null
         }
     }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
     val playlists = playlistsState.value
@@ -2311,10 +2314,11 @@ fun LibraryTracksScreen(
 @Composable
 fun LibraryArtistsScreen(
     repository: LocalLibraryRepository,
+    refreshToken: Int,
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
 ) {
-    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository) {
+    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository, refreshToken) {
         value = repository.getAllBrowseArtists()
     }
 

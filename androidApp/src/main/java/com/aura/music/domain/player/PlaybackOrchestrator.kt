@@ -2,6 +2,7 @@ package com.aura.music.domain.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -110,8 +111,11 @@ class PlaybackOrchestrator(
             }
 
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
-                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED queue adjustment because transition was caused by a PLAYLIST_CHANGED event.")
-                return
+                if (ctrl.mediaItemCount >= 3) {
+                    android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED stabilized queue.")
+                    return
+                }
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: ALLOWED external playlist change, resolving grid...")
             }
 
             val transitionedTrackIdResolved = mediaItem?.mediaId ?: return
@@ -187,6 +191,15 @@ class PlaybackOrchestrator(
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null
         controllerFuture = null
+    }
+
+    /**
+     * Synchronise la file d'attente d'ExoPlayer après un changement de contexte externe (par exemple, Android Auto).
+     */
+    fun syncPlaylistAfterExternalChange() {
+        android.util.Log.d("PlaybackOrchestrator", "syncPlaylistAfterExternalChange: triggering playlist sync")
+        syncExoPlayerPlaylist()
+        syncUiState()
     }
 
     /**
@@ -709,17 +722,67 @@ class PlaybackOrchestrator(
 
     private fun createMediaItem(track: QueuedTrack): MediaItem? {
         val uri = track.contentUri ?: return null
+        
+        var artworkData: ByteArray? = null
+        val artworkUri = track.coverUri?.let { uriStr ->
+            if (uriStr.startsWith("/") || uriStr.startsWith("file://")) {
+                val filePath = if (uriStr.startsWith("file://")) {
+                    uriStr.substring(7)
+                } else {
+                    uriStr
+                }
+                artworkData = getArtworkBytes(filePath)
+                val file = java.io.File(filePath)
+                // Serve cover art via public ArtworkContentProvider
+                Uri.parse("content://com.aura.music.artwork/covers/${file.name}")
+            } else {
+                Uri.parse(uriStr)
+            }
+        }
+
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artistName)
+            .setAlbumTitle(track.albumTitle)
+            .setArtworkUri(artworkUri)
+
+        if (artworkData != null) {
+            metadataBuilder.setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        }
+
         return MediaItem.Builder()
             .setMediaId(track.trackId)
             .setUri(Uri.parse(uri))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artistName)
-                    .setAlbumTitle(track.albumTitle)
-                    .build(),
-            )
+            .setMediaMetadata(metadataBuilder.build())
             .build()
+    }
+
+    private fun getArtworkBytes(filePath: String): ByteArray? {
+        val file = java.io.File(filePath)
+        if (!file.exists()) return null
+        try {
+            val size = file.length()
+            if (size in 1..100_000) {
+                return file.readBytes()
+            }
+            val options = android.graphics.BitmapFactory.Options().apply {
+                inSampleSize = 2
+            }
+            var bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
+            if (bitmap != null) {
+                if (bitmap.width > 300 || bitmap.height > 300) {
+                    bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 300, 300, true)
+                }
+                val stream = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
+                val bytes = stream.toByteArray()
+                bitmap.recycle()
+                return bytes
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Error reading/compressing artwork bytes", e)
+        }
+        return null
     }
 
     private suspend fun handleExternalTrackTransition(trackId: String) {

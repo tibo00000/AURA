@@ -56,11 +56,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlaylistsListScreen(
     repository: LocalLibraryRepository,
+    refreshToken: Int,
     onNavigateBack: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
     var showCreateDialog by remember { mutableStateOf(false) }

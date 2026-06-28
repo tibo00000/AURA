@@ -136,13 +136,13 @@ fun SearchScreen(
             pendingDeleteTrackId = null
         }
     }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository) {
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
         value = repository.getPlaylists()
     }
     val playlists = playlistsState.value
 
     LaunchedEffect(refreshToken) {
-        // Any permission refresh can be handled here if needed
+        viewModel.refreshDisplayedLocalResults()
     }
 
     DisposableEffect(lifecycleOwner, viewModel) {
@@ -208,14 +208,17 @@ fun SearchScreen(
                         },
                         onSelectOnlineTrack = { track ->
                             focusManager.clearFocus()
+                            viewModel.selectTab(1)
                             viewModel.selectSuggestion(track.title)
                         },
                         onSelectOnlineArtist = { artist ->
                             focusManager.clearFocus()
+                            viewModel.selectTab(1)
                             viewModel.selectSuggestion(artist.name)
                         },
                         onSelectOnlineAlbum = { album ->
                             focusManager.clearFocus()
+                            viewModel.selectTab(1)
                             viewModel.selectSuggestion(album.title)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp)

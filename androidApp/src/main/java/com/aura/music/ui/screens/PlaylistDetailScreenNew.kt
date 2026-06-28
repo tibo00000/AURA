@@ -63,12 +63,13 @@ fun PlaylistDetailScreenNew(
     repository: LocalLibraryRepository,
     playerViewModel: PlayerViewModel,
     playlistId: String,
+    refreshToken: Int,
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId, refreshTick) {
+    val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId, refreshTick, refreshToken) {
         value = repository.getPlaylistDetail(playlistId)
     }
     val scope = rememberCoroutineScope()
@@ -76,9 +77,9 @@ fun PlaylistDetailScreenNew(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showMenuOpen by remember { mutableStateOf(false) }
     val detail = detailState.value
-
+ 
     var activeTrackForPlaylist by remember { mutableStateOf<PlaylistTrackRow?>(null) }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
     val playlists = playlistsState.value

@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
+import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.HairlineDark
 import com.aura.music.ui.theme.RoseSignal
@@ -657,7 +658,7 @@ fun SharedTrackRowItem(
                         Icon(
                             imageVector = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                             contentDescription = if (isLiked) "Retirer des favoris" else "Ajouter aux favoris",
-                            tint = if (isLiked) RoseSignal else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isLiked) BlazeOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
                     }

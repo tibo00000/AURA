@@ -101,6 +101,7 @@ class PlaybackService : MediaLibraryService() {
                 try {
                     val container = (application as AuraApplication).container
                     val repository = container.localLibraryRepository
+                    val connectedPackages = session.connectedControllers.map { it.packageName }
 
                     val items = when (parentId) {
                         "root" -> {
@@ -113,13 +114,13 @@ class PlaybackService : MediaLibraryService() {
                             )
                         }
                         "favorites" -> {
-                            repository.getLikedTracks().map { it.toMediaItem() }
+                            repository.getLikedTracks().map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
                         }
                         "downloads" -> {
-                            repository.getDownloadedTracks().map { it.toMediaItem() }
+                            repository.getDownloadedTracks().map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
                         }
                         "tracks" -> {
-                            repository.getAllTracks().map { it.toMediaItem() }
+                            repository.getAllTracks().map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
                         }
                         "playlists" -> {
                             repository.getPlaylists().map { playlist ->
@@ -144,10 +145,10 @@ class PlaybackService : MediaLibraryService() {
                         else -> {
                             if (parentId.startsWith("playlist:")) {
                                 val playlistId = parentId.substringAfter("playlist:")
-                                repository.getPlaylistTrackQueue(playlistId).map { it.toMediaItem() }
+                                repository.getPlaylistTrackQueue(playlistId).map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
                             } else if (parentId.startsWith("album:")) {
                                 val albumId = parentId.substringAfter("album:")
-                                repository.getTracksForAlbum(albumId).map { it.toMediaItem() }
+                                repository.getTracksForAlbum(albumId).map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
                             } else {
                                 emptyList()
                             }
@@ -174,6 +175,7 @@ class PlaybackService : MediaLibraryService() {
                 try {
                     val container = (application as AuraApplication).container
                     val repository = container.localLibraryRepository
+                    val connectedPackages = session.connectedControllers.map { it.packageName }
 
                     val item = when (mediaId) {
                         "favorites" -> createFolderItem("favorites", "Favoris", MediaMetadata.FOLDER_TYPE_PLAYLISTS)
@@ -202,7 +204,7 @@ class PlaybackService : MediaLibraryService() {
                                 }
                             } else {
                                 val track = repository.getTrackById(mediaId)
-                                track?.toMediaItem()
+                                track?.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages)
                             }
                         }
                     }
@@ -219,6 +221,169 @@ class PlaybackService : MediaLibraryService() {
             return future
         }
 
+        private suspend fun resolveMediaItemsHelper(
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>
+        ): List<MediaItem> {
+            val container = (application as AuraApplication).container
+            val repository = container.localLibraryRepository
+            val queueManager = container.queueManager
+            val connectedPackages = mediaSession?.connectedControllers?.map { it.packageName } ?: emptyList()
+
+            val resolvedItems = mutableListOf<MediaItem>()
+
+            // Resolution de la file d'attente (reprise du contexte de navigation)
+            if (mediaItems.size == 1 && controller.packageName != packageName) {
+                val targetTrackId = mediaItems[0].mediaId
+                var parentFolderId = lastBrowsedFolderId
+
+                // Helper function to load context tracks dynamically
+                suspend fun getTracksForFolder(folderId: String): List<TrackListRow> {
+                    return when (folderId) {
+                        "favorites" -> repository.getLikedTracks()
+                        "downloads" -> repository.getDownloadedTracks()
+                        "tracks" -> repository.getAllTracks()
+                        else -> {
+                            if (folderId.startsWith("playlist:")) {
+                                val playlistId = folderId.substringAfter("playlist:")
+                                repository.getPlaylistTrackQueue(playlistId)
+                            } else if (folderId.startsWith("album:")) {
+                                val albumId = folderId.substringAfter("album:")
+                                repository.getTracksForAlbum(albumId)
+                            } else {
+                                emptyList()
+                            }
+                        }
+                    }
+                }
+
+                // Validate that the browsed folder contains our target track, or search for it
+                var contextTracks = emptyList<TrackListRow>()
+                if (parentFolderId != null) {
+                    contextTracks = getTracksForFolder(parentFolderId)
+                    if (contextTracks.none { it.id == targetTrackId }) {
+                        parentFolderId = null
+                    }
+                }
+
+                // Fallback search priorities if parentFolderId is null or track wasn't found in it
+                if (parentFolderId == null) {
+                    val likedTracks = repository.getLikedTracks()
+                    if (likedTracks.any { it.id == targetTrackId }) {
+                        parentFolderId = "favorites"
+                        contextTracks = likedTracks
+                    } else {
+                        val downloadedTracks = repository.getDownloadedTracks()
+                        if (downloadedTracks.any { it.id == targetTrackId }) {
+                            parentFolderId = "downloads"
+                            contextTracks = downloadedTracks
+                        } else {
+                            val allTracks = repository.getAllTracks()
+                            if (allTracks.any { it.id == targetTrackId }) {
+                                parentFolderId = "tracks"
+                                contextTracks = allTracks
+                            }
+                        }
+                    }
+                }
+
+                if (parentFolderId != null) {
+                    val mappedQueuedTracks = contextTracks.map {
+                        QueuedTrack(
+                            trackId = it.id,
+                            title = it.title,
+                            artistName = it.artistName,
+                            albumTitle = it.albumTitle,
+                            contentUri = it.contentUri,
+                            durationMs = it.durationMs,
+                            coverUri = it.coverUri,
+                            source = TrackSource.CONTEXT
+                        )
+                    }
+
+                    val startIndex = mappedQueuedTracks.indexOfFirst { it.trackId == targetTrackId }
+                    if (startIndex != -1) {
+                        queueManager.setContext(
+                            type = when {
+                                parentFolderId == "favorites" -> "favorites"
+                                parentFolderId == "downloads" -> "downloads"
+                                parentFolderId == "tracks" -> "library_tracks"
+                                parentFolderId.startsWith("playlist:") -> "playlist"
+                                parentFolderId.startsWith("album:") -> "album"
+                                else -> "library_tracks"
+                            },
+                            id = parentFolderId,
+                            tracks = mappedQueuedTracks,
+                            startIndex = startIndex
+                        )
+                    }
+                } else {
+                    // Fallback single track context if not found in any common folders
+                    val track = repository.getTrackById(targetTrackId)
+                    if (track != null) {
+                        val queuedTrack = QueuedTrack(
+                            trackId = track.id,
+                            title = track.title,
+                            artistName = track.artistName,
+                            albumTitle = track.albumTitle,
+                            contentUri = track.contentUri,
+                            durationMs = track.durationMs,
+                            coverUri = track.coverUri,
+                            source = TrackSource.CONTEXT
+                        )
+                        queueManager.setContext(
+                            type = "single_track",
+                            id = targetTrackId,
+                            tracks = listOf(queuedTrack),
+                            startIndex = 0
+                        )
+                    }
+                }
+
+                // Build the sliding triplet [prev, current, next] around the active track
+                val state = queueManager.state.value
+                val currentTrack = state.currentTrack
+                if (currentTrack != null) {
+                    val desiredTracks = mutableListOf<QueuedTrack>()
+                    val rawPrev = state.history.lastOrNull()
+                    val rawNext = state.priorityQueue.firstOrNull() ?: queueManager.getUpcomingContextTracks().firstOrNull()
+
+                    val prev = if (rawPrev?.trackId != currentTrack.trackId) rawPrev else null
+                    val next = if (rawNext?.trackId != currentTrack.trackId) rawNext else null
+
+                    if (prev != null) desiredTracks.add(prev)
+                    desiredTracks.add(currentTrack)
+                    if (next != null) desiredTracks.add(next)
+
+                    for (t in desiredTracks) {
+                        val resolvedItem = repository.getTrackById(t.trackId)?.toMediaItem(
+                            this@PlaybackService,
+                            controller.packageName,
+                            connectedPackages
+                        )
+                        if (resolvedItem != null) {
+                            resolvedItems.add(resolvedItem)
+                        }
+                    }
+                }
+            }
+
+            if (resolvedItems.isEmpty()) {
+                // Fallback resolution standard si non-contexte externe ou erreur
+                for (item in mediaItems) {
+                    val trackId = item.mediaId
+                    val track = repository.getTrackById(trackId)
+                    if (track != null) {
+                        resolvedItems.add(track.toMediaItem(this@PlaybackService, controller.packageName, connectedPackages))
+                    } else {
+                        resolvedItems.add(item)
+                    }
+                }
+            }
+
+            return resolvedItems
+        }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -227,98 +392,36 @@ class PlaybackService : MediaLibraryService() {
             val future = SettableFuture.create<List<MediaItem>>()
             serviceScope.launch {
                 try {
-                    val container = (application as AuraApplication).container
-                    val repository = container.localLibraryRepository
-                    val queueManager = container.queueManager
+                    val resolved = resolveMediaItemsHelper(controller, mediaItems)
+                    future.set(resolved)
+                } catch (e: Exception) {
+                    future.setException(e)
+                }
+            }
+            return future
+        }
 
-                    val resolvedItems = mutableListOf<MediaItem>()
-                    for (item in mediaItems) {
-                        val trackId = item.mediaId
-                        val track = repository.getTrackById(trackId)
-                        if (track != null) {
-                            resolvedItems.add(track.toMediaItem())
-                        } else {
-                            resolvedItems.add(item)
-                        }
-                    }
-
-                    // Resolution de la file d'attente (reprise du contexte de navigation)
-                    if (mediaItems.size == 1 && controller.packageName != packageName) {
-                        val targetTrackId = mediaItems[0].mediaId
-                        val parentFolderId = lastBrowsedFolderId
-
-                        if (parentFolderId != null) {
-                            val contextTracks = when (parentFolderId) {
-                                "favorites" -> repository.getLikedTracks()
-                                "downloads" -> repository.getDownloadedTracks()
-                                "tracks" -> repository.getAllTracks()
-                                else -> {
-                                    if (parentFolderId.startsWith("playlist:")) {
-                                        val playlistId = parentFolderId.substringAfter("playlist:")
-                                        repository.getPlaylistTrackQueue(playlistId)
-                                    } else if (parentFolderId.startsWith("album:")) {
-                                        val albumId = parentFolderId.substringAfter("album:")
-                                        repository.getTracksForAlbum(albumId)
-                                    } else {
-                                        emptyList()
-                                    }
-                                }
-                            }
-
-                            val mappedQueuedTracks = contextTracks.map {
-                                QueuedTrack(
-                                    trackId = it.id,
-                                    title = it.title,
-                                    artistName = it.artistName,
-                                    albumTitle = it.albumTitle,
-                                    contentUri = it.contentUri,
-                                    durationMs = it.durationMs,
-                                    coverUri = it.coverUri,
-                                    source = TrackSource.CONTEXT
-                                )
-                            }
-
-                            val startIndex = mappedQueuedTracks.indexOfFirst { it.trackId == targetTrackId }
-                            if (startIndex != -1) {
-                                queueManager.setContext(
-                                    type = when {
-                                        parentFolderId == "favorites" -> "favorites"
-                                        parentFolderId == "downloads" -> "downloads"
-                                        parentFolderId == "tracks" -> "library_tracks"
-                                        parentFolderId.startsWith("playlist:") -> "playlist"
-                                        parentFolderId.startsWith("album:") -> "album"
-                                        else -> "library_tracks"
-                                    },
-                                    id = parentFolderId,
-                                    tracks = mappedQueuedTracks,
-                                    startIndex = startIndex
-                                )
-                            }
-                        } else {
-                            // Fallback single track context si pas de dossier de navigation precedent
-                            val track = repository.getTrackById(targetTrackId)
-                            if (track != null) {
-                                val queuedTrack = QueuedTrack(
-                                    trackId = track.id,
-                                    title = track.title,
-                                    artistName = track.artistName,
-                                    albumTitle = track.albumTitle,
-                                    contentUri = track.contentUri,
-                                    durationMs = track.durationMs,
-                                    coverUri = track.coverUri,
-                                    source = TrackSource.CONTEXT
-                                )
-                                queueManager.setContext(
-                                    type = "single_track",
-                                    id = targetTrackId,
-                                    tracks = listOf(queuedTrack),
-                                    startIndex = 0
-                                )
-                            }
-                        }
-                    }
-
-                    future.set(resolvedItems)
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            serviceScope.launch {
+                try {
+                    val resolved = resolveMediaItemsHelper(controller, mediaItems)
+                    
+                    // Resolve correct starting index based on target track ID ONLY for external controllers.
+                    // For the internal application controller, use the requested startIndex directly.
+                    val resolvedIndex = if (controller.packageName != packageName && mediaItems.firstOrNull()?.mediaId != null) {
+                        resolved.indexOfFirst { it.mediaId == mediaItems.firstOrNull()?.mediaId }
+                    } else -1
+                    
+                    val targetStartIndex = if (resolvedIndex != -1) resolvedIndex else startIndex
+                    
+                    future.set(MediaSession.MediaItemsWithStartPosition(resolved, targetStartIndex, startPositionMs))
                 } catch (e: Exception) {
                     future.setException(e)
                 }
@@ -372,24 +475,76 @@ class PlaybackService : MediaLibraryService() {
 }
 
 // Mappers d'extension utilitaires pour la conversion propre vers MediaItem avec metadonnees completes
-fun TrackListRow.toMediaItem(): MediaItem {
-    val artworkUri = coverUri?.let { Uri.parse(it) }
+fun TrackListRow.toMediaItem(
+    context: android.content.Context,
+    clientPackageName: String? = null,
+    connectedPackages: List<String> = emptyList()
+): MediaItem {
+    var artworkData: ByteArray? = null
+    val artworkUri = coverUri?.let { uriStr ->
+        if (uriStr.startsWith("/") || uriStr.startsWith("file://")) {
+            val filePath = if (uriStr.startsWith("file://")) {
+                uriStr.substring(7)
+            } else {
+                uriStr
+            }
+            artworkData = getArtworkBytes(filePath)
+            val file = java.io.File(filePath)
+            // Serve cover art via public ArtworkContentProvider
+            Uri.parse("content://com.aura.music.artwork/covers/${file.name}")
+        } else {
+            Uri.parse(uriStr)
+        }
+    }
     val mediaUri = contentUri?.let { Uri.parse(it) }
+    val metadataBuilder = MediaMetadata.Builder()
+        .setTitle(title)
+        .setArtist(artistName)
+        .setAlbumTitle(albumTitle)
+        .setArtworkUri(artworkUri)
+        .setFolderType(MediaMetadata.FOLDER_TYPE_NONE)
+        .setIsPlayable(true)
+        .setIsBrowsable(false)
+
+    if (artworkData != null) {
+        metadataBuilder.setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+    }
+
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(mediaUri)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(artistName)
-                .setAlbumTitle(albumTitle)
-                .setArtworkUri(artworkUri)
-                .setFolderType(MediaMetadata.FOLDER_TYPE_NONE)
-                .setIsPlayable(true)
-                .setIsBrowsable(false)
-                .build()
-        )
+        .setMediaMetadata(metadataBuilder.build())
         .build()
+}
+
+private fun getArtworkBytes(filePath: String): ByteArray? {
+    val file = java.io.File(filePath)
+    if (!file.exists()) return null
+    try {
+        val size = file.length()
+        // If file is very small (< 100 KB), read directly to save performance
+        if (size in 1..100_000) {
+            return file.readBytes()
+        }
+        // Downsample and compress to JPEG to prevent TransactionTooLargeException (limited Binder buffer)
+        val options = android.graphics.BitmapFactory.Options().apply {
+            inSampleSize = 2
+        }
+        var bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
+        if (bitmap != null) {
+            if (bitmap.width > 300 || bitmap.height > 300) {
+                bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 300, 300, true)
+            }
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
+            val bytes = stream.toByteArray()
+            bitmap.recycle()
+            return bytes
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("PlaybackService", "Error reading/compressing artwork bytes", e)
+    }
+    return null
 }
 
 fun <T> List<T>.paginate(page: Int, pageSize: Int): List<T> {

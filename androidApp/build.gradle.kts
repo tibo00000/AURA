@@ -95,6 +95,9 @@ dependencies {
     // Background Sync WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
+    // Android Auto Car App Library
+    implementation("androidx.car.app:app:1.4.0-rc01")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
