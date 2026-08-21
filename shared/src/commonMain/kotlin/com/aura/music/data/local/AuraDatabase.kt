@@ -25,7 +25,7 @@ import androidx.sqlite.execSQL
         TrackMediaLinkEntity::class,
         UserSettingsEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @ConstructedBy(AuraDatabaseConstructor::class)
@@ -154,6 +154,13 @@ abstract class AuraDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_updated_at` ON `tracks` (`updated_at`)")
+                connection.execSQL("CREATE INDEX IF NOT EXISTS `index_download_jobs_updated_at` ON `download_jobs` (`updated_at`)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AuraDatabase? = null
 
@@ -161,7 +168,7 @@ abstract class AuraDatabase : RoomDatabase() {
             return INSTANCE ?: synchronized(this) {
                 val instance = createDatabaseBuilder(context)
                     .setDriver(androidx.sqlite.driver.bundled.BundledSQLiteDriver())
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 INSTANCE = instance
                 instance

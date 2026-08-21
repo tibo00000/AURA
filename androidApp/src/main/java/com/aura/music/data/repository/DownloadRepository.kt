@@ -27,6 +27,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.room3.useWriterConnection
 import androidx.room3.immediateTransaction
@@ -50,6 +53,7 @@ class DownloadRepository(
     private val apiService: AuraApiService,
     private val context: Context
 ) {
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var isPolling = false
     private val consecutiveFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
@@ -59,6 +63,52 @@ class DownloadRepository(
     companion object {
         private const val TAG = "DownloadRepository"
     }
+
+    /**
+     * Translates technical and backend error codes into user-friendly explanations.
+     */
+    fun mapFriendlyErrorMessage(errorCode: String?, rawMessage: String?): String {
+        val lowerMsg = rawMessage?.lowercase() ?: ""
+        val lowerCode = errorCode?.lowercase() ?: ""
+        return when {
+            lowerCode.contains("bot") || lowerMsg.contains("bot") || lowerMsg.contains("sign in") || lowerMsg.contains("cookie") ->
+                "YouTube a bloqué la requête anti-robot. Vos cookies YouTube sont peut-être expirés ou manquants."
+            lowerCode.contains("po_token") || lowerMsg.contains("po_token") ->
+                "Le jeton PO-Token YouTube a expiré. Une mise à jour du serveur est nécessaire."
+            lowerCode.contains("timeout") || lowerCode.contains("504") || lowerMsg.contains("timeout") || lowerMsg.contains("504") ->
+                "Délai d'attente dépassé : le serveur VPS n'a pas répondu à temps."
+            lowerCode == "polling_failed" ->
+                "Le serveur ne répond pas après plusieurs tentatives. Vérifiez la connexion."
+            lowerCode == "fetch_error" || lowerMsg.contains("récupérer le fichier") ->
+                "Impossible de télécharger le fichier audio final depuis le serveur VPS."
+            lowerCode.contains("no_match") || lowerMsg.contains("not found") ->
+                "Aucune version audio correspondante n'a été trouvée sur YouTube Music."
+            !rawMessage.isNullOrBlank() ->
+                rawMessage
+            else ->
+                "Une erreur inattendue est survenue pendant le téléchargement."
+        }
+    }
+
+    private fun parseIsoDateToEpoch(isoString: String?, fallback: Long = System.currentTimeMillis()): Long {
+        if (isoString.isNullOrBlank()) return fallback
+        return try {
+            java.time.Instant.parse(isoString).toEpochMilli()
+        } catch (e: Exception) {
+            fallback
+        }
+    }
+
+    /**
+     * Ensures the background polling loop is active as long as there are pending jobs.
+     */
+    fun ensurePollingStarted(userToken: String) {
+        if (isPolling) return
+        repositoryScope.launch {
+            startPolling(userToken)
+        }
+    }
+
 
     /**
      * Trigger a new download for an online track.
@@ -176,6 +226,9 @@ class DownloadRepository(
             )
             database.downloadJobDao().upsert(jobEntity)
 
+            // Auto-start polling in repository background scope
+            ensurePollingStarted(userToken)
+
             emit(Result.success(Unit))
         } catch (e: Exception) {
             Log.e(TAG, "Error triggering download for track $trackId", e)
@@ -185,7 +238,7 @@ class DownloadRepository(
 
     /**
      * Start the background polling loop for any queued or running jobs.
-     * Polls the backend every 2s until jobs reach succeeded or failed status.
+     * Polls the backend every 2s. Automatically exits when there are no active jobs left.
      */
     suspend fun startPolling(userToken: String) = withContext(Dispatchers.IO) {
         if (isPolling) return@withContext
@@ -195,8 +248,8 @@ class DownloadRepository(
             while (isPolling) {
                 val activeJobs = database.downloadJobDao().getActiveJobs()
                 if (activeJobs.isEmpty()) {
-                    delay(3000) // Sleep slightly longer if there are no active jobs
-                    continue
+                    Log.d(TAG, "No active download jobs remaining, stopping polling loop automatically.")
+                    break
                 }
 
                 for (job in activeJobs) {
@@ -207,11 +260,15 @@ class DownloadRepository(
                             // Reset the failure counter for this job on success
                             consecutiveFailures.remove(job.id)
 
+                            val friendlyError = if (jobData.error != null) {
+                                mapFriendlyErrorMessage(jobData.error?.code, jobData.error?.message)
+                            } else null
+
                             val updatedJob = job.copy(
                                 status = jobData.status,
                                 progressPercent = jobData.progressPercent,
                                 errorCode = jobData.error?.code,
-                                errorMessage = jobData.error?.message,
+                                errorMessage = friendlyError ?: jobData.error?.message,
                                 updatedAt = System.currentTimeMillis()
                             )
                             database.downloadJobDao().upsert(updatedJob)
@@ -245,7 +302,7 @@ class DownloadRepository(
             val failedJob = job.copy(
                 status = "failed",
                 errorCode = "polling_failed",
-                errorMessage = "Le serveur ne répond pas. Veuillez réessayer.",
+                errorMessage = mapFriendlyErrorMessage("polling_failed", "Le serveur ne répond pas après 5 tentatives."),
                 updatedAt = System.currentTimeMillis()
             )
             database.downloadJobDao().upsert(failedJob)
@@ -254,7 +311,7 @@ class DownloadRepository(
     }
 
     /**
-     * Stop active polling manually (e.g. when viewmodel is cleared).
+     * Stop active polling manually.
      */
     fun stopPolling() {
         isPolling = false
@@ -270,6 +327,12 @@ class DownloadRepository(
             
             val now = System.currentTimeMillis()
             val jobs = items.map { item ->
+                val createdAtEpoch = parseIsoDateToEpoch(item.createdAt, now)
+                val updatedAtEpoch = parseIsoDateToEpoch(item.updatedAt, now)
+                val friendlyError = if (item.errorMessage != null || item.errorCode != null) {
+                    mapFriendlyErrorMessage(item.errorCode, item.errorMessage)
+                } else null
+
                 DownloadJobEntity(
                     id = item.id,
                     trackId = item.trackId,
@@ -277,14 +340,19 @@ class DownloadRepository(
                     status = item.status,
                     progressPercent = item.progressPercent,
                     errorCode = item.errorCode,
-                    errorMessage = item.errorMessage,
+                    errorMessage = friendlyError ?: item.errorMessage,
                     attemptCount = item.attemptCount,
-                    createdAt = now,
-                    updatedAt = now
+                    createdAt = createdAtEpoch,
+                    updatedAt = updatedAtEpoch
                 )
             }
             database.downloadJobDao().upsert(jobs)
             Log.i(TAG, "Synchronized ${jobs.size} download jobs from server")
+
+            // Auto-start polling if there are pending/running jobs
+            if (jobs.any { it.status == "queued" || it.status == "running" }) {
+                ensurePollingStarted(userToken)
+            }
 
             // Auto-fetch physical files for succeeded jobs that are missing or incomplete locally
             for (item in items) {
@@ -517,6 +585,7 @@ class DownloadRepository(
                     )
                     database.downloadJobDao().upsert(updatedJob)
                     Log.d(TAG, "Local job $jobId reset to ${createData.status}")
+                    ensurePollingStarted(userToken)
                 }
             }
         } catch (e: Exception) {
@@ -550,6 +619,7 @@ class DownloadRepository(
                     )
                     database.downloadJobDao().upsert(updatedJob)
                     Log.d(TAG, "Local job $jobId reset to ${createData.status} after resolution")
+                    ensurePollingStarted(userToken)
                 }
             }
         } catch (e: Exception) {

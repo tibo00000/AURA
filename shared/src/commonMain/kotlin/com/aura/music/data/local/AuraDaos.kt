@@ -502,7 +502,7 @@ interface TrackDao {
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.canonical_audio_source_type = 'downloaded'
-        ORDER BY tracks.created_at DESC
+        ORDER BY tracks.updated_at DESC
         """
     )
     suspend fun getDownloadedTracks(): List<TrackListRow>
@@ -768,10 +768,11 @@ interface DownloadJobDao {
             download_jobs.progress_percent AS progressPercent,
             download_jobs.error_code AS errorCode,
             download_jobs.error_message AS errorMessage,
-            download_jobs.created_at AS createdAt
+            download_jobs.created_at AS createdAt,
+            download_jobs.updated_at AS updatedAt
         FROM download_jobs
         LEFT JOIN tracks ON tracks.id = download_jobs.track_id
-        ORDER BY download_jobs.created_at DESC
+        ORDER BY download_jobs.updated_at DESC
     """)
     fun getAllJobsWithTrackFlow(): kotlinx.coroutines.flow.Flow<List<DownloadJobRowModel>>
 

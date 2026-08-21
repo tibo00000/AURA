@@ -47,9 +47,12 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.CloudUpload
-import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.Immutable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ListItem
@@ -58,6 +61,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+
+/**
+ * Représente l'état de téléchargement local d'un titre pour les affichages en ligne.
+ */
+@Immutable
+sealed interface TrackDownloadStatus {
+    object NotDownloaded : TrackDownloadStatus
+    object Queued : TrackDownloadStatus
+    data class Downloading(val progressPercent: Float = 0f) : TrackDownloadStatus
+    object Downloaded : TrackDownloadStatus
+    data class Failed(val errorCode: String? = null, val message: String? = null) : TrackDownloadStatus
+}
+
 import coil3.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
@@ -401,6 +417,7 @@ fun SharedTrackRowItem(
     trailingIcon: @Composable (() -> Unit)? = null,
     contextType: String = "standard",  // "album", "playlist", "favorites", "search_online", "standard", "artist"
     isLiked: Boolean = false,
+    downloadStatus: TrackDownloadStatus = TrackDownloadStatus.NotDownloaded,
     onPlayNow: (() -> Unit)? = null,
     onAddToQueue: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
@@ -485,7 +502,7 @@ fun SharedTrackRowItem(
             }
             "search_online" -> {
                 if (onDownload != null) {
-                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.ArrowDownward, onDownload))
+                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.Download, onDownload))
                 }
                 if (onViewArtist != null) {
                     items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
@@ -572,7 +589,7 @@ fun SharedTrackRowItem(
                     items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
                 }
                 if (onDownload != null) {
-                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.ArrowDownward, onDownload))
+                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.Download, onDownload))
                 }
                 if (onDeleteDownload != null) {
                     items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
@@ -663,6 +680,87 @@ fun SharedTrackRowItem(
                         )
                     }
                 }
+
+                // 4-state Direct Download Indicator / Action
+                when (downloadStatus) {
+                    is TrackDownloadStatus.NotDownloaded -> {
+                        if (onDownload != null) {
+                            IconButton(
+                                onClick = onDownload,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Download,
+                                    contentDescription = "Télécharger",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                    is TrackDownloadStatus.Queued -> {
+                        Box(
+                            modifier = Modifier.size(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Schedule,
+                                contentDescription = "En attente de téléchargement",
+                                tint = BlazeOrange,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    is TrackDownloadStatus.Downloading -> {
+                        Box(
+                            modifier = Modifier.size(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val progress = (downloadStatus.progressPercent / 100f).coerceIn(0f, 1f)
+                            if (progress > 0f) {
+                                CircularProgressIndicator(
+                                    progress = { progress },
+                                    color = BlazeOrange,
+                                    strokeWidth = 2.5.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            } else {
+                                CircularProgressIndicator(
+                                    color = BlazeOrange,
+                                    strokeWidth = 2.5.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                    is TrackDownloadStatus.Downloaded -> {
+                        Box(
+                            modifier = Modifier.size(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = "Téléchargé (hors-ligne)",
+                                tint = Color(0xFF00E676),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    is TrackDownloadStatus.Failed -> {
+                        IconButton(
+                            onClick = { onDownload?.invoke() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ErrorOutline,
+                                contentDescription = "Échec du téléchargement (cliquer pour réessayer)",
+                                tint = Color.Red,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
                 if (trailingIcon != null) {
                     trailingIcon()
                 } else if (menuItems.isNotEmpty()) {
@@ -703,6 +801,7 @@ fun SharedTrackRowItem(
         }
     }
 }
+
 
 /**
  * Dialogue de selection de playlist (UI pure conforme MVVM).

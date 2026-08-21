@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Downloading
 import com.aura.music.ui.theme.TextPrimary
+import com.aura.music.ui.components.ShimmerTrackList
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -111,6 +112,20 @@ fun SearchScreen(
     val cloudFileRepository = application.container.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     
+    val allDownloadJobs by downloadRepository.getAllJobsWithTrack().collectAsState(initial = emptyList())
+    val trackDownloadStatusMap = remember(allDownloadJobs) {
+        allDownloadJobs.associate { job ->
+            val status = when (job.status) {
+                "succeeded" -> TrackDownloadStatus.Downloaded
+                "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
+                "queued", "requires_resolution" -> TrackDownloadStatus.Queued
+                "failed" -> TrackDownloadStatus.Failed
+                else -> TrackDownloadStatus.Idle
+            }
+            job.trackId to status
+        }
+    }
+
     val viewModel: SearchViewModel = viewModel(
         factory = SearchViewModelFactory(searchRepository, enrichmentRepository, application)
     )
@@ -354,6 +369,7 @@ fun SearchScreen(
                                 tracks = result.onlineTracks,
                                 artists = result.onlineArtists,
                                 albums = result.onlineAlbums,
+                                downloadStatusMap = trackDownloadStatusMap,
                                 onPlayTrack = { track ->
                                     focusManager.clearFocus()
                                     onPlayTrackInList(
@@ -374,28 +390,41 @@ fun SearchScreen(
                                     )
                                 },
                                 onDownloadTrack = { track ->
-                                    scope.launch {
-                                        downloadRepository.triggerDownload(
-                                            trackId = track.id,
-                                            title = track.title,
-                                            artistName = track.displayArtistName,
-                                            albumTitle = track.displayAlbumTitle,
-                                            coverUri = track.coverUri,
-                                            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
-                                        ).collect { result ->
-                                            if (result.isSuccess) {
-                                                scope.launch {
-                                                    val snackbarResult = snackbarHostState.showSnackbar(
-                                                        message = "Téléchargement lancé : ${track.title}",
-                                                        actionLabel = "Voir",
-                                                        duration = androidx.compose.material3.SnackbarDuration.Short
-                                                    )
-                                                    if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                                                        onOpenDownloads()
+                                    val currentStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
+                                    when (currentStatus) {
+                                        is TrackDownloadStatus.Downloaded -> {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    message = "${track.title} est déjà disponible hors-ligne.",
+                                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                                )
+                                            }
+                                        }
+                                        is TrackDownloadStatus.Downloading, TrackDownloadStatus.Queued -> {
+                                            onOpenDownloads()
+                                        }
+                                        else -> {
+                                            scope.launch {
+                                                downloadRepository.triggerDownload(
+                                                    trackId = track.id,
+                                                    title = track.title,
+                                                    artistName = track.displayArtistName,
+                                                    albumTitle = track.displayAlbumTitle,
+                                                    coverUri = track.coverUri,
+                                                    userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                                ).collect { result ->
+                                                    if (result.isSuccess) {
+                                                        scope.launch {
+                                                            val snackbarResult = snackbarHostState.showSnackbar(
+                                                                message = "Téléchargement lancé : ${track.title}",
+                                                                actionLabel = "Voir",
+                                                                duration = androidx.compose.material3.SnackbarDuration.Short
+                                                            )
+                                                            if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                                                onOpenDownloads()
+                                                            }
+                                                        }
                                                     }
-                                                }
-                                                scope.launch {
-                                                    downloadRepository.startPolling(com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
                                                 }
                                             }
                                         }
@@ -573,6 +602,7 @@ private fun OnlineSearchTab(
     tracks: List<TrackSummary>,
     artists: List<ArtistSummary>,
     albums: List<AlbumSummary>,
+    downloadStatusMap: Map<String, TrackDownloadStatus> = emptyMap(),
     onPlayTrack: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
     onAddToPlaylist: (TrackSummary) -> Unit,
@@ -594,6 +624,7 @@ private fun OnlineSearchTab(
                         track = track,
                         artists = artists,
                         albums = albums,
+                        downloadStatus = downloadStatusMap[track.id] ?: TrackDownloadStatus.Idle,
                         onPlayTrack = onPlayTrack,
                         onDownloadTrack = onDownloadTrack,
                         onOpenArtist = onOpenArtist,
@@ -1448,6 +1479,7 @@ private fun SearchOnlineTrackRowItem(
     track: TrackSummary,
     artists: List<ArtistSummary>,
     albums: List<AlbumSummary>,
+    downloadStatus: TrackDownloadStatus = TrackDownloadStatus.Idle,
     onPlayTrack: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
     onOpenArtist: (String) -> Unit,
@@ -1484,6 +1516,7 @@ private fun SearchOnlineTrackRowItem(
         onClick = onClick,
         showCover = true,
         contextType = "search_online",
+        downloadStatus = downloadStatus,
         onDownload = onDownload,
         onViewArtist = onViewArtist,
         onViewAlbum = onViewAlbum

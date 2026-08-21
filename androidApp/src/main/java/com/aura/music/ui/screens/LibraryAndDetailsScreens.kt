@@ -68,8 +68,14 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.Sort
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.CardDefaults
+import com.aura.music.ui.components.ShimmerTrackList
+import com.aura.music.ui.components.ShimmerGrid
 import androidx.compose.foundation.layout.PaddingValues
 import com.aura.music.ui.theme.*
 import androidx.compose.runtime.Composable
@@ -233,17 +239,26 @@ fun LibraryScreen(
 
             if (!isSearchActive) {
                 item {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
-                            LibraryGridItem("Favoris", "${favoritesCountState.value} éléments", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, onOpenArtists, Modifier.weight(1f))
-                            LibraryGridItem("Playlists", "${playlistsState.value.size} éléments", Icons.Rounded.QueueMusic, onOpenPlaylists, Modifier.weight(1f))
+                    if (summaryState.value == null) {
+                        ShimmerGrid(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            rowCount = 2,
+                            colCount = 2,
+                            cardHeight = 84.dp
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
+                                LibraryGridItem("Favoris", "${favoritesCountState.value} éléments", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, onOpenArtists, Modifier.weight(1f))
+                                LibraryGridItem("Playlists", "${playlistsState.value.size} éléments", Icons.Rounded.QueueMusic, onOpenPlaylists, Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -394,7 +409,7 @@ fun FavoritesScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick, refreshToken) {
+    val tracksState = produceState<List<TrackListRow>?>(initialValue = null, repository, refreshTick, refreshToken) {
         value = repository.getLikedTracks()
     }
     val scope = rememberCoroutineScope()
@@ -411,15 +426,18 @@ fun FavoritesScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
-        val contextTracks = remember(tracksState.value) {
-            tracksState.value.map { it.toQueuedTrack() }
-        }
-        if (tracksState.value.isEmpty()) {
+        val tracks = tracksState.value
+        if (tracks == null) {
+            ShimmerTrackList(count = 6)
+        } else if (tracks.isEmpty()) {
             EmptyStateSurface(
                 title = "Aucun favori",
                 message = "Appuie sur le cœur dans le player pour retrouver tes pistes ici.",
             )
         } else {
+            val contextTracks = remember(tracks) {
+                tracks.map { it.toQueuedTrack() }
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp),
@@ -449,7 +467,7 @@ fun FavoritesScreen(
                                 color = Color.White,
                             )
                             Text(
-                                "${tracksState.value.size} piste(s) aimée(s)",
+                                "${tracks.size} piste(s) aimée(s)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.75f),
                             )
@@ -466,7 +484,6 @@ fun FavoritesScreen(
                     ) {
                         Button(
                             onClick = {
-                                val tracks = tracksState.value
                                 if (tracks.isNotEmpty()) {
                                     playerViewModel.onEvent(
                                         PlayerEvent.PlayTrack(
@@ -479,7 +496,7 @@ fun FavoritesScreen(
                                     )
                                 }
                             },
-                            enabled = tracksState.value.isNotEmpty(),
+                            enabled = tracks.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = BlazeOrange,
                                 contentColor = Color.White
@@ -498,20 +515,20 @@ fun FavoritesScreen(
                         }
                         Button(
                             onClick = {
-                                val tracks = tracksState.value.shuffled()
-                                if (tracks.isNotEmpty()) {
+                                val shuffledTracks = tracks.shuffled()
+                                if (shuffledTracks.isNotEmpty()) {
                                     playerViewModel.onEvent(
                                         PlayerEvent.PlayTrack(
-                                            trackId = tracks.first().id,
+                                            trackId = shuffledTracks.first().id,
                                             contextType = "favorites",
                                             contextId = "favorites",
-                                            contextTracks = tracks.map { it.toQueuedTrack() },
+                                            contextTracks = shuffledTracks.map { it.toQueuedTrack() },
                                             startIndex = 0,
                                         ),
                                     )
                                 }
                             },
-                            enabled = tracksState.value.isNotEmpty(),
+                            enabled = tracks.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DarkGraphite,
                                 contentColor = Color.White
@@ -531,7 +548,7 @@ fun FavoritesScreen(
                     }
                 }
                 itemsIndexed(
-                    items = tracksState.value,
+                    items = tracks,
                     key = { _, track -> track.id },
                     contentType = { _, _ -> "track_row" }
                 ) { index, track ->
@@ -674,7 +691,7 @@ fun PlaylistsScreen(
     onOpenPlaylist: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
+    val playlistsState = produceState<List<PlaylistListRow>?>(initialValue = null, repository, refreshTick) {
         value = repository.getPlaylists()
     }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -709,7 +726,12 @@ fun PlaylistsScreen(
                     }
                 }
             }
-            PlaylistPreviewList(playlists = playlistsState.value, onOpenPlaylist = onOpenPlaylist)
+            val playlists = playlistsState.value
+            if (playlists == null) {
+                ShimmerTrackList(count = 4)
+            } else {
+                PlaylistPreviewList(playlists = playlists, onOpenPlaylist = onOpenPlaylist)
+            }
         }
     }
 
@@ -1285,6 +1307,7 @@ fun DownloadsScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val selectedErrorJob by viewModel.selectedErrorJob.collectAsState()
     var activeResolveJobId by remember { mutableStateOf<String?>(null) }
 
     val filterLabels = listOf(
@@ -1310,7 +1333,7 @@ fun DownloadsScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             if (uiState.errorMessage != null) {
-                // Inline simple and beautiful error banner
+                // Inline simple error banner
                 androidx.compose.material3.Card(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     shape = RoundedCornerShape(12.dp)
@@ -1361,7 +1384,7 @@ fun DownloadsScreen(
                         values = filterLabels,
                         selected = activeLabel,
                         onSelect = { label ->
-                            val mappedTab = filterMapping[label] ?: "En attente"
+                            val mappedTab = filterMapping[label] ?: "En cours"
                             viewModel.selectTab(mappedTab)
                         }
                     )
@@ -1370,12 +1393,7 @@ fun DownloadsScreen(
                 if (uiState.jobs.isEmpty()) {
                     item {
                         when (uiState.selectedTab) {
-                            "En attente" -> DownloadStateCard(
-                                Icons.Rounded.Schedule,
-                                "Aucun job en attente",
-                                "Les demandes de disponibilité locale apparaîtront ici avant exécution."
-                            )
-                            "En cours" -> DownloadStateCard(
+                            "En attente", "En cours" -> DownloadStateCard(
                                 Icons.Rounded.Sync,
                                 "Pas de progression active",
                                 "Les barres de progression s'activent lorsque le téléchargement démarre."
@@ -1400,6 +1418,9 @@ fun DownloadsScreen(
                             onResolve = {
                                 viewModel.loadCandidatesForJob(job.jobId)
                                 activeResolveJobId = job.jobId
+                            },
+                            onInspectError = {
+                                viewModel.inspectError(job)
                             },
                             onPlay = {
                                 val downloadsDir = File(context.filesDir, "downloads")
@@ -1446,6 +1467,225 @@ fun DownloadsScreen(
             onDismiss = { activeResolveJobId = null }
         )
     }
+
+    if (selectedErrorJob != null) {
+        DownloadErrorDetailDialog(
+            job = selectedErrorJob!!,
+            onDismiss = { viewModel.inspectError(null) },
+            onRetry = {
+                viewModel.retryDownload(selectedErrorJob!!.jobId)
+                viewModel.inspectError(null)
+            }
+        )
+    }
+}
+
+@Composable
+fun DownloadErrorDetailDialog(
+    job: com.aura.music.data.local.DownloadJobRowModel,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var showTechnicalDetails by remember { mutableStateOf(false) }
+
+    val isCookieError = (job.errorCode?.contains("bot", ignoreCase = true) == true) ||
+            (job.errorMessage?.contains("cookie", ignoreCase = true) == true) ||
+            (job.errorMessage?.contains("anti-robot", ignoreCase = true) == true)
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header with Error Icon & Title
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF4A1A1A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            tint = Color.Red,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Échec du téléchargement",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "${job.title} • ${job.artistName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // User-friendly Error Explanation Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2020))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Diagnostic :",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = BlazeOrange
+                        )
+                        Text(
+                            text = job.errorMessage ?: "Une erreur inattendue est survenue pendant le traitement.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary
+                        )
+                    }
+                }
+
+                // Collapsible Technical Section
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showTechnicalDetails = !showTechnicalDetails }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (showTechnicalDetails) "Masquer les détails techniques" else "Afficher les détails techniques",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextSecondary
+                        )
+                        Icon(
+                            imageVector = if (showTechnicalDetails) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    if (showTechnicalDetails) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = OffBlack)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "Code erreur : ${job.errorCode ?: "UNKNOWN"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
+                                Text(
+                                    text = "Job ID : ${job.jobId}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
+                                Text(
+                                    text = "Track ID : ${job.trackId}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Copy report button
+                OutlinedButton(
+                    onClick = {
+                        val report = buildString {
+                            appendLine("--- Rapport d'erreur de téléchargement AURA ---")
+                            appendLine("Piste : ${job.title} - ${job.artistName}")
+                            appendLine("Job ID : ${job.jobId}")
+                            appendLine("Track ID : ${job.trackId}")
+                            appendLine("Code : ${job.errorCode ?: "UNKNOWN"}")
+                            appendLine("Message : ${job.errorMessage ?: "Inconnu"}")
+                            appendLine("Date : ${java.util.Date(job.createdAt)}")
+                        }
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(report))
+                        android.widget.Toast.makeText(context, "Rapport d'erreur copié !", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Copier le rapport d'erreur")
+                }
+
+                // Action buttons Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Fermer", color = TextSecondary)
+                    }
+
+                    if (isCookieError && onOpenSettings != null) {
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onOpenSettings()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange, contentColor = Color.White),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.3f)
+                        ) {
+                            Text("Paramètres", fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onRetry()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange, contentColor = Color.White),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.2f)
+                        ) {
+                            Text("Réessayer", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1453,6 +1693,7 @@ private fun DownloadJobRow(
     job: com.aura.music.data.local.DownloadJobRowModel,
     onRetry: () -> Unit,
     onResolve: () -> Unit,
+    onInspectError: () -> Unit,
     onPlay: () -> Unit
 ) {
     androidx.compose.material3.Card(
@@ -1460,6 +1701,11 @@ private fun DownloadJobRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp),
         shape = RoundedCornerShape(12.dp),
+        onClick = {
+            if (job.status == "failed" || job.status == "cancelled") {
+                onInspectError()
+            }
+        }
     ) {
         Row(
             modifier = Modifier
@@ -1546,14 +1792,26 @@ private fun DownloadJobRow(
                         )
                     }
                     "failed" -> {
-                        Text(
-                            text = "Erreur : ${job.errorMessage ?: "Inconnue"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Red,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.padding(top = 2.dp)
-                        )
+                        ) {
+                            Text(
+                                text = "Erreur : ${job.errorMessage ?: "Inconnue"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Red,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Icon(
+                                imageVector = Icons.Rounded.Info,
+                                contentDescription = "Détails de l'erreur",
+                                tint = Color.Red.copy(alpha = 0.8f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                     "succeeded" -> {
                         Text(
@@ -1608,6 +1866,7 @@ private fun DownloadJobRow(
         }
     }
 }
+
 
 
 @Composable
@@ -1943,7 +2202,7 @@ fun LibraryTracksScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val tracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshTick, refreshToken) {
+    val tracksState = produceState<List<TrackListRow>?>(initialValue = null, repository, refreshTick, refreshToken) {
         value = repository.getAllTracks()
     }
     val scope = rememberCoroutineScope()
@@ -1983,24 +2242,28 @@ fun LibraryTracksScreen(
 
     val sortedTracks by remember(tracksState.value, selectedSort) {
         derivedStateOf {
+            val list = tracksState.value ?: return@derivedStateOf null
             when (selectedSort) {
-                "A-Z" -> tracksState.value.sortedBy { it.title.lowercase() }
-                "Récents" -> tracksState.value.sortedByDescending { it.createdAt }
-                else -> tracksState.value
+                "A-Z" -> list.sortedBy { it.title.lowercase() }
+                "Récents" -> list.sortedByDescending { it.updatedAt ?: it.createdAt }
+                else -> list
             }
         }
     }
 
     RouteScaffold(title = "Tous les titres", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
-        val contextTracks = remember(sortedTracks) {
-            sortedTracks.map { it.toQueuedTrack() }
-        }
-        if (tracksState.value.isEmpty()) {
+        val tracks = sortedTracks
+        if (tracks == null) {
+            ShimmerTrackList(count = 8)
+        } else if (tracks.isEmpty()) {
             EmptyStateSurface(
                 title = "Aucun titre",
                 message = "Indexe tes musiques locales pour voir tes pistes ici.",
             )
         } else {
+            val contextTracks = remember(tracks) {
+                tracks.map { it.toQueuedTrack() }
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize().background(DeepBlack),
                 contentPadding = PaddingValues(vertical = 8.dp),
@@ -2031,7 +2294,7 @@ fun LibraryTracksScreen(
                                 color = Color.White,
                             )
                             Text(
-                                "${tracksState.value.size} piste(s) locale(s)",
+                                "${tracks.size} piste(s) locale(s)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.75f),
                             )
@@ -2048,7 +2311,6 @@ fun LibraryTracksScreen(
                     ) {
                         Button(
                             onClick = {
-                                val tracks = sortedTracks
                                 if (tracks.isNotEmpty()) {
                                     playerViewModel.onEvent(
                                         PlayerEvent.PlayTrack(
@@ -2061,7 +2323,7 @@ fun LibraryTracksScreen(
                                     )
                                 }
                             },
-                            enabled = tracksState.value.isNotEmpty(),
+                            enabled = tracks.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = BlazeOrange,
                                 contentColor = Color.White
@@ -2080,20 +2342,20 @@ fun LibraryTracksScreen(
                         }
                         Button(
                             onClick = {
-                                val tracks = sortedTracks.shuffled()
-                                if (tracks.isNotEmpty()) {
+                                val shuffled = tracks.shuffled()
+                                if (shuffled.isNotEmpty()) {
                                     playerViewModel.onEvent(
                                         PlayerEvent.PlayTrack(
-                                            trackId = tracks.first().id,
+                                            trackId = shuffled.first().id,
                                             contextType = "library_tracks",
                                             contextId = "library_tracks",
-                                            contextTracks = tracks.map { it.toQueuedTrack() },
+                                            contextTracks = shuffled.map { it.toQueuedTrack() },
                                             startIndex = 0,
                                         ),
                                     )
                                 }
                             },
-                            enabled = tracksState.value.isNotEmpty(),
+                            enabled = tracks.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = DarkGraphite,
                                 contentColor = Color.White
@@ -2140,9 +2402,16 @@ fun LibraryTracksScreen(
                                             sharedPrefs.edit().putString("library_tracks_sort", option).apply()
                                             showSortMenu = false
                                         },
-                                        leadingIcon = if (selectedSort == option) {
-                                            { Icon(Icons.Rounded.Check, contentDescription = null, tint = BlazeOrange) }
-                                        } else null,
+                                        trailingIcon = {
+                                            if (selectedSort == option) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    tint = BlazeOrange,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -2150,7 +2419,7 @@ fun LibraryTracksScreen(
                     }
                 }
                 itemsIndexed(
-                    items = sortedTracks,
+                    items = tracks,
                     key = { _, track -> track.id },
                     contentType = { _, _ -> "track_row" }
                 ) { index, track ->

@@ -39,6 +39,9 @@ import com.aura.music.ui.theme.*
 import com.aura.music.AuraApplication
 import coil3.compose.AsyncImage
 import androidx.compose.material.icons.rounded.Favorite
+import com.aura.music.ui.components.ShimmerTrackList
+import com.aura.music.ui.components.ShimmerCard
+import com.aura.music.ui.components.rememberShimmerBrush
 
 sealed interface ResumeItem {
     object Favorites : ResumeItem
@@ -68,7 +71,7 @@ fun HomeScreen(
     val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
         value = repository.getLibraryDashboardSummary()
     }
-    val recentDownloadedTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
+    val recentDownloadedTracksState = produceState<List<TrackListRow>?>(initialValue = null, repository, refreshToken) {
         value = repository.getDownloadedTracks().take(4)
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
@@ -128,6 +131,7 @@ fun HomeScreen(
                 ResumeRail(
                     items = resumeItems,
                     likedCount = likedCountState.value,
+                    isLoading = summaryState.value == null,
                     onOpenPlaylist = onOpenPlaylist,
                     onOpenAlbum = onOpenAlbum,
                     onOpenArtist = onOpenArtist,
@@ -242,6 +246,7 @@ private fun HomeHeader(summary: LibraryDashboardSummary?, onRequestAudioPermissi
 private fun ResumeRail(
     items: List<ResumeItem>,
     likedCount: Int,
+    isLoading: Boolean,
     onOpenPlaylist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
@@ -254,6 +259,18 @@ private fun ResumeRail(
             color = TextPrimary,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
+        
+        if (isLoading) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp)
+            ) {
+                items(4) {
+                    ShimmerCard(width = 140.dp, height = 180.dp)
+                }
+            }
+            return
+        }
         
         if (items.isEmpty()) {
             Text(
@@ -456,7 +473,7 @@ private fun ResumeRail(
 }
 
 @Composable
-private fun RecentTracksSection(tracks: List<TrackListRow>, onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit) {
+private fun RecentTracksSection(tracks: List<TrackListRow>?, onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
             text = "Téléchargés récemment",
@@ -465,7 +482,9 @@ private fun RecentTracksSection(tracks: List<TrackListRow>, onPlayTrackInList: (
             modifier = Modifier.padding(horizontal = 16.dp)
         )
         
-        if (tracks.isEmpty()) {
+        if (tracks == null) {
+            ShimmerTrackList(count = 3, modifier = Modifier.padding(horizontal = 16.dp))
+        } else if (tracks.isEmpty()) {
             Text(
                 text = "Vos téléchargements récents apparaîtront ici.",
                 style = MaterialTheme.typography.bodyMedium,

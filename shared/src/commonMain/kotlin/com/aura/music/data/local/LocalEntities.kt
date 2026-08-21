@@ -68,6 +68,7 @@ data class AlbumEntity(
         Index(value = ["primary_artist_id"]),
         Index(value = ["album_id"]),
         Index(value = ["normalized_title"]),
+        Index(value = ["updated_at"]),
     ],
 )
 data class TrackEntity(
@@ -399,6 +400,7 @@ data class AlbumSourceLinkEntity(
     indices = [
         Index(value = ["track_id"]),
         Index(value = ["status"]),
+        Index(value = ["updated_at"]),
     ],
 )
 data class DownloadJobEntity(
@@ -426,7 +428,8 @@ data class DownloadJobRowModel(
     val progressPercent: Float?,
     val errorCode: String?,
     val errorMessage: String?,
-    val createdAt: Long
+    val createdAt: Long,
+    val updatedAt: Long = createdAt
 )
 
 /**

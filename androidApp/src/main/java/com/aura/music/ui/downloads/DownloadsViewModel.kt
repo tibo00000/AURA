@@ -46,6 +46,9 @@ class DownloadsViewModel(
     private val _candidates = MutableStateFlow<Map<String, List<com.aura.music.data.network.YtmCandidateDto>>>(emptyMap())
     val candidates = _candidates.asStateFlow()
 
+    private val _selectedErrorJob = MutableStateFlow<DownloadJobRowModel?>(null)
+    val selectedErrorJob = _selectedErrorJob.asStateFlow()
+
     val uiState: StateFlow<DownloadsUiState> = combine(
         _selectedTab,
         downloadRepository.getAllJobsWithTrack(),
@@ -103,11 +106,14 @@ class DownloadsViewModel(
         }
     }
 
+    fun inspectError(job: DownloadJobRowModel?) {
+        _selectedErrorJob.value = job
+    }
+
     init {
-        // Automatically sync active states and spin up polling loop
+        // Automatically sync active states on screen init
         viewModelScope.launch {
             downloadRepository.syncActiveJobs(userToken)
-            downloadRepository.startPolling(userToken)
         }
     }
 
@@ -148,12 +154,6 @@ class DownloadsViewModel(
 
     fun dismissError() {
         _errorMessage.value = null
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        // Gracefully release polling loops
-        downloadRepository.stopPolling()
     }
 
     class Factory(
