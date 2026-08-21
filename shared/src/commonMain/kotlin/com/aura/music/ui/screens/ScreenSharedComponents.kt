@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Downloading
@@ -83,6 +85,7 @@ import com.aura.music.ui.theme.TextMuted
  */
 @Immutable
 sealed interface TrackDownloadStatus {
+    object Idle : TrackDownloadStatus
     object NotDownloaded : TrackDownloadStatus
     object Queued : TrackDownloadStatus
     data class Downloading(val progressPercent: Float = 0f) : TrackDownloadStatus
@@ -682,7 +685,7 @@ fun SharedTrackRowItem(
 
                 // 4-state Direct Download Indicator / Action
                 when (downloadStatus) {
-                    is TrackDownloadStatus.NotDownloaded -> {
+                    is TrackDownloadStatus.Idle, is TrackDownloadStatus.NotDownloaded -> {
                         if (onDownload != null) {
                             IconButton(
                                 onClick = onDownload,

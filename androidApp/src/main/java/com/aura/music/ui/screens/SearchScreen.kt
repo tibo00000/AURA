@@ -115,11 +115,11 @@ fun SearchScreen(
     val allDownloadJobs by downloadRepository.getAllJobsWithTrack().collectAsState(initial = emptyList())
     val trackDownloadStatusMap = remember(allDownloadJobs) {
         allDownloadJobs.associate { job ->
-            val status = when (job.status) {
+            val status: TrackDownloadStatus = when (job.status) {
                 "succeeded" -> TrackDownloadStatus.Downloaded
                 "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
                 "queued", "requires_resolution" -> TrackDownloadStatus.Queued
-                "failed" -> TrackDownloadStatus.Failed
+                "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
                 else -> TrackDownloadStatus.Idle
             }
             job.trackId to status

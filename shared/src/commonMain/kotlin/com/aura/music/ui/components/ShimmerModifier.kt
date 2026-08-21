@@ -114,14 +114,15 @@ fun ShimmerTrackRow(
  */
 @Composable
 fun ShimmerCard(
-    brush: Brush,
     modifier: Modifier = Modifier,
+    brush: Brush = rememberShimmerBrush(),
+    width: Dp? = null,
     height: Dp = 100.dp,
     shape: Shape = RoundedCornerShape(16.dp)
 ) {
+    val baseModifier = if (width != null) modifier.width(width) else modifier.fillMaxWidth()
     Box(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = baseModifier
             .height(height)
             .shimmer(brush, shape)
     )
@@ -147,31 +148,27 @@ fun ShimmerTrackList(
 }
 
 /**
- * Grid of 2x2 or 2xN skeleton cards for Library/Dashboard.
+ * Grid of skeleton cards for Library/Dashboard.
  */
 @Composable
 fun ShimmerGrid(
-    count: Int = 4,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    rowCount: Int = 2,
+    colCount: Int = 2,
+    cardHeight: Dp = 80.dp
 ) {
     val brush = rememberShimmerBrush()
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        val rowCount = (count + 1) / 2
-        for (i in 0 until rowCount) {
+        repeat(rowCount) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ShimmerCard(brush = brush, height = 76.dp, modifier = Modifier.weight(1f))
-                if (i * 2 + 1 < count) {
-                    ShimmerCard(brush = brush, height = 76.dp, modifier = Modifier.weight(1f))
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
+                repeat(colCount) {
+                    ShimmerCard(brush = brush, height = cardHeight, modifier = Modifier.weight(1f))
                 }
             }
         }
