@@ -94,7 +94,7 @@ fun PlaylistDetailScreenNew(
         if (detail == null) {
             EmptyStateSurface("Playlist introuvable", "Cette playlist n'existe plus localement.")
         } else {
-            LazyColumn(
+            com.aura.music.ui.components.AuraLazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {

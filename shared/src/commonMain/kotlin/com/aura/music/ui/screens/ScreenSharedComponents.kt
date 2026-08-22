@@ -58,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -400,13 +401,6 @@ private data class ContextMenuItem(
 /**
  * Ligne de piste partagee entre FavoritesScreen et PlaylistDetailScreenNew.
  * Card DarkGraphite + titre + sous-titre + slot leading + slot trailing + menu contextuel.
- * 
- * Le menu contextuel varie selon le contextType :
- * - "album" : standard
- * - "playlist" : Retirer de playlist, Ajouter à une autre playlist, Voir l'artiste, Voir l'album
- * - "favorites" : Retirer des favoris, Ajouter à une playlist, Voir l'artiste, Voir l'album
- * - "search_online" : Ajouter à une playlist, Télécharger, Voir l'artiste, Voir l'album
- * - "standard" : Lire maintenant, Ajouter à la file, Ajouter à playlist, Ajouter aux favoris, Voir artiste/album, Télécharger, Supprimer
  */
 @Composable
 fun SharedTrackRowItem(
@@ -417,9 +411,12 @@ fun SharedTrackRowItem(
     coverUri: String? = null,
     showCover: Boolean = true,
     trailingIcon: @Composable (() -> Unit)? = null,
-    contextType: String = "standard",  // "album", "playlist", "favorites", "search_online", "standard", "artist"
+    contextType: String = "standard",
     isLiked: Boolean = false,
     downloadStatus: TrackDownloadStatus = TrackDownloadStatus.NotDownloaded,
+    isCloudOnly: Boolean = false,
+    isOfflineDisabled: Boolean = false,
+    onOfflineBlocked: (() -> Unit)? = null,
     onPlayNow: (() -> Unit)? = null,
     onAddToQueue: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
@@ -432,6 +429,7 @@ fun SharedTrackRowItem(
     onDeleteDownload: (() -> Unit)? = null,
     onUploadToCloud: (() -> Unit)? = null,
     onDownloadFromCloud: (() -> Unit)? = null,
+    onDeleteFromCloud: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -449,175 +447,95 @@ fun SharedTrackRowItem(
         onDownload,
         onDeleteDownload,
         onUploadToCloud,
-        onDownloadFromCloud
+        onDownloadFromCloud,
+        onDeleteFromCloud
     ) {
         val items = mutableListOf<ContextMenuItem>()
         when (contextType) {
             "playlist" -> {
-                if (onRemoveFromPlaylist != null) {
-                    items.add(ContextMenuItem("Retirer de cette playlist", Icons.Rounded.Delete, onRemoveFromPlaylist))
-                }
-                if (onAddToQueue != null) {
-                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                }
-                if (onAddToPlaylist != null) {
-                    items.add(ContextMenuItem("Ajouter à une autre playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                }
-                if (isLiked) {
-                    if (onUnlike != null) {
-                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
-                    }
-                } else {
-                    if (onLike != null) {
-                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
-                    }
-                }
-                if (onViewArtist != null) {
-                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                }
-                if (onViewAlbum != null) {
-                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                }
-            }
-            "favorites" -> {
-                if (onAddToQueue != null) {
-                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                }
-                if (isLiked) {
-                    if (onUnlike != null) {
-                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
-                    }
-                } else {
-                    if (onLike != null) {
-                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
-                    }
-                }
-                if (onAddToPlaylist != null) {
-                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                }
-                if (onViewArtist != null) {
-                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                }
-                if (onViewAlbum != null) {
-                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                }
-            }
-            "search_online" -> {
-                if (onDownload != null) {
-                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.Download, onDownload))
-                }
-                if (onViewArtist != null) {
-                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                }
-                if (onViewAlbum != null) {
-                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                }
-            }
-            "artist" -> {
-                if (onPlayNow != null) {
-                    items.add(ContextMenuItem("Lire maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                }
-                if (onAddToQueue != null) {
-                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                }
-                if (onAddToPlaylist != null) {
-                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                }
-                if (isLiked) {
-                    if (onUnlike != null) {
-                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
-                    }
-                } else {
-                    if (onLike != null) {
-                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
-                    }
-                }
-                if (onViewAlbum != null) {
-                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                }
-                if (onDeleteDownload != null) {
-                    items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
-                }
+                if (onRemoveFromPlaylist != null) items.add(ContextMenuItem("Retirer de cette playlist", Icons.Rounded.Delete, onRemoveFromPlaylist))
+                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
             }
             "album" -> {
-                if (onPlayNow != null) {
-                    items.add(ContextMenuItem("Lire maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                }
-                if (onAddToQueue != null) {
-                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                }
-                if (onAddToPlaylist != null) {
-                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                }
-                if (isLiked) {
-                    if (onUnlike != null) {
-                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
-                    }
-                } else {
-                    if (onLike != null) {
-                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
-                    }
-                }
-                if (onViewArtist != null) {
-                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                }
-                if (onDeleteDownload != null) {
-                    items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
-                }
+                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
             }
-            else -> { // standard, search_local, library_tracks, etc.
-                if (onPlayNow != null) {
-                    items.add(ContextMenuItem("Lire maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                }
-                if (onAddToQueue != null) {
-                    items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                }
-                if (onAddToPlaylist != null) {
-                    items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                }
-                if (isLiked) {
-                    if (onUnlike != null) {
-                        items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
-                    }
-                } else {
-                    if (onLike != null) {
-                        items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike))
-                    }
-                }
-                if (onViewArtist != null) {
-                    items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                }
-                if (onViewAlbum != null) {
-                    items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                }
-                if (onDownload != null) {
-                    items.add(ContextMenuItem("Télécharger", Icons.Rounded.Download, onDownload))
-                }
-                if (onDeleteDownload != null) {
-                    items.add(ContextMenuItem("Supprimer", Icons.Rounded.Delete, onDeleteDownload))
-                }
+            "artist" -> {
+                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+            }
+            "favorites" -> {
+                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+            }
+            "search_online" -> {
+                if (onPlayNow != null) items.add(ContextMenuItem("Écouter", Icons.Rounded.PlayArrow, onPlayNow))
+                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                if (onUploadToCloud != null) items.add(ContextMenuItem("Ajouter au Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
+            }
+            else -> {
+                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
             }
         }
-        if (onUploadToCloud != null) {
-            items.add(ContextMenuItem("Uploader vers le cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
-        }
-        if (onDownloadFromCloud != null) {
-            items.add(ContextMenuItem("Récupérer depuis le cloud", Icons.Rounded.CloudDownload, onDownloadFromCloud))
-        }
+        if (onUploadToCloud != null && contextType != "search_online") items.add(ContextMenuItem("Ajouter au Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
+        if (onDownloadFromCloud != null) items.add(ContextMenuItem("Récupérer depuis le Cloud", Icons.Rounded.CloudDownload, onDownloadFromCloud))
+        if (onDeleteFromCloud != null) items.add(ContextMenuItem("Supprimer du Cloud", Icons.Rounded.Delete, onDeleteFromCloud))
         items
     }
 
-    androidx.compose.material3.Card(
+    val effectiveAlpha = if (isOfflineDisabled) 0.38f else 1.0f
+    val onCardClick: () -> Unit = if (isOfflineDisabled) {
+        { onOfflineBlocked?.invoke() }
+    } else {
+        onClick
+    }
+
+    Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+            .alpha(effectiveAlpha),
         shape = RoundedCornerShape(12.dp),
-        onClick = onClick,
+        onClick = onCardClick,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(androidx.compose.ui.graphics.Color(0xFF1E1E1E))
+                .background(Color(0xFF1E1E1E))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -665,13 +583,7 @@ fun SharedTrackRowItem(
             ) {
                 if (onLike != null || onUnlike != null) {
                     IconButton(
-                        onClick = {
-                            if (isLiked) {
-                                onUnlike?.invoke()
-                            } else {
-                                onLike?.invoke()
-                            }
-                        },
+                        onClick = { if (isLiked) onUnlike?.invoke() else onLike?.invoke() },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -683,82 +595,41 @@ fun SharedTrackRowItem(
                     }
                 }
 
-                // 4-state Direct Download Indicator / Action
-                when (downloadStatus) {
-                    is TrackDownloadStatus.Idle, is TrackDownloadStatus.NotDownloaded -> {
-                        if (onDownload != null) {
-                            IconButton(
-                                onClick = onDownload,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Download,
-                                    contentDescription = "Télécharger",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                if (isCloudOnly && (downloadStatus is TrackDownloadStatus.Idle || downloadStatus is TrackDownloadStatus.NotDownloaded)) {
+                    // Hidden
+                } else {
+                    when (downloadStatus) {
+                        is TrackDownloadStatus.Idle, is TrackDownloadStatus.NotDownloaded -> {
+                            if (onUploadToCloud != null) {
+                                IconButton(onClick = onUploadToCloud, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Rounded.CloudUpload, contentDescription = "Ajouter au Cloud", tint = BlazeOrange, modifier = Modifier.size(20.dp))
+                                }
+                            } else if (onDownload != null) {
+                                IconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Rounded.Download, contentDescription = "Télécharger sur l'appareil", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                }
                             }
                         }
-                    }
-                    is TrackDownloadStatus.Queued -> {
-                        Box(
-                            modifier = Modifier.size(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Schedule,
-                                contentDescription = "En attente de téléchargement",
-                                tint = BlazeOrange,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    is TrackDownloadStatus.Downloading -> {
-                        Box(
-                            modifier = Modifier.size(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val progress = (downloadStatus.progressPercent / 100f).coerceIn(0f, 1f)
-                            if (progress > 0f) {
-                                CircularProgressIndicator(
-                                    progress = { progress },
-                                    color = BlazeOrange,
-                                    strokeWidth = 2.5.dp,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    color = BlazeOrange,
-                                    strokeWidth = 2.5.dp,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                        is TrackDownloadStatus.Queued -> {
+                            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Schedule, contentDescription = "En attente", tint = BlazeOrange, modifier = Modifier.size(18.dp))
                             }
                         }
-                    }
-                    is TrackDownloadStatus.Downloaded -> {
-                        Box(
-                            modifier = Modifier.size(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = "Téléchargé (hors-ligne)",
-                                tint = Color(0xFF00E676),
-                                modifier = Modifier.size(18.dp)
-                            )
+                        is TrackDownloadStatus.Downloading -> {
+                            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                                val progress = (downloadStatus.progressPercent / 100f).coerceIn(0f, 1f)
+                                CircularProgressIndicator(progress = { progress }, color = BlazeOrange, strokeWidth = 2.5.dp, modifier = Modifier.size(18.dp))
+                            }
                         }
-                    }
-                    is TrackDownloadStatus.Failed -> {
-                        IconButton(
-                            onClick = { onDownload?.invoke() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ErrorOutline,
-                                contentDescription = "Échec du téléchargement (cliquer pour réessayer)",
-                                tint = Color.Red,
-                                modifier = Modifier.size(20.dp)
-                            )
+                        is TrackDownloadStatus.Downloaded -> {
+                            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.CheckCircle, contentDescription = "Téléchargé", tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        is TrackDownloadStatus.Failed -> {
+                            IconButton(onClick = { onDownload?.invoke() }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Rounded.ErrorOutline, contentDescription = "Échec", tint = Color.Red, modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                 }

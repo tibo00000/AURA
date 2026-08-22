@@ -1,118 +1,102 @@
 package com.aura.music.ui.screens
 
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.CloudUpload
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Sort
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.SyncedFileResponseData
 import com.aura.music.data.repository.CloudFileRepository
+import com.aura.music.domain.player.PlayerEvent
 import com.aura.music.ui.RouteScaffold
-import com.aura.music.ui.theme.BlazeOrange
-import com.aura.music.ui.theme.DeepBlack
-import com.aura.music.ui.theme.DarkGraphite
-import com.aura.music.ui.theme.ElevatedGraphite
-import com.aura.music.ui.theme.TextPrimary
-import com.aura.music.ui.theme.TextSecondary
-import kotlinx.coroutines.flow.collect
+import com.aura.music.ui.components.AuraLazyColumn
+import com.aura.music.ui.player.PlayerViewModel
+import com.aura.music.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private enum class CloudFilterType {
+    ALL,
+    CLOUD_ONLY,
+    DOWNLOADED,
+    HEAVY,
+    RECENT
+}
 
 @Composable
 fun CloudSyncScreen(
     cloudFileRepository: CloudFileRepository,
     onNavigateBack: () -> Unit,
-    playerViewModel: com.aura.music.ui.player.PlayerViewModel? = null
+    playerViewModel: PlayerViewModel? = null
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var refreshTick by remember { mutableIntStateOf(0) }
 
+    // Multi-page Tab selector: 0: Dashboard / 1: Explorateur Cloud / 2: Stockage Local
+    var selectedTab by remember { mutableIntStateOf(0) }
+
     var isLoading by remember { mutableStateOf(false) }
     var cloudFiles by remember { mutableStateOf<List<SyncedFileResponseData>>(emptyList()) }
     var localTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
-    var syncEnabled by remember { mutableStateOf(false) }
 
-    // Navigation and list filters
-    var selectedFilter by remember { mutableStateOf("cloud_only") } // options: "cloud_only", "pending_upload", "all_cloud"
+    // Tab 0: Show pending uploads list toggle
+    var showPendingUploads by remember { mutableStateOf(false) }
+
+    // Tab 1: Filters & Search
+    var cloudSearchQuery by remember { mutableStateOf("") }
+    var activeFilter by remember { mutableStateOf(CloudFilterType.ALL) }
     var sortByFileSize by remember { mutableStateOf(false) }
 
-    // Bulk actions in progress flags
-    var isBulkUploading by remember { mutableStateOf(false) }
-    var isBulkDownloading by remember { mutableStateOf(false) }
+    // Dialog state
+    var trackToDeleteFromCloud by remember { mutableStateOf<SyncedFileResponseData?>(null) }
+    var showClearLocalCacheDialog by remember { mutableStateOf(false) }
+    var trackToDeleteLocalOnly by remember { mutableStateOf<TrackListRow?>(null) }
 
-    // Track operation progress: Map of trackId to "Uploading...", "Downloading...", "Deleting..."
+    // Progress operations tracking (trackId -> message)
     val activeOperations = remember { mutableStateMapOf<String, String>() }
 
-    // Fetch cloud files, settings, and local tracks
+    // Load data asynchronously on IO
     LaunchedEffect(refreshTick) {
         isLoading = true
         try {
-            cloudFileRepository.listCloudFiles().collect { result ->
-                result.onSuccess { items ->
-                    cloudFiles = items
-                }.onFailure { err ->
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Erreur de chargement cloud: ${err.message}")
+            withContext(Dispatchers.IO) {
+                cloudFileRepository.listCloudFiles().collect { result ->
+                    result.onSuccess { items ->
+                        cloudFiles = items
+                    }.onFailure { err ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Erreur de chargement cloud : ${err.message}")
+                        }
                     }
                 }
+                localTracks = cloudFileRepository.getLocalTracks()
             }
-
-            localTracks = cloudFileRepository.getLocalTracks()
-            syncEnabled = cloudFileRepository.getSettings()?.syncEnabled == true
         } catch (e: Exception) {
             Log.e("CloudSyncScreen", "Failed to refresh cloud state", e)
         } finally {
@@ -121,270 +105,695 @@ fun CloudSyncScreen(
     }
 
     // Calculations
-    val syncedTrackIds = remember(cloudFiles) { cloudFiles.map { it.trackId }.toSet() }
+    val totalCloudSizeBytes = remember(cloudFiles) { cloudFiles.sumOf { it.sizeBytes } }
+    val totalCloudSizeMb = remember(totalCloudSizeBytes) {
+        String.format("%.2f MB", totalCloudSizeBytes.toDouble() / (1024 * 1024))
+    }
+    val maxVpsLimitBytes = 20L * 1024L * 1024L * 1024L // 20 GB VPS reference
+    val storageFraction = remember(totalCloudSizeBytes) {
+        (totalCloudSizeBytes.toFloat() / maxVpsLimitBytes.toFloat()).coerceIn(0f, 1f)
+    }
 
-    // 1. Local tracks not yet synced to cloud (Pending upload)
+    val locallyStoredTracks = remember(localTracks) {
+        localTracks.filter { !it.contentUri.isNullOrBlank() }
+    }
+
     val pendingUploadTracks = remember(localTracks, cloudFiles) {
         localTracks.filter { track ->
             val isLocal = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true
             if (!isLocal) return@filter false
-            
-            // Check if synced by ID
             val isSyncedById = cloudFiles.any { it.trackId == track.id }
             if (isSyncedById) return@filter false
-            
-            // Check if synced by metadata (Title + Artist)
             val normTitle = track.title.lowercase().trim()
             val normArtist = track.artistName.lowercase().trim()
-            val isSyncedByMetadata = cloudFiles.any { cloud ->
-                val cTitle = cloud.title?.lowercase()?.trim() ?: ""
-                val cArtist = cloud.artistName?.lowercase()?.trim() ?: ""
-                cTitle == normTitle && cArtist == normArtist
+            !cloudFiles.any { cloud ->
+                (cloud.title?.lowercase()?.trim() ?: "") == normTitle &&
+                (cloud.artistName?.lowercase()?.trim() ?: "") == normArtist
             }
-            !isSyncedByMetadata
         }
     }
 
-    // 2. Cloud files missing locally (Available for download)
-    val cloudOnlyFiles = remember(cloudFiles, localTracks) {
-        cloudFiles.filter { cloudFile ->
-            // Check if local track exists by ID and has file
-            val localTrack = localTracks.find { it.id == cloudFile.trackId }
-            val hasLocalFileById = localTrack != null && !localTrack.contentUri.isNullOrBlank()
-            if (hasLocalFileById) return@filter false
-            
-            // Check if local track exists by metadata (Title + Artist) and has file
-            val normTitle = cloudFile.title?.lowercase()?.trim() ?: ""
-            val normArtist = cloudFile.artistName?.lowercase()?.trim() ?: ""
-            val hasLocalByMetadata = localTracks.any { local ->
-                val lTitle = local.title.lowercase().trim()
-                val lArtist = local.artistName.lowercase().trim()
-                lTitle == normTitle && lArtist == normArtist && !local.contentUri.isNullOrBlank()
+    // Safe to clear = local tracks that are securely backed up on the Cloud
+    val safeToClearTracks = remember(locallyStoredTracks, cloudFiles) {
+        locallyStoredTracks.filter { local ->
+            val normTitle = local.title.lowercase().trim()
+            val normArtist = local.artistName.lowercase().trim()
+            cloudFiles.any { cloud ->
+                cloud.trackId == local.id ||
+                ((cloud.title?.lowercase()?.trim() ?: "") == normTitle &&
+                 (cloud.artistName?.lowercase()?.trim() ?: "") == normArtist)
             }
-            !hasLocalByMetadata
         }
     }
+    val localOnlyTracks = remember(locallyStoredTracks, safeToClearTracks) {
+        locallyStoredTracks.filter { it !in safeToClearTracks }
+    }
 
-    // 3. VPS Storage calculation
-    val totalSizeBytes = remember(cloudFiles) { cloudFiles.sumOf { it.sizeBytes } }
-    val totalSizeMb = remember(totalSizeBytes) { String.format("%.2f MB", totalSizeBytes.toDouble() / (1024 * 1024)) }
-    val maxVpsLimitBytes = 20L * 1024L * 1024L * 1024L // 20 GB limit representation
-    val storageFraction = remember(totalSizeBytes) { (totalSizeBytes.toFloat() / maxVpsLimitBytes.toFloat()).coerceIn(0f, 1f) }
-
-    // 4. Sorted cloud inventory
-    val displayCloudFiles = remember(cloudFiles, sortByFileSize) {
-        if (sortByFileSize) {
-            cloudFiles.sortedByDescending { it.sizeBytes }
+    // Filtered Cloud Files for Tab 1
+    val filteredCloudFiles = remember(cloudFiles, cloudSearchQuery, activeFilter, sortByFileSize, locallyStoredTracks) {
+        val query = cloudSearchQuery.trim().lowercase()
+        var list = if (query.isEmpty()) {
+            cloudFiles
         } else {
-            cloudFiles.sortedByDescending { it.uploadedAt ?: "" }
+            cloudFiles.filter { file ->
+                (file.title?.lowercase()?.contains(query) == true) ||
+                (file.artistName?.lowercase()?.contains(query) == true) ||
+                (file.albumTitle?.lowercase()?.contains(query) == true)
+            }
+        }
+
+        // Apply selected Filter Chip
+        list = when (activeFilter) {
+            CloudFilterType.ALL -> list
+            CloudFilterType.CLOUD_ONLY -> list.filter { file ->
+                !locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && it.artistName.lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
+            }
+            CloudFilterType.DOWNLOADED -> list.filter { file ->
+                locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && it.artistName.lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
+            }
+            CloudFilterType.HEAVY -> list.filter { it.sizeBytes >= 10L * 1024L * 1024L } // >= 10 MB
+            CloudFilterType.RECENT -> list.sortedByDescending { it.uploadedAt ?: "" }.take(20)
+        }
+
+        if (sortByFileSize) {
+            list.sortedByDescending { it.sizeBytes }
+        } else if (activeFilter != CloudFilterType.RECENT) {
+            list.sortedByDescending { it.uploadedAt ?: "" }
+        } else {
+            list
         }
     }
 
     RouteScaffold(
-        title = "Gestion des fichiers Cloud",
-        onNavigateBack = onNavigateBack
+        title = "Cloud & Stockage",
+        onNavigateBack = onNavigateBack,
+        snackbarHostState = snackbarHostState,
+        actions = {
+            IconButton(onClick = { refreshTick++ }) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "Actualiser", tint = BlazeOrange)
+            }
+        }
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(DeepBlack)
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 90.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            // Tab Selector Row
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = DarkGraphite,
+                contentColor = BlazeOrange,
+                indicator = { tabPositions ->
+                    if (selectedTab < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            color = BlazeOrange
+                        )
+                    }
+                }
             ) {
-                // Section 1: VPS Storage Gauge
-                item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(24.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .background(Brush.linearGradient(listOf(Color(0xFF232323), Color(0xFF0F0F0F))))
-                                .padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Rounded.Storage,
-                                        contentDescription = null,
-                                        tint = BlazeOrange,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        "Stockage VPS AURA",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                }
-                                IconButton(onClick = { refreshTick++ }) {
-                                    Icon(Icons.Rounded.Refresh, contentDescription = "Rafraîchir", tint = TextSecondary)
-                                }
-                            }
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = {
+                        Text(
+                            "Vue d'ensemble",
+                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedTab == 0) BlazeOrange else TextSecondary
+                        )
+                    },
+                    icon = { Icon(Icons.Rounded.Storage, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Text(
+                            "Explorateur Cloud (${cloudFiles.size})",
+                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedTab == 1) BlazeOrange else TextSecondary
+                        )
+                    },
+                    icon = { Icon(Icons.Rounded.Cloud, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = {
+                        Text(
+                            "Téléphone (${locallyStoredTracks.size})",
+                            fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedTab == 2) BlazeOrange else TextSecondary
+                        )
+                    },
+                    icon = { Icon(Icons.Rounded.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+            }
 
-                            LinearProgressIndicator(
-                                progress = storageFraction,
-                                modifier = Modifier.fillMaxWidth(),
-                                color = BlazeOrange,
-                                trackColor = DarkGraphite
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    "$totalSizeMb occupés",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextPrimary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "Limite : 20.0 GB",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary
-                                )
-                            }
-
-                            Text(
-                                "Total : ${cloudFiles.size} morceau(x) sauvegardé(s)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = BlazeOrange,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
+            if (isLoading && cloudFiles.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BlazeOrange)
                 }
-
-                // Section 2: Auto-Sync Settings
-                item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .background(DarkGraphite)
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+            } else {
+                when (selectedTab) {
+                    // TAB 0: DASHBOARD / OVERVIEW
+                    0 -> {
+                        AuraLazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Sauvegarde automatique",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    "Sauvegarde directement chaque son téléchargé dans le cloud.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary
-                                )
-                            }
-                            Switch(
-                                checked = syncEnabled,
-                                onCheckedChange = { checked ->
-                                    scope.launch {
-                                        cloudFileRepository.updateSyncEnabled(checked)
-                                        syncEnabled = checked
-                                        snackbarHostState.showSnackbar(
-                                            if (checked) "Sauvegarde automatique activée" else "Sauvegarde automatique désactivée"
-                                        )
-                                    }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.Black,
-                                    checkedTrackColor = BlazeOrange,
-                                    uncheckedThumbColor = TextSecondary,
-                                    uncheckedTrackColor = DarkGraphite
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Section 3: Active operations or bulk actions
-                if (isLoading && cloudFiles.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(40.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = BlazeOrange)
-                        }
-                    }
-                } else {
-                    if (activeOperations.isNotEmpty()) {
-                        item {
-                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                Text(
-                                    "Opérations en cours",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BlazeOrange,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-                                activeOperations.forEach { (trackId, status) ->
-                                    val cloudItem = cloudFiles.find { it.trackId == trackId }
-                                    val trackName = localTracks.find { it.id == trackId }?.title
-                                        ?: cloudItem?.title
-                                        ?: "Piste #${trackId.substringAfterLast(":")}"
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp),
-                                        shape = RoundedCornerShape(12.dp)
+                            // Storage Overview Card
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = ElevatedGraphite)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         Row(
-                                            modifier = Modifier
-                                                .background(ElevatedGraphite)
-                                                .padding(12.dp)
-                                                .fillMaxWidth(),
+                                            modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.weight(1f)
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(16.dp),
-                                                    strokeWidth = 2.dp,
-                                                    color = BlazeOrange
-                                                )
-                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Icon(Icons.Rounded.Cloud, contentDescription = null, tint = BlazeOrange)
                                                 Text(
-                                                    trackName,
+                                                    "Stockage Serveur Personnel",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextPrimary
+                                                )
+                                            }
+                                            Text(
+                                                totalCloudSizeMb,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BlazeOrange
+                                            )
+                                        }
+
+                                        LinearProgressIndicator(
+                                            progress = { storageFraction },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(4.dp)),
+                                            color = BlazeOrange,
+                                            trackColor = DarkGraphite,
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                "${cloudFiles.size} morceaux sur le serveur",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextSecondary
+                                            )
+                                            Text(
+                                                "Limite standard: 20 GB",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Quick Stats Grid
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { selectedTab = 2 },
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(containerColor = DarkGraphite)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(20.dp))
+                                            Text("${locallyStoredTracks.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                            Text("Sur le téléphone (Hors-ligne)", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                        }
+                                    }
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { showPendingUploads = !showPendingUploads },
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (showPendingUploads) ElevatedGraphite else DarkGraphite
+                                        ),
+                                        border = if (showPendingUploads) CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BlazeOrange)) else null
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Rounded.CloudUpload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(20.dp))
+                                                Icon(
+                                                    if (showPendingUploads) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                                    contentDescription = null,
+                                                    tint = TextSecondary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            Text("${pendingUploadTracks.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                            Text(
+                                                if (pendingUploadTracks.isEmpty()) "À jour avec le Cloud" else "En attente d'upload (cliquer)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (pendingUploadTracks.isEmpty()) Color(0xFF00E676) else BlazeOrange
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Expandable Pending Uploads Section
+                            if (showPendingUploads) {
+                                item {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = ElevatedGraphite)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    "Titres non encore synchronisés (${pendingUploadTracks.size})",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextPrimary
+                                                )
+                                                if (pendingUploadTracks.isNotEmpty()) {
+                                                    Button(
+                                                        onClick = {
+                                                            scope.launch {
+                                                                snackbarHostState.showSnackbar("Synchronisation de ${pendingUploadTracks.size} morceaux lancée...")
+                                                                pendingUploadTracks.forEach { track ->
+                                                                    cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                                                        res.onFailure {
+                                                                            Log.e("CloudSync", "Failed to upload track ${track.id}: ${it.message}")
+                                                                        }
+                                                                    }
+                                                                }
+                                                                cloudFileRepository.refreshSyncedTrackIds()
+                                                                refreshTick++
+                                                                snackbarHostState.showSnackbar("Synchronisation terminée.")
+                                                            }
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Tout uploader", style = MaterialTheme.typography.labelMedium)
+                                                    }
+                                                }
+                                            }
+
+                                            if (pendingUploadTracks.isEmpty()) {
+                                                Text(
+                                                    "Tous vos morceaux locaux sont déjà sauvegardés sur votre Cloud personnel !",
                                                     style = MaterialTheme.typography.bodyMedium,
+                                                    color = Color(0xFF00E676)
+                                                )
+                                            } else {
+                                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    pendingUploadTracks.forEach { track ->
+                                                        val isUploading = activeOperations[track.id] != null
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .background(DarkGraphite, RoundedCornerShape(10.dp))
+                                                                .padding(10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                        ) {
+                                                            if (!track.coverUri.isNullOrBlank()) {
+                                                                AsyncImage(
+                                                                    model = track.coverUri,
+                                                                    contentDescription = null,
+                                                                    contentScale = ContentScale.Crop,
+                                                                    modifier = Modifier
+                                                                        .size(38.dp)
+                                                                        .clip(RoundedCornerShape(6.dp))
+                                                                )
+                                                            } else {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(38.dp)
+                                                                        .background(ElevatedGraphite, RoundedCornerShape(6.dp)),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                                                                }
+                                                            }
+
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(track.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                Text(track.artistName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                            }
+
+                                                            if (isUploading) {
+                                                                CircularProgressIndicator(color = BlazeOrange, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                                            } else {
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        scope.launch {
+                                                                            activeOperations[track.id] = "Upload..."
+                                                                            cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                                                                res.onSuccess {
+                                                                                    snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                                                                    cloudFileRepository.refreshSyncedTrackIds()
+                                                                                    refreshTick++
+                                                                                }.onFailure { err ->
+                                                                                    snackbarHostState.showSnackbar("Échec : ${err.message}")
+                                                                                }
+                                                                                activeOperations.remove(track.id)
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    modifier = Modifier.size(32.dp)
+                                                                ) {
+                                                                    Icon(Icons.Rounded.CloudUpload, contentDescription = "Uploader", tint = BlazeOrange)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // TAB 1: EXPLORATEUR & NETTOYEUR DU CLOUD
+                    1 -> {
+                        AuraLazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Search bar & Sort
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = cloudSearchQuery,
+                                        onValueChange = { cloudSearchQuery = it },
+                                        placeholder = { Text("Rechercher un son sur le Cloud...", style = MaterialTheme.typography.bodyMedium) },
+                                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary) },
+                                        trailingIcon = {
+                                            if (cloudSearchQuery.isNotEmpty()) {
+                                                IconButton(onClick = { cloudSearchQuery = "" }) {
+                                                    Icon(Icons.Rounded.Close, contentDescription = "Effacer")
+                                                }
+                                            }
+                                        },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = BlazeOrange,
+                                            unfocusedBorderColor = DarkGraphite,
+                                            focusedContainerColor = ElevatedGraphite,
+                                            unfocusedContainerColor = ElevatedGraphite
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    IconButton(
+                                        onClick = { sortByFileSize = !sortByFileSize },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(if (sortByFileSize) BlazeOrange else DarkGraphite, RoundedCornerShape(12.dp))
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Sort,
+                                            contentDescription = "Trier par taille",
+                                            tint = if (sortByFileSize) Color.White else TextPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Filter Chips Row
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = activeFilter == CloudFilterType.ALL,
+                                        onClick = { activeFilter = CloudFilterType.ALL },
+                                        label = { Text("Tous (${cloudFiles.size})") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeFilter == CloudFilterType.CLOUD_ONLY,
+                                        onClick = { activeFilter = CloudFilterType.CLOUD_ONLY },
+                                        label = { Text("Non téléchargés (Cloud seul)") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeFilter == CloudFilterType.DOWNLOADED,
+                                        onClick = { activeFilter = CloudFilterType.DOWNLOADED },
+                                        label = { Text("Sur le téléphone") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeFilter == CloudFilterType.HEAVY,
+                                        onClick = { activeFilter = CloudFilterType.HEAVY },
+                                        label = { Text("Fichiers lourds (> 10 Mo)") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeFilter == CloudFilterType.RECENT,
+                                        onClick = { activeFilter = CloudFilterType.RECENT },
+                                        label = { Text("Récents") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+
+                            // Items count indicator
+                            item {
+                                Text(
+                                    "${filteredCloudFiles.size} fichier(s) correspondant(s)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+
+                            if (filteredCloudFiles.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 40.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            if (cloudSearchQuery.isEmpty()) "Aucun fichier pour ce filtre" else "Aucun résultat trouvé sur le Cloud",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+                            } else {
+                                items(
+                                    items = filteredCloudFiles,
+                                    key = { it.trackId }
+                                ) { file ->
+                                    val sizeMbStr = String.format("%.1f MB", file.sizeBytes.toDouble() / (1024 * 1024))
+                                    val isDownloaded = locallyStoredTracks.any {
+                                        it.id == file.trackId ||
+                                        (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") &&
+                                         it.artistName.lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: ""))
+                                    }
+                                    val opStatus = activeOperations[file.trackId]
+
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = ElevatedGraphite)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            if (!file.coverUri.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = file.coverUri,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(44.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(44.dp)
+                                                        .background(DarkGraphite, RoundedCornerShape(8.dp)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = TextSecondary)
+                                                }
+                                            }
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    file.title ?: "Titre inconnu",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
                                                     color = TextPrimary,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
+                                                Text(
+                                                    listOfNotNull(file.artistName, file.albumTitle).joinToString(" • ").ifBlank { "Artiste inconnu" },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = TextSecondary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    "$sizeMbStr • ${if (isDownloaded) "Téléchargé sur le téléphone" else "Streamable (Cloud)"}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isDownloaded) Color(0xFF00E676) else BlazeOrange
+                                                )
                                             }
-                                            Text(
-                                                status,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = BlazeOrange,
-                                                fontWeight = FontWeight.Medium
-                                            )
+
+                                            if (opStatus != null) {
+                                                CircularProgressIndicator(color = BlazeOrange, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                            } else {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    // Stream play button
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (playerViewModel != null) {
+                                                                val queued = com.aura.music.domain.player.QueuedTrack(
+                                                                    trackId = file.trackId,
+                                                                    title = file.title ?: "Titre inconnu",
+                                                                    artistName = file.artistName ?: "Artiste inconnu",
+                                                                    albumTitle = file.albumTitle,
+                                                                    contentUri = null,
+                                                                    durationMs = file.durationMs?.toLong() ?: 0L,
+                                                                    coverUri = file.coverUri,
+                                                                    source = com.aura.music.domain.player.TrackSource.CONTEXT
+                                                                )
+                                                                playerViewModel.onEvent(
+                                                                    PlayerEvent.PlayTrack(
+                                                                        trackId = file.trackId,
+                                                                        contextType = "cloud_explorer",
+                                                                        contextId = "cloud",
+                                                                        contextTracks = listOf(queued),
+                                                                        startIndex = 0
+                                                                    )
+                                                                )
+                                                            }
+                                                        },
+                                                        modifier = Modifier.size(36.dp)
+                                                    ) {
+                                                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Écouter", tint = BlazeOrange)
+                                                    }
+
+                                                    // Download offline button (if not already downloaded)
+                                                    if (!isDownloaded) {
+                                                        IconButton(
+                                                            onClick = {
+                                                                scope.launch {
+                                                                    activeOperations[file.trackId] = "Téléchargement..."
+                                                                    cloudFileRepository.downloadTrack(
+                                                                        trackId = file.trackId,
+                                                                        title = file.title ?: "",
+                                                                        artistName = file.artistName,
+                                                                        albumTitle = file.albumTitle,
+                                                                        durationMs = file.durationMs,
+                                                                        artistId = file.artistId,
+                                                                        albumId = file.albumId,
+                                                                        coverUri = file.coverUri
+                                                                    ).collect { res ->
+                                                                        res.onSuccess {
+                                                                            snackbarHostState.showSnackbar("Téléchargé : ${file.title}")
+                                                                            refreshTick++
+                                                                        }.onFailure { err ->
+                                                                            snackbarHostState.showSnackbar("Échec : ${err.message}")
+                                                                        }
+                                                                        activeOperations.remove(file.trackId)
+                                                                    }
+                                                                }
+                                                            },
+                                                            modifier = Modifier.size(36.dp)
+                                                        ) {
+                                                            Icon(Icons.Rounded.Download, contentDescription = "Télécharger sur le téléphone", tint = TextPrimary)
+                                                        }
+                                                    }
+
+                                                    // Delete from Cloud button
+                                                    IconButton(
+                                                        onClick = { trackToDeleteFromCloud = file },
+                                                        modifier = Modifier.size(36.dp)
+                                                    ) {
+                                                        Icon(Icons.Rounded.Delete, contentDescription = "Supprimer du Cloud", tint = Color.Red.copy(alpha = 0.8f))
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -392,380 +801,219 @@ fun CloudSyncScreen(
                         }
                     }
 
-                    // Section 4: Filters Chips / Tab Selector
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                    // TAB 2: GESTIONNAIRE DE STOCKAGE LOCAL
+                    2 -> {
+                        AuraLazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val filters = listOf(
-                                    "cloud_only" to "À récupérer (${cloudOnlyFiles.size})",
-                                    "pending_upload" to "À uploader (${pendingUploadTracks.size})",
-                                    "all_cloud" to "Tout le Cloud (${cloudFiles.size})"
-                                )
-                                filters.forEach { (type, label) ->
-                                    val selected = selectedFilter == type
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .background(
-                                                if (selected) BlazeOrange else DarkGraphite,
-                                                shape = RoundedCornerShape(50.dp)
-                                            )
-                                            .clickable { selectedFilter = type }
-                                            .padding(vertical = 8.dp, horizontal = 4.dp),
-                                        contentAlignment = Alignment.Center
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = ElevatedGraphite)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
+                                        Text("Mémoire Téléphone (Mode Hors-ligne)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
                                         Text(
-                                            label,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selected) Color.Black else TextPrimary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            "${locallyStoredTracks.size} piste(s) sont stockées physiquement sur votre smartphone.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextSecondary
                                         )
+                                        Text(
+                                            "• ${safeToClearTracks.size} piste(s) sont sécurisées sur le Cloud et peuvent être libérées sans risque.\n" +
+                                            (if (localOnlyTracks.isNotEmpty()) "• ${localOnlyTracks.size} piste(s) sont uniquement sur ce téléphone et seront préservées." else "• Toutes vos pistes sont déjà sauvegardées sur le Cloud."),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (safeToClearTracks.isNotEmpty()) Color(0xFF00E676) else TextSecondary
+                                        )
+
+                                        if (safeToClearTracks.isNotEmpty()) {
+                                            Button(
+                                                onClick = { showClearLocalCacheDialog = true },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.85f)),
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Libérer la mémoire (${safeToClearTracks.size} sons sur le Cloud)", fontWeight = FontWeight.Bold)
+                                            }
+                                        }
                                     }
                                 }
                             }
 
-                            // Bulk Actions Row based on the selected filter
-                            if (selectedFilter == "cloud_only" && cloudOnlyFiles.isNotEmpty()) {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            isBulkDownloading = true
-                                            var successCount = 0
-                                            var failCount = 0
-                                            cloudOnlyFiles.forEach { cloudItem ->
-                                                val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                                                activeOperations[cloudItem.trackId] = "Téléchargement..."
-                                                cloudFileRepository.downloadTrack(
-                                                    trackId = cloudItem.trackId,
-                                                    title = trackMeta?.title ?: cloudItem.title,
-                                                    artistName = trackMeta?.artistName ?: cloudItem.artistName,
-                                                    albumTitle = trackMeta?.albumTitle ?: cloudItem.albumTitle,
-                                                    durationMs = trackMeta?.durationMs ?: cloudItem.durationMs,
-                                                    artistId = trackMeta?.artistId ?: cloudItem.artistId,
-                                                    albumId = trackMeta?.albumId ?: cloudItem.albumId,
-                                                    coverUri = trackMeta?.coverUri ?: cloudItem.coverUri
-                                                ).collect { res ->
-                                                    activeOperations.remove(cloudItem.trackId)
-                                                    res.onSuccess { successCount++ }.onFailure { failCount++ }
-                                                }
-                                            }
-                                            isBulkDownloading = false
-                                            snackbarHostState.showSnackbar("Récupération terminée: $successCount réussi(s), $failCount échoué(s)")
-                                            refreshTick++
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
-                                    enabled = !isBulkDownloading && activeOperations.isEmpty(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = Color.Black)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Tout récupérer (${cloudOnlyFiles.size} fichiers)", color = Color.Black, fontWeight = FontWeight.Bold)
-                                    if (isBulkDownloading) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.Black)
-                                    }
-                                }
-                            } else if (selectedFilter == "pending_upload" && pendingUploadTracks.isNotEmpty()) {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            isBulkUploading = true
-                                            var successCount = 0
-                                            var failCount = 0
-                                            pendingUploadTracks.forEach { track ->
-                                                activeOperations[track.id] = "Sauvegarde..."
-                                                cloudFileRepository.uploadTrack(track.id).collect { res ->
-                                                    activeOperations.remove(track.id)
-                                                    res.onSuccess { successCount++ }.onFailure { failCount++ }
-                                                }
-                                            }
-                                            isBulkUploading = false
-                                            snackbarHostState.showSnackbar("Sauvegarde terminée: $successCount réussi(s), $failCount échoué(s)")
-                                            refreshTick++
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
-                                    enabled = !isBulkUploading && activeOperations.isEmpty(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Rounded.CloudUpload, contentDescription = null, tint = Color.Black)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Tout sauvegarder (${pendingUploadTracks.size} fichiers)", color = Color.Black, fontWeight = FontWeight.Bold)
-                                    if (isBulkUploading) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.Black)
-                                    }
-                                }
-                            } else if (selectedFilter == "all_cloud" && cloudFiles.isNotEmpty()) {
-                                // Sorting control for VPS storage cleanup
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.End,
-                                    verticalAlignment = Alignment.CenterVertically
+                            item {
+                                Text(
+                                    "Pistes sur le téléphone (${locallyStoredTracks.size})",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                                )
+                            }
+
+                            items(
+                                items = locallyStoredTracks,
+                                key = { it.id }
+                            ) { track ->
+                                val isBackedUp = safeToClearTracks.contains(track)
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = DarkGraphite)
                                 ) {
                                     Row(
                                         modifier = Modifier
-                                            .clickable { sortByFileSize = !sortByFileSize }
-                                            .background(DarkGraphite, shape = RoundedCornerShape(8.dp))
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Icon(Icons.Rounded.Sort, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            if (sortByFileSize) "Trié par taille" else "Trié par date d'envoi",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TextPrimary
+                                        Icon(
+                                            if (isBackedUp) Icons.Rounded.CheckCircle else Icons.Rounded.PhoneAndroid,
+                                            contentDescription = null,
+                                            tint = if (isBackedUp) Color(0xFF00E676) else BlazeOrange,
+                                            modifier = Modifier.size(20.dp)
                                         )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(track.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(track.artistName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(
+                                                if (isBackedUp) "✓ Sauvegardé sur le Cloud (Suppression sûre)" else "⚠️ Local uniquement (Non synchronisé au Cloud)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isBackedUp) Color(0xFF00E676) else BlazeOrange
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                if (isBackedUp) {
+                                                    scope.launch {
+                                                        cloudFileRepository.removeLocalFile(track.id)
+                                                        refreshTick++
+                                                        snackbarHostState.showSnackbar("Fichier supprimé de l'appareil.")
+                                                    }
+                                                } else {
+                                                    trackToDeleteLocalOnly = track
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Delete, contentDescription = "Supprimer du téléphone", tint = TextSecondary)
+                                        }
                                     }
-                                }
-                            }
-                        }
-                    }
-
-                    // Section 5: List Rendering based on selected filter
-                    when (selectedFilter) {
-                        "cloud_only" -> {
-                            if (cloudOnlyFiles.isEmpty()) {
-                                item {
-                                    EmptyFilterState("Aucun titre à récupérer. Votre appareil est à jour.")
-                                }
-                            } else {
-                                items(cloudOnlyFiles, key = { "cloud-only-${it.trackId}" }) { cloudItem ->
-                                    val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                                    val title = trackMeta?.title ?: cloudItem.title ?: "Piste #${cloudItem.trackId.substringAfterLast(":")}"
-                                    val subtitle = trackMeta?.artistName ?: cloudItem.artistName ?: "Artiste inconnu"
-                                    val sizeMb = String.format("%.2f MB", cloudItem.sizeBytes.toDouble() / (1024 * 1024))
-                                    
-                                    TrackItemRow(
-                                        title = title,
-                                        subtitle = subtitle,
-                                        sizeMb = sizeMb,
-                                        actionIcon = Icons.Rounded.CloudDownload,
-                                        actionColor = BlazeOrange,
-                                        onActionClick = {
-                                            activeOperations[cloudItem.trackId] = "Téléchargement..."
-                                            scope.launch {
-                                                cloudFileRepository.downloadTrack(
-                                                    trackId = cloudItem.trackId,
-                                                    title = trackMeta?.title ?: cloudItem.title,
-                                                    artistName = trackMeta?.artistName ?: cloudItem.artistName,
-                                                    albumTitle = trackMeta?.albumTitle ?: cloudItem.albumTitle,
-                                                    durationMs = trackMeta?.durationMs ?: cloudItem.durationMs,
-                                                    artistId = trackMeta?.artistId ?: cloudItem.artistId,
-                                                    albumId = trackMeta?.albumId ?: cloudItem.albumId,
-                                                    coverUri = trackMeta?.coverUri ?: cloudItem.coverUri
-                                                ).collect { res ->
-                                                    activeOperations.remove(cloudItem.trackId)
-                                                    res.onSuccess {
-                                                        snackbarHostState.showSnackbar("Téléchargement réussi : $title")
-                                                        refreshTick++
-                                                    }.onFailure { err ->
-                                                        snackbarHostState.showSnackbar("Échec de téléchargement : ${err.message}")
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        enabled = !activeOperations.containsKey(cloudItem.trackId)
-                                    )
-                                }
-                            }
-                        }
-                        "pending_upload" -> {
-                            if (pendingUploadTracks.isEmpty()) {
-                                item {
-                                    EmptyFilterState("Aucun titre à sauvegarder. Tout est dans le cloud.")
-                                }
-                            } else {
-                                items(pendingUploadTracks, key = { "pending-${it.id}" }) { track ->
-                                    TrackItemRow(
-                                        title = track.title,
-                                        subtitle = track.artistName,
-                                        sizeMb = null,
-                                        actionIcon = Icons.Rounded.CloudUpload,
-                                        actionColor = BlazeOrange,
-                                        onActionClick = {
-                                            activeOperations[track.id] = "Sauvegarde..."
-                                            scope.launch {
-                                                cloudFileRepository.uploadTrack(track.id).collect { res ->
-                                                    activeOperations.remove(track.id)
-                                                    res.onSuccess {
-                                                        snackbarHostState.showSnackbar("Sauvegarde réussie : ${track.title}")
-                                                        refreshTick++
-                                                    }.onFailure { err ->
-                                                        snackbarHostState.showSnackbar("Échec de la sauvegarde : ${err.message}")
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        enabled = !activeOperations.containsKey(track.id)
-                                    )
-                                }
-                            }
-                        }
-                        "all_cloud" -> {
-                            if (displayCloudFiles.isEmpty()) {
-                                item {
-                                    EmptyFilterState("Aucun fichier stocké dans le cloud.")
-                                }
-                            } else {
-                                items(displayCloudFiles, key = { "all-cloud-${it.trackId}" }) { cloudItem ->
-                                    val trackMeta = localTracks.find { it.id == cloudItem.trackId }
-                                    val title = trackMeta?.title ?: cloudItem.title ?: "Piste #${cloudItem.trackId.substringAfterLast(":")}"
-                                    val subtitle = trackMeta?.artistName ?: cloudItem.artistName ?: "Artiste inconnu"
-                                    val sizeMb = String.format("%.2f MB", cloudItem.sizeBytes.toDouble() / (1024 * 1024))
-                                    val isLocal = trackMeta?.contentUri?.isNotBlank() == true
-
-                                    TrackItemRow(
-                                        title = title,
-                                        subtitle = "$subtitle • ${if (isLocal) "Sur l'appareil" else "Cloud uniquement"}",
-                                        sizeMb = sizeMb,
-                                        actionIcon = Icons.Rounded.Delete,
-                                        actionColor = Color.Red.copy(alpha = 0.8f),
-                                        onActionClick = {
-                                            activeOperations[cloudItem.trackId] = "Suppression..."
-                                            scope.launch {
-                                                try {
-                                                    cloudFileRepository.deleteSyncFile(cloudItem.trackId).collect { res ->
-                                                        activeOperations.remove(cloudItem.trackId)
-                                                        res.onSuccess {
-                                                            snackbarHostState.showSnackbar("Fichier supprimé du cloud")
-                                                            refreshTick++
-                                                        }.onFailure { err ->
-                                                            snackbarHostState.showSnackbar("Erreur de suppression : ${err.message}")
-                                                        }
-                                                    }
-                                                } catch (e: Exception) {
-                                                    activeOperations.remove(cloudItem.trackId)
-                                                    snackbarHostState.showSnackbar("Erreur : ${e.message}")
-                                                }
-                                            }
-                                        },
-                                        enabled = !activeOperations.containsKey(cloudItem.trackId)
-                                    )
                                 }
                             }
                         }
                     }
                 }
             }
-
-            // Snackbar Host for action feedback
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp)
-            ) { data ->
-                Snackbar(
-                    snackbarData = data,
-                    containerColor = ElevatedGraphite,
-                    contentColor = TextPrimary,
-                    actionColor = BlazeOrange
-                )
-            }
         }
-    }
-}
 
-@Composable
-fun TrackItemRow(
-    title: String,
-    subtitle: String,
-    sizeMb: String?,
-    actionIcon: androidx.compose.ui.graphics.vector.ImageVector,
-    actionColor: Color,
-    onActionClick: () -> Unit,
-    enabled: Boolean
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .background(DarkGraphite)
-                .padding(12.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    if (sizeMb != null) "$subtitle • $sizeMb" else subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            IconButton(
-                onClick = onActionClick,
-                enabled = enabled
-            ) {
-                Icon(
-                    actionIcon,
-                    contentDescription = null,
-                    tint = if (enabled) actionColor else TextSecondary
-                )
-            }
+        // Delete from Cloud Dialog
+        if (trackToDeleteFromCloud != null) {
+            val target = trackToDeleteFromCloud!!
+            AlertDialog(
+                onDismissRequest = { trackToDeleteFromCloud = null },
+                title = { Text("Supprimer du Cloud ?") },
+                text = {
+                    Text("Voulez-vous supprimer définitivement \"${target.title}\" du serveur personnel ? Ce morceau ne sera plus streamable.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val fileId = target.trackId
+                            trackToDeleteFromCloud = null
+                            scope.launch {
+                                cloudFileRepository.deleteSyncFile(fileId).collect { res ->
+                                    res.onSuccess {
+                                        snackbarHostState.showSnackbar("Morceau supprimé du Cloud avec succès.")
+                                        cloudFileRepository.refreshSyncedTrackIds()
+                                        refreshTick++
+                                    }.onFailure { err ->
+                                        snackbarHostState.showSnackbar("Erreur de suppression : ${err.message}")
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("Supprimer du Cloud")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { trackToDeleteFromCloud = null }) {
+                        Text("Annuler")
+                    }
+                }
+            )
         }
-    }
-}
 
-@Composable
-fun EmptyFilterState(message: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .background(DarkGraphite)
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.Info, contentDescription = null, tint = TextSecondary)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
+        // Clear Local Cache Confirmation Dialog (Safe tracks only)
+        if (showClearLocalCacheDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearLocalCacheDialog = false },
+                title = { Text("Vider la mémoire locale ?") },
+                text = {
+                    Text("Seuls les ${safeToClearTracks.size} morceaux déjà sauvegardés sur le Cloud seront supprimés de la mémoire locale du téléphone. Vos musiques restent intactes sur le Cloud et streamables en ligne.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showClearLocalCacheDialog = false
+                            scope.launch {
+                                safeToClearTracks.forEach { track ->
+                                    cloudFileRepository.removeLocalFile(track.id)
+                                }
+                                refreshTick++
+                                snackbarHostState.showSnackbar("${safeToClearTracks.size} fichiers locaux supprimés avec succès.")
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("Confirmer le nettoyage")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearLocalCacheDialog = false }) {
+                        Text("Annuler")
+                    }
+                }
+            )
+        }
+
+        // Warning when deleting a local-only track
+        if (trackToDeleteLocalOnly != null) {
+            val target = trackToDeleteLocalOnly!!
+            AlertDialog(
+                onDismissRequest = { trackToDeleteLocalOnly = null },
+                title = { Text("Attention : Morceau non sauvegardé sur le Cloud") },
+                text = {
+                    Text("Le morceau \"${target.title}\" n'a pas été envoyé sur votre serveur Cloud. Si vous le supprimez de l'appareil, il sera définitivement perdu.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            trackToDeleteLocalOnly = null
+                            scope.launch {
+                                cloudFileRepository.removeLocalFile(target.id)
+                                refreshTick++
+                                snackbarHostState.showSnackbar("Fichier supprimé de l'appareil.")
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("Supprimer définitivement")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { trackToDeleteLocalOnly = null }) {
+                        Text("Annuler")
+                    }
+                }
             )
         }
     }

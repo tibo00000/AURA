@@ -292,6 +292,9 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE id IN (:ids)")
     suspend fun deleteTracksByIds(ids: List<String>)
 
+    @Query("DELETE FROM track_media_links WHERE track_id = :trackId")
+    suspend fun deleteTrackMediaLinksByTrackId(trackId: String)
+
     @Query(
         """
         SELECT

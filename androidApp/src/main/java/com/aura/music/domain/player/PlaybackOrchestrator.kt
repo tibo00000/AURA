@@ -18,6 +18,7 @@ import com.aura.music.data.repository.AlbumDetail
 import com.aura.music.data.repository.ArtistDetail
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.service.PlaybackService
+import com.aura.music.data.network.BuildConfig
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
@@ -156,6 +157,7 @@ class PlaybackOrchestrator(
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             android.util.Log.e("PlaybackOrchestrator", "onPlayerError: error=${error.localizedMessage}", error)
+            controller?.pause()
             _uiState.update { current ->
                 current.copy(
                     playbackState = PlaybackState.Error,
@@ -721,7 +723,14 @@ class PlaybackOrchestrator(
     }
 
     private fun createMediaItem(track: QueuedTrack): MediaItem? {
-        val uri = track.contentUri ?: return null
+        val uri = if (!track.contentUri.isNullOrBlank()) {
+            track.contentUri
+        } else if (track.trackId.isNotBlank()) {
+            // Stream direct depuis le Cloud personnel AURA
+            "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
+        } else {
+            return null
+        }
         
         var artworkData: ByteArray? = null
         val artworkUri = track.coverUri?.let { uriStr ->

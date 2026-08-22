@@ -106,7 +106,7 @@ fun HomeScreen(
     }
 
     RouteScaffold(title = "Accueil", style = MaterialTheme.typography.headlineLarge) {
-        LazyColumn(
+        com.aura.music.ui.components.AuraLazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(DeepBlack),

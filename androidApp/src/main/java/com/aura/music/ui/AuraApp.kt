@@ -478,6 +478,7 @@ fun AuraApp() {
             composable(AuraRoute.Sandbox) {
                 com.aura.music.ui.screens.SandboxScreen(
                     repository = repository,
+                    playerViewModel = playerViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
@@ -675,31 +676,36 @@ fun RouteScaffold(
     onNavigateBack: (() -> Unit)? = null,
     snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+    topBar: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { if (title != null) Text(title, style = style ?: MaterialTheme.typography.titleLarge) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = DeepBlack,
-                    titleContentColor = TextPrimary,
-                    navigationIconContentColor = TextPrimary,
-                    actionIconContentColor = TextPrimary
-                ),
-                navigationIcon = {
-                    if (onNavigateBack != null) {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Retour",
-                                tint = TextPrimary,
-                            )
+            if (topBar != null) {
+                topBar()
+            } else if (title != null || onNavigateBack != null) {
+                TopAppBar(
+                    title = { if (title != null) Text(title, style = style ?: MaterialTheme.typography.titleLarge) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = DeepBlack,
+                        titleContentColor = TextPrimary,
+                        navigationIconContentColor = TextPrimary,
+                        actionIconContentColor = TextPrimary
+                    ),
+                    navigationIcon = {
+                        if (onNavigateBack != null) {
+                            IconButton(onClick = onNavigateBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = "Retour",
+                                    tint = TextPrimary,
+                                )
+                            }
                         }
-                    }
-                },
-                actions = actions
-            )
+                    },
+                    actions = actions
+                )
+            }
         },
         snackbarHost = {
             if (snackbarHostState != null) {

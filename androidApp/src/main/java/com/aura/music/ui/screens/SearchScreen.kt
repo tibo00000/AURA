@@ -156,6 +156,18 @@ fun SearchScreen(
     }
     val playlists = playlistsState.value
 
+    val localTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
+        value = repository.getAllTracks()
+    }
+    val localTracks = localTracksState.value
+
+    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshToken) {
+        cloudFileRepository.listCloudFiles().collect { res ->
+            res.onSuccess { value = it }
+        }
+    }
+    val cloudFiles = cloudFilesState.value
+
     LaunchedEffect(refreshToken) {
         viewModel.refreshDisplayedLocalResults()
     }
@@ -173,35 +185,46 @@ fun SearchScreen(
     }
 
     RouteScaffold(
-        title = "Recherche",
+        title = null,
         snackbarHostState = snackbarHostState,
-        actions = {
-            IconButton(onClick = onOpenDownloads) {
-                Icon(
-                    imageVector = Icons.Rounded.Downloading,
-                    contentDescription = "Téléchargements",
-                    tint = TextPrimary
-                )
-            }
-        }
     ) {
-        LazyColumn(
+        com.aura.music.ui.components.AuraLazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Search bar
+            // Compact Top Search Bar + Downloads Button
             item {
-                Spacer(modifier = Modifier.height(12.dp))
-                SearchBarInput(
-                    query = uiState.query,
-                    onQueryChange = viewModel::updateQuery,
-                    onSubmit = {
-                        focusManager.clearFocus()
-                        viewModel.submitSearch()
-                    },
-                    onClear = viewModel::clearQuery,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SearchBarInput(
+                        query = uiState.query,
+                        onQueryChange = viewModel::updateQuery,
+                        onSubmit = {
+                            focusManager.clearFocus()
+                            viewModel.submitSearch()
+                        },
+                        onClear = viewModel::clearQuery,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onOpenDownloads,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(ElevatedGraphite, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Downloading,
+                            contentDescription = "Téléchargements",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
             }
 
             // Local and Online suggestions dropdown (only during typing with 3+ chars)
@@ -343,6 +366,7 @@ fun SearchScreen(
                                 },
                                 cloudFileRepository = cloudFileRepository,
                                 syncedCloudTrackIds = syncedCloudTrackIds,
+                                cloudFiles = cloudFiles,
                                 snackbarHostState = snackbarHostState,
                                 scope = scope,
                                 localLibraryRepository = repository,
@@ -370,6 +394,9 @@ fun SearchScreen(
                                 artists = result.onlineArtists,
                                 albums = result.onlineAlbums,
                                 downloadStatusMap = trackDownloadStatusMap,
+                                localTracks = localTracks,
+                                cloudFiles = cloudFiles,
+                                syncedCloudTrackIds = syncedCloudTrackIds,
                                 onPlayTrack = { track ->
                                     focusManager.clearFocus()
                                     onPlayTrackInList(
@@ -429,6 +456,22 @@ fun SearchScreen(
                                             }
                                         }
                                     }
+                                },
+                                onUploadToCloud = { track ->
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Envoi vers le Cloud lancé : ${track.title}")
+                                        cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                            res.onSuccess {
+                                                snackbarHostState.showSnackbar("Sauvegardé sur le Cloud : ${track.title}")
+                                                cloudFileRepository.refreshSyncedTrackIds()
+                                            }.onFailure { err ->
+                                                snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                            }
+                                        }
+                                    }
+                                },
+                                onDeleteDownload = { trackId ->
+                                    trackToDelete = localTracks.firstOrNull { it.id == trackId }
                                 },
                                 onAddToPlaylist = { track ->
                                     activeTrackForPlaylist = TrackListRow(
@@ -532,6 +575,7 @@ private fun LocalLibrarySearchTab(
     modifier: Modifier = Modifier,
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
     syncedCloudTrackIds: Set<String>,
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
     snackbarHostState: androidx.compose.material3.SnackbarHostState,
     scope: kotlinx.coroutines.CoroutineScope,
     localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
@@ -559,6 +603,7 @@ private fun LocalLibrarySearchTab(
                         onDeleteTrack = onDeleteTrack,
                         cloudFileRepository = cloudFileRepository,
                         syncedCloudTrackIds = syncedCloudTrackIds,
+                        cloudFiles = cloudFiles,
                         snackbarHostState = snackbarHostState,
                         scope = scope,
                         localLibraryRepository = localLibraryRepository,
@@ -603,8 +648,13 @@ private fun OnlineSearchTab(
     artists: List<ArtistSummary>,
     albums: List<AlbumSummary>,
     downloadStatusMap: Map<String, TrackDownloadStatus> = emptyMap(),
+    localTracks: List<TrackListRow> = emptyList(),
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
+    syncedCloudTrackIds: Set<String> = emptySet(),
     onPlayTrack: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
+    onUploadToCloud: (TrackSummary) -> Unit,
+    onDeleteDownload: (String) -> Unit,
     onAddToPlaylist: (TrackSummary) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
@@ -619,14 +669,33 @@ private fun OnlineSearchTab(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
-                tracks.take(5).forEach { track ->
+                tracks.take(10).forEach { track ->
+                    val normTitle = track.title.lowercase().trim()
+                    val normArtist = track.displayArtistName.lowercase().trim()
+
+                    val isDownloadedLocally = localTracks.any {
+                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
+                        !it.contentUri.isNullOrBlank()
+                    }
+
+                    val isOnCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
+                        it.trackId == track.id ||
+                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
+                    }
+
+                    val isCloudOnly = isOnCloud && !isDownloadedLocally
+
                     SearchOnlineTrackRowItem(
                         track = track,
                         artists = artists,
                         albums = albums,
                         downloadStatus = downloadStatusMap[track.id] ?: TrackDownloadStatus.Idle,
+                        isDownloadedLocally = isDownloadedLocally,
+                        isCloudOnly = isCloudOnly,
                         onPlayTrack = onPlayTrack,
                         onDownloadTrack = onDownloadTrack,
+                        onUploadToCloud = onUploadToCloud,
+                        onDeleteDownload = onDeleteDownload,
                         onOpenArtist = onOpenArtist,
                         onOpenAlbum = onOpenAlbum
                     )
@@ -1346,6 +1415,7 @@ private fun SearchTrackRowItem(
     onDeleteTrack: ((TrackListRow) -> Unit)? = null,
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
     syncedCloudTrackIds: Set<String>,
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
     snackbarHostState: androidx.compose.material3.SnackbarHostState,
     scope: kotlinx.coroutines.CoroutineScope,
     localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
@@ -1423,8 +1493,13 @@ private fun SearchTrackRowItem(
         } else null
     }
 
-    val isCloudOnly = track.contentUri.isNullOrBlank()
-    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
+        it.trackId == track.id ||
+        (it.title?.lowercase()?.trim() == track.title.lowercase().trim() &&
+         it.artistName?.lowercase()?.trim() == (track.artistName ?: "").lowercase().trim())
+    }
+    val isCloudOnly = isPresentInCloud && !isDownloadedLocally
     val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
         if (isCloudOnly && isPresentInCloud) {
             {
@@ -1462,13 +1537,15 @@ private fun SearchTrackRowItem(
         showCover = true,
         contextType = "standard",
         isLiked = track.isLiked,
+        downloadStatus = if (isDownloadedLocally) TrackDownloadStatus.Downloaded else TrackDownloadStatus.Idle,
+        isCloudOnly = isCloudOnly,
         onLike = onLikeClick,
         onUnlike = onLikeClick,
         onAddToQueue = onAddToQueueClick,
         onAddToPlaylist = onAddToPlaylistClick,
         onViewArtist = onViewArtistClick,
         onViewAlbum = onViewAlbumClick,
-        onDeleteDownload = onDeleteClick,
+        onDeleteDownload = if (isDownloadedLocally) onDeleteClick else null,
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda
     )
@@ -1480,18 +1557,46 @@ private fun SearchOnlineTrackRowItem(
     artists: List<ArtistSummary>,
     albums: List<AlbumSummary>,
     downloadStatus: TrackDownloadStatus = TrackDownloadStatus.Idle,
+    isDownloadedLocally: Boolean = false,
+    isCloudOnly: Boolean = false,
     onPlayTrack: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
+    onUploadToCloud: ((TrackSummary) -> Unit)? = null,
+    onDeleteDownload: ((String) -> Unit)? = null,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
 ) {
     val currentOnPlay = rememberUpdatedState(onPlayTrack)
     val currentOnDownload = rememberUpdatedState(onDownloadTrack)
+    val currentOnUploadToCloud = rememberUpdatedState(onUploadToCloud)
+    val currentOnDeleteDownload = rememberUpdatedState(onDeleteDownload)
     val currentOnArtist = rememberUpdatedState(onOpenArtist)
     val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
 
     val onClick = remember(track.id) { { currentOnPlay.value(track) } }
     val onDownload = remember(track.id) { { currentOnDownload.value(track) } }
+    val onUpload = remember(track.id, currentOnUploadToCloud.value != null) {
+        val cb = currentOnUploadToCloud.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
+    val onDelete = remember(track.id, currentOnDeleteDownload.value != null) {
+        val cb = currentOnDeleteDownload.value
+        if (cb != null) {
+            { cb(track.id) }
+        } else null
+    }
+
+    val effectiveDownloadStatus = when {
+        isDownloadedLocally -> TrackDownloadStatus.Downloaded
+        downloadStatus is TrackDownloadStatus.Downloading -> downloadStatus
+        downloadStatus is TrackDownloadStatus.Queued -> downloadStatus
+        downloadStatus is TrackDownloadStatus.Failed -> downloadStatus
+        isCloudOnly -> TrackDownloadStatus.Idle
+        else -> TrackDownloadStatus.NotDownloaded
+    }
+
     val onViewArtist = remember(track.displayArtistName, artists) {
         {
             val matchedArtist = artists.firstOrNull { it.name.trim().lowercase() == track.displayArtistName.trim().lowercase() }
@@ -1516,8 +1621,11 @@ private fun SearchOnlineTrackRowItem(
         onClick = onClick,
         showCover = true,
         contextType = "search_online",
-        downloadStatus = downloadStatus,
+        downloadStatus = effectiveDownloadStatus,
+        isCloudOnly = isCloudOnly,
         onDownload = onDownload,
+        onUploadToCloud = if (!isCloudOnly && !isDownloadedLocally) onUpload else null,
+        onDeleteDownload = if (isDownloadedLocally) onDelete else null,
         onViewArtist = onViewArtist,
         onViewAlbum = onViewAlbum
     )

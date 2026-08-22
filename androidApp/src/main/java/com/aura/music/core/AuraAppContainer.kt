@@ -104,5 +104,9 @@ class AuraAppContainer(context: Context) {
     val playerViewModelFactory by lazy {
         PlayerViewModel.Factory(playbackOrchestrator, localLibraryRepository)
     }
+
+    val connectivityObserver by lazy {
+        ConnectivityObserver(appContext)
+    }
 }
 

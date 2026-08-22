@@ -419,4 +419,25 @@ class CloudFileRepository(
     suspend fun updateSyncEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
         database.userSettingsDao().updateSyncEnabled(enabled)
     }
+
+    suspend fun removeLocalFile(trackId: String) = withContext(Dispatchers.IO) {
+        try {
+            val trackRow = database.trackDao().getTrackById(trackId) ?: return@withContext
+            val uriStr = trackRow.contentUri
+            if (!uriStr.isNullOrBlank() && (uriStr.startsWith("file://") || uriStr.startsWith("/"))) {
+                val path = if (uriStr.startsWith("file://")) uriStr.substring(7) else uriStr
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    file.delete()
+                }
+            }
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to remove local file for track $trackId", e)
+        }
+    }
 }

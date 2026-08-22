@@ -425,6 +425,7 @@ fun FavoritesScreen(
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
 
     RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
@@ -440,7 +441,7 @@ fun FavoritesScreen(
             val contextTracks = remember(tracks) {
                 tracks.map { it.toQueuedTrack() }
             }
-            LazyColumn(
+            com.aura.music.ui.components.AuraLazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
@@ -634,13 +635,25 @@ fun FavoritesScreen(
                         } else null
                     }
 
+                    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+                    val isCloudOnlyTrack = isCloudOnly && isPresentInCloud
+                    val isOfflineBlocked = isCloudOnlyTrack && !isOnline
+
                     SharedTrackRowItem(
                         title = track.title,
-                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
                         onClick = onPlayClick,
                         coverUri = track.coverUri,
                         contextType = "favorites",
                         isLiked = true,
+                        downloadStatus = if (isDownloadedLocally) com.aura.music.ui.screens.TrackDownloadStatus.Downloaded else com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded,
+                        isCloudOnly = isCloudOnlyTrack,
+                        isOfflineDisabled = isOfflineBlocked,
+                        onOfflineBlocked = {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Ce titre est sur le Cloud. Connexion Internet requise pour le streamer.")
+                            }
+                        },
                         onAddToQueue = onAddToQueueClick,
                         onUnlike = onUnlikeClick,
                         onAddToPlaylist = onAddToPlaylistClick,
@@ -2236,6 +2249,7 @@ fun LibraryTracksScreen(
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
 
     val sortingOptions = listOf("A-Z", "Récents")
@@ -2266,7 +2280,7 @@ fun LibraryTracksScreen(
             val contextTracks = remember(tracks) {
                 tracks.map { it.toQueuedTrack() }
             }
-            LazyColumn(
+            com.aura.music.ui.components.AuraLazyColumn(
                 modifier = Modifier.fillMaxSize().background(DeepBlack),
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2515,13 +2529,25 @@ fun LibraryTracksScreen(
                         } else null
                     }
 
+                    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+                    val isCloudOnlyTrack = isCloudOnly && isPresentInCloud
+                    val isOfflineBlocked = isCloudOnlyTrack && !isOnline
+
                     SharedTrackRowItem(
                         title = track.title,
-                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
                         onClick = onPlayClick,
                         coverUri = track.coverUri,
                         contextType = "standard",
                         isLiked = track.isLiked,
+                        downloadStatus = if (isDownloadedLocally) com.aura.music.ui.screens.TrackDownloadStatus.Downloaded else com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded,
+                        isCloudOnly = isCloudOnlyTrack,
+                        isOfflineDisabled = isOfflineBlocked,
+                        onOfflineBlocked = {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Ce titre est sur le Cloud. Connexion Internet requise pour le streamer.")
+                            }
+                        },
                         onAddToQueue = onAddToQueueClick,
                         onLike = onLikeClick,
                         onUnlike = onUnlikeClick,
