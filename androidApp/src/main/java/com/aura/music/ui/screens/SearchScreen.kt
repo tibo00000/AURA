@@ -510,9 +510,16 @@ fun SearchScreen(
                                     }
                                 },
                                 onUploadToCloud = { track ->
+                                    val normTitle = track.title.lowercase().trim()
+                                    val normArtist = track.displayArtistName.lowercase().trim()
+                                    val matchedLocal = localTracks.firstOrNull {
+                                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
+                                        !it.contentUri.isNullOrBlank()
+                                    }
+                                    val trackIdToUpload = matchedLocal?.id ?: track.id
                                     scope.launch {
                                         snackbarHostState.showSnackbar("Envoi vers le Cloud lancé : ${track.title}")
-                                        cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                        cloudFileRepository.uploadTrack(trackIdToUpload).collect { res ->
                                             res.onSuccess {
                                                 snackbarHostState.showSnackbar("Sauvegardé sur le Cloud : ${track.title}")
                                                 cloudFileRepository.refreshSyncedTrackIds()
@@ -1699,7 +1706,7 @@ private fun SearchOnlineTrackRowItem(
         isCloudOnly = isCloudOnly,
         onAddToQueue = onAddToQueueClick,
         onDownload = onDownload,
-        onUploadToCloud = if (!isCloudOnly && !isDownloadedLocally) onUpload else null,
+        onUploadToCloud = if (isDownloadedLocally && !isCloudOnly) onUpload else null,
         onDeleteDownload = if (isDownloadedLocally) onDelete else null,
         onViewArtist = onViewArtist,
         onViewAlbum = onViewAlbum

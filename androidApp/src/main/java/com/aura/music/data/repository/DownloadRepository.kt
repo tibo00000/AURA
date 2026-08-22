@@ -275,8 +275,8 @@ class DownloadRepository(
                             Log.d(TAG, "Polled job ${job.id}: status=${jobData.status}, progress=${jobData.progressPercent}%")
 
                             if (jobData.status == "succeeded") {
-                                // Transition to downloading the physical file
-                                fetchDownloadedFile(job.id, job.trackId, userToken)
+                                // Register as Cloud-ready track in Room & notify UI
+                                markJobAsCloudReady(job.trackId)
                             }
                         } else {
                             handlePollingFailure(job)
@@ -291,6 +291,29 @@ class DownloadRepository(
         } finally {
             isPolling = false
             Log.d(TAG, "Stopped download jobs polling loop")
+        }
+    }
+
+    private suspend fun markJobAsCloudReady(trackId: String) = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    val rawTrack = database.trackDao().getRawTrackById(trackId)
+                    if (rawTrack != null && rawTrack.canonicalAudioSourceType != "downloaded") {
+                        val updatedTrack = rawTrack.copy(
+                            canonicalAudioSourceType = "cloud",
+                            isDownloadedByAura = false,
+                            updatedAt = now
+                        )
+                        database.trackDao().upsertTrack(updatedTrack)
+                        Log.d(TAG, "Registered track $trackId as cloud-ready")
+                    }
+                }
+            }
+            _downloadSuccessFlow.tryEmit(trackId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to mark track $trackId as cloud-ready", e)
         }
     }
 
@@ -354,20 +377,9 @@ class DownloadRepository(
                 ensurePollingStarted(userToken)
             }
 
-            // Auto-fetch physical files for succeeded jobs that are missing or incomplete locally
             for (item in items) {
                 if (item.status == "succeeded") {
-                    val downloadsDir = File(context.filesDir, "downloads")
-                    val targetFile = File(downloadsDir, "${item.trackId.replace(':', ';')}.mp3")
-                    
-                    // Verify database link is correct and points to "downloaded" status
-                    val rawTrack = database.trackDao().getRawTrackById(item.trackId)
-                    val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
-                    
-                    if (!targetFile.exists() || targetFile.length() == 0L || !isDbLinked) {
-                        Log.i(TAG, "Succeeded job ${item.id} (track ${item.trackId}) is missing local file, has 0 bytes or lacks DB link. Self-healing/fetching now...")
-                        fetchDownloadedFile(item.id, item.trackId, userToken)
-                    }
+                    markJobAsCloudReady(item.trackId)
                 }
             }
         } catch (e: Exception) {

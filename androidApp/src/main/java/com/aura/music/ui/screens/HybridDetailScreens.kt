@@ -52,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,7 +141,18 @@ fun HybridArtistScreen(
     val context = LocalContext.current
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
+    val localLibraryRepository = appContainer.localLibraryRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository) {
+        cloudFileRepository.listCloudFiles().collect { res ->
+            res.onSuccess { value = it }
+        }
+    }
+    val cloudFiles = cloudFilesState.value
+    val allLibraryTracksState = produceState(initialValue = emptyList<TrackListRow>(), localLibraryRepository) {
+        value = localLibraryRepository.getAllTracks()
+    }
+    val allLibraryTracks = allLibraryTracksState.value
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -284,20 +296,35 @@ fun HybridArtistScreen(
                 }
                 val displayedTracks = if (showAllOnlineTracks.value) onlineData.topTracks else onlineData.topTracks.take(5)
                 items(displayedTracks, key = { it.id }) { track ->
-                    val isSynced = syncedCloudTrackIds.contains(track.id)
-                    val isDownloaded = localTracks.any { it.id == track.id && !it.contentUri.isNullOrBlank() }
+                    val normTitle = track.title.lowercase().trim()
+                    val normArtist = track.displayArtistName.lowercase().trim()
+
+                    val matchedLocal = allLibraryTracks.firstOrNull {
+                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
+                        !it.contentUri.isNullOrBlank()
+                    }
+                    val isDownloaded = matchedLocal != null
+
+                    val isSynced = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
+                        it.trackId == track.id ||
+                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
+                    } || allLibraryTracks.any {
+                        it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)
+                    }
+
                     val dlStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
                     val trackRow = track.toTrackListRow(artistId = artist?.summary?.id ?: onlineData.id)
+                    val trackToPlay = matchedLocal ?: trackRow
 
                     InteractiveOnlineTrackRow(
                         track = track,
                         showCover = true,
                         isDownloaded = isDownloaded,
-                        isSyncedToCloud = isSynced,
+                        isSyncedToCloud = isSynced && !isDownloaded,
                         downloadStatus = dlStatus,
                         onPlay = {
                             if (isSynced || isDownloaded) {
-                                onPlayTrackInList(trackRow, allOnlineMapped, "artist_online")
+                                onPlayTrackInList(trackToPlay, allOnlineMapped, "artist_online")
                             } else {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Ajout au Cloud en cours pour : ${track.title}")
@@ -451,7 +478,18 @@ fun HybridAlbumScreen(
     val context = LocalContext.current
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
+    val localLibraryRepository = appContainer.localLibraryRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository) {
+        cloudFileRepository.listCloudFiles().collect { res ->
+            res.onSuccess { value = it }
+        }
+    }
+    val cloudFiles = cloudFilesState.value
+    val allLibraryTracksState = produceState(initialValue = emptyList<TrackListRow>(), localLibraryRepository) {
+        value = localLibraryRepository.getAllTracks()
+    }
+    val allLibraryTracks = allLibraryTracksState.value
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -682,21 +720,36 @@ fun HybridAlbumScreen(
                 )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->
-                    val isSynced = syncedCloudTrackIds.contains(track.id)
-                    val isDownloaded = localTracks.any { it.id == track.id && !it.contentUri.isNullOrBlank() }
+                    val normTitle = track.title.lowercase().trim()
+                    val normArtist = track.displayArtistName.lowercase().trim()
+
+                    val matchedLocal = allLibraryTracks.firstOrNull {
+                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
+                        !it.contentUri.isNullOrBlank()
+                    }
+                    val isDownloaded = matchedLocal != null
+
+                    val isSynced = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
+                        it.trackId == track.id ||
+                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
+                    } || allLibraryTracks.any {
+                        it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)
+                    }
+
                     val dlStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
                     val trackRow = track.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id)
+                    val trackToPlay = matchedLocal ?: trackRow
 
                     InteractiveOnlineTrackRow(
                         track = track,
                         index = index + 1,
                         showCover = false,
                         isDownloaded = isDownloaded,
-                        isSyncedToCloud = isSynced,
+                        isSyncedToCloud = isSynced && !isDownloaded,
                         downloadStatus = dlStatus,
                         onPlay = {
                             if (isSynced || isDownloaded) {
-                                onPlayTrackInList(trackRow, allOnlineAlbumMapped, "album_online")
+                                onPlayTrackInList(trackToPlay, allOnlineAlbumMapped, "album_online")
                             } else {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Ajout au Cloud en cours pour : ${track.title}")

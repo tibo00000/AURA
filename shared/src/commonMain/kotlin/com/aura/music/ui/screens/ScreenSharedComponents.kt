@@ -496,8 +496,8 @@ fun SharedTrackRowItem(
                 if (onPlayNow != null) items.add(ContextMenuItem("Écouter", Icons.Rounded.PlayArrow, onPlayNow))
                 if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
                 if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
-                if (onUploadToCloud != null) items.add(ContextMenuItem("Ajouter au Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
+                if (onDownload != null) items.add(ContextMenuItem("Ajouter au Cloud personnel", Icons.Rounded.CloudDownload, onDownload))
+                if (onUploadToCloud != null) items.add(ContextMenuItem("Sauvegarder le fichier local sur le Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
             }
             else -> {
                 if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
@@ -606,7 +606,12 @@ fun SharedTrackRowItem(
                                 }
                             } else if (onDownload != null) {
                                 IconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Rounded.Download, contentDescription = "Télécharger sur l'appareil", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                    Icon(
+                                        imageVector = if (contextType == "search_online") Icons.Rounded.CloudDownload else Icons.Rounded.Download,
+                                        contentDescription = if (contextType == "search_online") "Ajouter au Cloud" else "Télécharger sur l'appareil",
+                                        tint = if (contextType == "search_online") BlazeOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
                         }
