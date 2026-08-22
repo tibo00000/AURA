@@ -78,27 +78,36 @@ fun CloudSyncScreen(
     var showClearLocalCacheDialog by remember { mutableStateOf(false) }
     var trackToDeleteLocalOnly by remember { mutableStateOf<TrackListRow?>(null) }
 
-    // Progress operations tracking (trackId -> message)
-    val activeOperations = remember { mutableStateMapOf<String, String>() }
+    // Progress operations tracking (set of trackIds currently operating)
+    var activeOperations by remember { mutableStateOf(setOf<String>()) }
 
     // Load data asynchronously on IO
     LaunchedEffect(refreshTick) {
         isLoading = true
         try {
             withContext(Dispatchers.IO) {
-                cloudFileRepository.listCloudFiles().collect { result ->
-                    result.onSuccess { items ->
-                        cloudFiles = items
-                    }.onFailure { err ->
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Erreur de chargement cloud : ${err.message}")
+                // 1. ALWAYS load local tracks first so they are immediately visible even if network fails
+                val tracks = cloudFileRepository.getLocalTracks()
+                localTracks = tracks
+
+                // 2. Fetch cloud files if network is reachable
+                try {
+                    cloudFileRepository.listCloudFiles().collect { result ->
+                        result.onSuccess { items ->
+                            cloudFiles = items
+                        }.onFailure { err ->
+                            Log.w("CloudSyncScreen", "Cloud list failed: ${err.message}")
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Serveur Cloud inaccessible : ${err.message}")
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.w("CloudSyncScreen", "Failed to contact cloud server", e)
                 }
-                localTracks = cloudFileRepository.getLocalTracks()
             }
         } catch (e: Exception) {
-            Log.e("CloudSyncScreen", "Failed to refresh cloud state", e)
+            Log.e("CloudSyncScreen", "Failed to refresh state", e)
         } finally {
             isLoading = false
         }
@@ -125,7 +134,7 @@ fun CloudSyncScreen(
             val isSyncedById = cloudFiles.any { it.trackId == track.id }
             if (isSyncedById) return@filter false
             val normTitle = track.title.lowercase().trim()
-            val normArtist = track.artistName.lowercase().trim()
+            val normArtist = (track.artistName ?: "").lowercase().trim()
             !cloudFiles.any { cloud ->
                 (cloud.title?.lowercase()?.trim() ?: "") == normTitle &&
                 (cloud.artistName?.lowercase()?.trim() ?: "") == normArtist
@@ -137,7 +146,7 @@ fun CloudSyncScreen(
     val safeToClearTracks = remember(locallyStoredTracks, cloudFiles) {
         locallyStoredTracks.filter { local ->
             val normTitle = local.title.lowercase().trim()
-            val normArtist = local.artistName.lowercase().trim()
+            val normArtist = (local.artistName ?: "").lowercase().trim()
             cloudFiles.any { cloud ->
                 cloud.trackId == local.id ||
                 ((cloud.title?.lowercase()?.trim() ?: "") == normTitle &&
@@ -166,10 +175,10 @@ fun CloudSyncScreen(
         list = when (activeFilter) {
             CloudFilterType.ALL -> list
             CloudFilterType.CLOUD_ONLY -> list.filter { file ->
-                !locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && it.artistName.lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
+                !locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && (it.artistName ?: "").lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
             }
             CloudFilterType.DOWNLOADED -> list.filter { file ->
-                locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && it.artistName.lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
+                locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && (it.artistName ?: "").lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
             }
             CloudFilterType.HEAVY -> list.filter { it.sizeBytes >= 10L * 1024L * 1024L } // >= 10 MB
             CloudFilterType.RECENT -> list.sortedByDescending { it.uploadedAt ?: "" }.take(20)
@@ -449,7 +458,7 @@ fun CloudSyncScreen(
                                             } else {
                                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     pendingUploadTracks.forEach { track ->
-                                                        val isUploading = activeOperations[track.id] != null
+                                                        val isUploading = activeOperations.contains(track.id)
                                                         Row(
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
@@ -480,7 +489,7 @@ fun CloudSyncScreen(
 
                                                             Column(modifier = Modifier.weight(1f)) {
                                                                 Text(track.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                Text(track.artistName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                Text(track.artistName ?: "Artiste inconnu", style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                             }
 
                                                             if (isUploading) {
@@ -489,7 +498,7 @@ fun CloudSyncScreen(
                                                                 IconButton(
                                                                     onClick = {
                                                                         scope.launch {
-                                                                            activeOperations[track.id] = "Upload..."
+                                                                            activeOperations = activeOperations + track.id
                                                                             cloudFileRepository.uploadTrack(track.id).collect { res ->
                                                                                 res.onSuccess {
                                                                                     snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
@@ -498,7 +507,7 @@ fun CloudSyncScreen(
                                                                                 }.onFailure { err ->
                                                                                     snackbarHostState.showSnackbar("Échec : ${err.message}")
                                                                                 }
-                                                                                activeOperations.remove(track.id)
+                                                                                activeOperations = activeOperations - track.id
                                                                             }
                                                                         }
                                                                     },
@@ -660,9 +669,9 @@ fun CloudSyncScreen(
                                     val isDownloaded = locallyStoredTracks.any {
                                         it.id == file.trackId ||
                                         (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") &&
-                                         it.artistName.lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: ""))
+                                         (it.artistName ?: "").lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: ""))
                                     }
-                                    val opStatus = activeOperations[file.trackId]
+                                    val isOperating = activeOperations.contains(file.trackId)
 
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
@@ -719,7 +728,7 @@ fun CloudSyncScreen(
                                                 )
                                             }
 
-                                            if (opStatus != null) {
+                                            if (isOperating) {
                                                 CircularProgressIndicator(color = BlazeOrange, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                             } else {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -758,7 +767,7 @@ fun CloudSyncScreen(
                                                         IconButton(
                                                             onClick = {
                                                                 scope.launch {
-                                                                    activeOperations[file.trackId] = "Téléchargement..."
+                                                                    activeOperations = activeOperations + file.trackId
                                                                     cloudFileRepository.downloadTrack(
                                                                         trackId = file.trackId,
                                                                         title = file.title ?: "",
@@ -775,7 +784,7 @@ fun CloudSyncScreen(
                                                                         }.onFailure { err ->
                                                                             snackbarHostState.showSnackbar("Échec : ${err.message}")
                                                                         }
-                                                                        activeOperations.remove(file.trackId)
+                                                                        activeOperations = activeOperations - file.trackId
                                                                     }
                                                                 }
                                                             },
@@ -881,7 +890,7 @@ fun CloudSyncScreen(
                                         )
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(track.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(track.artistName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(track.artistName ?: "Artiste inconnu", style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             Text(
                                                 if (isBackedUp) "✓ Sauvegardé sur le Cloud (Suppression sûre)" else "⚠️ Local uniquement (Non synchronisé au Cloud)",
                                                 style = MaterialTheme.typography.labelSmall,

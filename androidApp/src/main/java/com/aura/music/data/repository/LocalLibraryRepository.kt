@@ -99,95 +99,73 @@ class LocalLibraryRepository(
         if (downloadsDir.exists() && downloadsDir.isDirectory) {
             val supportedExtensions = setOf("mp3", "m4a", "wav")
             val audioFiles = downloadsDir.listFiles { file -> file.isFile && file.extension.lowercase() in supportedExtensions } ?: emptyArray()
-            val retriever = android.media.MediaMetadataRetriever()
             for (file in audioFiles) {
                 try {
-                    retriever.setDataSource(file.absolutePath)
-                    val rawTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
-                    val rawArtist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                    val rawAlbum = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                    val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    val durationMs = durationStr?.toLongOrNull()
-
                     val trackId = file.nameWithoutExtension.replace(';', ':')
                     val existingTrack = database.trackDao().getRawTrackById(trackId)
 
-                    val title = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                    var rawTitle: String? = null
+                    var rawArtist: String? = null
+                    var rawAlbum: String? = null
+                    var durationMs: Long? = existingTrack?.durationMs
+                    var coverUri: String? = existingTrack?.coverUri
+
+                    // If existingTrack has valid title and artist, reuse without calling native retriever
+                    if (existingTrack == null || existingTrack.title.isBlank() || existingTrack.displayArtistName.isNullOrBlank()) {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(file.absolutePath)
+                            rawTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            rawArtist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                            rawAlbum = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            durationMs = durationStr?.toLongOrNull() ?: durationMs
+
+                            if (coverUri == null) {
+                                val embeddedPicture = retriever.embeddedPicture
+                                if (embeddedPicture != null) {
+                                    val coversDir = java.io.File(context.filesDir, "covers")
+                                    if (!coversDir.exists()) coversDir.mkdirs()
+                                    val coverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
+                                    java.io.FileOutputStream(coverFile).use { fos ->
+                                        fos.write(embeddedPicture)
+                                    }
+                                    coverUri = android.net.Uri.fromFile(coverFile).toString()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("LocalLibraryRepository", "Could not extract metadata via retriever for ${file.name}: ${e.message}")
+                        } finally {
+                            try {
+                                retriever.release()
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        }
+                    }
+
+                    val title = if (existingTrack != null && existingTrack.title.isNotBlank()) {
                         existingTrack.title
                     } else {
                         rawTitle?.ifBlank { null } ?: file.nameWithoutExtension
                     }
 
-                    val artistName = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                    val artistName = if (existingTrack != null && !existingTrack.displayArtistName.isNullOrBlank()) {
                         existingTrack.displayArtistName ?: "Unknown artist"
                     } else {
                         rawArtist?.ifBlank { null } ?: "Unknown artist"
                     }
 
-                    val albumTitle = if (existingTrack != null && existingTrack.isDownloadedByAura) {
+                    val albumTitle = if (existingTrack != null && !existingTrack.displayAlbumTitle.isNullOrBlank()) {
                         existingTrack.displayAlbumTitle
                     } else {
                         rawAlbum?.ifBlank { null }
                     }
 
-                    val artistId = if (existingTrack != null && existingTrack.isDownloadedByAura) {
-                        existingTrack.primaryArtistId ?: artistIdOf(artistName)
-                    } else {
-                        artistIdOf(artistName)
-                    }
-
-                    val albumId = if (existingTrack != null && existingTrack.isDownloadedByAura) {
-                        existingTrack.albumId
-                    } else {
-                        albumTitle?.let { albumIdOf(artistName, it) }
-                    }
+                    val artistId = existingTrack?.primaryArtistId ?: artistIdOf(artistName)
+                    val albumId = existingTrack?.albumId ?: albumTitle?.let { albumIdOf(artistName, it) }
 
                     val fileUri = android.net.Uri.fromFile(file).toString()
-                    var coverUri: String? = existingTrack?.coverUri
-                    val isOnlineUri = coverUri?.startsWith("http") == true
-                    if (isOnlineUri) {
-                        val client = HttpClient()
-                        try {
-                            val imageResponse = client.get(coverUri!!)
-                            if (imageResponse.status.value in 200..299) {
-                                val imageBytes = imageResponse.body<ByteArray>()
-                                val coversDir = java.io.File(context.filesDir, "covers")
-                                if (!coversDir.exists()) {
-                                    coversDir.mkdirs()
-                                }
-                                val coverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
-                                java.io.FileOutputStream(coverFile).use { fos ->
-                                    fos.write(imageBytes)
-                                }
-                                coverUri = android.net.Uri.fromFile(coverFile).toString()
-                                android.util.Log.i("LocalLibraryRepository", "Downloaded remote cover from scan for $trackId to $coverUri")
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("LocalLibraryRepository", "Failed to download remote cover fallback for $trackId", e)
-                        } finally {
-                            client.close()
-                        }
-                    }
-
-                    val finalIsOnlineUri = coverUri?.startsWith("http") == true
-                    if (coverUri == null || finalIsOnlineUri) {
-                        val embeddedPicture = retriever.embeddedPicture
-                        if (embeddedPicture != null) {
-                            try {
-                                val coversDir = java.io.File(context.filesDir, "covers")
-                                if (!coversDir.exists()) {
-                                    coversDir.mkdirs()
-                                }
-                                val coverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
-                                java.io.FileOutputStream(coverFile).use { fos ->
-                                    fos.write(embeddedPicture)
-                                }
-                                coverUri = android.net.Uri.fromFile(coverFile).toString()
-                            } catch (e: Exception) {
-                                android.util.Log.e("LocalLibraryRepository", "Failed to extract embedded cover for $trackId", e)
-                            }
-                        }
-                    }
 
                     // Upsert artist
                     if (!scannedArtists.containsKey(artistId)) {
@@ -265,11 +243,6 @@ class LocalLibraryRepository(
                 } catch (e: Exception) {
                     android.util.Log.e("LocalLibraryRepository", "Error retrieving metadata for private file ${file.name}", e)
                 }
-            }
-            try {
-                retriever.release()
-            } catch (e: Exception) {
-                // ignore
             }
         }
 

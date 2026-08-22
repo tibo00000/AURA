@@ -21,12 +21,18 @@ class ArtworkContentProvider : ContentProvider() {
         
         // Format attendu: content://com.aura.music.artwork/covers/filename.jpg
         val pathSegments = uri.pathSegments
-        if (pathSegments.size >= 2 && pathSegments[0] == "covers") {
-            val fileName = pathSegments[1]
-            val coversDir = File(context.filesDir, "covers")
-            val file = File(coversDir, fileName)
-            if (file.exists()) {
-                return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        if (pathSegments.isNotEmpty()) {
+            val fileName = pathSegments.last()
+            val candidateFiles = listOf(
+                File(File(context.filesDir, "covers"), fileName),
+                File(context.filesDir, fileName),
+                File(File(context.cacheDir, "covers"), fileName),
+                File(context.cacheDir, fileName)
+            )
+            for (file in candidateFiles) {
+                if (file.exists() && file.isFile) {
+                    return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                }
             }
         }
         throw FileNotFoundException("Artwork file not found for URI: $uri")

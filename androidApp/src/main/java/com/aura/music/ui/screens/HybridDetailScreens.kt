@@ -17,18 +17,36 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,8 +74,11 @@ import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.trackList
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DeepBlack
+import com.aura.music.ui.theme.DarkGraphite
+import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -67,6 +88,22 @@ import com.aura.music.domain.player.PlayerEvent
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
+
+private fun TrackSummary.toTrackListRow(artistId: String? = null, albumId: String? = null): TrackListRow = TrackListRow(
+    id = id,
+    artistId = artistId,
+    albumId = albumId,
+    title = title,
+    artistName = displayArtistName,
+    albumTitle = displayAlbumTitle,
+    contentUri = null,
+    durationMs = durationMs.toLong(),
+    coverUri = coverUri,
+    isLiked = isLiked,
+    createdAt = 0L,
+    updatedAt = 0L
+)
 
 // =============================================================================
 // HybridArtistScreen (AND-010)
@@ -134,7 +171,26 @@ fun HybridArtistScreen(
             }
         }
 
-        LazyColumn(
+        val downloadRepository = appContainer.downloadRepository
+        val allDownloadJobs by downloadRepository.getAllJobsWithTrack().collectAsState(initial = emptyList())
+        val trackDownloadStatusMap = remember(allDownloadJobs) {
+            allDownloadJobs.associate { job ->
+                val status: TrackDownloadStatus = when (job.status) {
+                    "succeeded" -> TrackDownloadStatus.Downloaded
+                    "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
+                    "queued", "requires_resolution" -> TrackDownloadStatus.Queued
+                    "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
+                    else -> TrackDownloadStatus.Idle
+                }
+                job.trackId to status
+            }
+        }
+
+        val allOnlineMapped = remember(onlineData?.topTracks, artist?.summary?.id, onlineData?.id) {
+            onlineData?.topTracks?.map { it.toTrackListRow(artistId = artist?.summary?.id ?: onlineData.id) } ?: emptyList()
+        }
+
+        com.aura.music.ui.components.AuraLazyColumn(
             modifier = Modifier.fillMaxSize().background(DeepBlack),
             verticalArrangement = Arrangement.spacedBy(0.dp),
             contentPadding = PaddingValues(bottom = 32.dp),
@@ -219,15 +275,60 @@ fun HybridArtistScreen(
             } else if (onlineData != null && onlineData.topTracks.isNotEmpty()) {
                 item(key = "online_tracklist_header") {
                     Text(
-                        "Top tracks (enrichissement)",
+                        "Titres populaires",
                         style = MaterialTheme.typography.titleMedium,
-                        color = TextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                 }
                 val displayedTracks = if (showAllOnlineTracks.value) onlineData.topTracks else onlineData.topTracks.take(5)
-                items(displayedTracks, key = { "online_track_${it.id}" }) { track ->
-                    OnlineTrackRow(track = track, showCover = true)
+                items(displayedTracks, key = { it.id }) { track ->
+                    val isSynced = syncedCloudTrackIds.contains(track.id)
+                    val isDownloaded = localTracks.any { it.id == track.id && !it.contentUri.isNullOrBlank() }
+                    val dlStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
+                    val trackRow = track.toTrackListRow(artistId = artist?.summary?.id ?: onlineData.id)
+
+                    InteractiveOnlineTrackRow(
+                        track = track,
+                        showCover = true,
+                        isDownloaded = isDownloaded,
+                        isSyncedToCloud = isSynced,
+                        downloadStatus = dlStatus,
+                        onPlay = {
+                            if (isSynced || isDownloaded) {
+                                onPlayTrackInList(trackRow, allOnlineMapped, "artist_online")
+                            } else {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Ajout au Cloud en cours pour : ${track.title}")
+                                    downloadRepository.triggerDownload(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artistName = track.displayArtistName,
+                                        albumTitle = track.displayAlbumTitle,
+                                        coverUri = track.coverUri,
+                                        userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                    ).collect { }
+                                }
+                            }
+                        },
+                        onDownloadCloud = {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Ajout au Cloud lancé pour : ${track.title}")
+                                downloadRepository.triggerDownload(
+                                    trackId = track.id,
+                                    title = track.title,
+                                    artistName = track.displayArtistName,
+                                    albumTitle = track.displayAlbumTitle,
+                                    coverUri = track.coverUri,
+                                    userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                ).collect { }
+                            }
+                        },
+                        onAddToQueue = { onAddToQueue(trackRow) },
+                        onAddToPlaylist = { activeTrackForPlaylist = trackRow },
+                        onLike = { onLikeTrack(trackRow) }
+                    )
                 }
                 if (!showAllOnlineTracks.value && onlineData.topTracks.size > 5) {
                     item(key = "show_more_tracks") {
@@ -390,7 +491,28 @@ fun HybridAlbumScreen(
         val trackCount = album?.summary?.trackCount ?: onlineData?.trackCount
         val localTracks = album?.tracks ?: emptyList()
 
-        LazyColumn(
+        val downloadRepository = appContainer.downloadRepository
+        val allDownloadJobs by downloadRepository.getAllJobsWithTrack().collectAsState(initial = emptyList())
+        val trackDownloadStatusMap = remember(allDownloadJobs) {
+            allDownloadJobs.associate { job ->
+                val status: TrackDownloadStatus = when (job.status) {
+                    "succeeded" -> TrackDownloadStatus.Downloaded
+                    "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
+                    "queued", "requires_resolution" -> TrackDownloadStatus.Queued
+                    "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
+                    else -> TrackDownloadStatus.Idle
+                }
+                job.trackId to status
+            }
+        }
+
+        var isAlbumBatchDownloading by remember { mutableStateOf(false) }
+
+        val allOnlineAlbumMapped = remember(onlineData?.tracks, artistId, album?.summary?.id, onlineData?.id) {
+            onlineData?.tracks?.map { it.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id) } ?: emptyList()
+        }
+
+        com.aura.music.ui.components.AuraLazyColumn(
             modifier = Modifier.fillMaxSize().background(DeepBlack),
             contentPadding = PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -415,22 +537,82 @@ fun HybridAlbumScreen(
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(
-                        onClick = {
-                            if (localTracks.isNotEmpty())
+                    if (localTracks.isNotEmpty()) {
+                        Button(
+                            onClick = {
                                 onPlayTrackInList(localTracks.first(), localTracks, "album")
-                        },
-                        enabled = localTracks.isNotEmpty(),
-                    ) { Text("Play") }
-                    Button(
-                        onClick = {
-                            val shuffled = localTracks.shuffled()
-                            if (shuffled.isNotEmpty())
-                                onPlayTrackInList(shuffled.first(), shuffled, "album")
-                        },
-                        enabled = localTracks.isNotEmpty(),
-                    ) { Text("Aléatoire") }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                            Text("Play")
+                        }
+                        Button(
+                            onClick = {
+                                val shuffled = localTracks.shuffled()
+                                if (shuffled.isNotEmpty())
+                                    onPlayTrackInList(shuffled.first(), shuffled, "album")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite)
+                        ) {
+                            Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                            Text("Aléatoire")
+                        }
+                    } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
+                        Button(
+                            onClick = {
+                                val firstSynced = onlineData.tracks.firstOrNull { syncedCloudTrackIds.contains(it.id) } ?: onlineData.tracks.first()
+                                onPlayTrackInList(firstSynced.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id), allOnlineAlbumMapped, "album_online")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                            Text("Play")
+                        }
+
+                        Button(
+                            onClick = {
+                                if (!isAlbumBatchDownloading) {
+                                    scope.launch {
+                                        isAlbumBatchDownloading = true
+                                        val total = onlineData.tracks.size
+                                        snackbarHostState.showSnackbar("Ajout des $total pistes de l'album sur le Cloud...")
+                                        val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                                        kotlinx.coroutines.coroutineScope {
+                                            onlineData.tracks.forEach { trk ->
+                                                launch {
+                                                    semaphore.withPermit {
+                                                        downloadRepository.triggerDownload(
+                                                            trackId = trk.id,
+                                                            title = trk.title,
+                                                            artistName = trk.displayArtistName,
+                                                            albumTitle = trk.displayAlbumTitle,
+                                                            coverUri = trk.coverUri,
+                                                            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                                        ).collect { }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        isAlbumBatchDownloading = false
+                                        cloudFileRepository.refreshSyncedTrackIds()
+                                        snackbarHostState.showSnackbar("Album ajouté à votre Cloud personnel !")
+                                    }
+                                }
+                            },
+                            enabled = !isAlbumBatchDownloading,
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite)
+                        ) {
+                            if (isAlbumBatchDownloading) {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                                Text("Télécharger l'album")
+                            }
+                        }
+                    }
                 }
             }
 
@@ -499,8 +681,53 @@ fun HybridAlbumScreen(
                     onDownloadFromCloud = onDownloadFromCloudLambda
                 )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
-                items(onlineData.tracks, key = { "online_album_track_${it.id}" }) { track ->
-                    OnlineTrackRow(track = track, showCover = false)
+                itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->
+                    val isSynced = syncedCloudTrackIds.contains(track.id)
+                    val isDownloaded = localTracks.any { it.id == track.id && !it.contentUri.isNullOrBlank() }
+                    val dlStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
+                    val trackRow = track.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id)
+
+                    InteractiveOnlineTrackRow(
+                        track = track,
+                        index = index + 1,
+                        showCover = false,
+                        isDownloaded = isDownloaded,
+                        isSyncedToCloud = isSynced,
+                        downloadStatus = dlStatus,
+                        onPlay = {
+                            if (isSynced || isDownloaded) {
+                                onPlayTrackInList(trackRow, allOnlineAlbumMapped, "album_online")
+                            } else {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Ajout au Cloud en cours pour : ${track.title}")
+                                    downloadRepository.triggerDownload(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artistName = track.displayArtistName,
+                                        albumTitle = track.displayAlbumTitle,
+                                        coverUri = track.coverUri,
+                                        userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                    ).collect { }
+                                }
+                            }
+                        },
+                        onDownloadCloud = {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Ajout au Cloud lancé pour : ${track.title}")
+                                downloadRepository.triggerDownload(
+                                    trackId = track.id,
+                                    title = track.title,
+                                    artistName = track.displayArtistName,
+                                    albumTitle = track.displayAlbumTitle,
+                                    coverUri = track.coverUri,
+                                    userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                ).collect { }
+                            }
+                        },
+                        onAddToQueue = { onAddToQueue(trackRow) },
+                        onAddToPlaylist = { activeTrackForPlaylist = trackRow },
+                        onLike = { onLikeTrack(trackRow) }
+                    )
                 }
             } else {
                 item(key = "empty_tracks") {
@@ -816,40 +1043,175 @@ private fun OnlineAlbumRailSection(
 }
 
 @Composable
-private fun OnlineTrackRow(track: TrackSummary, showCover: Boolean = true) {
+fun InteractiveOnlineTrackRow(
+    track: TrackSummary,
+    index: Int? = null,
+    showCover: Boolean = true,
+    isDownloaded: Boolean = false,
+    isSyncedToCloud: Boolean = false,
+    downloadStatus: TrackDownloadStatus = TrackDownloadStatus.Idle,
+    onPlay: () -> Unit,
+    onDownloadCloud: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onLike: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .clickable(onClick = onPlay)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (index != null) {
+            Text(
+                text = "$index",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                modifier = Modifier.width(24.dp),
+                textAlign = TextAlign.Center
+            )
+        }
+
         if (showCover) {
             val cover = track.coverUri
-            if (cover != null) {
+            if (!cover.isNullOrBlank()) {
                 AsyncImage(
                     model = cover,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
+                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
                 )
             } else {
-                PlaceholderCover(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)))
+                PlaceholderCover(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
             }
         }
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 track.title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+            val durationStr = if (track.durationMs > 0) {
+                val totalSec = track.durationMs / 1000
+                String.format("%d:%02d", totalSec / 60, totalSec % 60)
+            } else null
+            val subtext = listOfNotNull(track.displayArtistName, durationStr).joinToString(" • ")
             Text(
-                track.displayArtistName,
+                subtext,
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+        }
+
+        // Action / Status Icon
+        when {
+            downloadStatus is TrackDownloadStatus.Downloading -> {
+                CircularProgressIndicator(
+                    progress = { (downloadStatus as TrackDownloadStatus.Downloading).progressPercent },
+                    modifier = Modifier.size(24.dp),
+                    color = BlazeOrange,
+                    strokeWidth = 2.dp
+                )
+            }
+            downloadStatus is TrackDownloadStatus.Queued -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = BlazeOrange,
+                    strokeWidth = 2.dp
+                )
+            }
+            isDownloaded -> {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = "Sur l'appareil",
+                    tint = Color(0xFF00E676),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            isSyncedToCloud -> {
+                // Épuré : déjà sur le Cloud
+            }
+            else -> {
+                IconButton(
+                    onClick = onDownloadCloud,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.CloudDownload,
+                        contentDescription = "Ajouter au Cloud",
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
+        Box {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Rounded.MoreVert, contentDescription = "Options", tint = TextSecondary)
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Écouter") },
+                    onClick = {
+                        showMenu = false
+                        onPlay()
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.PlayArrow, contentDescription = null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Ajouter à la file d'attente") },
+                    onClick = {
+                        showMenu = false
+                        onAddToQueue()
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.QueueMusic, contentDescription = null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Ajouter à une playlist") },
+                    onClick = {
+                        showMenu = false
+                        onAddToPlaylist()
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Ajouter aux favoris") },
+                    onClick = {
+                        showMenu = false
+                        onLike()
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.Favorite, contentDescription = null) }
+                )
+                if (!isSyncedToCloud && !isDownloaded) {
+                    DropdownMenuItem(
+                        text = { Text("Ajouter au Cloud personnel") },
+                        onClick = {
+                            showMenu = false
+                            onDownloadCloud()
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.CloudUpload, contentDescription = null) }
+                    )
+                }
+            }
         }
     }
 }

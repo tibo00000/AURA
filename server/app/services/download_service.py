@@ -33,6 +33,69 @@ from rapidfuzz import fuzz
 ytmusic = YTMusic()
 
 
+def _auto_register_in_sync_files(
+    user_id: str,
+    track_id: str,
+    audio_file: Path,
+    title: Optional[str] = None,
+    artist_name: Optional[str] = None,
+    album_title: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    artist_id: Optional[str] = None,
+    album_id: Optional[str] = None,
+    cover_uri: Optional[str] = None,
+) -> bool:
+    """Auto-registers a successfully downloaded track into the user's personal Cloud sync storage."""
+    try:
+        import hashlib
+        import json
+        import shutil
+        from datetime import datetime, timezone
+        from app.config import get_settings
+
+        sync_base = Path(get_settings().sync_files_dir)
+        if not sync_base.is_absolute():
+            sync_base = Path.cwd() / sync_base
+        safe_user_id = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+        user_dir = sync_base / safe_user_id
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        track_key = hashlib.sha256(track_id.encode("utf-8")).hexdigest()
+        target_audio = user_dir / f"{track_key}.audio"
+        target_json = user_dir / f"{track_key}.json"
+
+        # Hardlink if on same filesystem, otherwise copy
+        try:
+            if target_audio.exists():
+                target_audio.unlink()
+            os.link(audio_file, target_audio)
+        except Exception:
+            shutil.copyfile(audio_file, target_audio)
+
+        uploaded_at = datetime.now(timezone.utc).isoformat()
+        metadata = {
+            "track_id": track_id,
+            "synced": True,
+            "size_bytes": target_audio.stat().st_size,
+            "mime_type": "audio/mpeg",
+            "title": title,
+            "artist_name": artist_name,
+            "album_title": album_title,
+            "duration_ms": duration_ms,
+            "artist_id": artist_id,
+            "album_id": album_id,
+            "cover_uri": cover_uri,
+            "uploaded_at": uploaded_at,
+            "updated_at": uploaded_at,
+        }
+        target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+        logger.info("Auto-registered downloaded track %s in sync_files for user %s", track_id, user_id)
+        return True
+    except Exception as e:
+        logger.exception("Failed to auto-register downloaded file to sync_files for track %s: %s", track_id, e)
+        return False
+
+
 def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
     """Build yt-dlp options optimised for VPS bypass."""
     pot_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416/token")
@@ -612,19 +675,31 @@ class DownloadService:
                         return
 
                     expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
+                    audio_final = None
                     if expected_file.exists():
-                        status = "succeeded"
-                        progress_percent = 100.0
+                        audio_final = expected_file
                     else:
                         matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
                         non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
                         if non_thumb:
-                            status = "succeeded"
-                            progress_percent = 100.0
-                        else:
-                            status = "failed"
-                            error_code = "job_failed"
-                            error_message = "Audio conversion failed, no MP3 found."
+                            audio_final = non_thumb[0]
+
+                    if audio_final is not None and audio_final.exists():
+                        # Auto-register in user's personal Cloud sync storage
+                        _auto_register_in_sync_files(
+                            user_id=job.user_id,
+                            track_id=job.track_id,
+                            audio_file=audio_final,
+                            title=title,
+                            artist_name=artist,
+                            album_title=album,
+                        )
+                        status = "succeeded"
+                        progress_percent = 100.0
+                    else:
+                        status = "failed"
+                        error_code = "job_failed"
+                        error_message = "Audio conversion failed, no MP3 found."
             except yt_dlp.utils.DownloadError as e:
                 status = "failed"
                 error_code = "job_failed"

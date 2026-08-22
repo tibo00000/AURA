@@ -17,11 +17,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -29,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHostState
+import kotlinx.coroutines.sync.withPermit
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -172,6 +176,62 @@ fun PlaylistDetailScreenNew(
                         ) {
                             Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                             Text("Shuffle")
+                        }
+
+                        val notDownloadedTracks = remember(detail.tracks) {
+                            detail.tracks.filter { it.contentUri.isNullOrBlank() }
+                        }
+                        var isBatchDownloading by remember { mutableStateOf(false) }
+
+                        IconButton(
+                            onClick = {
+                                if (!isBatchDownloading && notDownloadedTracks.isNotEmpty()) {
+                                    scope.launch {
+                                        isBatchDownloading = true
+                                        val total = notDownloadedTracks.size
+                                        snackbarHostState.showSnackbar("Téléchargement de $total morceau(x) pour l'écoute hors-ligne...")
+                                        
+                                        val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                                        kotlinx.coroutines.coroutineScope {
+                                            notDownloadedTracks.forEach { track ->
+                                                launch {
+                                                    semaphore.withPermit {
+                                                        cloudFileRepository.downloadTrack(
+                                                            trackId = track.trackId,
+                                                            title = track.title,
+                                                            artistName = track.artistName,
+                                                            albumTitle = track.albumTitle,
+                                                            durationMs = track.durationMs,
+                                                            artistId = track.artistId,
+                                                            albumId = track.albumId,
+                                                            coverUri = track.coverUri,
+                                                        ).collect { }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        isBatchDownloading = false
+                                        refreshTick++
+                                        snackbarHostState.showSnackbar("Playlist disponible hors-ligne !")
+                                    }
+                                } else if (notDownloadedTracks.isEmpty()) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Tous les titres de cette playlist sont déjà sur l'appareil.")
+                                    }
+                                }
+                            },
+                            enabled = !isBatchDownloading,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            if (isBatchDownloading) {
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = BlazeOrange)
+                            } else {
+                                Icon(
+                                    if (notDownloadedTracks.isEmpty()) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                                    contentDescription = "Rendre disponible hors-ligne",
+                                    tint = if (notDownloadedTracks.isEmpty()) Color(0xFF00E676) else BlazeOrange
+                                )
+                            }
                         }
 
                         Box {

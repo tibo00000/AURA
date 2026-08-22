@@ -399,22 +399,74 @@ fun SearchScreen(
                                 syncedCloudTrackIds = syncedCloudTrackIds,
                                 onPlayTrack = { track ->
                                     focusManager.clearFocus()
-                                    onPlayTrackInList(
-                                        TrackListRow(
+                                    val normTitle = track.title.lowercase().trim()
+                                    val normArtist = track.displayArtistName.lowercase().trim()
+
+                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
+                                        it.trackId == track.id ||
+                                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
+                                    }
+
+                                    val matchedLocal = localTracks.firstOrNull {
+                                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
+                                        !it.contentUri.isNullOrBlank()
+                                    }
+
+                                    if (matchedLocal != null || isOnCloud) {
+                                        val trackRow = TrackListRow(
                                             id = track.id,
                                             artistId = null,
                                             albumId = null,
                                             title = track.title,
                                             artistName = track.displayArtistName,
                                             albumTitle = track.displayAlbumTitle,
-                                            contentUri = null,
+                                            contentUri = matchedLocal?.contentUri,
                                             durationMs = track.durationMs.toLong(),
                                             coverUri = track.coverUri,
                                             isLiked = track.isLiked
-                                        ),
-                                        emptyList(),
-                                        "search_online_tracks"
-                                    )
+                                        )
+                                        onPlayTrackInList(
+                                            trackRow,
+                                            listOf(trackRow),
+                                            "search_online_tracks"
+                                        )
+                                    } else {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Ce morceau n'est pas sur votre Cloud. Cliquez sur le nuage pour l'ajouter.")
+                                        }
+                                    }
+                                },
+                                onAddToQueue = { track ->
+                                    val normTitle = track.title.lowercase().trim()
+                                    val normArtist = track.displayArtistName.lowercase().trim()
+                                    val matchedLocal = localTracks.firstOrNull {
+                                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
+                                        !it.contentUri.isNullOrBlank()
+                                    }
+                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
+                                        it.trackId == track.id ||
+                                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
+                                    }
+                                    if (matchedLocal != null || isOnCloud) {
+                                        val queued = com.aura.music.domain.player.QueuedTrack(
+                                            trackId = track.id,
+                                            title = track.title,
+                                            artistName = track.displayArtistName,
+                                            albumTitle = track.displayAlbumTitle,
+                                            contentUri = matchedLocal?.contentUri,
+                                            durationMs = track.durationMs.toLong(),
+                                            coverUri = track.coverUri,
+                                            source = com.aura.music.domain.player.TrackSource.PRIORITY
+                                        )
+                                        playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(queued))
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Ajouté à la file : ${track.title}")
+                                        }
+                                    } else {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Ce morceau n'est pas sur votre Cloud. Cliquez sur le nuage pour l'ajouter.")
+                                        }
+                                    }
                                 },
                                 onDownloadTrack = { track ->
                                     val currentStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
@@ -652,6 +704,7 @@ private fun OnlineSearchTab(
     cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
     syncedCloudTrackIds: Set<String> = emptySet(),
     onPlayTrack: (TrackSummary) -> Unit,
+    onAddToQueue: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
     onUploadToCloud: (TrackSummary) -> Unit,
     onDeleteDownload: (String) -> Unit,
@@ -660,6 +713,8 @@ private fun OnlineSearchTab(
     onOpenAlbum: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showAllTracks by remember { mutableStateOf(false) }
+
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (tracks.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -669,7 +724,8 @@ private fun OnlineSearchTab(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
-                tracks.take(10).forEach { track ->
+                val displayedTracks = if (showAllTracks) tracks else tracks.take(10)
+                displayedTracks.forEach { track ->
                     val normTitle = track.title.lowercase().trim()
                     val normArtist = track.displayArtistName.lowercase().trim()
 
@@ -693,12 +749,22 @@ private fun OnlineSearchTab(
                         isDownloadedLocally = isDownloadedLocally,
                         isCloudOnly = isCloudOnly,
                         onPlayTrack = onPlayTrack,
+                        onAddToQueue = onAddToQueue,
                         onDownloadTrack = onDownloadTrack,
                         onUploadToCloud = onUploadToCloud,
                         onDeleteDownload = onDeleteDownload,
                         onOpenArtist = onOpenArtist,
                         onOpenAlbum = onOpenAlbum
                     )
+                }
+
+                if (!showAllTracks && tracks.size > 10) {
+                    androidx.compose.material3.TextButton(
+                        onClick = { showAllTracks = true },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                    ) {
+                        Text("Afficher tous les résultats (${tracks.size})", color = BlazeOrange, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
@@ -1560,6 +1626,7 @@ private fun SearchOnlineTrackRowItem(
     isDownloadedLocally: Boolean = false,
     isCloudOnly: Boolean = false,
     onPlayTrack: (TrackSummary) -> Unit,
+    onAddToQueue: ((TrackSummary) -> Unit)? = null,
     onDownloadTrack: (TrackSummary) -> Unit,
     onUploadToCloud: ((TrackSummary) -> Unit)? = null,
     onDeleteDownload: ((String) -> Unit)? = null,
@@ -1567,6 +1634,7 @@ private fun SearchOnlineTrackRowItem(
     onOpenAlbum: (String) -> Unit,
 ) {
     val currentOnPlay = rememberUpdatedState(onPlayTrack)
+    val currentOnQueue = rememberUpdatedState(onAddToQueue)
     val currentOnDownload = rememberUpdatedState(onDownloadTrack)
     val currentOnUploadToCloud = rememberUpdatedState(onUploadToCloud)
     val currentOnDeleteDownload = rememberUpdatedState(onDeleteDownload)
@@ -1574,6 +1642,12 @@ private fun SearchOnlineTrackRowItem(
     val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
 
     val onClick = remember(track.id) { { currentOnPlay.value(track) } }
+    val onAddToQueueClick = remember(track.id, currentOnQueue.value != null) {
+        val cb = currentOnQueue.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
     val onDownload = remember(track.id) { { currentOnDownload.value(track) } }
     val onUpload = remember(track.id, currentOnUploadToCloud.value != null) {
         val cb = currentOnUploadToCloud.value
@@ -1623,6 +1697,7 @@ private fun SearchOnlineTrackRowItem(
         contextType = "search_online",
         downloadStatus = effectiveDownloadStatus,
         isCloudOnly = isCloudOnly,
+        onAddToQueue = onAddToQueueClick,
         onDownload = onDownload,
         onUploadToCloud = if (!isCloudOnly && !isDownloadedLocally) onUpload else null,
         onDeleteDownload = if (isDownloadedLocally) onDelete else null,

@@ -69,10 +69,20 @@ class CloudFileRepository(
 
             Log.i(TAG, "Starting cloud upload for track $trackId (URI: $localUri)")
 
-            val contentResolver = context.contentResolver
-            val uri = Uri.parse(localUri)
-            val fileBytes = contentResolver.openInputStream(uri)?.use { inputStream ->
-                inputStream.readBytes()
+            val fileBytes: ByteArray? = if (localUri.startsWith("file://") || localUri.startsWith("/")) {
+                val filePath = if (localUri.startsWith("file://")) localUri.substring(7) else localUri
+                val f = File(filePath)
+                if (f.exists()) f.readBytes() else null
+            } else {
+                try {
+                    val uri = Uri.parse(localUri)
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        inputStream.readBytes()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to open input stream for $localUri", e)
+                    null
+                }
             }
 
             if (fileBytes == null || fileBytes.isEmpty()) {
@@ -80,12 +90,13 @@ class CloudFileRepository(
                 return@flow
             }
 
-            val mimeType = contentResolver.getType(uri) ?: "audio/mpeg"
+            val mimeType = if (localUri.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else if (localUri.endsWith(".wav", ignoreCase = true)) "audio/wav" else "audio/mpeg"
 
             var uploadCoverUri = trackRow.coverUri
             if (uploadCoverUri.isNullOrBlank() || !uploadCoverUri.startsWith("http")) {
                 try {
-                    val searchResult = apiService.search("${trackRow.title} ${trackRow.artistName}", limitTracks = 3)
+                    val queryArtist = trackRow.artistName ?: ""
+                    val searchResult = apiService.search("${trackRow.title} $queryArtist".trim(), limitTracks = 3)
                     val resolved = searchResult.data?.tracks?.firstOrNull { it.coverUri?.startsWith("http") == true }?.coverUri
                     if (resolved != null) {
                         uploadCoverUri = resolved

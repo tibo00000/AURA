@@ -498,7 +498,11 @@ fun TrackListRow.toMediaItem(
             Uri.parse(uriStr)
         }
     }
-    val mediaUri = contentUri?.let { Uri.parse(it) }
+    val mediaUri = if (!contentUri.isNullOrBlank()) {
+        Uri.parse(contentUri)
+    } else if (id.isNotBlank()) {
+        Uri.parse("${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$id")
+    } else null
     val metadataBuilder = MediaMetadata.Builder()
         .setTitle(title)
         .setArtist(artistName)
