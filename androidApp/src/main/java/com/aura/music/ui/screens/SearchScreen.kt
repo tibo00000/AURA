@@ -136,6 +136,7 @@ fun SearchScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     val intentSenderLauncher = rememberLauncherForActivityResult(
@@ -373,6 +374,7 @@ fun SearchScreen(
                                 scope = scope,
                                 localLibraryRepository = repository,
                                 onRefresh = { viewModel.refreshDisplayedLocalResults() },
+                                onEditMetadata = { track -> trackToEditMetadata = track },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -625,6 +627,19 @@ fun SearchScreen(
             }
         )
     }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = application.container.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                viewModel.refreshDisplayedLocalResults()
+            }
+        )
+    }
 }
 
 /**
@@ -650,6 +665,7 @@ private fun LocalLibrarySearchTab(
     scope: kotlinx.coroutines.CoroutineScope,
     localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
     onRefresh: () -> Unit,
+    onEditMetadata: ((TrackListRow) -> Unit)? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (tracks.isNotEmpty()) {
@@ -677,7 +693,8 @@ private fun LocalLibrarySearchTab(
                         snackbarHostState = snackbarHostState,
                         scope = scope,
                         localLibraryRepository = localLibraryRepository,
-                        onRefresh = onRefresh
+                        onRefresh = onRefresh,
+                        onEditMetadata = onEditMetadata
                     )
                 }
             }
@@ -1498,6 +1515,7 @@ private fun SearchTrackRowItem(
     scope: kotlinx.coroutines.CoroutineScope,
     localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
     onRefresh: () -> Unit,
+    onEditMetadata: ((TrackListRow) -> Unit)? = null,
 ) {
     val currentOnPlay = rememberUpdatedState(onPlayTrack)
     val currentOnQueue = rememberUpdatedState(onAddToQueue)
@@ -1506,6 +1524,7 @@ private fun SearchTrackRowItem(
     val currentOnArtist = rememberUpdatedState(onOpenArtist)
     val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
     val currentOnDelete = rememberUpdatedState(onDeleteTrack)
+    val currentOnEditMetadata = rememberUpdatedState(onEditMetadata)
 
     val onClick = remember(track.id, tracks) { { currentOnPlay.value(track, tracks) } }
     val onAddToQueueClick = remember(track.id) { { currentOnQueue.value(track) } }
@@ -1628,7 +1647,8 @@ private fun SearchTrackRowItem(
         onViewAlbum = onViewAlbumClick,
         onDeleteDownload = if (isDownloadedLocally) onDeleteClick else null,
         onUploadToCloud = onUploadToCloudLambda,
-        onDownloadFromCloud = onDownloadFromCloudLambda
+        onDownloadFromCloud = onDownloadFromCloudLambda,
+        onEditMetadata = if (currentOnEditMetadata.value != null) { { currentOnEditMetadata.value?.invoke(track) } } else null
     )
 }
 

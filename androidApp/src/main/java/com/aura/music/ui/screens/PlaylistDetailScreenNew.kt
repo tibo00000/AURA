@@ -86,6 +86,7 @@ fun PlaylistDetailScreenNew(
     val detail = detailState.value
  
     var activeTrackForPlaylist by remember { mutableStateOf<PlaylistTrackRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<com.aura.music.data.local.TrackListRow?>(null) }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
@@ -352,7 +353,8 @@ fun PlaylistDetailScreenNew(
                             cloudFileRepository = cloudFileRepository,
                             syncedCloudTrackIds = syncedCloudTrackIds,
                             cloudFiles = cloudFiles,
-                            snackbarHostState = snackbarHostState
+                            snackbarHostState = snackbarHostState,
+                            onEditMetadata = { t -> trackToEditMetadata = t }
                         )
                     }
                 }
@@ -407,6 +409,19 @@ fun PlaylistDetailScreenNew(
             }
         )
     }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                refreshTick++
+            }
+        )
+    }
 }
 
 @Composable
@@ -424,6 +439,7 @@ private fun PlaylistTrackRowItem(
     syncedCloudTrackIds: Set<String>,
     cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
     snackbarHostState: SnackbarHostState,
+    onEditMetadata: ((com.aura.music.data.local.TrackListRow) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -537,6 +553,7 @@ private fun PlaylistTrackRowItem(
         onViewAlbum = onViewAlbumClick,
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda,
+        onEditMetadata = if (onEditMetadata != null) { { onEditMetadata(track.toTrackListRow()) } } else null
     )
 }
 

@@ -280,6 +280,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getRawTrackById(trackId: String): TrackEntity?
 
+    @Query("SELECT content_uri FROM track_media_links WHERE track_id = :trackId LIMIT 1")
+    suspend fun getTrackContentUri(trackId: String): String?
+
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
 

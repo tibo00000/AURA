@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -431,6 +432,7 @@ fun SharedTrackRowItem(
     onUploadToCloud: (() -> Unit)? = null,
     onDownloadFromCloud: (() -> Unit)? = null,
     onDeleteFromCloud: (() -> Unit)? = null,
+    onEditMetadata: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -438,7 +440,7 @@ fun SharedTrackRowItem(
             onLike != null || onUnlike != null || onRemoveFromPlaylist != null ||
             onViewArtist != null || onViewAlbum != null || onDownload != null ||
             onDeleteDownload != null || onUploadToCloud != null ||
-            onDownloadFromCloud != null || onDeleteFromCloud != null
+            onDownloadFromCloud != null || onDeleteFromCloud != null || onEditMetadata != null
 
     val effectiveAlpha = if (isOfflineDisabled) 0.38f else 1.0f
     val onCardClick: () -> Unit = if (isOfflineDisabled) {
@@ -593,7 +595,8 @@ fun SharedTrackRowItem(
                                 onDeleteDownload,
                                 onUploadToCloud,
                                 onDownloadFromCloud,
-                                onDeleteFromCloud
+                                onDeleteFromCloud,
+                                onEditMetadata
                             ) {
                                 val items = mutableListOf<ContextMenuItem>()
                                 when (contextType) {
@@ -659,6 +662,7 @@ fun SharedTrackRowItem(
                                 if (onUploadToCloud != null && contextType != "search_online") items.add(ContextMenuItem("Ajouter au Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
                                 if (onDownloadFromCloud != null) items.add(ContextMenuItem("Récupérer depuis le Cloud", Icons.Rounded.CloudDownload, onDownloadFromCloud))
                                 if (onDeleteFromCloud != null) items.add(ContextMenuItem("Supprimer du Cloud", Icons.Rounded.Delete, onDeleteFromCloud))
+                                if (onEditMetadata != null) items.add(ContextMenuItem("Modifier les informations", Icons.Rounded.Edit, onEditMetadata))
                                 items
                             }
                             DropdownMenu(

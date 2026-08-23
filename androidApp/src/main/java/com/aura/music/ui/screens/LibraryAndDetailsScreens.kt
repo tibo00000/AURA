@@ -196,18 +196,27 @@ fun LibraryScreen(
         value = repository.getLikedTracks().size
     }
     var query by remember { mutableStateOf("") }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     val searchResults = remember { mutableStateListOf<TrackListRow>() }
     val searchArtists = remember { mutableStateListOf<ArtistBrowseRow>() }
     val searchAlbums = remember { mutableStateListOf<AlbumBrowseRow>() }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     LaunchedEffect(query, repository, refreshToken, refreshTick) {
-        searchResults.clear()
-        searchArtists.clear()
-        searchAlbums.clear()
         if (query.trim().length >= 2) {
-            searchResults += repository.searchLocalTracks(query, limit = 24)
-            searchArtists += repository.searchLocalArtists(query, limit = 8)
-            searchAlbums += repository.searchLocalAlbums(query, limit = 8)
+            val tracks = repository.searchLocalTracks(query, limit = 24)
+            val artists = repository.searchLocalArtists(query, limit = 8)
+            val albums = repository.searchLocalAlbums(query, limit = 8)
+            searchResults.clear()
+            searchResults.addAll(tracks)
+            searchArtists.clear()
+            searchArtists.addAll(artists)
+            searchAlbums.clear()
+            searchAlbums.addAll(albums)
+        } else {
+            searchResults.clear()
+            searchArtists.clear()
+            searchAlbums.clear()
         }
     }
 
@@ -221,6 +230,7 @@ fun LibraryScreen(
         snackbarHostState = snackbarHostState
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().background(DeepBlack),
             verticalArrangement = Arrangement.spacedBy(24.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
@@ -360,7 +370,8 @@ fun LibraryScreen(
                         },
                         onDeleteDownload = { track -> trackToDelete = track },
                         onUploadToCloud = onUploadToCloudLambda,
-                        onDownloadFromCloud = onDownloadFromCloudLambda
+                        onDownloadFromCloud = onDownloadFromCloudLambda,
+                        onEditMetadata = { track -> trackToEditMetadata = track }
                     )
                 }
                 if (searchAlbums.isNotEmpty()) {
@@ -414,6 +425,19 @@ fun LibraryScreen(
             }
         )
     }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                refreshTick++
+            }
+        )
+    }
 }
 
 @Composable
@@ -431,6 +455,7 @@ fun FavoritesScreen(
     }
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
@@ -741,6 +766,7 @@ fun FavoritesScreen(
                         onViewAlbum = onViewAlbumClick,
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
+                        onEditMetadata = { trackToEditMetadata = track }
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -757,6 +783,19 @@ fun FavoritesScreen(
                     repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "favorites")
                     activeTrackForPlaylist = null
                 }
+            }
+        )
+    }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                refreshTick++
             }
         )
     }
@@ -1034,6 +1073,7 @@ fun ArtistRouteScreen(
     val artist = artistState.value
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
         value = repository.getPlaylists()
     }
@@ -1163,7 +1203,8 @@ fun ArtistRouteScreen(
                     }
                 },
                 onUploadToCloud = onUploadToCloudLambda,
-                onDownloadFromCloud = onDownloadFromCloudLambda
+                onDownloadFromCloud = onDownloadFromCloudLambda,
+                onEditMetadata = { track -> trackToEditMetadata = track }
             )
             item { SectionTitle("Albums", "Navigation album depuis la bibliotheque locale.") }
             item { BrowseAlbumRail(albums = artist.albums, onOpenAlbum = onOpenAlbum) }
@@ -1181,6 +1222,19 @@ fun ArtistRouteScreen(
                     activeTrackForPlaylist = null
                     refreshTick++
                 }
+            }
+        )
+    }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                refreshTick++
             }
         )
     }
@@ -1202,6 +1256,7 @@ fun AlbumRouteScreen(
     val album = albumState.value
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
         value = repository.getPlaylists()
     }
@@ -1393,7 +1448,8 @@ fun AlbumRouteScreen(
                     }
                 },
                 onUploadToCloud = onUploadToCloudLambda,
-                onDownloadFromCloud = onDownloadFromCloudLambda
+                onDownloadFromCloud = onDownloadFromCloudLambda,
+                onEditMetadata = { track -> trackToEditMetadata = track }
             )
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
@@ -1409,6 +1465,19 @@ fun AlbumRouteScreen(
                     activeTrackForPlaylist = null
                     refreshTick++
                 }
+            }
+        )
+    }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                refreshTick++
             }
         )
     }
@@ -2322,6 +2391,7 @@ fun LibraryTracksScreen(
     }
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null)}
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     val intentSenderLauncher = rememberLauncherForActivityResult(
@@ -2700,6 +2770,7 @@ fun LibraryTracksScreen(
                         onDeleteDownload = if (isDownloadedLocally) onDeleteDownloadClick else null,
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
+                        onEditMetadata = { trackToEditMetadata = track }
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -2746,6 +2817,19 @@ fun LibraryTracksScreen(
                     }
                     trackToDelete = null
                 }
+            }
+        )
+    }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                refreshTick++
             }
         )
     }

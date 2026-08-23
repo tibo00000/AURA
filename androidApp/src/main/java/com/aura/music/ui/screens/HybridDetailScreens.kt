@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
@@ -144,6 +145,7 @@ fun HybridArtistScreen(
     // Title from local if available, else from online, else placeholder
     val showAllOnlineTracks = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
 
     val context = LocalContext.current
@@ -294,7 +296,8 @@ fun HybridArtistScreen(
                     onLikeTrack = onLikeTrack,
                     onDeleteDownload = { track -> trackToDelete = track },
                     onUploadToCloud = onUploadToCloudLambda,
-                    onDownloadFromCloud = onDownloadFromCloudLambda
+                    onDownloadFromCloud = onDownloadFromCloudLambda,
+                    onEditMetadata = { track -> trackToEditMetadata = track }
                 )
             } else if (onlineData != null && onlineData.topTracks.isNotEmpty()) {
                 item(key = "online_tracklist_header") {
@@ -354,7 +357,10 @@ fun HybridArtistScreen(
                         },
                         onAddToQueue = { onAddToQueue(trackRow) },
                         onAddToPlaylist = { activeTrackForPlaylist = trackRow },
-                        onLike = { onLikeTrack(trackRow) }
+                        onLike = { onLikeTrack(trackRow) },
+                        onEditMetadata = if (matchedLocal != null) {
+                            { trackToEditMetadata = matchedLocal }
+                        } else null
                     )
                 }
                 if (!showAllOnlineTracks.value && onlineData.topTracks.size > 5) {
@@ -446,6 +452,19 @@ fun HybridArtistScreen(
             }
         )
     }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = localLibraryRepository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                viewModel.refreshLocal()
+            }
+        )
+    }
 }
 
 // =============================================================================
@@ -473,6 +492,7 @@ fun HybridAlbumScreen(
 
     val screenTitle = album?.summary?.title ?: onlineData?.title ?: "Album"
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
 
     val context = LocalContext.current
@@ -693,7 +713,8 @@ fun HybridAlbumScreen(
                     onLikeTrack = onLikeTrack,
                     onDeleteDownload = { track -> trackToDelete = track },
                     onUploadToCloud = onUploadToCloudLambda,
-                    onDownloadFromCloud = onDownloadFromCloudLambda
+                    onDownloadFromCloud = onDownloadFromCloudLambda,
+                    onEditMetadata = { track -> trackToEditMetadata = track }
                 )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->
@@ -744,7 +765,10 @@ fun HybridAlbumScreen(
                         },
                         onAddToQueue = { onAddToQueue(trackRow) },
                         onAddToPlaylist = { activeTrackForPlaylist = trackRow },
-                        onLike = { onLikeTrack(trackRow) }
+                        onLike = { onLikeTrack(trackRow) },
+                        onEditMetadata = if (matchedLocal != null) {
+                            { trackToEditMetadata = matchedLocal }
+                        } else null
                     )
                 }
             } else {
@@ -793,6 +817,19 @@ fun HybridAlbumScreen(
             onConfirm = {
                 onDeleteTrack(trackToDelete!!)
                 trackToDelete = null
+            }
+        )
+    }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = localLibraryRepository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                viewModel.refreshLocal()
             }
         )
     }
@@ -1073,6 +1110,7 @@ fun InteractiveOnlineTrackRow(
     onAddToQueue: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onLike: () -> Unit,
+    onEditMetadata: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1231,6 +1269,16 @@ fun InteractiveOnlineTrackRow(
                             onDownloadCloud()
                         },
                         leadingIcon = { Icon(Icons.Rounded.CloudUpload, contentDescription = null) }
+                    )
+                }
+                if (onEditMetadata != null) {
+                    DropdownMenuItem(
+                        text = { Text("Modifier les informations") },
+                        onClick = {
+                            showMenu = false
+                            onEditMetadata()
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
                     )
                 }
             }

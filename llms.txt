@@ -33,6 +33,7 @@ Domain
 Android
 - `docs/android/app-architecture.md`: couches Android, MVVM, Room, MediaStore et player.
 - `docs/android/local-persistence.md`: repartition des donnees entre MediaStore et Room, tables locales candidates.
+- `docs/android/metadata-editor.md`: editeur de metadonnees ID3v2.3, continuite 3 couches, compression d'images et Scoped Storage.
 - `docs/android/room-schema.md`: schema detaille Room avec colonnes, cles et contraintes.
 - `docs/android/room-relationships.md`: diagramme relationnel du schema Room.
 - `docs/android/navigation.md`: graphe de navigation Android.

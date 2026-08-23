@@ -360,3 +360,10 @@ Pour les fichiers stockés physiquement en local (audios MP3 et pochettes d'albu
   2. Écriture du fichier dans le répertoire privé de l'application : `context.filesDir/downloads/{trackId}.mp3`.
   3. Insertion ou mise à jour de `track_media_links` avec le chemin du fichier local.
   4. Modification du type de source `canonicalAudioSourceType` en `downloaded`.
+
+## Édition des Métadonnées & Protection Anti-Écrasement
+
+- **Continuité 3 Couches** : Toute modification de métadonnées (`updateTrackMetadata`) met à jour simultanément la base Room (`TrackEntity`, `ArtistEntity`, `AlbumEntity`), le fichier MP3 physique via `AudioTagWriter` (frames ID3v2.3 `TIT2`, `TPE1`, `TALB`, `TRCK`, `TYER`, `APIC`) et notifie `MediaScannerConnection` pour actualiser l'OS.
+- **Règle Anti-Écrasement lors des Scans** : Lors de l'exécution de `refreshLocalMediaIndex()`, si une piste locale existe déjà dans Room (`existingTrack != null`), les métadonnées personnalisées par l'utilisateur (titre, nom d'artiste, titre d'album, pochette, relations) ont la priorité absolue et ne sont jamais écrasées par les anciennes métadonnées brutes de `MediaStore`.
+- **Accès au Stockage Android 11+** : L'accès direct en écriture aux fichiers audio physiques nécessite la permission `MANAGE_EXTERNAL_STORAGE` gérée via `StoragePermissionHelper`.
+

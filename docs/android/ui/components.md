@@ -52,6 +52,7 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - `Ajouter a une playlist`
   - `Voir l'artiste`
   - `Voir l'album`
+  - `Modifier les informations` pour les pistes physiques locales (ouvre `EditTrackMetadataBottomSheet`)
   - `Telecharger` uniquement si la piste n'est pas disponible localement
   - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
   - `Uploader vers le cloud` uniquement si la piste est locale (`contentUri` en `content://`), non téléchargée par Aura et absente du cloud
@@ -169,6 +170,16 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
 - Règles :
   - S'affiche uniquement sur l'écran d'accueil (`HomeScreen`) si plus de 5 titres sont en mode `cloud_only` et présents sur le cloud.
 
+## EditTrackMetadataBottomSheet
+- Role : ModalBottomSheet d'édition des tags et métadonnées d'un morceau physique local.
+- Structure :
+  - Header avec titre et bouton de fermeture
+  - Bannière optionnelle d'autorisation d'accès complet au stockage (`StoragePermissionHelper`)
+  - Sélecteur de pochette (aperçu 140x140 dp avec PhotoPicker pour l'édition manuelle)
+  - Section 1 : Suggestions Deezer automatiques avec cartes 1-clic pour appliquer les métadonnées officielles
+  - Section 2 : Formulaire d'édition manuelle (titre, artiste, album, numéro de piste, année)
+  - Bouton d'action "Enregistrer les modifications"
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
@@ -177,3 +188,8 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : `HeroIdentityCard`, `EmptyStateSurface`, `DownloadStateCard`, `FilterRow`, `SectionTitle`, `BrowseAlbumRail`, `BrowseArtistRail`
 - `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt` : composition de `SettingsCard` et usage de `HeroIdentityCard` + `EmptyStateSurface`
 - `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `PlaylistCard`, `PlayerHero`, `PlayerQueueRow`, surfaces detail secondaires
+- `android/app/src/main/java/com/aura/music/ui/screens/EditTrackMetadataBottomSheet.kt` : `EditTrackMetadataBottomSheet` modal d'édition
+- `android/app/src/main/java/com/aura/music/core/StoragePermissionHelper.kt` : vérification et activation `MANAGE_EXTERNAL_STORAGE`
+- `android/app/src/main/java/com/aura/music/data/metadata/AudioTagWriter.kt` : moteur natif ID3v2.3 atomique
+- `android/app/src/main/java/com/aura/music/core/ImageCompressionUtils.kt` : compression 500x500 JPEG 80%
+

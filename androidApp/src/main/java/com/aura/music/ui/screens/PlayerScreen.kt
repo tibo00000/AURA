@@ -49,6 +49,7 @@ fun PlayerScreen(
     // State for context menu and playlists
     var menuExpanded by remember { mutableStateOf(false) }
     var showSelectPlaylistDialog by remember { mutableStateOf(false) }
+    var showEditMetadataBottomSheet by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
 
     val trackDetailsState = produceState<com.aura.music.data.local.TrackListRow?>(initialValue = null, track?.trackId) {
@@ -233,6 +234,19 @@ fun PlayerScreen(
                                 Icon(Icons.Rounded.Album, contentDescription = null)
                             }
                         )
+                        // Modifier les informations
+                        if (trackDetails != null) {
+                            DropdownMenuItem(
+                                text = { Text("Modifier les informations") },
+                                onClick = {
+                                    menuExpanded = false
+                                    showEditMetadataBottomSheet = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Edit, contentDescription = null)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -520,6 +534,20 @@ fun PlayerScreen(
             onPlaylistSelected = { playlist ->
                 playerViewModel.addTrackToPlaylist(playlist.id, track.trackId)
                 showSelectPlaylistDialog = false
+            }
+        )
+    }
+
+    if (showEditMetadataBottomSheet && trackDetails != null) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+        EditTrackMetadataBottomSheet(
+            track = trackDetails,
+            apiService = appContainer.auraApiService,
+            localLibraryRepository = appContainer.localLibraryRepository,
+            onDismiss = { showEditMetadataBottomSheet = false },
+            onTrackUpdated = {
+                showEditMetadataBottomSheet = false
             }
         )
     }

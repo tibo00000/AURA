@@ -251,15 +251,36 @@ class LocalLibraryRepository(
             val mediaFiles = mediaStoreAudioDataSource.getLocalAudioFiles()
             for (media in mediaFiles) {
                 val trackId = trackIdOf(media.mediaStoreId)
-                val artistId = artistIdOf(media.artistName)
-                val albumId = media.albumTitle?.let { albumIdOf(media.artistName, it) }
+                val existingTrack = database.trackDao().getRawTrackById(trackId)
+
+                val title = if (existingTrack != null && existingTrack.title.isNotBlank()) {
+                    existingTrack.title
+                } else {
+                    media.title
+                }
+
+                val artistName = if (existingTrack != null && !existingTrack.displayArtistName.isNullOrBlank()) {
+                    existingTrack.displayArtistName ?: media.artistName
+                } else {
+                    media.artistName
+                }
+
+                val albumTitle = if (existingTrack != null && !existingTrack.displayAlbumTitle.isNullOrBlank()) {
+                    existingTrack.displayAlbumTitle
+                } else {
+                    media.albumTitle
+                }
+
+                val artistId = existingTrack?.primaryArtistId ?: artistIdOf(artistName)
+                val albumId = existingTrack?.albumId ?: albumTitle?.let { albumIdOf(artistName, it) }
+                val coverUri = existingTrack?.coverUri ?: media.coverUri
 
                 // Upsert artist
                 if (!scannedArtists.containsKey(artistId)) {
                     scannedArtists[artistId] = ArtistEntity(
                         id = artistId,
-                        name = media.artistName,
-                        normalizedName = normalize(media.artistName),
+                        name = artistName,
+                        normalizedName = normalize(artistName),
                         pictureUri = null,
                         summary = null,
                         createdAt = now,
@@ -268,14 +289,14 @@ class LocalLibraryRepository(
                 }
 
                 // Upsert album
-                if (albumId != null && media.albumTitle != null) {
+                if (albumId != null && albumTitle != null) {
                     if (!scannedAlbums.containsKey(albumId)) {
                         scannedAlbums[albumId] = AlbumEntity(
                             id = albumId,
                             primaryArtistId = artistId,
-                            title = media.albumTitle,
-                            normalizedTitle = normalize(media.albumTitle),
-                            coverUri = media.coverUri,
+                            title = albumTitle,
+                            normalizedTitle = normalize(albumTitle),
+                            coverUri = coverUri,
                             releaseDate = null,
                             trackCount = null,
                             createdAt = now,
@@ -285,26 +306,25 @@ class LocalLibraryRepository(
                 }
 
                 // Create track
-                val existingTrack = database.trackDao().getRawTrackById(trackId)
                 scannedTracks.add(
                     TrackEntity(
                         id = trackId,
                         primaryArtistId = artistId,
                         albumId = albumId,
-                        title = media.title,
-                        normalizedTitle = normalize(media.title),
-                        displayArtistName = media.artistName,
-                        displayAlbumTitle = media.albumTitle,
-                        durationMs = media.durationMs,
-                        coverUri = media.coverUri,
+                        title = title,
+                        normalizedTitle = normalize(title),
+                        displayArtistName = artistName,
+                        displayAlbumTitle = albumTitle,
+                        durationMs = existingTrack?.durationMs ?: media.durationMs,
+                        coverUri = coverUri,
                         canonicalAudioSourceType = "local",
                         isLiked = existingTrack?.isLiked ?: false,
                         isDownloadedByAura = false,
                         isExplicit = null,
                         popularity = null,
                         genresJson = null,
-                        createdAt = media.dateModifiedEpochMs ?: now,
-                        updatedAt = media.dateModifiedEpochMs ?: now,
+                        createdAt = existingTrack?.createdAt ?: (media.dateModifiedEpochMs ?: now),
+                        updatedAt = existingTrack?.updatedAt ?: (media.dateModifiedEpochMs ?: now),
                     )
                 )
 
@@ -980,6 +1000,180 @@ class LocalLibraryRepository(
             }
         }
         pendingIntent
+    }
+
+    /**
+     * Met à jour les métadonnées d'un titre local sur les 3 couches :
+     * 1. Sauvegarde et compression de la pochette (si fournie)
+     * 2. Écriture physique atomique des tags ID3 (si fichier accessible / MP3)
+     * 3. Mise à jour de la base de données Room (Track, Artist, Album)
+     * 4. Notification MediaScanner pour le système Android
+     */
+    suspend fun updateTrackMetadata(
+        trackId: String,
+        newTitle: String,
+        newArtistName: String,
+        newAlbumTitle: String?,
+        coverSourceUriOrUrl: String? = null,
+        coverSourceBytes: ByteArray? = null,
+        trackNumber: String? = null,
+        year: String? = null
+    ): Result<TrackListRow> = withContext(Dispatchers.IO) {
+        runCatching {
+            val now = System.currentTimeMillis()
+            val existingTrack = database.trackDao().getRawTrackById(trackId)
+                ?: throw IllegalArgumentException("Track not found: $trackId")
+
+            val artistName = newArtistName.trim().ifBlank { "Artiste inconnu" }
+            val title = newTitle.trim().ifBlank { existingTrack.title }
+            val albumTitle = newAlbumTitle?.trim()?.ifBlank { null }
+
+            // Résolution des IDs avec les méthodes de normalisation canoniques
+            val artistId = artistIdOf(artistName)
+            val albumId = albumTitle?.let { albumIdOf(artistName, it) }
+
+            // 1. Gestion et compression de la pochette (500x500 max, JPEG 80%)
+            var finalCoverUri: String? = existingTrack.coverUri
+            var coverJpegBytes: ByteArray? = null
+
+            val coversDir = java.io.File(context.filesDir, "covers")
+            if (!coversDir.exists()) coversDir.mkdirs()
+            val targetCoverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
+
+            if (coverSourceBytes != null && coverSourceBytes.isNotEmpty()) {
+                val success = com.aura.music.core.ImageCompressionUtils.compressAndSaveBytes(coverSourceBytes, targetCoverFile)
+                if (success) {
+                    finalCoverUri = android.net.Uri.fromFile(targetCoverFile).toString()
+                    coverJpegBytes = com.aura.music.core.ImageCompressionUtils.getCompressedJpegBytes(targetCoverFile)
+                }
+            } else if (!coverSourceUriOrUrl.isNullOrBlank()) {
+                val success = if (coverSourceUriOrUrl.startsWith("http://") || coverSourceUriOrUrl.startsWith("https://")) {
+                    com.aura.music.core.ImageCompressionUtils.downloadAndCompressImage(coverSourceUriOrUrl, targetCoverFile)
+                } else {
+                    val uri = android.net.Uri.parse(coverSourceUriOrUrl)
+                    com.aura.music.core.ImageCompressionUtils.compressAndSaveUri(context, uri, targetCoverFile)
+                }
+                if (success) {
+                    finalCoverUri = android.net.Uri.fromFile(targetCoverFile).toString()
+                    coverJpegBytes = com.aura.music.core.ImageCompressionUtils.getCompressedJpegBytes(targetCoverFile)
+                }
+            } else if (targetCoverFile.exists()) {
+                coverJpegBytes = com.aura.music.core.ImageCompressionUtils.getCompressedJpegBytes(targetCoverFile)
+            }
+
+            // 2. Écriture physique atomique des tags ID3 si fichier présent
+            val contentUri = database.trackDao().getTrackContentUri(trackId)
+            var physicalFile: java.io.File? = null
+
+            if (!contentUri.isNullOrBlank()) {
+                if (contentUri.startsWith("file://") || contentUri.startsWith("/")) {
+                    val path = if (contentUri.startsWith("file://")) contentUri.removePrefix("file://") else contentUri
+                    val f = java.io.File(path)
+                    if (f.exists()) physicalFile = f
+                } else if (contentUri.startsWith("content://")) {
+                    try {
+                        val uri = android.net.Uri.parse(contentUri)
+                        val proj = arrayOf(android.provider.MediaStore.Audio.Media.DATA)
+                        context.contentResolver.query(uri, proj, null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val dataIdx = cursor.getColumnIndex(android.provider.MediaStore.Audio.Media.DATA)
+                                if (dataIdx != -1) {
+                                    val path = cursor.getString(dataIdx)
+                                    if (!path.isNullOrBlank()) {
+                                        val f = java.io.File(path)
+                                        if (f.exists()) physicalFile = f
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("LocalLibraryRepository", "Could not resolve physical file from contentUri: ${e.message}")
+                    }
+                }
+            }
+
+            // Recherche alternative dans le dossier downloads interne
+            if (physicalFile == null) {
+                val localFile = java.io.File(context.filesDir, "downloads/${trackId.replace(':', ';')}.mp3")
+                if (localFile.exists()) physicalFile = localFile
+            }
+
+            val targetFile = physicalFile
+            if (targetFile != null && targetFile.exists()) {
+                try {
+                    com.aura.music.data.metadata.AudioTagWriter.writeMp3Tags(
+                        audioFile = targetFile,
+                        title = title,
+                        artistName = artistName,
+                        albumTitle = albumTitle,
+                        trackNumber = trackNumber,
+                        year = year,
+                        coverJpegBytes = coverJpegBytes
+                    )
+                    // Notification MediaScanner
+                    android.media.MediaScannerConnection.scanFile(
+                        context,
+                        arrayOf(targetFile.absolutePath),
+                        arrayOf("audio/mpeg"),
+                        null
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.w("LocalLibraryRepository", "Physical tag write failed: ${e.message}")
+                }
+            }
+
+            // 3. Persistance Room (Artist, Album, Track)
+            val artistEntity = ArtistEntity(
+                id = artistId,
+                name = artistName,
+                normalizedName = normalize(artistName),
+                pictureUri = null,
+                summary = null,
+                createdAt = now,
+                updatedAt = now
+            )
+            database.artistDao().upsertArtists(listOf(artistEntity))
+
+            if (albumId != null && albumTitle != null) {
+                val albumEntity = AlbumEntity(
+                    id = albumId,
+                    primaryArtistId = artistId,
+                    title = albumTitle,
+                    normalizedTitle = normalize(albumTitle),
+                    coverUri = finalCoverUri,
+                    releaseDate = year,
+                    trackCount = null,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                database.albumDao().upsertAlbums(listOf(albumEntity))
+            }
+
+            val updatedTrack = existingTrack.copy(
+                title = title,
+                normalizedTitle = normalize(title),
+                displayArtistName = artistName,
+                displayAlbumTitle = albumTitle,
+                primaryArtistId = artistId,
+                albumId = albumId,
+                coverUri = finalCoverUri,
+                updatedAt = now
+            )
+            database.trackDao().upsertTrack(updatedTrack)
+
+            TrackListRow(
+                id = updatedTrack.id,
+                artistId = artistId,
+                albumId = albumId,
+                title = updatedTrack.title,
+                artistName = updatedTrack.displayArtistName,
+                albumTitle = updatedTrack.displayAlbumTitle,
+                contentUri = contentUri,
+                durationMs = updatedTrack.durationMs ?: 0L,
+                coverUri = updatedTrack.coverUri,
+                isLiked = updatedTrack.isLiked
+            )
+        }
     }
 
     private suspend fun normalizePlaylistPositions(playlistId: String) {

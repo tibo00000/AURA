@@ -776,6 +776,7 @@ fun LazyListScope.trackList(
     onDeleteDownload: ((TrackListRow) -> Unit)? = null,
     onUploadToCloud: ((TrackListRow) -> Unit)? = null,
     onDownloadFromCloud: ((TrackListRow) -> Unit)? = null,
+    onEditMetadata: ((TrackListRow) -> Unit)? = null,
 ) {
     if (title.isNotBlank()) {
         item(key = "tracklist_title_${title}_${contextType}") {
@@ -810,6 +811,7 @@ fun LazyListScope.trackList(
             val currentOnDelete = rememberUpdatedState(onDeleteDownload)
             val currentOnUpload = rememberUpdatedState(onUploadToCloud)
             val currentOnDownloadFromCloud = rememberUpdatedState(onDownloadFromCloud)
+            val currentOnEditMetadata = rememberUpdatedState(onEditMetadata)
 
             val currentOnClick = remember(track.id, tracks, contextType) {
                 { currentOnPlay.value(track, tracks, contextType) }
@@ -858,6 +860,10 @@ fun LazyListScope.trackList(
                 val cb = currentOnDownloadFromCloud.value
                 if (cb != null) { { cb(track) } } else null
             }
+            val onEditMetadataLambda = remember(track.id, currentOnEditMetadata.value != null) {
+                val cb = currentOnEditMetadata.value
+                if (cb != null) { { cb(track) } } else null
+            }
 
             val isDownloadedLocally = !track.contentUri.isNullOrBlank()
             val isCloudOnly = !isDownloadedLocally
@@ -881,6 +887,7 @@ fun LazyListScope.trackList(
                 onDeleteDownload = if (isDownloadedLocally) onDeleteDownloadLambda else null,
                 onUploadToCloud = onUploadToCloudLambda,
                 onDownloadFromCloud = onDownloadFromCloudLambda,
+                onEditMetadata = onEditMetadataLambda,
             )
         }
     }
