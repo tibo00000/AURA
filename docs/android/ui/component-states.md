@@ -19,6 +19,17 @@ Definir les etats visuels et interactifs minimaux que chaque composant critique 
 - `online_only`
 - `disabled`
 
+### États de Synchronisation Cloud / Local (Indicateur visuel à droite)
+Chaque ligne de morceau affiche un statut visuel clair basé sur la résolution par triplet `(title, artistName, albumTitle)` :
+1. **Téléchargé sur l'appareil** (`local_downloaded`) : Icône `Icons.Rounded.CheckCircle` verte (`#4CAF50`). Le fichier est physiquement présent sur le téléphone.
+2. **Sur le Cloud uniquement** (`cloud_only`) : Icône `Icons.Rounded.Cloud` orange Blaze (`#FF6E00`). Le morceau est sauvegardé sur votre serveur VPS mais absent du stockage local.
+3. **Absent du Cloud et de l'appareil** (`available_online`) : Icône `Icons.Rounded.CloudDownload` orange Blaze (`#FF6E00`). Le morceau provient du catalogue en ligne et peut être téléchargé.
+
+### Switch Mode Hors-Ligne (Playlists & Favoris)
+- Présent sur les écrans `PlaylistDetailScreenNew` et `FavoritesScreen`.
+- **ON** : Lance le téléchargement en arrière-plan de tous les morceaux non présents physiquement (contrôle de flux par sémaphore).
+- **OFF** : Libère le stockage physique de l'appareil en supprimant les fichiers téléchargés locaux, tout en conservant intacts les fichiers sur le Cloud VPS.
+
 ### TrackRow - Architecture du Menu Contextuel
 Le menu contextuel du `TrackRow` est gere via le parametre `contextType` de `SharedTrackRowItem`. **Aucun `trailingIcon` custom ne doit etre passe** ; laisser le menu contextuel par defaut gerer les cas documentes.
 
