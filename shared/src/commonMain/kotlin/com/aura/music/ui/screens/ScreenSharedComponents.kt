@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Delete
@@ -524,65 +525,59 @@ fun SharedTrackRowItem(
         onClick
     }
 
-    Card(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp)
+            .clickable(onClick = onCardClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
             .alpha(effectiveAlpha),
-        shape = RoundedCornerShape(12.dp),
-        onClick = onCardClick,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF1E1E1E))
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        if (showCover) {
+            if (coverUri != null) {
+                AsyncImage(
+                    model = coverUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            } else {
+                PlaceholderCover(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            if (showCover) {
-                if (coverUri != null) {
-                    AsyncImage(
-                        model = coverUri,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                    )
-                } else {
-                    PlaceholderCover(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (onLike != null || onUnlike != null) {
-                    IconButton(
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (onLike != null || onUnlike != null) {
+                IconButton(
                         onClick = { if (isLiked) onUnlike?.invoke() else onLike?.invoke() },
                         modifier = Modifier.size(32.dp)
                     ) {
@@ -596,7 +591,14 @@ fun SharedTrackRowItem(
                 }
 
                 if (isCloudOnly && (downloadStatus is TrackDownloadStatus.Idle || downloadStatus is TrackDownloadStatus.NotDownloaded)) {
-                    // Hidden
+                    Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Cloud,
+                            contentDescription = "Sur le Cloud",
+                            tint = BlazeOrange,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 } else {
                     when (downloadStatus) {
                         is TrackDownloadStatus.Idle, is TrackDownloadStatus.NotDownloaded -> {
@@ -678,8 +680,6 @@ fun SharedTrackRowItem(
             }
         }
     }
-}
-
 
 /**
  * Dialogue de selection de playlist (UI pure conforme MVVM).

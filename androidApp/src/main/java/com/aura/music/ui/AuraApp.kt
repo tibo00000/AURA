@@ -859,6 +859,8 @@ fun LazyListScope.trackList(
                 if (cb != null) { { cb(track) } } else null
             }
 
+            val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+            val isCloudOnly = !isDownloadedLocally
             com.aura.music.ui.screens.SharedTrackRowItem(
                 title = track.title,
                 subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" | "),
@@ -867,6 +869,8 @@ fun LazyListScope.trackList(
                 onClick = currentOnClick,
                 contextType = contextType,
                 isLiked = track.isLiked,
+                downloadStatus = if (isDownloadedLocally) com.aura.music.ui.screens.TrackDownloadStatus.Downloaded else com.aura.music.ui.screens.TrackDownloadStatus.Idle,
+                isCloudOnly = isCloudOnly,
                 onAddToPlaylist = onAddToPlaylistLambda,
                 onLike = onLikeLambda,
                 onUnlike = onUnlikeLambda,
@@ -874,7 +878,7 @@ fun LazyListScope.trackList(
                 onAddToQueue = onAddToQueueLambda,
                 onViewArtist = onViewArtistLambda,
                 onViewAlbum = onViewAlbumLambda,
-                onDeleteDownload = onDeleteDownloadLambda,
+                onDeleteDownload = if (isDownloadedLocally) onDeleteDownloadLambda else null,
                 onUploadToCloud = onUploadToCloudLambda,
                 onDownloadFromCloud = onDownloadFromCloudLambda,
             )

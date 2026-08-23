@@ -30,6 +30,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHostState
 import kotlinx.coroutines.sync.withPermit
@@ -56,6 +58,7 @@ import com.aura.music.data.repository.PlaylistDetail
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.theme.BlazeOrange
+import com.aura.music.ui.theme.DarkGraphite
 import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
@@ -92,6 +95,12 @@ fun PlaylistDetailScreenNew(
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
+        cloudFileRepository.listCloudFiles().collect { res ->
+            res.onSuccess { value = it }
+        }
+    }
+    val cloudFiles = cloudFilesState.value
     val snackbarHostState = remember { SnackbarHostState() }
 
     RouteScaffold(title = detail?.summary?.name ?: "Playlist", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
@@ -178,62 +187,6 @@ fun PlaylistDetailScreenNew(
                             Text("Shuffle")
                         }
 
-                        val notDownloadedTracks = remember(detail.tracks) {
-                            detail.tracks.filter { it.contentUri.isNullOrBlank() }
-                        }
-                        var isBatchDownloading by remember { mutableStateOf(false) }
-
-                        IconButton(
-                            onClick = {
-                                if (!isBatchDownloading && notDownloadedTracks.isNotEmpty()) {
-                                    scope.launch {
-                                        isBatchDownloading = true
-                                        val total = notDownloadedTracks.size
-                                        snackbarHostState.showSnackbar("Téléchargement de $total morceau(x) pour l'écoute hors-ligne...")
-                                        
-                                        val semaphore = kotlinx.coroutines.sync.Semaphore(2)
-                                        kotlinx.coroutines.coroutineScope {
-                                            notDownloadedTracks.forEach { track ->
-                                                launch {
-                                                    semaphore.withPermit {
-                                                        cloudFileRepository.downloadTrack(
-                                                            trackId = track.trackId,
-                                                            title = track.title,
-                                                            artistName = track.artistName,
-                                                            albumTitle = track.albumTitle,
-                                                            durationMs = track.durationMs,
-                                                            artistId = track.artistId,
-                                                            albumId = track.albumId,
-                                                            coverUri = track.coverUri,
-                                                        ).collect { }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        isBatchDownloading = false
-                                        refreshTick++
-                                        snackbarHostState.showSnackbar("Playlist disponible hors-ligne !")
-                                    }
-                                } else if (notDownloadedTracks.isEmpty()) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Tous les titres de cette playlist sont déjà sur l'appareil.")
-                                    }
-                                }
-                            },
-                            enabled = !isBatchDownloading,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            if (isBatchDownloading) {
-                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = BlazeOrange)
-                            } else {
-                                Icon(
-                                    if (notDownloadedTracks.isEmpty()) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                                    contentDescription = "Rendre disponible hors-ligne",
-                                    tint = if (notDownloadedTracks.isEmpty()) Color(0xFF00E676) else BlazeOrange
-                                )
-                            }
-                        }
-
                         Box {
                             IconButton(onClick = { showMenuOpen = true }) {
                                 Icon(Icons.Rounded.MoreVert, contentDescription = "Menu actions supplémentaires")
@@ -260,6 +213,101 @@ fun PlaylistDetailScreenNew(
                                     leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
                                 )
                             }
+                        }
+                    }
+
+                    val notDownloadedTracks = remember(detail.tracks) {
+                        detail.tracks.filter { it.contentUri.isNullOrBlank() }
+                    }
+                    val isAllDownloaded = remember(detail.tracks, notDownloadedTracks) {
+                        detail.tracks.isNotEmpty() && notDownloadedTracks.isEmpty()
+                    }
+                    var isBatchDownloading by remember { mutableStateOf(false) }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                if (isAllDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                                contentDescription = null,
+                                tint = if (isAllDownloaded) Color(0xFF00E676) else TextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Télécharger sur l'appareil",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary
+                            )
+                        }
+
+                        if (isBatchDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = BlazeOrange
+                            )
+                        } else {
+                            Switch(
+                                checked = isAllDownloaded,
+                                enabled = detail.tracks.isNotEmpty(),
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        if (notDownloadedTracks.isNotEmpty()) {
+                                            scope.launch {
+                                                isBatchDownloading = true
+                                                val total = notDownloadedTracks.size
+                                                snackbarHostState.showSnackbar("Téléchargement de $total morceau(x) pour l'écoute hors-ligne...")
+                                                val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                                                kotlinx.coroutines.coroutineScope {
+                                                    notDownloadedTracks.forEach { track ->
+                                                        launch {
+                                                            semaphore.withPermit {
+                                                                cloudFileRepository.downloadTrack(
+                                                                    trackId = track.trackId,
+                                                                    title = track.title,
+                                                                    artistName = track.artistName,
+                                                                    albumTitle = track.albumTitle,
+                                                                    durationMs = track.durationMs,
+                                                                    artistId = track.artistId,
+                                                                    albumId = track.albumId,
+                                                                    coverUri = track.coverUri,
+                                                                ).collect { }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                isBatchDownloading = false
+                                                refreshTick++
+                                                snackbarHostState.showSnackbar("Playlist disponible hors-ligne !")
+                                            }
+                                        }
+                                    } else {
+                                        scope.launch {
+                                            val downloadedTracks = detail.tracks.filter { !it.contentUri.isNullOrBlank() }
+                                            downloadedTracks.forEach { track ->
+                                                cloudFileRepository.removeLocalFile(track.trackId)
+                                            }
+                                            refreshTick++
+                                            snackbarHostState.showSnackbar("Fichiers locaux supprimés. Titres toujours disponibles sur le Cloud.")
+                                        }
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = BlazeOrange,
+                                    uncheckedThumbColor = Color.Gray,
+                                    uncheckedTrackColor = DarkGraphite
+                                )
+                            )
                         }
                     }
                 }
@@ -303,6 +351,7 @@ fun PlaylistDetailScreenNew(
                             onAddToQueue = onAddToQueueClick,
                             cloudFileRepository = cloudFileRepository,
                             syncedCloudTrackIds = syncedCloudTrackIds,
+                            cloudFiles = cloudFiles,
                             snackbarHostState = snackbarHostState
                         )
                     }
@@ -373,6 +422,7 @@ private fun PlaylistTrackRowItem(
     onAddToQueue: () -> Unit,
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
     syncedCloudTrackIds: Set<String>,
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
     snackbarHostState: SnackbarHostState,
 ) {
     val scope = rememberCoroutineScope()
@@ -412,8 +462,16 @@ private fun PlaylistTrackRowItem(
         track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
     }
 
-    val isLocalScanned = track.contentUri?.startsWith("content://") == true
-    val isAlreadySynced = syncedCloudTrackIds.contains(track.trackId)
+    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+    val isPresentInCloud = syncedCloudTrackIds.contains(track.trackId) ||
+        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.trackId) } ||
+        cloudFiles.any { cloud ->
+            isDeezerTrackMatch(cloud.trackId, track.trackId) ||
+            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+        }
+    val isAlreadySynced = isPresentInCloud
     val onUploadToCloudLambda = remember(track.trackId, isLocalScanned, isAlreadySynced) {
         if (isLocalScanned && !isAlreadySynced) {
             {
@@ -434,7 +492,6 @@ private fun PlaylistTrackRowItem(
     }
 
     val isCloudOnly = track.contentUri.isNullOrBlank()
-    val isPresentInCloud = syncedCloudTrackIds.contains(track.trackId)
     val onDownloadFromCloudLambda = remember(track.trackId, isCloudOnly, isPresentInCloud) {
         if (isCloudOnly && isPresentInCloud) {
             {

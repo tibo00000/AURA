@@ -399,18 +399,21 @@ fun SearchScreen(
                                 syncedCloudTrackIds = syncedCloudTrackIds,
                                 onPlayTrack = { track ->
                                     focusManager.clearFocus()
-                                    val normTitle = track.title.lowercase().trim()
-                                    val normArtist = track.displayArtistName.lowercase().trim()
-
-                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
-                                        it.trackId == track.id ||
-                                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
+                                    val matchedLocal = localTracks.firstOrNull { local ->
+                                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                        !local.contentUri.isNullOrBlank()
                                     }
-
-                                    val matchedLocal = localTracks.firstOrNull {
-                                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
-                                        !it.contentUri.isNullOrBlank()
-                                    }
+                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                                        cloudFiles.any { cloud ->
+                                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                                        }
 
                                     if (matchedLocal != null || isOnCloud) {
                                         val trackRow = TrackListRow(
@@ -437,16 +440,21 @@ fun SearchScreen(
                                     }
                                 },
                                 onAddToQueue = { track ->
-                                    val normTitle = track.title.lowercase().trim()
-                                    val normArtist = track.displayArtistName.lowercase().trim()
-                                    val matchedLocal = localTracks.firstOrNull {
-                                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
-                                        !it.contentUri.isNullOrBlank()
+                                    val matchedLocal = localTracks.firstOrNull { local ->
+                                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                        !local.contentUri.isNullOrBlank()
                                     }
-                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
-                                        it.trackId == track.id ||
-                                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
-                                    }
+                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                                        cloudFiles.any { cloud ->
+                                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                                        }
                                     if (matchedLocal != null || isOnCloud) {
                                         val queued = com.aura.music.domain.player.QueuedTrack(
                                             trackId = track.id,
@@ -510,11 +518,12 @@ fun SearchScreen(
                                     }
                                 },
                                 onUploadToCloud = { track ->
-                                    val normTitle = track.title.lowercase().trim()
-                                    val normArtist = track.displayArtistName.lowercase().trim()
-                                    val matchedLocal = localTracks.firstOrNull {
-                                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
-                                        !it.contentUri.isNullOrBlank()
+                                    val matchedLocal = localTracks.firstOrNull { local ->
+                                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                        !local.contentUri.isNullOrBlank()
                                     }
                                     val trackIdToUpload = matchedLocal?.id ?: track.id
                                     scope.launch {
@@ -733,18 +742,22 @@ private fun OnlineSearchTab(
                 )
                 val displayedTracks = if (showAllTracks) tracks else tracks.take(10)
                 displayedTracks.forEach { track ->
-                    val normTitle = track.title.lowercase().trim()
-                    val normArtist = track.displayArtistName.lowercase().trim()
-
-                    val isDownloadedLocally = localTracks.any {
-                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
-                        !it.contentUri.isNullOrBlank()
+                    val isDownloadedLocally = localTracks.any { local ->
+                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                        !local.contentUri.isNullOrBlank()
                     }
 
-                    val isOnCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
-                        it.trackId == track.id ||
-                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
-                    }
+                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                        }
 
                     val isCloudOnly = isOnCloud && !isDownloadedLocally
 
@@ -1544,8 +1557,17 @@ private fun SearchTrackRowItem(
         } else null
     }
 
-    val isLocalScanned = track.contentUri?.startsWith("content://") == true
-    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+        cloudFiles.any { cloud ->
+            isDeezerTrackMatch(cloud.trackId, track.id) ||
+            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+        }
+    val isAlreadySynced = isPresentInCloud
     val onUploadToCloudLambda = remember(track.id, isLocalScanned, isAlreadySynced) {
         if (isLocalScanned && !isAlreadySynced) {
             {
@@ -1566,12 +1588,6 @@ private fun SearchTrackRowItem(
         } else null
     }
 
-    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
-    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
-        it.trackId == track.id ||
-        (it.title?.lowercase()?.trim() == track.title.lowercase().trim() &&
-         it.artistName?.lowercase()?.trim() == (track.artistName ?: "").lowercase().trim())
-    }
     val isCloudOnly = isPresentInCloud && !isDownloadedLocally
     val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
         if (isCloudOnly && isPresentInCloud) {

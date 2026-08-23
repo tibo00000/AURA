@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Download
@@ -105,6 +106,40 @@ private fun TrackSummary.toTrackListRow(artistId: String? = null, albumId: Strin
     createdAt = 0L,
     updatedAt = 0L
 )
+
+fun extractDeezerId(id: String?): String? {
+    if (id.isNullOrBlank()) return null
+    if (id.startsWith("trk_")) {
+        return try {
+            val token = id.removePrefix("trk_")
+            val padding = when (token.length % 4) {
+                2 -> "=="
+                3 -> "="
+                else -> ""
+            }
+            val paddedToken = token + padding
+            val bytes = android.util.Base64.decode(paddedToken, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+            val decoded = String(bytes, Charsets.UTF_8)
+            val parts = decoded.split(":")
+            if (parts.size >= 4 && parts[2].equals("deezer", ignoreCase = true)) parts[3].trim() else null
+        } catch (e: Exception) {
+            null
+        }
+    } else if (id.startsWith("deezer:", ignoreCase = true)) {
+        return id.substringAfter(":").trim()
+    } else if (id.all { it.isDigit() }) {
+        return id.trim()
+    }
+    return null
+}
+
+fun isDeezerTrackMatch(trackIdA: String?, trackIdB: String?): Boolean {
+    if (trackIdA.isNullOrBlank() || trackIdB.isNullOrBlank()) return false
+    if (trackIdA == trackIdB) return true
+    val deezerIdA = extractDeezerId(trackIdA)
+    val deezerIdB = extractDeezerId(trackIdB)
+    return deezerIdA != null && deezerIdB != null && deezerIdA == deezerIdB
+}
 
 // =============================================================================
 // HybridArtistScreen (AND-010)
@@ -224,8 +259,16 @@ fun HybridArtistScreen(
             val localTracks = artist?.topTracks ?: emptyList()
             if (localTracks.isNotEmpty()) {
                 val onUploadToCloudLambda = { track: TrackListRow ->
-                    val isLocalScanned = track.contentUri?.startsWith("content://") == true
-                    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+                             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+                        }
+                    val isAlreadySynced = isPresentInCloud
                     if (isLocalScanned && !isAlreadySynced) {
                         scope.launch {
                             snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
@@ -243,7 +286,14 @@ fun HybridArtistScreen(
                 }
                 val onDownloadFromCloudLambda = { track: TrackListRow ->
                     val isCloudOnly = track.contentUri.isNullOrBlank()
-                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+                             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+                        }
                     if (isCloudOnly && isPresentInCloud) {
                         scope.launch {
                             snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
@@ -296,23 +346,29 @@ fun HybridArtistScreen(
                 }
                 val displayedTracks = if (showAllOnlineTracks.value) onlineData.topTracks else onlineData.topTracks.take(5)
                 items(displayedTracks, key = { it.id }) { track ->
-                    val normTitle = track.title.lowercase().trim()
-                    val normArtist = track.displayArtistName.lowercase().trim()
-
-                    val matchedLocal = allLibraryTracks.firstOrNull {
-                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
-                        !it.contentUri.isNullOrBlank()
+                    val matchedLocal = allLibraryTracks.firstOrNull { local ->
+                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                        !local.contentUri.isNullOrBlank()
                     }
                     val isDownloaded = matchedLocal != null
 
-                    val isSynced = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
-                        it.trackId == track.id ||
-                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
-                    } || allLibraryTracks.any {
-                        it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)
-                    }
+                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                        }
 
-                    val dlStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
+                    val isSyncedToCloud = isOnCloud && !isDownloaded
+
+                    val dlStatus = trackDownloadStatusMap[track.id]
+                        ?: trackDownloadStatusMap.entries.firstOrNull { isDeezerTrackMatch(it.key, track.id) }?.value
+                        ?: TrackDownloadStatus.Idle
                     val trackRow = track.toTrackListRow(artistId = artist?.summary?.id ?: onlineData.id)
                     val trackToPlay = matchedLocal ?: trackRow
 
@@ -320,10 +376,10 @@ fun HybridArtistScreen(
                         track = track,
                         showCover = true,
                         isDownloaded = isDownloaded,
-                        isSyncedToCloud = isSynced && !isDownloaded,
+                        isSyncedToCloud = isSyncedToCloud,
                         downloadStatus = dlStatus,
                         onPlay = {
-                            if (isSynced || isDownloaded) {
+                            if (isOnCloud || isDownloaded) {
                                 onPlayTrackInList(trackToPlay, allOnlineMapped, "artist_online")
                             } else {
                                 scope.launch {
@@ -601,7 +657,11 @@ fun HybridAlbumScreen(
                     } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                         Button(
                             onClick = {
-                                val firstSynced = onlineData.tracks.firstOrNull { syncedCloudTrackIds.contains(it.id) } ?: onlineData.tracks.first()
+                                val firstSynced = onlineData.tracks.firstOrNull { track ->
+                                    syncedCloudTrackIds.contains(track.id) ||
+                                    syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                                    cloudFiles.any { isDeezerTrackMatch(it.trackId, track.id) }
+                                } ?: onlineData.tracks.first()
                                 onPlayTrackInList(firstSynced.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id), allOnlineAlbumMapped, "album_online")
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
@@ -657,8 +717,16 @@ fun HybridAlbumScreen(
             // ---- TRACKLIST (local only) ----
             if (localTracks.isNotEmpty()) {
                 val onUploadToCloudLambda = { track: TrackListRow ->
-                    val isLocalScanned = track.contentUri?.startsWith("content://") == true
-                    val isAlreadySynced = syncedCloudTrackIds.contains(track.id)
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+                             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+                        }
+                    val isAlreadySynced = isPresentInCloud
                     if (isLocalScanned && !isAlreadySynced) {
                         scope.launch {
                             snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
@@ -676,7 +744,14 @@ fun HybridAlbumScreen(
                 }
                 val onDownloadFromCloudLambda = { track: TrackListRow ->
                     val isCloudOnly = track.contentUri.isNullOrBlank()
-                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id)
+                    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+                             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+                        }
                     if (isCloudOnly && isPresentInCloud) {
                         scope.launch {
                             snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
@@ -720,23 +795,29 @@ fun HybridAlbumScreen(
                 )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->
-                    val normTitle = track.title.lowercase().trim()
-                    val normArtist = track.displayArtistName.lowercase().trim()
-
-                    val matchedLocal = allLibraryTracks.firstOrNull {
-                        (it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)) &&
-                        !it.contentUri.isNullOrBlank()
+                    val matchedLocal = allLibraryTracks.firstOrNull { local ->
+                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                        !local.contentUri.isNullOrBlank()
                     }
                     val isDownloaded = matchedLocal != null
 
-                    val isSynced = syncedCloudTrackIds.contains(track.id) || cloudFiles.any {
-                        it.trackId == track.id ||
-                        ((it.title?.lowercase()?.trim() ?: "") == normTitle && (it.artistName?.lowercase()?.trim() ?: "") == normArtist)
-                    } || allLibraryTracks.any {
-                        it.id == track.id || (it.title.lowercase().trim() == normTitle && it.artistName.lowercase().trim() == normArtist)
-                    }
+                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                        cloudFiles.any { cloud ->
+                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                        }
 
-                    val dlStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
+                    val isSyncedToCloud = isOnCloud && !isDownloaded
+
+                    val dlStatus = trackDownloadStatusMap[track.id]
+                        ?: trackDownloadStatusMap.entries.firstOrNull { isDeezerTrackMatch(it.key, track.id) }?.value
+                        ?: TrackDownloadStatus.Idle
                     val trackRow = track.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id)
                     val trackToPlay = matchedLocal ?: trackRow
 
@@ -745,10 +826,10 @@ fun HybridAlbumScreen(
                         index = index + 1,
                         showCover = false,
                         isDownloaded = isDownloaded,
-                        isSyncedToCloud = isSynced && !isDownloaded,
+                        isSyncedToCloud = isSyncedToCloud,
                         downloadStatus = dlStatus,
                         onPlay = {
-                            if (isSynced || isDownloaded) {
+                            if (isOnCloud || isDownloaded) {
                                 onPlayTrackInList(trackToPlay, allOnlineAlbumMapped, "album_online")
                             } else {
                                 scope.launch {
@@ -1193,7 +1274,12 @@ fun InteractiveOnlineTrackRow(
                 )
             }
             isSyncedToCloud -> {
-                // Épuré : déjà sur le Cloud
+                Icon(
+                    Icons.Rounded.Cloud,
+                    contentDescription = "Sur le Cloud",
+                    tint = BlazeOrange,
+                    modifier = Modifier.size(20.dp)
+                )
             }
             else -> {
                 IconButton(

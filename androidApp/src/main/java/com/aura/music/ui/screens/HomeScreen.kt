@@ -90,9 +90,24 @@ fun HomeScreen(
         value = repository.getAllTracks()
     }
 
-    val cloudOnlyCount = remember(allTracksState.value, syncedCloudTrackIds) {
+    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshToken) {
+        cloudFileRepository.listCloudFiles().collect { res ->
+            res.onSuccess { value = it }
+        }
+    }
+    val cloudFiles = cloudFilesState.value
+
+    val cloudOnlyCount = remember(allTracksState.value, syncedCloudTrackIds, cloudFiles) {
         allTracksState.value.count { track ->
-            track.contentUri.isNullOrBlank() && syncedCloudTrackIds.contains(track.id)
+            val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+                syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                cloudFiles.any { cloud ->
+                    isDeezerTrackMatch(cloud.trackId, track.id) ||
+                    (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                     (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+                     (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+                }
+            track.contentUri.isNullOrBlank() && isPresentInCloud
         }
     }
 
