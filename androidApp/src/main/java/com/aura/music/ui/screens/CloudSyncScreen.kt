@@ -1,5 +1,8 @@
 package com.aura.music.ui.screens
 
+import com.aura.music.ui.utils.TrackLookupIndex
+import com.aura.music.ui.utils.FastTimeFormatter
+
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -127,31 +130,25 @@ fun CloudSyncScreen(
         localTracks.filter { !it.contentUri.isNullOrBlank() }
     }
 
-    val pendingUploadTracks = remember(localTracks, cloudFiles) {
+    val localLookupIndex = remember(locallyStoredTracks) {
+        TrackLookupIndex.build(locallyStoredTracks, emptyList(), emptySet())
+    }
+
+    val cloudLookupIndex = remember(cloudFiles) {
+        TrackLookupIndex.build(emptyList(), cloudFiles, emptySet())
+    }
+
+    val pendingUploadTracks = remember(localTracks, cloudLookupIndex) {
         localTracks.filter { track ->
             val isLocal = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true
-            if (!isLocal) return@filter false
-            val isSyncedById = cloudFiles.any { it.trackId == track.id }
-            if (isSyncedById) return@filter false
-            val normTitle = track.title.lowercase().trim()
-            val normArtist = (track.artistName ?: "").lowercase().trim()
-            !cloudFiles.any { cloud ->
-                (cloud.title?.lowercase()?.trim() ?: "") == normTitle &&
-                (cloud.artistName?.lowercase()?.trim() ?: "") == normArtist
-            }
+            isLocal && !cloudLookupIndex.isCloudSynced(track.id, track.title, track.artistName, track.albumTitle)
         }
     }
 
     // Safe to clear = local tracks that are securely backed up on the Cloud
-    val safeToClearTracks = remember(locallyStoredTracks, cloudFiles) {
+    val safeToClearTracks = remember(locallyStoredTracks, cloudLookupIndex) {
         locallyStoredTracks.filter { local ->
-            val normTitle = local.title.lowercase().trim()
-            val normArtist = (local.artistName ?: "").lowercase().trim()
-            cloudFiles.any { cloud ->
-                cloud.trackId == local.id ||
-                ((cloud.title?.lowercase()?.trim() ?: "") == normTitle &&
-                 (cloud.artistName?.lowercase()?.trim() ?: "") == normArtist)
-            }
+            cloudLookupIndex.isCloudSynced(local.id, local.title, local.artistName, local.albumTitle)
         }
     }
     val localOnlyTracks = remember(locallyStoredTracks, safeToClearTracks) {
@@ -159,7 +156,7 @@ fun CloudSyncScreen(
     }
 
     // Filtered Cloud Files for Tab 1
-    val filteredCloudFiles = remember(cloudFiles, cloudSearchQuery, activeFilter, sortByFileSize, locallyStoredTracks) {
+    val filteredCloudFiles = remember(cloudFiles, cloudSearchQuery, activeFilter, sortByFileSize, localLookupIndex) {
         val query = cloudSearchQuery.trim().lowercase()
         var list = if (query.isEmpty()) {
             cloudFiles
@@ -175,10 +172,10 @@ fun CloudSyncScreen(
         list = when (activeFilter) {
             CloudFilterType.ALL -> list
             CloudFilterType.CLOUD_ONLY -> list.filter { file ->
-                !locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && (it.artistName ?: "").lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
+                localLookupIndex.findLocalMatch(file.trackId, file.title ?: "", file.artistName, file.albumTitle) == null
             }
             CloudFilterType.DOWNLOADED -> list.filter { file ->
-                locallyStoredTracks.any { it.id == file.trackId || (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") && (it.artistName ?: "").lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: "")) }
+                localLookupIndex.findLocalMatch(file.trackId, file.title ?: "", file.artistName, file.albumTitle) != null
             }
             CloudFilterType.HEAVY -> list.filter { it.sizeBytes >= 10L * 1024L * 1024L } // >= 10 MB
             CloudFilterType.RECENT -> list.sortedByDescending { it.uploadedAt ?: "" }.take(20)
@@ -665,12 +662,8 @@ fun CloudSyncScreen(
                                     items = filteredCloudFiles,
                                     key = { it.trackId }
                                 ) { file ->
-                                    val sizeMbStr = String.format("%.1f MB", file.sizeBytes.toDouble() / (1024 * 1024))
-                                    val isDownloaded = locallyStoredTracks.any {
-                                        it.id == file.trackId ||
-                                        (it.title.lowercase().trim() == (file.title?.lowercase()?.trim() ?: "") &&
-                                         (it.artistName ?: "").lowercase().trim() == (file.artistName?.lowercase()?.trim() ?: ""))
-                                    }
+                                    val sizeMbStr = FastTimeFormatter.formatFileSize(file.sizeBytes)
+                                    val isDownloaded = localLookupIndex.findLocalMatch(file.trackId, file.title ?: "", file.artistName, file.albumTitle) != null
                                     val isOperating = activeOperations.contains(file.trackId)
 
                                     Card(

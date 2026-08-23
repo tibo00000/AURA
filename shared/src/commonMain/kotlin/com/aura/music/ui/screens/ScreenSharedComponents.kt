@@ -434,89 +434,11 @@ fun SharedTrackRowItem(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
-    val menuItems = remember(
-        contextType,
-        isLiked,
-        onPlayNow,
-        onAddToQueue,
-        onAddToPlaylist,
-        onLike,
-        onUnlike,
-        onRemoveFromPlaylist,
-        onViewArtist,
-        onViewAlbum,
-        onDownload,
-        onDeleteDownload,
-        onUploadToCloud,
-        onDownloadFromCloud,
-        onDeleteFromCloud
-    ) {
-        val items = mutableListOf<ContextMenuItem>()
-        when (contextType) {
-            "playlist" -> {
-                if (onRemoveFromPlaylist != null) items.add(ContextMenuItem("Retirer de cette playlist", Icons.Rounded.Delete, onRemoveFromPlaylist))
-                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
-                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
-                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
-                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
-            }
-            "album" -> {
-                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
-                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
-                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
-                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
-            }
-            "artist" -> {
-                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
-                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
-                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
-                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
-            }
-            "favorites" -> {
-                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
-                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
-                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
-            }
-            "search_online" -> {
-                if (onPlayNow != null) items.add(ContextMenuItem("Écouter", Icons.Rounded.PlayArrow, onPlayNow))
-                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                if (onDownload != null) items.add(ContextMenuItem("Ajouter au Cloud personnel", Icons.Rounded.CloudDownload, onDownload))
-                if (onUploadToCloud != null) items.add(ContextMenuItem("Sauvegarder le fichier local sur le Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
-            }
-            else -> {
-                if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
-                if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
-                if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
-                if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
-                else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
-                if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
-                if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
-                if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
-                if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
-            }
-        }
-        if (onUploadToCloud != null && contextType != "search_online") items.add(ContextMenuItem("Ajouter au Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
-        if (onDownloadFromCloud != null) items.add(ContextMenuItem("Récupérer depuis le Cloud", Icons.Rounded.CloudDownload, onDownloadFromCloud))
-        if (onDeleteFromCloud != null) items.add(ContextMenuItem("Supprimer du Cloud", Icons.Rounded.Delete, onDeleteFromCloud))
-        items
-    }
+    val hasMenu = onPlayNow != null || onAddToQueue != null || onAddToPlaylist != null ||
+            onLike != null || onUnlike != null || onRemoveFromPlaylist != null ||
+            onViewArtist != null || onViewAlbum != null || onDownload != null ||
+            onDeleteDownload != null || onUploadToCloud != null ||
+            onDownloadFromCloud != null || onDeleteFromCloud != null
 
     val effectiveAlpha = if (isOfflineDisabled) 0.38f else 1.0f
     val onCardClick: () -> Unit = if (isOfflineDisabled) {
@@ -643,7 +565,7 @@ fun SharedTrackRowItem(
 
                 if (trailingIcon != null) {
                     trailingIcon()
-                } else if (menuItems.isNotEmpty()) {
+                } else if (hasMenu) {
                     Box {
                         IconButton(
                             onClick = { menuExpanded = true },
@@ -655,24 +577,109 @@ fun SharedTrackRowItem(
                                 modifier = Modifier.size(20.dp),
                             )
                         }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            menuItems.forEach { item ->
-                                DropdownMenuItem(
-                                    text = { Text(item.text) },
-                                    onClick = {
-                                        item.onClick()
-                                        menuExpanded = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = item.icon,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                )
+                        if (menuExpanded) {
+                            val menuItems = remember(
+                                contextType,
+                                isLiked,
+                                onPlayNow,
+                                onAddToQueue,
+                                onAddToPlaylist,
+                                onLike,
+                                onUnlike,
+                                onRemoveFromPlaylist,
+                                onViewArtist,
+                                onViewAlbum,
+                                onDownload,
+                                onDeleteDownload,
+                                onUploadToCloud,
+                                onDownloadFromCloud,
+                                onDeleteFromCloud
+                            ) {
+                                val items = mutableListOf<ContextMenuItem>()
+                                when (contextType) {
+                                    "playlist" -> {
+                                        if (onRemoveFromPlaylist != null) items.add(ContextMenuItem("Retirer de cette playlist", Icons.Rounded.Delete, onRemoveFromPlaylist))
+                                        if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                                        if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                                        else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                                        if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                                        if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                                        if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                                        if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+                                    }
+                                    "album" -> {
+                                        if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                                        if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                                        if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                                        if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                                        else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                                        if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                                        if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                                        if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+                                    }
+                                    "artist" -> {
+                                        if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                                        if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                                        if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                                        if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                                        else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                                        if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                                        if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                                        if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+                                    }
+                                    "favorites" -> {
+                                        if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                                        if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                                        if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                                        if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike))
+                                        if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                                        if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                                        if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                                        if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+                                    }
+                                    "search_online" -> {
+                                        if (onPlayNow != null) items.add(ContextMenuItem("Écouter", Icons.Rounded.PlayArrow, onPlayNow))
+                                        if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                                        if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                                        if (onDownload != null) items.add(ContextMenuItem("Ajouter au Cloud personnel", Icons.Rounded.CloudDownload, onDownload))
+                                        if (onUploadToCloud != null) items.add(ContextMenuItem("Sauvegarder le fichier local sur le Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
+                                    }
+                                    else -> {
+                                        if (onPlayNow != null) items.add(ContextMenuItem("Écouter maintenant", Icons.Rounded.PlayArrow, onPlayNow))
+                                        if (onAddToQueue != null) items.add(ContextMenuItem("Ajouter à la file d'attente", Icons.Rounded.QueueMusic, onAddToQueue))
+                                        if (onAddToPlaylist != null) items.add(ContextMenuItem("Ajouter à une playlist", Icons.Rounded.PlaylistAdd, onAddToPlaylist))
+                                        if (isLiked) { if (onUnlike != null) items.add(ContextMenuItem("Retirer des favoris", Icons.Rounded.Favorite, onUnlike)) }
+                                        else { if (onLike != null) items.add(ContextMenuItem("Ajouter aux favoris", Icons.Rounded.FavoriteBorder, onLike)) }
+                                        if (onViewArtist != null) items.add(ContextMenuItem("Voir l'artiste", Icons.Rounded.Person, onViewArtist))
+                                        if (onViewAlbum != null) items.add(ContextMenuItem("Voir l'album", Icons.Rounded.Album, onViewAlbum))
+                                        if (onDownload != null) items.add(ContextMenuItem("Télécharger sur l'appareil", Icons.Rounded.Download, onDownload))
+                                        if (onDeleteDownload != null) items.add(ContextMenuItem("Supprimer du téléphone", Icons.Rounded.Delete, onDeleteDownload))
+                                    }
+                                }
+                                if (onUploadToCloud != null && contextType != "search_online") items.add(ContextMenuItem("Ajouter au Cloud", Icons.Rounded.CloudUpload, onUploadToCloud))
+                                if (onDownloadFromCloud != null) items.add(ContextMenuItem("Récupérer depuis le Cloud", Icons.Rounded.CloudDownload, onDownloadFromCloud))
+                                if (onDeleteFromCloud != null) items.add(ContextMenuItem("Supprimer du Cloud", Icons.Rounded.Delete, onDeleteFromCloud))
+                                items
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                menuItems.forEach { item ->
+                                    DropdownMenuItem(
+                                        text = { Text(item.text) },
+                                        onClick = {
+                                            item.onClick()
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
