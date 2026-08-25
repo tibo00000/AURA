@@ -315,11 +315,18 @@ class TrackLookupIndex(
  */
 object FastTimeFormatter {
     fun formatDuration(ms: Long): String {
-        if (ms <= 0) return "0:00"
+        if (ms <= 0L) return "0:00"
         val totalSec = ms / 1000
-        val min = totalSec / 60
+        val hours = totalSec / 3600
+        val min = (totalSec % 3600) / 60
         val sec = totalSec % 60
-        return if (sec < 10) "$min:0$sec" else "$min:$sec"
+        return if (hours > 0) {
+            val minStr = if (min < 10) "0$min" else "$min"
+            val secStr = if (sec < 10) "0$sec" else "$sec"
+            "$hours:$minStr:$secStr"
+        } else {
+            if (sec < 10) "$min:0$sec" else "$min:$sec"
+        }
     }
 
     fun formatFileSize(bytes: Long): String {

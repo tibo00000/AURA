@@ -231,6 +231,17 @@ class QueueManager {
     }
 
     /**
+     * Vide intégralement la priority queue en une mutation atomique.
+     * La piste courante n'est pas affectée.
+     */
+    fun clearPriorityQueue() {
+        _state.update { current ->
+            if (current.priorityQueue.isEmpty()) return@update current
+            current.copy(priorityQueue = emptyList())
+        }
+    }
+
+    /**
      * Reordonne la priority queue.
      * N'affecte pas le contexte source (cf. queue-rules.md).
      */

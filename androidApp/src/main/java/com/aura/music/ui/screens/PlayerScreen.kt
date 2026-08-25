@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -32,6 +33,7 @@ import com.aura.music.domain.player.PlayerEvent
 import com.aura.music.domain.player.PlayerUiState
 import com.aura.music.domain.player.RepeatMode
 import com.aura.music.ui.player.PlayerViewModel
+import com.aura.music.ui.utils.FastTimeFormatter
 import com.aura.music.ui.theme.*
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
@@ -610,9 +612,7 @@ fun PlayerScreen(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
                                             .clickable {
-                                                for (i in visiblePriorityQueue.indices.reversed()) {
-                                                    onRemoveFromQueue(i)
-                                                }
+                                                playerViewModel.onEvent(PlayerEvent.ClearPriorityQueue)
                                             }
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
@@ -765,7 +765,12 @@ private fun PriorityQueueItemRow(
     dragModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
-    val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp)
+    val elevation by animateDpAsState(
+        targetValue = if (isDragging) 12.dp else 0.dp,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "pq_elevation"
+    )
+    val itemShape = RoundedCornerShape(14.dp)
     val bgColor = if (isDragging) ElevatedGraphite else Color.Transparent
     val borderStroke = if (isDragging) BlazeOrange else Color.Transparent
 
@@ -773,10 +778,14 @@ private fun PriorityQueueItemRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .shadow(elevation, RoundedCornerShape(14.dp))
-            .clip(RoundedCornerShape(14.dp))
+            .graphicsLayer {
+                shadowElevation = elevation.toPx()
+                shape = itemShape
+                clip = false
+            }
+            .clip(itemShape)
             .background(bgColor)
-            .border(if (isDragging) 1.dp else 0.dp, borderStroke, RoundedCornerShape(14.dp))
+            .border(if (isDragging) 1.dp else 0.dp, borderStroke, itemShape)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -863,7 +872,12 @@ private fun MainQueueItemRow(
     dragModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
-    val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp)
+    val elevation by animateDpAsState(
+        targetValue = if (isDragging) 12.dp else 0.dp,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "mq_elevation"
+    )
+    val itemShape = RoundedCornerShape(14.dp)
     val bgColor = if (isDragging) ElevatedGraphite else Color.Transparent
     val borderStroke = if (isDragging) BlazeOrange else Color.Transparent
 
@@ -871,10 +885,14 @@ private fun MainQueueItemRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .shadow(elevation, RoundedCornerShape(14.dp))
-            .clip(RoundedCornerShape(14.dp))
+            .graphicsLayer {
+                shadowElevation = elevation.toPx()
+                shape = itemShape
+                clip = false
+            }
+            .clip(itemShape)
             .background(bgColor)
-            .border(if (isDragging) 1.dp else 0.dp, borderStroke, RoundedCornerShape(14.dp))
+            .border(if (isDragging) 1.dp else 0.dp, borderStroke, itemShape)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1011,14 +1029,6 @@ private fun describeContext(uiState: PlayerUiState): String = when (uiState.cont
     else -> "Lecture directe"
 }
 
-private fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "$minutes:${seconds.toString().padStart(2, '0')}"
-}
-
 @Composable
 private fun PlaybackProgressBlock(
     playerViewModel: PlayerViewModel,
@@ -1050,12 +1060,12 @@ private fun PlaybackProgressBlock(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = formatDuration((seekDraft ?: uiState.positionMs.toFloat()).toLong()),
+                text = FastTimeFormatter.formatDuration((seekDraft ?: uiState.positionMs.toFloat()).toLong()),
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary
             )
             Text(
-                text = formatDuration(uiState.durationMs),
+                text = FastTimeFormatter.formatDuration(uiState.durationMs),
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary
             )

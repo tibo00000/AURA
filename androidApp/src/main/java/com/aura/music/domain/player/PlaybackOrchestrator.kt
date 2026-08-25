@@ -217,6 +217,7 @@ class PlaybackOrchestrator(
             is PlayerEvent.SeekTo -> handleSeek(event.positionMs)
             is PlayerEvent.AddToQueue -> handleAddToQueue(event.track)
             is PlayerEvent.RemoveFromQueue -> handleRemoveFromQueue(event.index)
+            is PlayerEvent.ClearPriorityQueue -> handleClearPriorityQueue()
             is PlayerEvent.ReorderQueue -> handleReorderQueue(event.fromIndex, event.toIndex)
             is PlayerEvent.RemoveFromMainQueue -> handleRemoveFromMainQueue(event.internalId)
             is PlayerEvent.ReorderMainQueue -> handleReorderMainQueue(event.fromInternalId, event.toInternalId)
@@ -353,6 +354,12 @@ class PlaybackOrchestrator(
 
     private fun handleRemoveFromQueue(index: Int) {
         queueManager.removeFromQueue(index)
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleClearPriorityQueue() {
+        queueManager.clearPriorityQueue()
         syncExoPlayerPlaylist()
         syncUiState()
     }

@@ -64,6 +64,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -72,8 +76,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.runtime.rememberUpdatedState
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
@@ -126,67 +140,94 @@ fun SleekSlider(
     activeColor: Color = Color(0xFFFF6B00), // BlazeOrange
     inactiveColor: Color = Color(0xFF1A1A1A), // DarkGraphite
 ) {
-    val density = LocalDensity.current
-    var width by remember { mutableStateOf(1) }
     val rangeLength = valueRange.endInclusive - valueRange.start
     val fraction = ((value - valueRange.start) / if (rangeLength > 0f) rangeLength else 1f).coerceIn(0f, 1f)
+
+    val currentRange by rememberUpdatedState(valueRange)
+    val currentLength by rememberUpdatedState(rangeLength)
+    val currentOnChange by rememberUpdatedState(onValueChange)
+    val currentOnFinished by rememberUpdatedState(onValueChangeFinished)
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(18.dp)
-            .onSizeChanged { width = it.width.coerceAtLeast(1) }
-            .pointerInput(valueRange, rangeLength) {
+            .semantics {
+                role = Role.Slider
+                contentDescription = "Position de lecture"
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = value.coerceIn(currentRange.start, currentRange.endInclusive),
+                    range = currentRange
+                )
+                setProgress { targetValue ->
+                    currentOnChange(targetValue.coerceIn(currentRange.start, currentRange.endInclusive))
+                    currentOnFinished?.invoke()
+                    true
+                }
+            }
+            .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
-                        val frac = (offset.x / size.width).coerceIn(0f, 1f)
-                        onValueChange(valueRange.start + frac * rangeLength)
-                        if (onValueChangeFinished != null) {
+                        val length = currentLength
+                        val rawFrac = (offset.x / size.width).coerceIn(0f, 1f)
+                        val frac = if (isRtl) 1f - rawFrac else rawFrac
+                        currentOnChange(currentRange.start + frac * length)
+                        if (currentOnFinished != null) {
                             tryAwaitRelease()
-                            onValueChangeFinished()
+                            currentOnFinished?.invoke()
                         }
                     }
                 )
             }
-            .pointerInput(valueRange, rangeLength) {
+            .pointerInput(Unit) {
                 detectHorizontalDragGestures(
-                    onDragEnd = { onValueChangeFinished?.invoke() },
+                    onDragEnd = { currentOnFinished?.invoke() },
                     onHorizontalDrag = { change, _ ->
-                        val frac = (change.position.x / size.width).coerceIn(0f, 1f)
-                        onValueChange(valueRange.start + frac * rangeLength)
+                        val length = currentLength
+                        val rawFrac = (change.position.x / size.width).coerceIn(0f, 1f)
+                        val frac = if (isRtl) 1f - rawFrac else rawFrac
+                        currentOnChange(currentRange.start + frac * length)
                     }
                 )
-            },
-        contentAlignment = Alignment.CenterStart
-    ) {
-        // Track Background
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .background(inactiveColor, shape = RoundedCornerShape(1.5.dp))
-        )
-        // Active Track
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(fraction)
-                .height(3.dp)
-                .background(activeColor, shape = RoundedCornerShape(1.5.dp))
-        )
-        
-        // Thumb (small dot)
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .graphicsLayer {
-                    val thumbSizePx = with(density) { 8.dp.toPx() }
-                    val maxOffset = width - thumbSizePx
-                    translationX = (maxOffset * fraction).coerceAtLeast(0f)
+            }
+            .drawBehind {
+                val trackHeightPx = 3.dp.toPx()
+                val trackCornerRadiusPx = 1.5.dp.toPx()
+                val thumbRadiusPx = 4.dp.toPx()
+                val centerY = size.height / 2f
+                val top = centerY - trackHeightPx / 2f
+
+                // Inactive track (full width)
+                drawRoundRect(
+                    color = inactiveColor,
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width, trackHeightPx),
+                    cornerRadius = CornerRadius(trackCornerRadiusPx, trackCornerRadiusPx)
+                )
+
+                // Active track (proportional width, Draw phase only)
+                val activeWidth = (size.width * fraction).coerceIn(0f, size.width)
+                if (activeWidth > 0f) {
+                    val activeTopLeftX = if (isRtl) size.width - activeWidth else 0f
+                    drawRoundRect(
+                        color = activeColor,
+                        topLeft = Offset(activeTopLeftX, top),
+                        size = Size(activeWidth, trackHeightPx),
+                        cornerRadius = CornerRadius(trackCornerRadiusPx, trackCornerRadiusPx)
+                    )
                 }
-                .size(8.dp)
-                .background(activeColor, shape = CircleShape)
-        )
-    }
+
+                // Thumb dot (radius 4.dp = size 8.dp)
+                val rawThumbCenterX = if (isRtl) size.width * (1f - fraction) else size.width * fraction
+                val thumbCenterX = rawThumbCenterX.coerceIn(thumbRadiusPx, size.width - thumbRadiusPx)
+                drawCircle(
+                    color = activeColor,
+                    radius = thumbRadiusPx,
+                    center = Offset(thumbCenterX, centerY)
+                )
+            }
+    )
 }
 
 @Composable
