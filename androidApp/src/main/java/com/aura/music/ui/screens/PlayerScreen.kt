@@ -32,6 +32,7 @@ import com.aura.music.domain.player.PlaybackState
 import com.aura.music.domain.player.PlayerEvent
 import com.aura.music.domain.player.PlayerUiState
 import com.aura.music.domain.player.RepeatMode
+import com.aura.music.ui.components.rememberAuraFlingBehavior
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.utils.FastTimeFormatter
 import com.aura.music.ui.theme.*
@@ -460,8 +461,14 @@ fun PlayerScreen(
                     // =========================================================
                     // VUE FILE D'ATTENTE MODERNE (Scrollable, full height)
                     // =========================================================
+                    val queueFlingBehavior = rememberAuraFlingBehavior(
+                        maxVelocity = 3500f,
+                        frictionMultiplier = 0.85f
+                    )
+
                     LazyColumn(
                         state = reorderState.listState,
+                        flingBehavior = queueFlingBehavior,
                         modifier = Modifier
                             .fillMaxSize()
                             .background(DeepBlack)

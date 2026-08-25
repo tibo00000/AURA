@@ -77,12 +77,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
@@ -154,7 +152,6 @@ fun SleekSlider(
             .fillMaxWidth()
             .height(18.dp)
             .semantics {
-                role = Role.Slider
                 contentDescription = "Position de lecture"
                 progressBarRangeInfo = ProgressBarRangeInfo(
                     current = value.coerceIn(currentRange.start, currentRange.endInclusive),
