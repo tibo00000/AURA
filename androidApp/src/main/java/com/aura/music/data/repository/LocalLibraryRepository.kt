@@ -63,6 +63,7 @@ class LocalLibraryRepository(
     private val database: AuraDatabase,
     private val mediaStoreAudioDataSource: MediaStoreAudioDataSource,
     private val syncRepositoryProvider: () -> SyncRepository,
+    private val cloudFileRepositoryProvider: (() -> CloudFileRepository)? = null,
     private val apiService: AuraApiService,
     private val context: android.content.Context,
 ) {
@@ -917,6 +918,17 @@ class LocalLibraryRepository(
         } else {
             recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
         }
+
+        if (!currentlyLiked) {
+            val prefs = context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE)
+            if (prefs.getBoolean("auto_download_favorites", false)) {
+                try {
+                    cloudFileRepositoryProvider?.invoke()?.autoDownloadFavoriteTrack(trackId)
+                } catch (e: Exception) {
+                    Log.w("LocalLibraryRepository", "Auto download favorite failed: ${e.message}")
+                }
+            }
+        }
     }
 
     private suspend fun recordLikeOutbox(
@@ -990,11 +1002,18 @@ class LocalLibraryRepository(
         if (!securityExceptionThrown) {
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
-                    database.trackDao().deleteTracksByIds(listOf(trackId))
+                    val isCloudSynced = cloudFileRepositoryProvider?.invoke()?.isCloudTrackSynced(trackId) == true
                     val downloadsDir = java.io.File(context.filesDir, "downloads")
                     val targetFile = java.io.File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
                     if (targetFile.exists()) {
                         targetFile.delete()
+                    }
+                    if (isCloudSynced) {
+                        // Conserve la ligne TrackEntity dans Room pour le streaming Cloud, supprime juste le lien local
+                        database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+                    } else {
+                        // Non synchronisé au Cloud : suppression définitive de la base Room
+                        database.trackDao().deleteTracksByIds(listOf(trackId))
                     }
                 }
             }

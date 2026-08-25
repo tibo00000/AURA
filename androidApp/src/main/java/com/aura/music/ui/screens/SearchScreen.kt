@@ -170,6 +170,9 @@ fun SearchScreen(
         }
     }
     val cloudFiles = cloudFilesState.value
+    val lookupIndex = remember(localTracks, cloudFiles, syncedCloudTrackIds) {
+        TrackLookupIndex.build(localTracks, cloudFiles, syncedCloudTrackIds)
+    }
 
     LaunchedEffect(refreshToken) {
         viewModel.refreshDisplayedLocalResults()
@@ -600,29 +603,44 @@ fun SearchScreen(
     }
 
     if (trackToDelete != null) {
+        val isPresentInCloud = lookupIndex.isCloudSynced(trackToDelete!!.id, trackToDelete!!.title, trackToDelete!!.artistName, trackToDelete!!.albumTitle)
         ConfirmDialog(
-            title = "Supprimer de l'appareil ?",
-            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
-            confirmLabel = "Supprimer",
+            title = if (isPresentInCloud) "Supprimer le téléchargement ?" else "Supprimer de l'appareil ?",
+            message = if (isPresentInCloud) {
+                "Voulez-vous supprimer le fichier local de « ${trackToDelete!!.title} » pour libérer de l'espace ? Le titre restera disponible en streaming sur votre Cloud."
+            } else {
+                "Voulez-vous vraiment supprimer « ${trackToDelete!!.title} » de votre appareil ? Cette action supprimera définitivement le fichier physique."
+            },
+            confirmLabel = if (isPresentInCloud) "Supprimer le fichier local" else "Supprimer",
             onDismiss = { trackToDelete = null },
             onConfirm = {
-                val trackId = trackToDelete!!.id
-                pendingDeleteTrackId = trackId
-                scope.launch {
-                    val pendingIntent = repository.deleteTrack(trackId)
-                    if (pendingIntent != null) {
-                        try {
-                            val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                            intentSenderLauncher.launch(intentSenderRequest)
-                        } catch (e: Exception) {
-                            android.util.Log.e("SearchScreen", "Failed to launch intent sender for delete", e)
-                            pendingDeleteTrackId = null
-                        }
-                    } else {
-                        pendingDeleteTrackId = null
+                val t = trackToDelete!!
+                trackToDelete = null
+                if (isPresentInCloud) {
+                    scope.launch {
+                        cloudFileRepository.removeLocalFile(t.id)
+                        repository.refreshLocalMediaIndex()
                         viewModel.refreshDisplayedLocalResults()
+                        snackbarHostState.showSnackbar("Téléchargement local supprimé. Titre conservé sur le Cloud.")
                     }
-                    trackToDelete = null
+                } else {
+                    val trackId = t.id
+                    pendingDeleteTrackId = trackId
+                    scope.launch {
+                        val pendingIntent = repository.deleteTrack(trackId)
+                        if (pendingIntent != null) {
+                            try {
+                                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                intentSenderLauncher.launch(intentSenderRequest)
+                            } catch (e: Exception) {
+                                android.util.Log.e("SearchScreen", "Failed to launch intent sender for delete", e)
+                                pendingDeleteTrackId = null
+                            }
+                        } else {
+                            pendingDeleteTrackId = null
+                            viewModel.refreshDisplayedLocalResults()
+                        }
+                    }
                 }
             }
         )

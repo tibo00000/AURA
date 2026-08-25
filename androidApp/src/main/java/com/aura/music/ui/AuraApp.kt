@@ -776,14 +776,17 @@ fun LazyListScope.trackList(
     onDeleteDownload: ((TrackListRow) -> Unit)? = null,
     onUploadToCloud: ((TrackListRow) -> Unit)? = null,
     onDownloadFromCloud: ((TrackListRow) -> Unit)? = null,
+    onDeleteFromCloud: ((TrackListRow) -> Unit)? = null,
     onEditMetadata: ((TrackListRow) -> Unit)? = null,
 ) {
     if (title.isNotBlank()) {
         item(key = "tracklist_title_${title}_${contextType}") {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                color = com.aura.music.ui.theme.TextPrimary,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
             )
         }
     }
@@ -811,6 +814,7 @@ fun LazyListScope.trackList(
             val currentOnDelete = rememberUpdatedState(onDeleteDownload)
             val currentOnUpload = rememberUpdatedState(onUploadToCloud)
             val currentOnDownloadFromCloud = rememberUpdatedState(onDownloadFromCloud)
+            val currentOnDeleteFromCloud = rememberUpdatedState(onDeleteFromCloud)
             val currentOnEditMetadata = rememberUpdatedState(onEditMetadata)
 
             val currentOnClick = remember(track.id, tracks, contextType) {
@@ -860,6 +864,10 @@ fun LazyListScope.trackList(
                 val cb = currentOnDownloadFromCloud.value
                 if (cb != null) { { cb(track) } } else null
             }
+            val onDeleteFromCloudLambda = remember(track.id, currentOnDeleteFromCloud.value != null) {
+                val cb = currentOnDeleteFromCloud.value
+                if (cb != null) { { cb(track) } } else null
+            }
             val onEditMetadataLambda = remember(track.id, currentOnEditMetadata.value != null) {
                 val cb = currentOnEditMetadata.value
                 if (cb != null) { { cb(track) } } else null
@@ -887,6 +895,7 @@ fun LazyListScope.trackList(
                 onDeleteDownload = if (isDownloadedLocally) onDeleteDownloadLambda else null,
                 onUploadToCloud = onUploadToCloudLambda,
                 onDownloadFromCloud = onDownloadFromCloudLambda,
+                onDeleteFromCloud = onDeleteFromCloudLambda,
                 onEditMetadata = onEditMetadataLambda,
             )
         }

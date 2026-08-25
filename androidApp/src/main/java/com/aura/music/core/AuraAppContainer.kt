@@ -33,6 +33,7 @@ class AuraAppContainer(context: Context) {
             database = database,
             mediaStoreAudioDataSource = mediaStoreAudioDataSource,
             syncRepositoryProvider = { syncRepository },
+            cloudFileRepositoryProvider = { cloudFileRepository },
             apiService = auraApiService,
             context = appContext
         )

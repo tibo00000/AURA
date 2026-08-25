@@ -75,10 +75,14 @@ import com.aura.music.data.repository.ArtistDetail
 import com.aura.music.data.repository.AlbumDetail
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.trackList
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.ui.unit.sp
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.DarkGraphite
 import com.aura.music.ui.theme.ElevatedGraphite
+import com.aura.music.ui.theme.HairlineDark
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
 import androidx.compose.ui.text.style.TextOverflow
@@ -223,6 +227,8 @@ fun HybridArtistScreen(
         ) {
             // ---- HERO section ----
             item(key = "hero") {
+                val localTracks = artist?.topTracks ?: emptyList()
+                val canPlay = localTracks.isNotEmpty() || allOnlineMapped.isNotEmpty()
                 ArtistHeroSection(
                     name = artist?.summary?.name ?: onlineData?.name ?: "",
                     pictureUri = artist?.summary?.pictureUri ?: onlineData?.pictureUri,
@@ -230,8 +236,26 @@ fun HybridArtistScreen(
                     trackCount = artist?.topTracks?.size ?: onlineData?.topTracks?.size ?: 0,
                     albumCount = artist?.albums?.size ?: onlineData?.albums?.size ?: 0,
                     isEnrichmentLoading = state.isEnrichmentLoading,
+                    onPlay = {
+                        if (localTracks.isNotEmpty()) {
+                            onPlayTrackInList(localTracks.first(), localTracks, "artist")
+                        } else if (allOnlineMapped.isNotEmpty()) {
+                            onPlayTrackInList(allOnlineMapped.first(), allOnlineMapped, "artist_online")
+                        }
+                    },
+                    onShuffle = {
+                        if (localTracks.isNotEmpty()) {
+                            val shuffled = localTracks.shuffled()
+                            onPlayTrackInList(shuffled.first(), shuffled, "artist")
+                        } else if (allOnlineMapped.isNotEmpty()) {
+                            val shuffled = allOnlineMapped.shuffled()
+                            onPlayTrackInList(shuffled.first(), shuffled, "artist_online")
+                        }
+                    },
+                    canPlay = canPlay
                 )
             }
+            item { Spacer(Modifier.height(12.dp)) }
 
             // ---- TRACKLIST ----
             // Prefer local tracks; fall back to online top_tracks summary if local is empty
@@ -303,10 +327,10 @@ fun HybridArtistScreen(
                 item(key = "online_tracklist_header") {
                     Text(
                         "Titres populaires",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                     )
                 }
                 val displayedTracks = if (showAllOnlineTracks.value) onlineData.topTracks else onlineData.topTracks.take(5)
@@ -385,8 +409,9 @@ fun HybridArtistScreen(
 
             if (localAlbums.isNotEmpty()) {
                 item(key = "albums_section") {
+                    Spacer(Modifier.height(28.dp))
                     SectionTitle("Albums", "Discographie disponible localement.")
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(14.dp))
                     BrowseAlbumRail(albums = localAlbums, onOpenAlbum = onOpenAlbum)
                 }
             } else if (onlineAlbums.isNotEmpty()) {
@@ -395,6 +420,7 @@ fun HybridArtistScreen(
 
                 if (albums.isNotEmpty()) {
                     item(key = "online_albums_section") {
+                        Spacer(Modifier.height(28.dp))
                         OnlineAlbumRailSection(
                             title = "Albums",
                             albums = albums,
@@ -404,6 +430,7 @@ fun HybridArtistScreen(
                 }
                 if (singles.isNotEmpty()) {
                     item(key = "online_singles_section") {
+                        Spacer(Modifier.height(28.dp))
                         OnlineAlbumRailSection(
                             title = "Singles",
                             albums = singles,
@@ -847,21 +874,22 @@ private fun ArtistHeroSection(
     trackCount: Int,
     albumCount: Int,
     isEnrichmentLoading: Boolean,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    canPlay: Boolean,
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(DeepBlack)
-            .padding(top = 24.dp, bottom = 20.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Artist picture (enriched) or placeholder
             Box(
-                modifier = Modifier.size(120.dp),
+                modifier = Modifier.size(80.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (pictureUri != null) {
@@ -870,24 +898,24 @@ private fun ArtistHeroSection(
                         contentDescription = "Photo de $name",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(120.dp)
-                            .clip(CircleShape),
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, BlazeOrange.copy(alpha = 0.6f), CircleShape),
                     )
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(120.dp)
-                            .background(
-                                Color(0xFF232323),
-                                CircleShape,
-                            ),
-                        contentAlignment = Alignment.Center,
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .background(DarkGraphite)
+                            .border(1.5.dp, HairlineDark, CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Rounded.Mic,
+                            Icons.Rounded.Person,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(48.dp),
+                            tint = BlazeOrange,
+                            modifier = Modifier.size(44.dp),
                         )
                     }
                 }
@@ -908,32 +936,78 @@ private fun ArtistHeroSection(
             }
 
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    name,
+                    text = "ARTISTE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = BlazeOrange,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                Text(
+                    text = name,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "$trackCount piste(s) • $albumCount album(s)",
+                    text = "$trackCount titre(s) • $albumCount album(s)",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
+                    color = TextSecondary
                 )
-                if (summary != null) {
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        modifier = Modifier.padding(horizontal = 32.dp),
-                    )
-                }
+            }
+        }
+
+        if (!summary.isNullOrBlank()) {
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // Action Buttons: Play (BlazeOrange) + Shuffle (DarkGraphite)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onPlay,
+                enabled = canPlay,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(if (canPlay) BlazeOrange else DarkGraphite)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = "Lecture",
+                    tint = if (canPlay) DeepBlack else TextSecondary,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onShuffle,
+                enabled = canPlay,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(DarkGraphite)
+                    .border(1.dp, HairlineDark, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Shuffle,
+                    contentDescription = "Aléatoire",
+                    tint = if (canPlay) TextPrimary else TextSecondary,
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
     }

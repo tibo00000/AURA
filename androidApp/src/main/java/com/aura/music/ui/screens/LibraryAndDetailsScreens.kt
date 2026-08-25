@@ -17,6 +17,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Surface
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -48,9 +64,11 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlaylistAdd
-import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.ui.draw.scale
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -154,6 +172,7 @@ fun LibraryScreen(
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -269,32 +288,100 @@ fun LibraryScreen(
                     if (summaryState.value == null) {
                         ShimmerGrid(
                             modifier = Modifier.padding(horizontal = 16.dp),
-                            rowCount = 2,
+                            rowCount = 1,
                             colCount = 2,
                             cardHeight = 84.dp
                         )
                     } else {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} éléments", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
-                                LibraryGridItem("Favoris", "${favoritesCountState.value} éléments", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                LibraryGridItem("Artistes", "Parcourir", Icons.Rounded.Mic, onOpenArtists, Modifier.weight(1f))
-                                LibraryGridItem("Playlists", "${playlistsState.value.size} éléments", Icons.Rounded.QueueMusic, onOpenPlaylists, Modifier.weight(1f))
-                            }
+                            LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} morceaux", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
+                            LibraryGridItem("Favoris", "${favoritesCountState.value} favoris", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
                         }
                     }
                 }
                 
-                if (playlistsState.value.isNotEmpty()) {
-                    item { 
-                        Text("Playlists récentes", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.padding(horizontal = 16.dp))
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Playlists",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            if (playlistsState.value.isNotEmpty()) {
+                                Text(
+                                    "(${playlistsState.value.size})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextMuted
+                                )
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (playlistsState.value.size > 4) {
+                                TextButton(onClick = onOpenPlaylists) {
+                                    Text("Voir tout", color = BlazeOrange)
+                                }
+                            }
+                            IconButton(onClick = { showCreatePlaylistDialog = true }) {
+                                Icon(Icons.Rounded.Add, contentDescription = "Créer une playlist", tint = BlazeOrange)
+                            }
+                        }
                     }
-                    item { PlaylistPreviewList(playlists = playlistsState.value.take(4), onOpenPlaylist = onOpenPlaylist) }
+                }
+
+                if (playlistsState.value.isEmpty()) {
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clickable { showCreatePlaylistDialog = true },
+                            shape = RoundedCornerShape(16.dp),
+                            color = DarkGraphite
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(ElevatedGraphite, RoundedCornerShape(12.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, tint = BlazeOrange)
+                                }
+                                Column {
+                                    Text("Créer une playlist", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text("Organise tes morceaux préférés", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        PlaylistPreviewList(playlists = playlistsState.value.take(6), onOpenPlaylist = onOpenPlaylist)
+                    }
                 }
                 
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -398,29 +485,44 @@ fun LibraryScreen(
     }
 
     if (trackToDelete != null) {
+        val isPresentInCloud = lookupIndex.isCloudSynced(trackToDelete!!.id, trackToDelete!!.title, trackToDelete!!.artistName, trackToDelete!!.albumTitle)
         ConfirmDialog(
-            title = "Supprimer de l'appareil ?",
-            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
-            confirmLabel = "Supprimer",
+            title = if (isPresentInCloud) "Supprimer le téléchargement ?" else "Supprimer de l'appareil ?",
+            message = if (isPresentInCloud) {
+                "Voulez-vous supprimer le fichier local de « ${trackToDelete!!.title} » pour libérer de l'espace ? Le titre restera disponible en streaming sur votre Cloud."
+            } else {
+                "Voulez-vous vraiment supprimer « ${trackToDelete!!.title} » de votre appareil ? Cette action supprimera définitivement le fichier physique."
+            },
+            confirmLabel = if (isPresentInCloud) "Supprimer le fichier local" else "Supprimer",
             onDismiss = { trackToDelete = null },
             onConfirm = {
-                val trackId = trackToDelete!!.id
-                pendingDeleteTrackId = trackId
-                scope.launch {
-                    val pendingIntent = repository.deleteTrack(trackId)
-                    if (pendingIntent != null) {
-                        try {
-                            val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                            intentSenderLauncher.launch(intentSenderRequest)
-                        } catch (e: Exception) {
-                            android.util.Log.e("LibraryScreen", "Failed to launch intent sender for delete", e)
-                            pendingDeleteTrackId = null
-                        }
-                    } else {
-                        pendingDeleteTrackId = null
+                val t = trackToDelete!!
+                trackToDelete = null
+                if (isPresentInCloud) {
+                    scope.launch {
+                        cloudFileRepository.removeLocalFile(t.id)
+                        repository.refreshLocalMediaIndex()
                         refreshTick++
+                        snackbarHostState.showSnackbar("Téléchargement local supprimé. Titre conservé sur le Cloud.")
                     }
-                    trackToDelete = null
+                } else {
+                    val trackId = t.id
+                    pendingDeleteTrackId = trackId
+                    scope.launch {
+                        val pendingIntent = repository.deleteTrack(trackId)
+                        if (pendingIntent != null) {
+                            try {
+                                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                intentSenderLauncher.launch(intentSenderRequest)
+                            } catch (e: Exception) {
+                                android.util.Log.e("LibraryScreen", "Failed to launch intent sender for delete", e)
+                                pendingDeleteTrackId = null
+                            }
+                        } else {
+                            pendingDeleteTrackId = null
+                            refreshTick++
+                        }
+                    }
                 }
             }
         )
@@ -438,8 +540,25 @@ fun LibraryScreen(
             }
         )
     }
+
+    if (showCreatePlaylistDialog) {
+        PlaylistNameDialog(
+            title = "Créer une playlist",
+            confirmLabel = "Créer",
+            initialValue = "",
+            onDismiss = { showCreatePlaylistDialog = false },
+            onConfirm = { name ->
+                scope.launch {
+                    repository.createPlaylist(name)
+                    refreshTick++
+                }
+                showCreatePlaylistDialog = false
+            }
+        )
+    }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(
     repository: LocalLibraryRepository,
@@ -450,18 +569,41 @@ fun FavoritesScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val tracksState = produceState<List<TrackListRow>?>(initialValue = null, repository, refreshTick, refreshToken) {
-        value = repository.getLikedTracks()
+    var localTracksList by remember { mutableStateOf<List<TrackListRow>?>(null) }
+    LaunchedEffect(repository, refreshTick, refreshToken) {
+        localTracksList = repository.getLikedTracks()
     }
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDeleteLocal by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDeleteFromCloud by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            pendingDeleteTrackId?.let { trackId ->
+                localTracksList = localTracksList?.filter { it.id != trackId }
+                scope.launch {
+                    repository.deleteTrack(trackId)
+                    pendingDeleteTrackId = null
+                    refreshTick++
+                }
+            }
+        } else {
+            pendingDeleteTrackId = null
+            refreshTick++
+        }
+    }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
         value = repository.getPlaylists()
     }
     val playlists = playlistsState.value
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
+    var isAutoDownloadFavorites by remember { mutableStateOf(sharedPrefs.getBoolean("auto_download_favorites", false)) }
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
@@ -473,9 +615,33 @@ fun FavoritesScreen(
     val cloudFiles = cloudFilesState.value
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
+    val lookupIndex = remember(localTracksList, cloudFiles, syncedCloudTrackIds) {
+        TrackLookupIndex.build(localTracksList ?: emptyList(), cloudFiles, syncedCloudTrackIds)
+    }
 
-    RouteScaffold(title = "Favoris", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
-        val tracks = tracksState.value
+    RouteScaffold(
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Retour",
+                            tint = TextPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeepBlack,
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
+                )
+            )
+        },
+        snackbarHostState = snackbarHostState
+    ) {
+        val tracks = localTracksList
         if (tracks == null) {
             ShimmerTrackList(count = 6)
         } else if (tracks.isEmpty()) {
@@ -495,8 +661,36 @@ fun FavoritesScreen(
             }
             var isBatchDownloading by remember { mutableStateOf(false) }
 
-            val lookupIndex = remember(tracks, cloudFiles, syncedCloudTrackIds) {
-                TrackLookupIndex.build(tracks ?: emptyList(), cloudFiles, syncedCloudTrackIds)
+            // Auto-téléchargement persistant dès que de nouvelles pistes manquent et que l'option est active
+            LaunchedEffect(isAutoDownloadFavorites, tracks, isOnline) {
+                if (isAutoDownloadFavorites && isOnline && !isBatchDownloading && tracks != null) {
+                    val toDownload = tracks.filter { it.contentUri.isNullOrBlank() }
+                    if (toDownload.isNotEmpty()) {
+                        isBatchDownloading = true
+                        val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                        kotlinx.coroutines.coroutineScope {
+                            toDownload.forEach { track ->
+                                launch {
+                                    semaphore.withPermit {
+                                        cloudFileRepository.downloadTrack(
+                                            trackId = track.id,
+                                            title = track.title,
+                                            artistName = track.artistName,
+                                            albumTitle = track.albumTitle,
+                                            durationMs = track.durationMs,
+                                            artistId = track.artistId,
+                                            albumId = track.albumId,
+                                            coverUri = track.coverUri
+                                        ).collect { }
+                                    }
+                                }
+                            }
+                        }
+                        isBatchDownloading = false
+                        repository.refreshLocalMediaIndex()
+                        refreshTick++
+                    }
+                }
             }
 
             com.aura.music.ui.components.AuraLazyColumn(
@@ -507,7 +701,7 @@ fun FavoritesScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
                             .background(
                                 Brush.linearGradient(listOf(Color(0xFFFF6B00), Color(0xFF1A0A00))),
                                 RoundedCornerShape(24.dp),
@@ -528,7 +722,7 @@ fun FavoritesScreen(
                                 color = Color.White,
                             )
                             Text(
-                                text = "${tracks.size} titre(s) enregistré(s)",
+                                text = "${tracks.size} titre${if (tracks.size > 1) "s" else ""} enregistré${if (tracks.size > 1) "s" else ""}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.8f),
                             )
@@ -543,11 +737,13 @@ fun FavoritesScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Boutons Symboles Play & Shuffle à gauche
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Button(
+                            // Bouton Play Principal (Symbole circulaire BlazeOrange)
+                            IconButton(
                                 onClick = {
                                     if (tracks.isNotEmpty()) {
                                         playerViewModel.onEvent(
@@ -561,13 +757,21 @@ fun FavoritesScreen(
                                         )
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
-                                enabled = tracks.isNotEmpty(),
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(BlazeOrange, CircleShape),
+                                enabled = tracks.isNotEmpty()
                             ) {
-                                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                                Text("Play")
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = "Lire",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
                             }
-                            Button(
+
+                            // Bouton Shuffle (Symbole circulaire DarkGraphite)
+                            IconButton(
                                 onClick = {
                                     val shuffled = tracks.shuffled()
                                     if (shuffled.isNotEmpty()) {
@@ -583,33 +787,60 @@ fun FavoritesScreen(
                                         )
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite),
-                                enabled = tracks.isNotEmpty(),
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(DarkGraphite, CircleShape),
+                                enabled = tracks.isNotEmpty()
                             ) {
-                                Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                                Text("Aléatoire")
+                                Icon(
+                                    imageVector = Icons.Rounded.Shuffle,
+                                    contentDescription = "Lecture aléatoire",
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
 
-                        // Bouton d'action globale Cloud / Local
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = if (isAllDownloaded) "Hors-ligne" else "Télécharger tout",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isAllDownloaded) Color(0xFF00E676) else TextSecondary
-                            )
-                            Switch(
-                                checked = isAllDownloaded,
-                                enabled = !isBatchDownloading && isOnline,
-                                onCheckedChange = { shouldDownloadAll ->
-                                    if (shouldDownloadAll) {
-                                        scope.launch {
+                        // Commutateur de synchronisation Hors-ligne direct avec icône intégrée dans le thumb
+                        Switch(
+                            checked = isAutoDownloadFavorites,
+                            enabled = !isBatchDownloading && isOnline,
+                            thumbContent = if (isBatchDownloading) {
+                                {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        strokeWidth = 1.5.dp,
+                                        color = BlazeOrange
+                                    )
+                                }
+                            } else if (isAutoDownloadFavorites && isAllDownloaded) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DownloadDone,
+                                        contentDescription = "Disponible hors-ligne",
+                                        tint = BlazeOrange,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            } else {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = "Télécharger",
+                                        tint = if (isAutoDownloadFavorites) BlazeOrange else TextSecondary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            },
+                            onCheckedChange = { shouldEnableAutoDownload ->
+                                isAutoDownloadFavorites = shouldEnableAutoDownload
+                                sharedPrefs.edit().putBoolean("auto_download_favorites", shouldEnableAutoDownload).apply()
+                                if (shouldEnableAutoDownload) {
+                                    scope.launch {
+                                        val toDownload = tracks.filter { it.contentUri.isNullOrBlank() }
+                                        if (toDownload.isNotEmpty()) {
                                             isBatchDownloading = true
-                                            val toDownload = tracks.filter { it.contentUri.isNullOrBlank() }
-                                            snackbarHostState.showSnackbar("Téléchargement de ${toDownload.size} pistes favoris...")
+                                            snackbarHostState.showSnackbar("Téléchargement automatique des favoris activé (${toDownload.size} pistes)...")
                                             val semaphore = kotlinx.coroutines.sync.Semaphore(2)
                                             kotlinx.coroutines.coroutineScope {
                                                 toDownload.forEach { track ->
@@ -633,26 +864,24 @@ fun FavoritesScreen(
                                             repository.refreshLocalMediaIndex()
                                             refreshTick++
                                             snackbarHostState.showSnackbar("Favoris synchronisés sur l'appareil !")
-                                        }
-                                    } else {
-                                        scope.launch {
-                                            val downloadedTracks = tracks.filter { !it.contentUri.isNullOrBlank() }
-                                            downloadedTracks.forEach { track ->
-                                                cloudFileRepository.removeLocalFile(track.id)
-                                            }
-                                            refreshTick++
-                                            snackbarHostState.showSnackbar("Fichiers locaux supprimés. Favoris toujours disponibles sur le Cloud.")
+                                        } else {
+                                            snackbarHostState.showSnackbar("Téléchargement automatique des favoris activé !")
                                         }
                                     }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = BlazeOrange,
-                                    uncheckedThumbColor = Color.Gray,
-                                    uncheckedTrackColor = DarkGraphite
-                                )
+                                } else {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Téléchargement automatique désactivé. Vos morceaux restent sur l'appareil.")
+                                    }
+                                }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = BlazeOrange,
+                                uncheckedThumbColor = DarkGraphite,
+                                uncheckedTrackColor = ElevatedGraphite,
+                                uncheckedBorderColor = Color.Transparent
                             )
-                        }
+                        )
                     }
                 }
                 itemsIndexed(
@@ -673,6 +902,7 @@ fun FavoritesScreen(
                     val onAddToQueueClick = remember(track.id) { { playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) } }
                     val onUnlikeClick = remember(track.id) {
                         {
+                            localTracksList = localTracksList?.filter { it.id != track.id }
                             scope.launch {
                                 repository.toggleLike(track.id, currentlyLiked = true, contextType = "favorites")
                                 refreshTick++
@@ -744,6 +974,24 @@ fun FavoritesScreen(
                     val isCloudOnlyTrack = isCloudOnly && isPresentInCloud
                     val isOfflineBlocked = isCloudOnlyTrack && !isOnline
 
+                    val onDeleteDownloadLambda = remember(track.id, isDownloadedLocally) {
+                        if (isDownloadedLocally) {
+                            {
+                                trackToDeleteLocal = track
+                                Unit
+                            }
+                        } else null
+                    }
+
+                    val onDeleteFromCloudLambda = remember(track.id, isPresentInCloud) {
+                        if (isPresentInCloud) {
+                            {
+                                trackToDeleteFromCloud = track
+                                Unit
+                            }
+                        } else null
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
@@ -764,8 +1012,10 @@ fun FavoritesScreen(
                         onAddToPlaylist = onAddToPlaylistClick,
                         onViewArtist = onViewArtistClick,
                         onViewAlbum = onViewAlbumClick,
+                        onDeleteDownload = onDeleteDownloadLambda,
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
+                        onDeleteFromCloud = onDeleteFromCloudLambda,
                         onEditMetadata = { trackToEditMetadata = track }
                     )
                 }
@@ -782,6 +1032,79 @@ fun FavoritesScreen(
                 scope.launch {
                     repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "favorites")
                     activeTrackForPlaylist = null
+                }
+            }
+        )
+    }
+
+    if (trackToDeleteLocal != null) {
+        val isPresentInCloud = lookupIndex.isCloudSynced(trackToDeleteLocal!!.id, trackToDeleteLocal!!.title, trackToDeleteLocal!!.artistName, trackToDeleteLocal!!.albumTitle)
+        ConfirmDialog(
+            title = if (isPresentInCloud) "Supprimer le téléchargement ?" else "Supprimer de l'appareil ?",
+            message = if (isPresentInCloud) {
+                "Voulez-vous supprimer le fichier local de « ${trackToDeleteLocal!!.title} » pour libérer de l'espace ? Le titre restera disponible en streaming sur votre Cloud."
+            } else {
+                "Voulez-vous vraiment supprimer « ${trackToDeleteLocal!!.title} » de votre appareil ? Cette action supprimera définitivement le fichier physique."
+            },
+            confirmLabel = if (isPresentInCloud) "Supprimer le fichier local" else "Supprimer",
+            onDismiss = { trackToDeleteLocal = null },
+            onConfirm = {
+                val t = trackToDeleteLocal!!
+                trackToDeleteLocal = null
+                if (isPresentInCloud) {
+                    localTracksList = localTracksList?.map { if (it.id == t.id) it.copy(contentUri = null) else it }
+                    scope.launch {
+                        cloudFileRepository.removeLocalFile(t.id)
+                        repository.refreshLocalMediaIndex()
+                        refreshTick++
+                        snackbarHostState.showSnackbar("Téléchargement local supprimé. Titre conservé sur le Cloud.")
+                    }
+                } else {
+                    val trackId = t.id
+                    pendingDeleteTrackId = trackId
+                    localTracksList = localTracksList?.filter { it.id != trackId }
+                    scope.launch {
+                        val pendingIntent = repository.deleteTrack(trackId)
+                        if (pendingIntent != null) {
+                            try {
+                                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                intentSenderLauncher.launch(intentSenderRequest)
+                            } catch (e: Exception) {
+                                android.util.Log.e("FavoritesScreen", "Failed to launch intent sender for delete", e)
+                                pendingDeleteTrackId = null
+                                refreshTick++
+                            }
+                        } else {
+                            pendingDeleteTrackId = null
+                            refreshTick++
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (trackToDeleteFromCloud != null) {
+        ConfirmDialog(
+            title = "Supprimer du Cloud ?",
+            message = "Voulez-vous vraiment supprimer « ${trackToDeleteFromCloud!!.title} » de votre Cloud personnel AURA ? Vous ne pourrez plus le streamer à distance.",
+            confirmLabel = "Supprimer du Cloud",
+            onDismiss = { trackToDeleteFromCloud = null },
+            onConfirm = {
+                val t = trackToDeleteFromCloud!!
+                trackToDeleteFromCloud = null
+                localTracksList = localTracksList?.filter { it.id != t.id }
+                scope.launch {
+                    cloudFileRepository.deleteSyncFile(t.id).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Titre supprimé du Cloud : ${t.title}")
+                            cloudFileRepository.refreshSyncedTrackIds()
+                            refreshTick++
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec de la suppression Cloud : ${err.message}")
+                            refreshTick++
+                        }
+                    }
                 }
             }
         )
@@ -1057,6 +1380,7 @@ fun PlaylistDetailScreen(
         )
     }
 }
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistRouteScreen(
     repository: LocalLibraryRepository,
@@ -1067,13 +1391,38 @@ fun ArtistRouteScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val artistState = produceState<ArtistDetail?>(initialValue = null, repository, artistId, refreshTick) {
-        value = repository.getArtistDetail(artistId)
+    var localArtistDetail by remember { mutableStateOf<ArtistDetail?>(null) }
+    LaunchedEffect(repository, artistId, refreshTick) {
+        localArtistDetail = repository.getArtistDetail(artistId)
     }
-    val artist = artistState.value
+    val artist = localArtistDetail
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDeleteFromCloud by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
+
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            pendingDeleteTrackId?.let { trackId ->
+                localArtistDetail = localArtistDetail?.let { current ->
+                    current.copy(topTracks = current.topTracks.filter { it.id != trackId })
+                }
+                scope.launch {
+                    repository.deleteTrack(trackId)
+                    pendingDeleteTrackId = null
+                    refreshTick++
+                }
+            }
+        } else {
+            pendingDeleteTrackId = null
+            refreshTick++
+        }
+    }
+
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick) {
         value = repository.getPlaylists()
     }
@@ -1089,11 +1438,32 @@ fun ArtistRouteScreen(
         }
     }
     val cloudFiles = cloudFilesState.value
+    val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
+    val lookupIndex = remember(artist?.topTracks, cloudFiles, syncedCloudTrackIds) {
+        TrackLookupIndex.build(artist?.topTracks ?: emptyList(), cloudFiles, syncedCloudTrackIds)
+    }
 
     RouteScaffold(
-        title = artist?.summary?.name ?: "Artist",
-        onNavigateBack = onNavigateBack,
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Retour",
+                            tint = TextPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeepBlack,
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
+                )
+            )
+        },
         snackbarHostState = snackbarHostState
     ) {
         if (artist == null) {
@@ -1104,111 +1474,299 @@ fun ArtistRouteScreen(
             return@RouteScaffold
         }
 
-        val lookupIndex = remember(artist.topTracks, cloudFiles, syncedCloudTrackIds) {
-            TrackLookupIndex.build(artist.topTracks, cloudFiles, syncedCloudTrackIds)
-        }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().background(DeepBlack),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            // 1. Hero Identity
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        if (!artist.summary.pictureUri.isNullOrBlank()) {
+                            AsyncImage(
+                                model = artist.summary.pictureUri,
+                                contentDescription = artist.summary.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, BlazeOrange.copy(alpha = 0.6f), CircleShape)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(DarkGraphite)
+                                    .border(1.5.dp, HairlineDark, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Person,
+                                    contentDescription = null,
+                                    tint = BlazeOrange,
+                                    modifier = Modifier.size(44.dp)
+                                )
+                            }
+                        }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item {
-                HeroIdentityCard(
-                    title = artist.summary.name,
-                    subtitle = "${artist.topTracks.size} top track(s) | ${artist.albums.size} album(s)",
-                    gradient = Brush.linearGradient(listOf(Color(0xFF792BEE), Color(0xFF101010))),
-                )
-            }
-            item {
-                Row(modifier = Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            val tracks = artist.topTracks
-                            if (tracks.isNotEmpty()) onPlayTrackInList(tracks.first(), tracks, "artist")
-                        },
-                        enabled = artist.topTracks.isNotEmpty(),
-                    ) { Text("Play") }
-                    Button(
-                        onClick = {
-                            val tracks = artist.topTracks.shuffled()
-                            if (tracks.isNotEmpty()) onPlayTrackInList(tracks.first(), tracks, "artist")
-                        },
-                        enabled = artist.topTracks.isNotEmpty(),
-                    ) { Text("Mix local") }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "ARTISTE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = BlazeOrange,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.2.sp
+                            )
+                            Text(
+                                text = artist.summary.name,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${artist.topTracks.size} titre(s) • ${artist.albums.size} album(s)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    // Circular Action Buttons: Play (BlazeOrange) + Shuffle (DarkGraphite)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val tracks = artist.topTracks
+                                if (tracks.isNotEmpty()) onPlayTrackInList(tracks.first(), tracks, "artist")
+                            },
+                            enabled = artist.topTracks.isNotEmpty(),
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(if (artist.topTracks.isNotEmpty()) BlazeOrange else DarkGraphite)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Lecture",
+                                tint = if (artist.topTracks.isNotEmpty()) DeepBlack else TextSecondary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val tracks = artist.topTracks.shuffled()
+                                if (tracks.isNotEmpty()) onPlayTrackInList(tracks.first(), tracks, "artist")
+                            },
+                            enabled = artist.topTracks.isNotEmpty(),
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(DarkGraphite)
+                                .border(1.dp, HairlineDark, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Shuffle,
+                                contentDescription = "Aléatoire",
+                                tint = if (artist.topTracks.isNotEmpty()) TextPrimary else TextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
                 }
             }
-            val onUploadToCloudLambda = { track: TrackListRow ->
-                val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
-                val isAlreadySynced = lookupIndex.isCloudSynced(track.id, track.title, track.artistName, track.albumTitle)
-                if (isLocalScanned && !isAlreadySynced) {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
-                        cloudFileRepository.uploadTrack(track.id).collect { res ->
-                            res.onSuccess {
-                                snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
-                                cloudFileRepository.refreshSyncedTrackIds()
-                                refreshTick++
-                            }.onFailure { err ->
-                                snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+            item { Spacer(Modifier.height(12.dp)) }
+
+            // 2. Albums Section (Option 1 - Clean Horizontal Rail with Square Covers)
+            if (artist.albums.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        text = "Albums",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
+                    )
+                }
+                item {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp)
+                    ) {
+                        items(artist.albums, key = { it.id }) { album ->
+                            Column(
+                                modifier = Modifier
+                                    .width(130.dp)
+                                    .clickable { onOpenAlbum(album.id) },
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(130.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(DarkGraphite)
+                                        .border(1.dp, HairlineDark, RoundedCornerShape(14.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (!album.coverUri.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = album.coverUri,
+                                            contentDescription = album.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Album,
+                                            contentDescription = null,
+                                            tint = TextSecondary.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(48.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = album.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                val count = album.trackCount
+                                Text(
+                                    text = if (count != null && count > 0) "$count titre(s)" else "Album",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
                 }
             }
-            val onDownloadFromCloudLambda = { track: TrackListRow ->
-                val isCloudOnly = track.contentUri.isNullOrBlank()
-                val isPresentInCloud = lookupIndex.isCloudSynced(track.id, track.title, track.artistName, track.albumTitle)
-                if (isCloudOnly && isPresentInCloud) {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
-                        cloudFileRepository.downloadTrack(
-                            trackId = track.id,
-                            title = track.title,
-                            artistName = track.artistName,
-                            albumTitle = track.albumTitle,
-                            durationMs = track.durationMs,
-                            artistId = track.artistId,
-                            albumId = track.albumId,
-                            coverUri = track.coverUri
-                        ).collect { res ->
-                            res.onSuccess {
-                                snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
-                                repository.refreshLocalMediaIndex()
-                                refreshTick++
-                            }.onFailure { err ->
-                                snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+
+            // 3. Top Tracks Section (SharedTrackRowItem)
+            if (artist.topTracks.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        text = "Titres populaires",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
+                    )
+                }
+
+                items(artist.topTracks, key = { it.id }) { track ->
+                    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+                    val isPresentInCloud = lookupIndex.isCloudSynced(track.id, track.title, track.artistName, track.albumTitle)
+                    val isCloudOnlyTrack = track.contentUri.isNullOrBlank() && isPresentInCloud
+                    val isOfflineBlocked = isCloudOnlyTrack && !isOnline
+
+                    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+                    val onUploadToCloudLambda: (() -> Unit)? = if (isLocalScanned && !isPresentInCloud) {
+                        {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                                cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                    res.onSuccess {
+                                        snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                        cloudFileRepository.refreshSyncedTrackIds()
+                                        refreshTick++
+                                    }.onFailure { err ->
+                                        snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                    }
+                                }
                             }
+                            Unit
                         }
-                    }
+                    } else null
+
+                    val onDownloadFromCloudLambda: (() -> Unit)? = if (isCloudOnlyTrack) {
+                        {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                                cloudFileRepository.downloadTrack(
+                                    trackId = track.id,
+                                    title = track.title,
+                                    artistName = track.artistName,
+                                    albumTitle = track.albumTitle,
+                                    durationMs = track.durationMs,
+                                    artistId = track.artistId,
+                                    albumId = track.albumId,
+                                    coverUri = track.coverUri
+                                ).collect { res ->
+                                    res.onSuccess {
+                                        snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                                        repository.refreshLocalMediaIndex()
+                                        refreshTick++
+                                    }.onFailure { err ->
+                                        snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                                    }
+                                }
+                            }
+                            Unit
+                        }
+                    } else null
+
+                    SharedTrackRowItem(
+                        title = track.title,
+                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
+                        onClick = { onPlayTrackInList(track, artist.topTracks, "artist") },
+                        coverUri = track.coverUri,
+                        contextType = "artist",
+                        isLiked = track.isLiked,
+                        downloadStatus = if (isDownloadedLocally) TrackDownloadStatus.Downloaded else TrackDownloadStatus.NotDownloaded,
+                        isCloudOnly = isCloudOnlyTrack,
+                        isOfflineDisabled = isOfflineBlocked,
+                        onOfflineBlocked = {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Ce titre est sur le Cloud. Connexion Internet requise pour le streamer.")
+                            }
+                        },
+                        onAddToQueue = { playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
+                        onLike = {
+                            scope.launch {
+                                repository.toggleLike(track.id, currentlyLiked = false, contextType = "artist", contextId = artistId)
+                                refreshTick++
+                            }
+                        },
+                        onUnlike = {
+                            scope.launch {
+                                repository.toggleLike(track.id, currentlyLiked = true, contextType = "artist", contextId = artistId)
+                                refreshTick++
+                            }
+                        },
+                        onAddToPlaylist = { activeTrackForPlaylist = track },
+                        onViewAlbum = track.albumId?.let { albumId -> { onOpenAlbum(albumId) } },
+                        onUploadToCloud = onUploadToCloudLambda,
+                        onDownloadFromCloud = onDownloadFromCloudLambda,
+                        onDeleteDownload = if (isDownloadedLocally) { { trackToDelete = track } } else null,
+                        onDeleteFromCloud = if (isPresentInCloud) { { trackToDeleteFromCloud = track } } else null,
+                        onEditMetadata = { trackToEditMetadata = track }
+                    )
                 }
             }
-
-            trackList(
-                title = "Titres populaires",
-                tracks = artist.topTracks,
-                contextType = "artist",
-                onPlayTrackInList = onPlayTrackInList,
-                onOpenArtist = { },
-                onOpenAlbum = onOpenAlbum,
-                onPlayNow = { track -> onPlayTrackInList(track, artist.topTracks, "artist") },
-                onAddToQueue = { track -> playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) },
-                onAddTrackToPlaylist = { track -> activeTrackForPlaylist = track },
-                onLikeTrack = { track ->
-                    scope.launch {
-                        repository.toggleLike(track.id, track.isLiked, "artist", artistId)
-                        refreshTick++
-                    }
-                },
-                onDeleteDownload = { track ->
-                    scope.launch {
-                        repository.deleteTrack(track.id)
-                        refreshTick++
-                    }
-                },
-                onUploadToCloud = onUploadToCloudLambda,
-                onDownloadFromCloud = onDownloadFromCloudLambda,
-                onEditMetadata = { track -> trackToEditMetadata = track }
-            )
-            item { SectionTitle("Albums", "Navigation album depuis la bibliotheque locale.") }
-            item { BrowseAlbumRail(albums = artist.albums, onOpenAlbum = onOpenAlbum) }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
 
@@ -1221,6 +1779,85 @@ fun ArtistRouteScreen(
                     repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "artist")
                     activeTrackForPlaylist = null
                     refreshTick++
+                }
+            }
+        )
+    }
+
+    if (trackToDelete != null) {
+        val isPresentInCloud = lookupIndex.isCloudSynced(trackToDelete!!.id, trackToDelete!!.title, trackToDelete!!.artistName, trackToDelete!!.albumTitle)
+        ConfirmDialog(
+            title = if (isPresentInCloud) "Supprimer le téléchargement ?" else "Supprimer de l'appareil ?",
+            message = if (isPresentInCloud) {
+                "Voulez-vous supprimer le fichier local de « ${trackToDelete!!.title} » pour libérer de l'espace ? Le titre restera disponible en streaming sur votre Cloud."
+            } else {
+                "Voulez-vous vraiment supprimer « ${trackToDelete!!.title} » de votre appareil ? Cette action supprimera définitivement le fichier physique."
+            },
+            confirmLabel = if (isPresentInCloud) "Supprimer le fichier local" else "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                val t = trackToDelete!!
+                trackToDelete = null
+                if (isPresentInCloud) {
+                    localArtistDetail = localArtistDetail?.let { current ->
+                        current.copy(topTracks = current.topTracks.map { if (it.id == t.id) it.copy(contentUri = null) else it })
+                    }
+                    scope.launch {
+                        cloudFileRepository.removeLocalFile(t.id)
+                        repository.refreshLocalMediaIndex()
+                        refreshTick++
+                        snackbarHostState.showSnackbar("Téléchargement local supprimé. Titre conservé sur le Cloud.")
+                    }
+                } else {
+                    val trackId = t.id
+                    pendingDeleteTrackId = trackId
+                    localArtistDetail = localArtistDetail?.let { current ->
+                        current.copy(topTracks = current.topTracks.filter { it.id != trackId })
+                    }
+                    scope.launch {
+                        val pendingIntent = repository.deleteTrack(trackId)
+                        if (pendingIntent != null) {
+                            try {
+                                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                intentSenderLauncher.launch(intentSenderRequest)
+                            } catch (e: Exception) {
+                                android.util.Log.e("ArtistRouteScreen", "Failed to launch intent sender for delete", e)
+                                pendingDeleteTrackId = null
+                                refreshTick++
+                            }
+                        } else {
+                            pendingDeleteTrackId = null
+                            refreshTick++
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (trackToDeleteFromCloud != null) {
+        ConfirmDialog(
+            title = "Supprimer du Cloud ?",
+            message = "Voulez-vous vraiment supprimer « ${trackToDeleteFromCloud!!.title} » de votre Cloud personnel AURA ? Vous ne pourrez plus le streamer à distance.",
+            confirmLabel = "Supprimer du Cloud",
+            onDismiss = { trackToDeleteFromCloud = null },
+            onConfirm = {
+                val t = trackToDeleteFromCloud!!
+                trackToDeleteFromCloud = null
+                localArtistDetail = localArtistDetail?.let { current ->
+                    current.copy(topTracks = current.topTracks.filter { it.id != t.id })
+                }
+                scope.launch {
+                    cloudFileRepository.deleteSyncFile(t.id).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Titre supprimé du Cloud : ${t.title}")
+                            cloudFileRepository.refreshSyncedTrackIds()
+                            refreshTick++
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec de la suppression Cloud : ${err.message}")
+                            refreshTick++
+                        }
+                    }
                 }
             }
         )
@@ -2376,6 +3013,7 @@ fun YtmProposalsDialog(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryTracksScreen(
     repository: LocalLibraryRepository,
@@ -2386,19 +3024,22 @@ fun LibraryTracksScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val tracksState = produceState<List<TrackListRow>?>(initialValue = null, repository, refreshTick, refreshToken) {
-        value = repository.getAllTracks()
+    var localTracksList by remember { mutableStateOf<List<TrackListRow>?>(null) }
+    LaunchedEffect(repository, refreshTick, refreshToken) {
+        localTracksList = repository.getAllTracks()
     }
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null)}
     var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDeleteFromCloud by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             pendingDeleteTrackId?.let { trackId ->
+                localTracksList = localTracksList?.filter { it.id != trackId }
                 scope.launch {
                     repository.deleteTrack(trackId)
                     pendingDeleteTrackId = null
@@ -2407,6 +3048,7 @@ fun LibraryTracksScreen(
             }
         } else {
             pendingDeleteTrackId = null
+            refreshTick++
         }
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshTick, refreshToken) {
@@ -2431,15 +3073,15 @@ fun LibraryTracksScreen(
     val sortingOptions = listOf("A-Z", "Récents")
     var selectedSort by remember { mutableStateOf(sharedPrefs.getString("library_tracks_sort", "A-Z") ?: "A-Z") }
     var selectedFilter by remember { mutableStateOf("Tous") }
-    var showSortMenu by remember { mutableStateOf(false) }
+    var showFiltersSection by remember { mutableStateOf(false) }
 
-    val lookupIndex = remember(tracksState.value, cloudFiles, syncedCloudTrackIds) {
-        TrackLookupIndex.build(tracksState.value ?: emptyList(), cloudFiles, syncedCloudTrackIds)
+    val lookupIndex = remember(localTracksList, cloudFiles, syncedCloudTrackIds) {
+        TrackLookupIndex.build(localTracksList ?: emptyList(), cloudFiles, syncedCloudTrackIds)
     }
 
-    val sortedTracks by remember(tracksState.value, selectedSort, selectedFilter, lookupIndex) {
+    val sortedTracks by remember(localTracksList, selectedSort, selectedFilter, lookupIndex) {
         derivedStateOf {
-            val list = tracksState.value ?: return@derivedStateOf null
+            val list = localTracksList ?: return@derivedStateOf null
             val filtered = when (selectedFilter) {
                 "Sur l'appareil" -> list.filter { !it.contentUri.isNullOrBlank() }
                 "Pas synchronisé" -> list.filter { track ->
@@ -2455,7 +3097,45 @@ fun LibraryTracksScreen(
         }
     }
 
-    RouteScaffold(title = "Tous les titres", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
+    RouteScaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            "Tous les titres",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        val count = sortedTracks?.size
+                        if (count != null) {
+                            Text(
+                                "$count piste${if (count > 1) "s" else ""}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Retour",
+                            tint = TextPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeepBlack,
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
+                )
+            )
+        },
+        snackbarHostState = snackbarHostState
+    ) {
         val tracks = sortedTracks
         if (tracks == null) {
             ShimmerTrackList(count = 8)
@@ -2474,177 +3154,181 @@ fun LibraryTracksScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .background(
-                                Brush.linearGradient(listOf(BlazeOrange, Color(0xFF101010))),
-                                RoundedCornerShape(24.dp),
-                            )
-                            .padding(20.dp),
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp),
-                            )
-                            Text(
-                                "Tous les titres",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                            )
-                            Text(
-                                "${tracks.size} piste(s) locale(s)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.75f),
-                            )
-                        }
-                    }
-                }
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Button(
-                            onClick = {
-                                if (tracks.isNotEmpty()) {
-                                    playerViewModel.onEvent(
-                                        PlayerEvent.PlayTrack(
-                                            trackId = tracks.first().id,
-                                            contextType = "library_tracks",
-                                            contextId = "library_tracks",
-                                            contextTracks = tracks.map { it.toQueuedTrack() },
-                                            startIndex = 0,
-                                        ),
-                                    )
-                                }
-                            },
-                            enabled = tracks.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = BlazeOrange,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 10.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Play", fontWeight = FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = {
-                                val shuffled = tracks.shuffled()
-                                if (shuffled.isNotEmpty()) {
-                                    playerViewModel.onEvent(
-                                        PlayerEvent.PlayTrack(
-                                            trackId = shuffled.first().id,
-                                            contextType = "library_tracks",
-                                            contextId = "library_tracks",
-                                            contextTracks = shuffled.map { it.toQueuedTrack() },
-                                            startIndex = 0,
-                                        ),
-                                    )
-                                }
-                            },
-                            enabled = tracks.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = DarkGraphite,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Shuffle,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Shuffle", fontWeight = FontWeight.Bold)
-                        }
-                        Box {
-                            Button(
-                                onClick = { showSortMenu = true },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = DarkGraphite,
-                                    contentColor = TextPrimary
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                            // Boutons Symboles Play & Shuffle à gauche
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Icon(
-                                    Icons.Rounded.Sort,
-                                    contentDescription = "Trier",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(selectedSort, style = MaterialTheme.typography.labelLarge)
-                            }
-                            DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false },
-                            ) {
-                                sortingOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            selectedSort = option
-                                            sharedPrefs.edit().putString("library_tracks_sort", option).apply()
-                                            showSortMenu = false
-                                        },
-                                        trailingIcon = {
-                                            if (selectedSort == option) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Check,
-                                                    contentDescription = null,
-                                                    tint = BlazeOrange,
-                                                    modifier = Modifier.size(16.dp)
+                                // Bouton Play Principal (Symbole circulaire BlazeOrange)
+                                IconButton(
+                                    onClick = {
+                                        if (tracks.isNotEmpty()) {
+                                            playerViewModel.onEvent(
+                                                PlayerEvent.PlayTrack(
+                                                    trackId = tracks.first().id,
+                                                    contextType = "library_tracks",
+                                                    contextId = "library_tracks",
+                                                    contextTracks = tracks.map { it.toQueuedTrack() },
+                                                    startIndex = 0,
                                                 )
-                                            }
+                                            )
                                         }
+                                    },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(BlazeOrange, CircleShape),
+                                    enabled = tracks.isNotEmpty()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PlayArrow,
+                                        contentDescription = "Lire",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+
+                                // Bouton Shuffle (Symbole circulaire DarkGraphite)
+                                IconButton(
+                                    onClick = {
+                                        val shuffled = tracks.shuffled()
+                                        if (shuffled.isNotEmpty()) {
+                                            playerViewModel.onEvent(
+                                                PlayerEvent.PlayTrack(
+                                                    trackId = shuffled.first().id,
+                                                    contextType = "library_tracks",
+                                                    contextId = "library_tracks",
+                                                    contextTracks = shuffled.map { it.toQueuedTrack() },
+                                                    startIndex = 0,
+                                                )
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(DarkGraphite, CircleShape),
+                                    enabled = tracks.isNotEmpty()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Shuffle,
+                                        contentDescription = "Lecture aléatoire",
+                                        tint = TextPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Bouton Filtres / Options discret et sobre à droite
+                            Surface(
+                                onClick = { showFiltersSection = !showFiltersSection },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (showFiltersSection) ElevatedGraphite else DarkGraphite
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Tune,
+                                        contentDescription = "Filtres et tri",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = if (selectedFilter != "Tous") selectedFilter else selectedSort,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = TextSecondary,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }
                         }
-                    }
-                }
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        listOf("Tous", "Sur l'appareil", "Pas synchronisé").forEach { filter ->
-                            val isSelected = selectedFilter == filter
-                            androidx.compose.material3.FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedFilter = filter },
-                                label = { Text(filter) },
-                                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = BlazeOrange,
-                                    selectedLabelColor = Color.White,
-                                    containerColor = DarkGraphite,
-                                    labelColor = TextPrimary
-                                ),
-                                border = null,
-                                shape = RoundedCornerShape(16.dp)
-                            )
+
+                        // Section filtres dépliable animée
+                        AnimatedVisibility(
+                            visible = showFiltersSection,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 10.dp)
+                                    .background(ElevatedGraphite, RoundedCornerShape(16.dp))
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Section Tri
+                                Text(
+                                    text = "TRIER PAR",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    sortingOptions.forEach { sortOption ->
+                                        val isSelected = selectedSort == sortOption
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                selectedSort = sortOption
+                                                sharedPrefs.edit().putString("library_tracks_sort", sortOption).apply()
+                                            },
+                                            label = { Text(sortOption) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = BlazeOrange,
+                                                selectedLabelColor = Color.White,
+                                                containerColor = DarkGraphite,
+                                                labelColor = TextSecondary
+                                            ),
+                                            border = null,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                    }
+                                }
+
+                                // Section Filtres
+                                Text(
+                                    text = "FILTRER PAR",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    listOf("Tous", "Sur l'appareil", "Pas synchronisé").forEach { filterOption ->
+                                        val isSelected = selectedFilter == filterOption
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { selectedFilter = filterOption },
+                                            label = { Text(filterOption) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = BlazeOrange,
+                                                selectedLabelColor = Color.White,
+                                                containerColor = DarkGraphite,
+                                                labelColor = TextSecondary
+                                            ),
+                                            border = null,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2744,6 +3428,15 @@ fun LibraryTracksScreen(
                         } else null
                     }
 
+                    val onDeleteFromCloudLambda = remember(track.id, isPresentInCloud) {
+                        if (isPresentInCloud) {
+                            {
+                                trackToDeleteFromCloud = track
+                                Unit
+                            }
+                        } else null
+                    }
+
                     val isOfflineBlocked = isCloudOnlyTrack && !isOnline
 
                     SharedTrackRowItem(
@@ -2770,6 +3463,7 @@ fun LibraryTracksScreen(
                         onDeleteDownload = if (isDownloadedLocally) onDeleteDownloadClick else null,
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
+                        onDeleteFromCloud = onDeleteFromCloudLambda,
                         onEditMetadata = { trackToEditMetadata = track }
                     )
                 }
@@ -2793,29 +3487,73 @@ fun LibraryTracksScreen(
     }
 
     if (trackToDelete != null) {
+        val isPresentInCloud = lookupIndex.isCloudSynced(trackToDelete!!.id, trackToDelete!!.title, trackToDelete!!.artistName, trackToDelete!!.albumTitle)
         ConfirmDialog(
-            title = "Supprimer de l'appareil ?",
-            message = "Voulez-vous vraiment supprimer ce titre de votre appareil ? Cette action supprimera définitivement le fichier physique.",
-            confirmLabel = "Supprimer",
+            title = if (isPresentInCloud) "Supprimer le téléchargement ?" else "Supprimer de l'appareil ?",
+            message = if (isPresentInCloud) {
+                "Voulez-vous supprimer le fichier local de « ${trackToDelete!!.title} » pour libérer de l'espace ? Le titre restera disponible en streaming sur votre Cloud."
+            } else {
+                "Voulez-vous vraiment supprimer « ${trackToDelete!!.title} » de votre appareil ? Cette action supprimera définitivement le fichier physique."
+            },
+            confirmLabel = if (isPresentInCloud) "Supprimer le fichier local" else "Supprimer",
             onDismiss = { trackToDelete = null },
             onConfirm = {
-                val trackId = trackToDelete!!.id
-                pendingDeleteTrackId = trackId
-                scope.launch {
-                    val pendingIntent = repository.deleteTrack(trackId)
-                    if (pendingIntent != null) {
-                        try {
-                            val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                            intentSenderLauncher.launch(intentSenderRequest)
-                        } catch (e: Exception) {
-                            android.util.Log.e("LibraryTracksScreen", "Failed to launch intent sender for delete", e)
-                            pendingDeleteTrackId = null
-                        }
-                    } else {
-                        pendingDeleteTrackId = null
+                val t = trackToDelete!!
+                trackToDelete = null
+                if (isPresentInCloud) {
+                    localTracksList = localTracksList?.map { if (it.id == t.id) it.copy(contentUri = null) else it }
+                    scope.launch {
+                        cloudFileRepository.removeLocalFile(t.id)
+                        repository.refreshLocalMediaIndex()
                         refreshTick++
+                        snackbarHostState.showSnackbar("Téléchargement local supprimé. Titre conservé sur le Cloud.")
                     }
-                    trackToDelete = null
+                } else {
+                    val trackId = t.id
+                    pendingDeleteTrackId = trackId
+                    localTracksList = localTracksList?.filter { it.id != trackId }
+                    scope.launch {
+                        val pendingIntent = repository.deleteTrack(trackId)
+                        if (pendingIntent != null) {
+                            try {
+                                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                intentSenderLauncher.launch(intentSenderRequest)
+                            } catch (e: Exception) {
+                                android.util.Log.e("LibraryTracksScreen", "Failed to launch intent sender for delete", e)
+                                pendingDeleteTrackId = null
+                                refreshTick++
+                            }
+                        } else {
+                            pendingDeleteTrackId = null
+                            refreshTick++
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (trackToDeleteFromCloud != null) {
+        ConfirmDialog(
+            title = "Supprimer du Cloud ?",
+            message = "Voulez-vous vraiment supprimer « ${trackToDeleteFromCloud!!.title} » de votre Cloud personnel AURA ? Vous ne pourrez plus le streamer à distance.",
+            confirmLabel = "Supprimer du Cloud",
+            onDismiss = { trackToDeleteFromCloud = null },
+            onConfirm = {
+                val t = trackToDeleteFromCloud!!
+                trackToDeleteFromCloud = null
+                localTracksList = localTracksList?.filter { it.id != t.id }
+                scope.launch {
+                    cloudFileRepository.deleteSyncFile(t.id).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Titre supprimé du Cloud : ${t.title}")
+                            cloudFileRepository.refreshSyncedTrackIds()
+                            refreshTick++
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec de la suppression Cloud : ${err.message}")
+                            refreshTick++
+                        }
+                    }
                 }
             }
         )

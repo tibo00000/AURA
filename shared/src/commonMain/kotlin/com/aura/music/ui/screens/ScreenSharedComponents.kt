@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -77,11 +79,18 @@ import coil3.compose.AsyncImage
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.text.style.TextAlign
 import com.aura.music.ui.theme.BlazeOrange
+import com.aura.music.ui.theme.DarkGraphite
+import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.HairlineDark
 import com.aura.music.ui.theme.RoseSignal
 import com.aura.music.ui.theme.TextMuted
+import com.aura.music.ui.theme.TextPrimary
+import com.aura.music.ui.theme.TextSecondary
 
 /**
  * Représente l'état de téléchargement local d'un titre pour les affichages en ligne.
@@ -188,23 +197,66 @@ fun BrowseArtistRail(
     if (artists.isEmpty()) {
         EmptyStateSurface(
             "Pas encore d'artiste local",
-            "AURA affichera ici les artistes issus de la bibliotheque indexee.",
+            "AURA affichera ici les artistes issus de la bibliothèque indexée.",
             Modifier.padding(horizontal = 16.dp),
         )
         return
     }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp)
+    ) {
         items(artists, key = { it.id }) { artist ->
-            SharedRailCard(
-                title = artist.name,
-                subtitle = "${artist.trackCount} piste(s) | ${artist.albumCount} album(s)",
-                imageUri = artist.pictureUri,
-                gradientStartColor = Color(0xFF792BEE),
-                imageShape = CircleShape,
-                onClick = { onOpenArtist(artist.id) }
-            )
+            Column(
+                modifier = Modifier
+                    .width(104.dp)
+                    .clickable { onOpenArtist(artist.id) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                        .background(DarkGraphite)
+                        .border(1.5.dp, HairlineDark, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (artist.pictureUri != null) {
+                        AsyncImage(
+                            model = artist.pictureUri,
+                            contentDescription = artist.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.Person,
+                            contentDescription = null,
+                            tint = BlazeOrange,
+                            modifier = Modifier.size(44.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = artist.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "${artist.trackCount} titre(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
-        item { Spacer(modifier = Modifier.size(16.dp)) }
     }
 }
 
@@ -214,32 +266,37 @@ fun BrowseAlbumRail(
     onOpenAlbum: (String) -> Unit,
 ) {
     if (albums.isEmpty()) {
-        EmptyStateSurface("Pas d'album local", "Les albums locaux indexes seront proposes ici.", Modifier.padding(horizontal = 16.dp))
+        EmptyStateSurface("Pas d'album local", "Les albums locaux indexés seront proposés ici.", Modifier.padding(horizontal = 16.dp))
         return
     }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 16.dp)) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp)
+    ) {
         items(albums, key = { it.id }) { album ->
+            val count = album.trackCount
             SharedRailCard(
                 title = album.title,
-                subtitle = album.artistName ?: "Artiste inconnu",
+                subtitle = if (count != null && count > 0) "$count titre(s)" else (album.artistName ?: "Album"),
                 imageUri = album.coverUri,
                 gradientStartColor = Color(0xFFFF9E00),
-                imageShape = RoundedCornerShape(20.dp),
+                imageShape = RoundedCornerShape(14.dp),
                 onClick = { onOpenAlbum(album.id) }
             )
         }
-        item { Spacer(modifier = Modifier.size(16.dp)) }
     }
 }
 
 @Composable
 fun SectionTitle(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+        if (!subtitle.isNullOrBlank()) {
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
     }
 }
 
@@ -249,56 +306,54 @@ fun SharedRailCard(
     subtitle: String,
     imageUri: String?,
     gradientStartColor: Color,
-    imageShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(20.dp),
+    imageShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(14.dp),
     onClick: () -> Unit
 ) {
-    Card(
+    Column(
         modifier = Modifier
-            .size(width = 168.dp, height = 236.dp)
+            .width(130.dp)
             .clickable { onClick() },
-        shape = RoundedCornerShape(24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Box(
+            modifier = Modifier
+                .size(130.dp)
+                .clip(imageShape)
+                .background(DarkGraphite)
+                .border(1.dp, HairlineDark, imageShape),
+            contentAlignment = Alignment.Center
         ) {
             if (imageUri != null) {
                 AsyncImage(
                     model = imageUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(imageShape),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    contentDescription = title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .background(
-                            Brush.linearGradient(listOf(gradientStartColor, com.aura.music.ui.theme.HairlineDark)),
-                            imageShape
-                        )
-                )
-            }
-            Column {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                Icon(
+                    imageVector = Icons.Rounded.Album,
+                    contentDescription = null,
+                    tint = TextSecondary.copy(alpha = 0.6f),
+                    modifier = Modifier.size(48.dp)
                 )
             }
         }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

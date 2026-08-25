@@ -37,16 +37,145 @@ class CloudFileRepository(
     private val _syncedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val syncedTrackIds = _syncedTrackIds.asStateFlow()
 
+    fun isCloudTrackSynced(trackId: String): Boolean {
+        val ids = _syncedTrackIds.value
+        if (ids.contains(trackId)) return true
+        val cleanId = trackId.removePrefix("deezer:").removePrefix("ytm:")
+        return ids.any {
+            it == trackId || it.removePrefix("deezer:").removePrefix("ytm:") == cleanId
+        }
+    }
+
     suspend fun refreshSyncedTrackIds() {
         try {
             val response = apiService.listSyncFiles(SyncRepository.AUTH_TOKEN)
             val data = response.data
             if (response.error == null && data != null) {
                 _syncedTrackIds.value = data.items.map { it.trackId }.toSet()
+                reconcileCloudTracksWithDatabase(data.items)
                 Log.i(TAG, "Refreshed synced track IDs: ${_syncedTrackIds.value.size} tracks")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to refresh synced track IDs", e)
+        }
+    }
+
+    suspend fun reconcileCloudTracksWithDatabase(items: List<com.aura.music.data.network.SyncedFileResponseData>) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        try {
+            val serverCloudIds = items.map { it.trackId }.toSet()
+
+            // 1. Purge any orphan cloud-only tracks from Room that are no longer on the Cloud server
+            val allTracks = database.trackDao().getAllTracks()
+            val orphanIds = allTracks.filter { track ->
+                track.contentUri.isNullOrBlank() &&
+                track.id !in serverCloudIds &&
+                !serverCloudIds.any { com.aura.music.ui.screens.isDeezerTrackMatch(it, track.id) }
+            }.map { it.id }
+            if (orphanIds.isNotEmpty()) {
+                database.trackDao().deleteTracksByIds(orphanIds)
+                Log.i(TAG, "Purged ${orphanIds.size} orphan Cloud tracks from Room: $orphanIds")
+            }
+
+            // 2. Reconcile / insert missing Cloud tracks
+            for (item in items) {
+                val existingTrack = database.trackDao().getRawTrackById(item.trackId)
+                if (existingTrack == null) {
+                    val fileTitle = item.title ?: "Piste Cloud ${item.trackId}"
+                    val artist = item.artistName ?: "Artiste Inconnu"
+                    val album = item.albumTitle ?: "Album Inconnu"
+                    val duration = item.durationMs ?: 0L
+                    val artistId = item.artistId
+                    val albumId = item.albumId
+
+                    if (artistId != null) {
+                        val placeholderArtist = com.aura.music.data.local.ArtistEntity(
+                            id = artistId,
+                            name = artist,
+                            normalizedName = artist.lowercase().trim(),
+                            pictureUri = item.coverUri,
+                            artworkOrigin = null,
+                            artworkLastResolvedAt = null,
+                            summary = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                        database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
+                    }
+
+                    if (albumId != null) {
+                        val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
+                            id = albumId,
+                            primaryArtistId = artistId,
+                            title = album,
+                            normalizedTitle = album.lowercase().trim(),
+                            coverUri = item.coverUri,
+                            artworkOrigin = null,
+                            artworkLastResolvedAt = null,
+                            releaseDate = null,
+                            trackCount = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                        database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
+                    }
+
+                    val newTrack = com.aura.music.data.local.TrackEntity(
+                        id = item.trackId,
+                        primaryArtistId = artistId,
+                        albumId = albumId,
+                        title = fileTitle,
+                        normalizedTitle = fileTitle.lowercase().trim(),
+                        displayArtistName = artist,
+                        displayAlbumTitle = album,
+                        durationMs = duration,
+                        coverUri = item.coverUri,
+                        canonicalAudioSourceType = "cloud",
+                        isLiked = false,
+                        isDownloadedByAura = false,
+                        isExplicit = false,
+                        popularity = 0,
+                        genresJson = null,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                    database.trackDao().upsertTrack(newTrack)
+                    Log.d(TAG, "Reconciled missing Cloud TrackEntity in Room for ${item.trackId} - $fileTitle")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to reconcile cloud tracks with database", e)
+        }
+    }
+
+    suspend fun autoDownloadFavoriteTrack(trackId: String) = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences("aura_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("auto_download_favorites", false)) return@withContext
+        try {
+            val trackRow = database.trackDao().getTrackById(trackId)
+            if (trackRow != null && !trackRow.contentUri.isNullOrBlank()) {
+                Log.i(TAG, "Favorite track $trackId is already present on device.")
+                return@withContext
+            }
+            Log.i(TAG, "Auto-downloading favorite track $trackId...")
+            downloadTrack(
+                trackId = trackId,
+                title = trackRow?.title,
+                artistName = trackRow?.artistName,
+                albumTitle = trackRow?.albumTitle,
+                durationMs = trackRow?.durationMs,
+                artistId = trackRow?.artistId,
+                albumId = trackRow?.albumId,
+                coverUri = trackRow?.coverUri
+            ).collect { res ->
+                res.onSuccess {
+                    Log.i(TAG, "Successfully auto-downloaded favorite track $trackId to ${it.absolutePath}")
+                }.onFailure { err ->
+                    Log.w(TAG, "Failed auto-downloading favorite track $trackId: ${err.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Auto-download favorite track $trackId exception", e)
         }
     }
 
@@ -377,6 +506,7 @@ class CloudFileRepository(
             }
             val items = data.items
             _syncedTrackIds.value = items.map { it.trackId }.toSet()
+            reconcileCloudTracksWithDatabase(items)
             emit(Result.success(items))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to list cloud files", e)
@@ -409,6 +539,13 @@ class CloudFileRepository(
             }
             Log.i(TAG, "Successfully deleted track $trackId from cloud")
             _syncedTrackIds.value = _syncedTrackIds.value - trackId
+
+            val trackRow = database.trackDao().getTrackById(trackId)
+            if (trackRow == null || trackRow.contentUri.isNullOrBlank()) {
+                database.trackDao().deleteTracksByIds(listOf(trackId))
+                Log.i(TAG, "Deleted cloud-only track $trackId from Room database")
+            }
+
             emit(Result.success(Unit))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete cloud file $trackId", e)
