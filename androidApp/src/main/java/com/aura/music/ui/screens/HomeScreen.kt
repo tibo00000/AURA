@@ -43,6 +43,11 @@ import com.aura.music.ui.components.ShimmerTrackList
 import com.aura.music.ui.components.ShimmerCard
 import com.aura.music.ui.components.rememberShimmerBrush
 
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 sealed interface ResumeItem {
     object Favorites : ResumeItem
     data class Playlist(val playlist: PlaylistListRow) : ResumeItem
@@ -67,6 +72,7 @@ fun HomeScreen(
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
     val cloudFileRepository = application.container.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    var isCloudBannerDismissed by remember { mutableStateOf(false) }
 
     val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
         value = repository.getLibraryDashboardSummary()
@@ -132,11 +138,12 @@ fun HomeScreen(
                 HomeHeader(summaryState.value, onRequestAudioPermission)
             }
             
-            if (cloudOnlyCount > 5) {
+            if (cloudOnlyCount > 5 && !isCloudBannerDismissed) {
                 item {
                     CloudRecoveryBanner(
                         count = cloudOnlyCount,
                         onOpenCloudSync = onOpenCloudSync,
+                        onDismiss = { isCloudBannerDismissed = true },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -174,27 +181,26 @@ fun HomeScreen(
 private fun CloudRecoveryBanner(
     count: Int,
     onOpenCloudSync: () -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onOpenCloudSync() },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkGraphite),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BlazeOrange)
+            .clip(RoundedCornerShape(18.dp))
+            .background(ElevatedGraphite)
+            .border(1.dp, BlazeOrange.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
+            .padding(16.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(BlazeOrange.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -206,35 +212,51 @@ private fun CloudRecoveryBanner(
                 )
             }
             
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = "Fichiers cloud disponibles",
+                    text = "Musique sur le Cloud",
                     style = MaterialTheme.typography.titleMedium,
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "$count titres sont présents sur votre cloud mais absents de cet appareil. Récupérez-les manuellement.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "$count titres disponibles sur votre serveur.",
+                    style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
             }
 
-            Button(
-                onClick = onOpenCloudSync,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BlazeOrange,
-                    contentColor = TextOnAccent
-                ),
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "Gérer",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Button(
+                    onClick = onOpenCloudSync,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BlazeOrange,
+                        contentColor = DeepBlack
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Gérer",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Masquer le rappel",
+                        tint = TextMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

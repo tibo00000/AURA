@@ -2,6 +2,7 @@ package com.aura.music.ui.screens
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,13 +25,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.aura.music.domain.player.PlaybackState
 import com.aura.music.domain.player.PlayerEvent
 import com.aura.music.domain.player.PlayerUiState
 import com.aura.music.domain.player.RepeatMode
 import com.aura.music.ui.player.PlayerViewModel
-import org.burnoutcrew.reorderable.ReorderableItem
+import com.aura.music.ui.theme.*
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
@@ -76,6 +78,8 @@ fun PlayerScreen(
 
     val visiblePriorityQueue by remember { derivedStateOf { localPriorityQueue.value } }
     val visibleMainQueue by remember { derivedStateOf { localMainQueue.value.take(30) } }
+    val totalQueueCount by remember { derivedStateOf { visiblePriorityQueue.size + uiState.mainQueueTracks.size } }
+    val queueLabel by remember { derivedStateOf { if (totalQueueCount > 0) "File ($totalQueueCount)" else "File" } }
 
     val onRemoveFromQueue = remember(playerViewModel) {
         { index: Int ->
@@ -126,6 +130,7 @@ fun PlayerScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(DeepBlack)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -134,7 +139,7 @@ fun PlayerScreen(
                         imageVector = Icons.Rounded.KeyboardArrowDown,
                         contentDescription = "Fermer le lecteur",
                         modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onBackground
+                        tint = TextPrimary
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
@@ -142,36 +147,38 @@ fun PlayerScreen(
                 // Segmented control (Lecteur / File d'attente)
                 Row(
                     modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                        .padding(4.dp),
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(DarkGraphite)
+                        .border(1.dp, HairlineDark, RoundedCornerShape(999.dp))
+                        .padding(3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (showQueue) Color.Transparent else MaterialTheme.colorScheme.primary)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (!showQueue) BlazeOrange else Color.Transparent)
                             .clickable { showQueue = false }
                             .padding(horizontal = 16.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = "Lecteur",
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (showQueue) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold
+                            color = if (!showQueue) DeepBlack else TextSecondary,
+                            fontWeight = if (!showQueue) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (showQueue) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (showQueue) BlazeOrange else Color.Transparent)
                             .clickable { showQueue = true }
                             .padding(horizontal = 16.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "File",
+                            text = queueLabel,
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (showQueue) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
+                            color = if (showQueue) DeepBlack else TextSecondary,
+                            fontWeight = if (showQueue) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
@@ -179,15 +186,22 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.weight(1f))
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Rounded.MoreVert, contentDescription = "Options supplémentaires")
+                        Icon(
+                            Icons.Rounded.MoreVert,
+                            contentDescription = "Options supplémentaires",
+                            tint = TextPrimary
+                        )
                     }
                     DropdownMenu(
                         expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
+                        onDismissRequest = { menuExpanded = false },
+                        modifier = Modifier
+                            .background(ElevatedGraphite)
+                            .border(1.dp, HairlineDark, RoundedCornerShape(12.dp))
                     ) {
                         // Ajouter/Retirer aux favoris
                         DropdownMenuItem(
-                            text = { Text(if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris") },
+                            text = { Text(if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris", color = TextPrimary) },
                             onClick = {
                                 playerViewModel.onEvent(PlayerEvent.ToggleLike)
                                 menuExpanded = false
@@ -195,55 +209,56 @@ fun PlayerScreen(
                             leadingIcon = {
                                 Icon(
                                     imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                    contentDescription = null
+                                    contentDescription = null,
+                                    tint = if (uiState.isCurrentTrackLiked) BlazeOrange else TextSecondary
                                 )
                             }
                         )
                         // Ajouter à une playlist
                         DropdownMenuItem(
-                            text = { Text("Ajouter à une playlist") },
+                            text = { Text("Ajouter à une playlist", color = TextPrimary) },
                             onClick = {
                                 showSelectPlaylistDialog = true
                                 menuExpanded = false
                             },
                             leadingIcon = {
-                                Icon(Icons.Rounded.PlaylistAdd, contentDescription = null)
+                                Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = BlazeOrange)
                             }
                         )
                         // Voir l'artiste
                         DropdownMenuItem(
-                            text = { Text("Voir l'artiste") },
+                            text = { Text("Voir l'artiste", color = if (artistId != null) TextPrimary else TextMuted) },
                             onClick = {
                                 artistId?.let { onOpenArtist(it) }
                                 menuExpanded = false
                             },
                             enabled = artistId != null,
                             leadingIcon = {
-                                Icon(Icons.Rounded.Person, contentDescription = null)
+                                Icon(Icons.Rounded.Person, contentDescription = null, tint = if (artistId != null) TextPrimary else TextMuted)
                             }
                         )
                         // Voir l'album
                         DropdownMenuItem(
-                            text = { Text("Voir l'album") },
+                            text = { Text("Voir l'album", color = if (albumId != null) TextPrimary else TextMuted) },
                             onClick = {
                                 albumId?.let { onOpenAlbum(it) }
                                 menuExpanded = false
                             },
                             enabled = albumId != null,
                             leadingIcon = {
-                                Icon(Icons.Rounded.Album, contentDescription = null)
+                                Icon(Icons.Rounded.Album, contentDescription = null, tint = if (albumId != null) TextPrimary else TextMuted)
                             }
                         )
                         // Modifier les informations
                         if (trackDetails != null) {
                             DropdownMenuItem(
-                                text = { Text("Modifier les informations") },
+                                text = { Text("Modifier les informations", color = TextPrimary) },
                                 onClick = {
                                     menuExpanded = false
                                     showEditMetadataBottomSheet = true
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Rounded.Edit, contentDescription = null)
+                                    Icon(Icons.Rounded.Edit, contentDescription = null, tint = TextPrimary)
                                 }
                             )
                         }
@@ -251,14 +266,19 @@ fun PlayerScreen(
                 }
             }
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = DeepBlack
     ) { innerPadding ->
         if (track == null) {
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
                     text = "Aucune lecture active",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TextSecondary
                 )
             }
         } else {
@@ -268,14 +288,18 @@ fun PlayerScreen(
                     .padding(innerPadding)
             ) {
                 if (!showQueue) {
+                    // =========================================================
+                    // VUE LECTEUR PLEIN ÉCRAN
+                    // =========================================================
                     // Large Artwork
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 32.dp, vertical = 8.dp)
-                            .aspectRatio(1f) // Square
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF1A1A1A)))),
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(DarkGraphite)
+                            .border(1.dp, HairlineDark, RoundedCornerShape(20.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         val cover = track.coverUri
@@ -290,7 +314,7 @@ fun PlayerScreen(
                             Icon(
                                 Icons.Rounded.MusicNote,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                tint = TextMuted,
                                 modifier = Modifier.size(80.dp)
                             )
                         }
@@ -311,12 +335,12 @@ fun PlayerScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = TextPrimary
                         )
                         Text(
                             text = track.artistName,
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -325,7 +349,7 @@ fun PlayerScreen(
                             Text(
                                 text = albumTitle,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color = TextMuted,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -350,33 +374,44 @@ fun PlayerScreen(
                             Icon(
                                 Icons.Rounded.Shuffle,
                                 contentDescription = "Lecture aléatoire",
-                                tint = if (uiState.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (uiState.shuffleEnabled) BlazeOrange else TextSecondary,
                             )
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Previous) }) {
-                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Piste précédente", modifier = Modifier.size(48.dp))
+                            Icon(
+                                Icons.Rounded.SkipPrevious,
+                                contentDescription = "Piste précédente",
+                                modifier = Modifier.size(44.dp),
+                                tint = TextPrimary
+                            )
                         }
                         IconButton(
                             onClick = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
                             modifier = Modifier
-                                .size(72.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                .size(68.dp)
+                                .clip(CircleShape)
+                                .background(BlazeOrange)
                         ) {
                             Icon(
                                 imageVector = if (uiState.playbackState == PlaybackState.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 contentDescription = "Lecture ou pause",
-                                modifier = Modifier.size(40.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                modifier = Modifier.size(38.dp),
+                                tint = DeepBlack
                             )
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.Next) }) {
-                            Icon(Icons.Rounded.SkipNext, contentDescription = "Piste suivante", modifier = Modifier.size(48.dp))
+                            Icon(
+                                Icons.Rounded.SkipNext,
+                                contentDescription = "Piste suivante",
+                                modifier = Modifier.size(44.dp),
+                                tint = TextPrimary
+                            )
                         }
                         IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.CycleRepeatMode) }) {
                             Icon(
                                 imageVector = if (uiState.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                                 contentDescription = "Mode répétition",
-                                tint = if (uiState.repeatMode == RepeatMode.Off) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                                tint = if (uiState.repeatMode == RepeatMode.Off) TextSecondary else BlazeOrange,
                             )
                         }
                     }
@@ -393,7 +428,7 @@ fun PlayerScreen(
                             Icon(
                                 imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                                 contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
-                                tint = if (uiState.isCurrentTrackLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (uiState.isCurrentTrackLiked) BlazeOrange else TextSecondary,
                                 modifier = Modifier.size(28.dp),
                             )
                         }
@@ -404,65 +439,201 @@ fun PlayerScreen(
                             Icon(
                                 imageVector = Icons.Rounded.PlaylistAdd,
                                 contentDescription = "Ajouter à une playlist",
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = TextSecondary,
                                 modifier = Modifier.size(28.dp),
                             )
                         }
                     }
 
-                    // Context
-                    SourceContextCard(uiState)
-
                     Spacer(modifier = Modifier.weight(1f))
 
-                    // Button to open the Queue directly
-                    Button(
+                    // Single unified Queue access card with context & track count
+                    PlayerQueueAccessCard(
+                        uiState = uiState,
+                        totalQueueCount = totalQueueCount,
                         onClick = { showQueue = true },
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .padding(bottom = 32.dp, start = 24.dp, end = 24.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.QueueMusic,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Voir la file d'attente (${visiblePriorityQueue.size + uiState.mainQueueTracks.size} titres)",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    )
                 } else {
-                    // Dynamic Queue (Scrollable, full height)
+                    // =========================================================
+                    // VUE FILE D'ATTENTE MODERNE (Scrollable, full height)
+                    // =========================================================
                     LazyColumn(
                         state = reorderState.listState,
                         modifier = Modifier
                             .fillMaxSize()
+                            .background(DeepBlack)
                             .reorderable(reorderState),
-                        contentPadding = PaddingValues(bottom = 32.dp)
+                        contentPadding = PaddingValues(bottom = 36.dp, top = 4.dp)
                     ) {
-                        // PRIORITY QUEUE HEADER
+                        // 1. CARTE EN COURS DE LECTURE
+                        item(key = "now_playing_card", contentType = "header") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(ElevatedGraphite)
+                                    .border(1.dp, HairlineDark, RoundedCornerShape(16.dp))
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(BlazeOrange)
+                                    )
+                                    Text(
+                                        text = "EN COURS DE LECTURE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BlazeOrange,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    val cover = track.coverUri
+                                    if (cover != null) {
+                                        AsyncImage(
+                                            model = cover,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(DarkGraphite),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.MusicNote,
+                                                contentDescription = null,
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = track.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = track.artistName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(BlazeOrange)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (uiState.playbackState == PlaybackState.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                            contentDescription = "Lecture / Pause",
+                                            tint = DeepBlack,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. FILE D'ATTENTE PRIORITAIRE (Ajouts manuels)
                         item(key = "pq_header", contentType = "header") {
-                            Text(
-                                text = "File d'attente prioritaire (${visiblePriorityQueue.size})",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "File d'attente prioritaire",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    if (visiblePriorityQueue.isNotEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(BlazeOrange.copy(alpha = 0.2f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${visiblePriorityQueue.size}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BlazeOrange
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (visiblePriorityQueue.isNotEmpty()) {
+                                    Text(
+                                        text = "Tout effacer",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = TextMuted,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                for (i in visiblePriorityQueue.indices.reversed()) {
+                                                    onRemoveFromQueue(i)
+                                                }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
                             if (visiblePriorityQueue.isEmpty()) {
-                                Text(
-                                    text = "Aucune piste ajoutée manuellement.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(DarkGraphite.copy(alpha = 0.5f))
+                                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                                ) {
+                                    Text(
+                                        text = "Aucun titre ajouté manuellement.\nUtilisez « Lire ensuite » dans le menu d'un morceau.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextMuted
+                                    )
+                                }
                             }
                         }
 
@@ -482,16 +653,49 @@ fun PlayerScreen(
                             }
                         }
 
-                        // MAIN UPCOMING QUEUE HEADER
+                        // 3. MAIN UPCOMING QUEUE HEADER (File contextuelle / Album / Playlist)
                         if (uiState.mainQueueTracks.isNotEmpty()) {
                             item(key = "mq_header", contentType = "header") {
-                                Text(
-                                    text = "À suivre (${uiState.mainQueueTracks.size})",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 20.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "À suivre",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(ElevatedGraphite)
+                                                    .border(1.dp, HairlineDark, RoundedCornerShape(6.dp))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${uiState.mainQueueTracks.size}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = "Depuis : ${describeContext(uiState)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextMuted
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -516,8 +720,8 @@ fun PlayerScreen(
                                 Text(
                                     text = "Et ${uiState.mainQueueTracks.size - 30} autres pistes...",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
                                 )
                             }
                         }
@@ -561,29 +765,21 @@ private fun PriorityQueueItemRow(
     dragModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
-    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-    val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+    val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp)
+    val bgColor = if (isDragging) ElevatedGraphite else Color.Transparent
+    val borderStroke = if (isDragging) BlazeOrange else Color.Transparent
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation)
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .shadow(elevation, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(bgColor)
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .border(if (isDragging) 1.dp else 0.dp, borderStroke, RoundedCornerShape(14.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(
-            onClick = onRemove,
-            modifier = Modifier.size(40.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Close,
-                contentDescription = "Retirer",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
         val cover = queuedTrack.coverUri
         if (cover != null) {
             AsyncImage(
@@ -591,21 +787,21 @@ private fun PriorityQueueItemRow(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(DarkGraphite),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Rounded.MusicNote,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    tint = TextMuted,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -613,29 +809,49 @@ private fun PriorityQueueItemRow(
         
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = queuedTrack.title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = queuedTrack.artistName,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = TextSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(
-            imageVector = Icons.Rounded.DragHandle,
-            contentDescription = "Réorganiser",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Retirer",
+                modifier = Modifier.size(18.dp),
+                tint = TextMuted
+            )
+        }
+
+        Box(
             modifier = dragModifier
-                .size(40.dp)
-                .padding(8.dp)
-        )
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.DragHandle,
+                contentDescription = "Réorganiser",
+                tint = if (isDragging) BlazeOrange else TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -647,29 +863,21 @@ private fun MainQueueItemRow(
     dragModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
-    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-    val bgColor = if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+    val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp)
+    val bgColor = if (isDragging) ElevatedGraphite else Color.Transparent
+    val borderStroke = if (isDragging) BlazeOrange else Color.Transparent
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation)
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .shadow(elevation, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(bgColor)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .border(if (isDragging) 1.dp else 0.dp, borderStroke, RoundedCornerShape(14.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(
-            onClick = onRemove,
-            modifier = Modifier.size(40.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Close,
-                contentDescription = "Retirer de la suite",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
         val cover = queuedTrack.coverUri
         if (cover != null) {
             AsyncImage(
@@ -677,21 +885,21 @@ private fun MainQueueItemRow(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(DarkGraphite),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Rounded.MusicNote,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    tint = TextMuted,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -699,54 +907,98 @@ private fun MainQueueItemRow(
         
         Spacer(modifier = Modifier.width(12.dp))
         
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = queuedTrack.title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = queuedTrack.artistName,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = TextSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        Icon(
-            imageVector = Icons.Rounded.DragHandle,
-            contentDescription = "Réorganiser",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Retirer de la suite",
+                modifier = Modifier.size(18.dp),
+                tint = TextMuted
+            )
+        }
+
+        Box(
             modifier = dragModifier
-                .size(40.dp)
-                .padding(8.dp)
-        )
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.DragHandle,
+                contentDescription = "Réorganiser",
+                tint = if (isDragging) BlazeOrange else TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
 @Composable
-private fun SourceContextCard(uiState: PlayerUiState) {
-    if (uiState.contextType != "recent_tracks") {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.QueueMusic, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.width(12.dp))
+private fun PlayerQueueAccessCard(
+    uiState: PlayerUiState,
+    totalQueueCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(ElevatedGraphite)
+            .border(1.dp, HairlineDark, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.QueueMusic,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = BlazeOrange
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "File d'attente ($totalQueueCount)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
             Text(
                 text = "Depuis : ${describeContext(uiState)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = "Afficher la file d'attente",
+            tint = TextMuted,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
@@ -790,8 +1042,8 @@ private fun PlaybackProgressBlock(
                 seekDraft = null
             },
             valueRange = 0f..uiState.durationMs.toFloat().coerceAtLeast(1f),
-            activeColor = MaterialTheme.colorScheme.primary,
-            inactiveColor = MaterialTheme.colorScheme.surfaceVariant
+            activeColor = BlazeOrange,
+            inactiveColor = HairlineDark
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -800,12 +1052,12 @@ private fun PlaybackProgressBlock(
             Text(
                 text = formatDuration((seekDraft ?: uiState.positionMs.toFloat()).toLong()),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = TextSecondary
             )
             Text(
                 text = formatDuration(uiState.durationMs),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = TextSecondary
             )
         }
     }

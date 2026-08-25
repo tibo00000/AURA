@@ -1,84 +1,117 @@
 package com.aura.music.ui.screens
 
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aura.music.data.local.UserSettingsEntity
+import com.aura.music.data.repository.DownloadRepository
 import com.aura.music.data.repository.LibraryDashboardSummary
 import com.aura.music.data.repository.LocalLibraryRepository
-import com.aura.music.data.repository.DownloadRepository
 import com.aura.music.ui.RouteScaffold
+import com.aura.music.ui.theme.BlazeOrange
+import com.aura.music.ui.theme.DarkGraphite
+import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.ElevatedGraphite
+import com.aura.music.ui.theme.HairlineDark
+import com.aura.music.ui.theme.SemanticError
+import com.aura.music.ui.theme.SemanticSuccess
+import com.aura.music.ui.theme.TextMuted
 import com.aura.music.ui.theme.TextPrimary
-import androidx.compose.material.icons.rounded.CloudDownload
+import com.aura.music.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.flow.collect
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
-import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
 fun SettingsScreen(
     repository: LocalLibraryRepository,
     downloadRepository: DownloadRepository,
     syncRepository: com.aura.music.data.repository.SyncRepository,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: () -> Unit = {},
     onNavigateToSandbox: () -> Unit,
     onNavigateToCloudSync: () -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
 
     var cookiesText by remember { mutableStateOf("") }
     var isUploading by remember { mutableStateOf(false) }
     var uploadStatus by remember { mutableStateOf<String?>(null) }
     var isSuccess by remember { mutableStateOf<Boolean?>(null) }
     var showYouTubeLogin by remember { mutableStateOf(false) }
+    var showManualCookies by remember { mutableStateOf(false) }
 
     var isSyncing by remember { mutableStateOf(false) }
     var syncResultStatus by remember { mutableStateOf<String?>(null) }
     var isSyncSuccess by remember { mutableStateOf<Boolean?>(null) }
+
+    var isIndexing by remember { mutableStateOf(false) }
+    var indexResult by remember { mutableStateOf<String?>(null) }
 
     val settingsState = produceState<UserSettingsEntity?>(initialValue = null, repository, refreshTick) {
         repository.ensureDefaults()
@@ -89,26 +122,31 @@ fun SettingsScreen(
     }
     val settings = settingsState.value
 
-    RouteScaffold(title = "Paramètres", onNavigateBack = onNavigateBack) {
+    // Pas de fleche de retour car c'est un onglet principal du menu inferieur
+    RouteScaffold(title = "Paramètres") {
         if (settings == null) {
-            EmptyStateSurface("Settings indisponibles", "Le profil local n'est pas encore initialise.")
+            EmptyStateSurface("Settings indisponibles", "Le profil local n'est pas encore initialisé.")
             return@RouteScaffold
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DeepBlack),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            // =================================================================
+            // 1. SYNCHRONISATION & CLOUD
+            // =================================================================
             item {
-                HeroIdentityCard(
-                    title = "Preferences AURA",
-                    subtitle = "Recherche online, sync future et diagnostic local.",
-                    gradient = Brush.linearGradient(listOf(Color(0xFF232323), Color(0xFF050505))),
-                )
-            }
-            item {
-                val ctx = LocalContext.current
-                SettingsCard(title = "Compte et sync") {
+                SettingsCard(
+                    title = "Synchronisation & Cloud",
+                    icon = Icons.Rounded.Cloud
+                ) {
                     SettingToggleRow(
-                        title = "Sync cloud",
-                        subtitle = "Optionnelle. L'app reste utile sans backend cloud.",
+                        title = "Synchronisation Cloud",
+                        subtitle = "Sauvegardez vos titres et playlists sur votre serveur privé.",
                         checked = settings.syncEnabled,
                         onCheckedChange = { enabled ->
                             scope.launch {
@@ -119,130 +157,149 @@ fun SettingsScreen(
                     )
 
                     if (settings.syncEnabled) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Divider()
-                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = HairlineDark, modifier = Modifier.padding(vertical = 4.dp))
 
                         val formattedDate = remember(settings.lastSyncAt) {
                             settings.lastSyncAt?.let { timestamp ->
-                                val sdf = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault())
+                                val sdf = java.text.SimpleDateFormat("dd/MM/yyyy à HH:mm", java.util.Locale.getDefault())
                                 sdf.format(java.util.Date(timestamp))
-                            } ?: "Jamais synchronisé"
+                            } ?: "Aucune synchronisation récente"
                         }
 
-                        Text(
-                            text = "Dernière synchronisation : $formattedDate",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (settings.lastSyncAt != null) SemanticSuccess else BlazeOrange)
+                            )
+                            Text(
+                                text = "Dernière synchro : $formattedDate",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
 
                         if (syncResultStatus != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = syncResultStatus!!,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (isSyncSuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                color = if (isSyncSuccess == true) SemanticSuccess else SemanticError,
                                 fontWeight = FontWeight.Medium
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Button(
-                            onClick = {
-                                isSyncing = true
-                                syncResultStatus = "Synchronisation réseau démarrée..."
-                                isSyncSuccess = null
-                                scope.launch {
-                                    try {
-                                        val deviceId = android.provider.Settings.Secure.getString(
-                                            ctx.contentResolver,
-                                            android.provider.Settings.Secure.ANDROID_ID
-                                        ) ?: "android_pixel_device"
-                                        val success = syncRepository.performSync(deviceId, force = true)
-                                        if (success) {
-                                            syncResultStatus = "Synchronisation réussie !"
-                                            isSyncSuccess = true
-                                            refreshTick++
-                                        } else {
-                                            syncResultStatus = "Échec ou aucun changement à synchroniser."
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Bouton Synchroniser
+                            Button(
+                                onClick = {
+                                    isSyncing = true
+                                    syncResultStatus = "Synchronisation en cours..."
+                                    isSyncSuccess = null
+                                    scope.launch {
+                                        try {
+                                            val deviceId = android.provider.Settings.Secure.getString(
+                                                ctx.contentResolver,
+                                                android.provider.Settings.Secure.ANDROID_ID
+                                            ) ?: "android_pixel_device"
+                                            val success = syncRepository.performSync(deviceId, force = true)
+                                            if (success) {
+                                                syncResultStatus = "Synchronisation réussie !"
+                                                isSyncSuccess = true
+                                                refreshTick++
+                                            } else {
+                                                syncResultStatus = "Aucune mise à jour requise."
+                                                isSyncSuccess = true
+                                            }
+                                        } catch (e: Exception) {
+                                            syncResultStatus = "Erreur : ${e.localizedMessage}"
                                             isSyncSuccess = false
+                                        } finally {
+                                            isSyncing = false
                                         }
-                                    } catch (e: Exception) {
-                                        syncResultStatus = "Erreur: ${e.localizedMessage}"
-                                        isSyncSuccess = false
-                                    } finally {
-                                        isSyncing = false
+                                    }
+                                },
+                                enabled = !isSyncing,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BlazeOrange,
+                                    contentColor = DeepBlack
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                if (isSyncing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = DeepBlack,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Synchroniser", fontWeight = FontWeight.Bold)
                                     }
                                 }
-                            },
-                            enabled = !isSyncing,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFF6B00),
-                                contentColor = Color(0xFF160A00)
-                            ),
-                            shape = RoundedCornerShape(999.dp)
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            }
+
+                            // Bouton Fichiers Cloud
+                            Button(
+                                onClick = onNavigateToCloudSync,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(1.dp, HairlineDark, RoundedCornerShape(12.dp)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Sync,
-                                    contentDescription = "Synchroniser"
-                                )
-                                Text(if (isSyncing) "Synchronisation..." else "Synchroniser maintenant")
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = BlazeOrange)
+                                    Text("Fichiers Cloud", fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = HairlineDark, modifier = Modifier.padding(vertical = 4.dp))
 
-                    Button(
-                        onClick = onNavigateToCloudSync,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ElevatedGraphite,
-                            contentColor = TextPrimary
-                        ),
-                        shape = RoundedCornerShape(999.dp)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CloudDownload,
-                                contentDescription = "Fichiers Cloud"
-                            )
-                            Text("Gestion des fichiers Cloud")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(12.dp))
-                    PolicyRow(
-                        title = "Sync stats",
-                        selected = settings.statsSyncNetworkPolicy,
-                        options = listOf("wifi_only", "any_network"),
-                        onSelect = { policy ->
-                            scope.launch {
-                                repository.setStatsSyncNetworkPolicy(policy)
-                                refreshTick++
+                        PolicyPillSelector(
+                            label = "Autoriser la synchronisation sur :",
+                            selected = settings.statsSyncNetworkPolicy,
+                            onSelect = { policy ->
+                                scope.launch {
+                                    repository.setStatsSyncNetworkPolicy(policy)
+                                    refreshTick++
+                                }
                             }
-                        },
-                    )
+                        )
+                    }
                 }
             }
+
+            // =================================================================
+            // 2. RECHERCHE & SERVICES EN LIGNE
+            // =================================================================
             item {
-                SettingsCard(title = "Recherche") {
+                SettingsCard(
+                    title = "Recherche & Services en ligne",
+                    icon = Icons.Rounded.Search
+                ) {
                     SettingToggleRow(
-                        title = "Recherche online",
-                        subtitle = "Active la partie backend-only pour la recherche enrichie.",
+                        title = "Catalogue musical étendu",
+                        subtitle = "Recherchez et écoutez des millions de titres en ligne via Deezer et YouTube.",
                         checked = settings.onlineSearchEnabled,
                         onCheckedChange = { enabled ->
                             scope.launch {
@@ -251,110 +308,158 @@ fun SettingsScreen(
                             }
                         },
                     )
-                    Divider()
-                    PolicyRow(
-                        title = "Politique reseau",
-                        selected = settings.onlineSearchNetworkPolicy,
-                        options = listOf("wifi_only", "any_network"),
-                        onSelect = { policy ->
-                            scope.launch {
-                                repository.setOnlineSearchNetworkPolicy(policy)
-                                refreshTick++
+
+                    if (settings.onlineSearchEnabled) {
+                        HorizontalDivider(color = HairlineDark, modifier = Modifier.padding(vertical = 4.dp))
+
+                        PolicyPillSelector(
+                            label = "Autoriser la recherche en ligne sur :",
+                            selected = settings.onlineSearchNetworkPolicy,
+                            onSelect = { policy ->
+                                scope.launch {
+                                    repository.setOnlineSearchNetworkPolicy(policy)
+                                    refreshTick++
+                                }
                             }
-                        },
-                    )
+                        )
+                    }
                 }
             }
+
+            // =================================================================
+            // 3. CONTOURNEMENT YOUTUBE & SESSIONS
+            // =================================================================
             item {
-                SettingsCard(title = "Contournement YouTube (Cookies)") {
+                SettingsCard(
+                    title = "Accès & Flux YouTube",
+                    icon = Icons.Rounded.PlayCircle
+                ) {
                     Text(
-                        "Pour contourner les blocages YouTube, connectez-vous directement via la WebView sécurisée de l'application ou collez vos cookies Netscape manuellement.",
+                        text = "Connectez-vous pour contourner les restrictions régionales et assurer la lecture fluide de tous les flux audio.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = TextSecondary
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
 
                     Button(
                         onClick = { showYouTubeLogin = true },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE50914), // YouTube Red
+                            containerColor = Color(0xFFE50914),
                             contentColor = Color.White
                         ),
-                        shape = RoundedCornerShape(999.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Se connecter à YouTube (WebView)")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                            Text("Connexion YouTube (WebView sécurisée)", fontWeight = FontWeight.Bold)
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        "Ou coller manuellement les cookies Netscape :",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = cookiesText,
-                        onValueChange = { cookiesText = it },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(120.dp),
-                        placeholder = { Text("# Netscape HTTP Cookie File\n...", style = MaterialTheme.typography.bodySmall) },
-                        maxLines = 10,
-                        singleLine = false,
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        colors = OutlinedTextFieldDefaults.colors()
-                    )
-                    
-                    if (uploadStatus != null) {
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showManualCookies = !showManualCookies }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text(
-                            text = uploadStatus!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isSuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
-                            fontWeight = FontWeight.Medium
+                            text = "Saisie manuelle des cookies Netscape",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted
+                        )
+                        Icon(
+                            imageVector = if (showManualCookies) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = null,
+                            tint = TextMuted
                         )
                     }
 
-                    Button(
-                        onClick = {
-                            if (cookiesText.isBlank()) {
-                                uploadStatus = "Veuillez coller des cookies valides."
-                                isSuccess = false
-                                return@Button
-                            }
-                            isUploading = true
-                            uploadStatus = "Envoi en cours..."
-                            isSuccess = null
-                            scope.launch {
-                                downloadRepository.uploadCookies(cookiesText, com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
-                                    .collect { result ->
-                                        isUploading = false
-                                        result.fold(
-                                            onSuccess = {
-                                                uploadStatus = "Cookies mis à jour avec succès sur le serveur."
-                                                isSuccess = true
-                                                cookiesText = ""
-                                            },
-                                            onFailure = { error ->
-                                                uploadStatus = "Erreur: ${error.localizedMessage}"
-                                                isSuccess = false
-                                            }
-                                        )
-                                    }
-                            }
-                        },
-                        enabled = !isUploading && cookiesText.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF6B00),
-                            contentColor = Color(0xFF160A00)
-                        ),
-                        shape = RoundedCornerShape(999.dp)
+                    AnimatedVisibility(
+                        visible = showManualCookies,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
                     ) {
-                        Text(if (isUploading) "Téléversement..." else "Mettre à jour les cookies")
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = cookiesText,
+                                onValueChange = { cookiesText = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(110.dp),
+                                placeholder = {
+                                    Text(
+                                        "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\t...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextMuted
+                                    )
+                                },
+                                maxLines = 8,
+                                singleLine = false,
+                                shape = RoundedCornerShape(12.dp),
+                                textStyle = MaterialTheme.typography.bodySmall.copy(color = TextPrimary),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = DarkGraphite,
+                                    unfocusedContainerColor = DarkGraphite,
+                                    focusedBorderColor = BlazeOrange,
+                                    unfocusedBorderColor = HairlineDark,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                )
+                            )
+
+                            if (uploadStatus != null) {
+                                Text(
+                                    text = uploadStatus!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSuccess == true) SemanticSuccess else SemanticError,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (cookiesText.isBlank()) {
+                                        uploadStatus = "Veuillez coller des cookies valides."
+                                        isSuccess = false
+                                        return@Button
+                                    }
+                                    isUploading = true
+                                    uploadStatus = "Envoi en cours..."
+                                    isSuccess = null
+                                    scope.launch {
+                                        downloadRepository.uploadCookies(cookiesText, com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
+                                            .collect { result ->
+                                                isUploading = false
+                                                result.fold(
+                                                    onSuccess = {
+                                                        uploadStatus = "Cookies mis à jour avec succès sur le serveur."
+                                                        isSuccess = true
+                                                        cookiesText = ""
+                                                    },
+                                                    onFailure = { error ->
+                                                        uploadStatus = "Erreur : ${error.localizedMessage}"
+                                                        isSuccess = false
+                                                    }
+                                                )
+                                            }
+                                    }
+                                },
+                                enabled = !isUploading && cookiesText.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BlazeOrange,
+                                    contentColor = DeepBlack
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(if (isUploading) "Téléversement..." else "Envoyer les cookies", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 
@@ -371,11 +476,11 @@ fun SettingsScreen(
                                         isUploading = false
                                         result.fold(
                                             onSuccess = {
-                                                uploadStatus = "Cookies WebView mis à jour avec succès !"
+                                                uploadStatus = "Cookies YouTube mis à jour avec succès !"
                                                 isSuccess = true
                                             },
                                             onFailure = { error ->
-                                                uploadStatus = "Erreur WebView: ${error.localizedMessage}"
+                                                uploadStatus = "Erreur WebView : ${error.localizedMessage}"
                                                 isSuccess = false
                                             }
                                         )
@@ -386,40 +491,50 @@ fun SettingsScreen(
                     )
                 }
             }
-            item {
-                var isIndexing by remember { mutableStateOf(false) }
-                var indexResult by remember { mutableStateOf<String?>(null) }
 
-                SettingsCard(title = "Diagnostics") {
-                    Text("Pistes indexees: ${summaryState.value?.roomTrackCount ?: 0}", style = MaterialTheme.typography.bodyMedium)
-                    Text("MediaStore detecte: ${summaryState.value?.mediaStoreTrackCount ?: 0}", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Snapshot actif: ${if (summaryState.value?.activeSnapshot != null) "oui" else "non"}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+            // =================================================================
+            // 4. STOCKAGE & BIBLIOTHÈQUE LOCALE
+            // =================================================================
+            item {
+                SettingsCard(
+                    title = "Bibliothèque locale & Données",
+                    icon = Icons.Rounded.Storage
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MetricBadge(
+                            label = "Pistes Room",
+                            value = "${summaryState.value?.roomTrackCount ?: 0}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "Pistes MediaStore",
+                            value = "${summaryState.value?.mediaStoreTrackCount ?: 0}",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
                     if (indexResult != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = indexResult!!,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF00E0FF),
+                            color = SemanticSuccess,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     Button(
                         onClick = {
                             isIndexing = true
-                            indexResult = "Indexation locale en cours..."
+                            indexResult = "Scan du stockage en cours..."
                             scope.launch {
                                 try {
                                     val count = repository.refreshLocalMediaIndex()
-                                    indexResult = "Indexation terminée : $count piste(s) synchronisée(s) !"
+                                    indexResult = "Index rafraîchi : $count piste(s) synchronisée(s)"
                                     refreshTick++
-                                } catch (e: java.lang.Exception) {
+                                } catch (e: Exception) {
                                     indexResult = "Erreur : ${e.localizedMessage}"
                                 } finally {
                                     isIndexing = false
@@ -427,58 +542,144 @@ fun SettingsScreen(
                             }
                         },
                         enabled = !isIndexing,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, HairlineDark, RoundedCornerShape(12.dp)),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF00E0FF),
-                            contentColor = Color.Black
+                            containerColor = DarkGraphite,
+                            contentColor = TextPrimary
                         ),
-                        shape = RoundedCornerShape(999.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(if (isIndexing) "Indexation..." else "Rafraîchir l'index local")
+                        if (isIndexing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = BlazeOrange,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp))
+                                Text("Scanner & rafraîchir l'index local", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                     }
                 }
             }
+
+            // =================================================================
+            // 5. OUTILS AVANCÉS
+            // =================================================================
             item {
-                SettingsCard(title = "Sandbox Performance") {
+                SettingsCard(
+                    title = "Outils avancés",
+                    icon = Icons.Rounded.Tune
+                ) {
                     Text(
-                        "Outil de diagnostic pour tester la fluidité des listes réorganisables sous différentes configurations.",
+                        text = "Outil de diagnostic pour tester la fluidité et les performances des listes réorganisables.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = TextSecondary
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+
                     Button(
                         onClick = onNavigateToSandbox,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, HairlineDark, RoundedCornerShape(12.dp)),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.onSecondary
+                            containerColor = DarkGraphite,
+                            contentColor = TextPrimary
                         ),
-                        shape = RoundedCornerShape(999.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Ouvrir la Sandbox")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Tune, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp))
+                            Text("Ouvrir le bac à sable de performance", fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+
+            // Footer Version
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "AURA Music Player",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "Version 1.0.0 • Architecture Hybride MVVM",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
+            }
         }
     }
 }
 
+// =============================================================================
+// Composants de style pour les Paramètres
+// =============================================================================
+
 @Composable
 private fun SettingsCard(
     title: String,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    icon: ImageVector? = null,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
+            .clip(RoundedCornerShape(20.dp))
+            .background(ElevatedGraphite)
+            .border(1.dp, HairlineDark, RoundedCornerShape(20.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            content()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(DarkGraphite)
+                        .border(1.dp, HairlineDark, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
         }
+        content()
     }
 }
 
@@ -494,39 +695,107 @@ private fun SettingToggleRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = DeepBlack,
+                checkedTrackColor = BlazeOrange,
+                uncheckedThumbColor = TextMuted,
+                uncheckedTrackColor = DarkGraphite,
+                uncheckedBorderColor = HairlineDark
+            )
+        )
     }
 }
 
 @Composable
-private fun PolicyRow(
-    title: String,
+private fun PolicyPillSelector(
+    label: String,
     selected: String,
-    options: List<String>,
     onSelect: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { option ->
-                val icon = if (option == "wifi_only") Icons.Rounded.Wifi else Icons.Rounded.Sync
-                Card(modifier = Modifier.clickable { onSelect(option) }, shape = RoundedCornerShape(999.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.Medium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val options = listOf(
+                "wifi_only" to ("Wi-Fi uniquement" to Icons.Rounded.Wifi),
+                "any_network" to ("Wi-Fi & Réseau mobile" to Icons.Rounded.Language)
+            )
+            options.forEach { (key, pair) ->
+                val (text, icon) = pair
+                val isSelected = selected == key
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) BlazeOrange.copy(alpha = 0.15f) else DarkGraphite)
+                        .border(1.dp, if (isSelected) BlazeOrange else HairlineDark, RoundedCornerShape(12.dp))
+                        .clickable { onSelect(key) }
+                        .padding(vertical = 10.dp, horizontal = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Row(
-                        modifier = Modifier
-                            .background(if (selected == option) Color(0xFFFF6B00) else MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(icon, contentDescription = null, tint = if (selected == option) Color(0xFF160A00) else MaterialTheme.colorScheme.onSurface)
-                        Text(option.replace('_', ' '), color = if (selected == option) Color(0xFF160A00) else MaterialTheme.colorScheme.onSurface)
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSelected) BlazeOrange else TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) BlazeOrange else TextSecondary,
+                            maxLines = 1
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MetricBadge(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(DarkGraphite)
+            .border(1.dp, HairlineDark, RoundedCornerShape(12.dp))
+            .padding(vertical = 10.dp, horizontal = 12.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = BlazeOrange
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
         }
     }
 }
