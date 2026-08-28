@@ -45,6 +45,15 @@
             </intent-filter>
         </service>
 
+        <!-- SleepTimerReceiver for exact sleep timer wakeup via AlarmManager -->
+        <receiver
+            android:name=".service.SleepTimerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.aura.music.action.SLEEP_TIMER_EXPIRED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Aura CarAppService for Android Auto Custom UI Templates -->
         <service
             android:name=".service.AuraCarAppService"

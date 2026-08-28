@@ -1,9 +1,14 @@
 package com.aura.music.ui.screens
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,10 +26,15 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -36,6 +46,8 @@ import com.aura.music.ui.components.rememberAuraFlingBehavior
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.utils.FastTimeFormatter
 import com.aura.music.ui.theme.*
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
@@ -55,6 +67,7 @@ fun PlayerScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var showSelectPlaylistDialog by remember { mutableStateOf(false) }
     var showEditMetadataBottomSheet by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
 
     val trackDetailsState = produceState<com.aura.music.data.local.TrackListRow?>(initialValue = null, track?.trackId) {
@@ -83,6 +96,22 @@ fun PlayerScreen(
     val visibleMainQueue by remember { derivedStateOf { localMainQueue.value.take(30) } }
     val totalQueueCount by remember { derivedStateOf { visiblePriorityQueue.size + uiState.mainQueueTracks.size } }
     val queueLabel by remember { derivedStateOf { if (totalQueueCount > 0) "File ($totalQueueCount)" else "File" } }
+
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val swipeCoverThreshold = with(density) { 80.dp.toPx() }
+    val dismissThreshold = with(density) { 130.dp.toPx() }
+
+    // Offset for swipe down to dismiss player
+    val screenOffsetY = remember { Animatable(0f) }
+
+    // Offset for cover swipe (left/right) to change track
+    val coverOffsetX = remember { Animatable(0f) }
+
+    // Reset cover offset whenever track changes
+    LaunchedEffect(track?.trackId) {
+        coverOffsetX.snapTo(0f)
+    }
 
     val onRemoveFromQueue = remember(playerViewModel) {
         { index: Int ->
@@ -129,11 +158,42 @@ fun PlayerScreen(
     )
 
     Scaffold(
+        modifier = Modifier
+            .offset { IntOffset(0, screenOffsetY.value.coerceAtLeast(0f).roundToInt()) }
+            .graphicsLayer {
+                val progress = (screenOffsetY.value / 1000f).coerceIn(0f, 1f)
+                alpha = 1f - progress * 0.4f
+            },
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(DeepBlack)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    if (screenOffsetY.value > dismissThreshold) {
+                                        screenOffsetY.animateTo(1200f, tween(180))
+                                        onNavigateBack()
+                                    } else {
+                                        screenOffsetY.animateTo(0f, spring())
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                coroutineScope.launch { screenOffsetY.animateTo(0f, spring()) }
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                if (dragAmount > 0 || screenOffsetY.value > 0) {
+                                    change.consume()
+                                    coroutineScope.launch {
+                                        screenOffsetY.snapTo((screenOffsetY.value + dragAmount).coerceAtLeast(0f))
+                                    }
+                                }
+                            }
+                        )
+                    }
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -187,6 +247,17 @@ fun PlayerScreen(
                 }
                 
                 Spacer(modifier = Modifier.weight(1f))
+
+                // Minuteur de veille (Bouton d'accès rapide)
+                val isSleepTimerActive = uiState.sleepTimerRemainingSeconds != null || uiState.isSleepTimerEndOfTrack
+                IconButton(onClick = { showSleepTimerDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Bedtime,
+                        contentDescription = if (isSleepTimerActive) "Minuteur de veille actif" else "Minuteur de veille",
+                        tint = if (isSleepTimerActive) BlazeOrange else TextSecondary
+                    )
+                }
+
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(
@@ -202,18 +273,29 @@ fun PlayerScreen(
                             .background(ElevatedGraphite)
                             .border(1.dp, HairlineDark, RoundedCornerShape(12.dp))
                     ) {
-                        // Ajouter/Retirer aux favoris
+                        // Minuteur de veille
                         DropdownMenuItem(
-                            text = { Text(if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris", color = TextPrimary) },
+                            text = {
+                                val timerText = when {
+                                    uiState.isSleepTimerEndOfTrack -> "Minuteur (Fin du titre)"
+                                    uiState.sleepTimerRemainingSeconds != null -> {
+                                        val m = uiState.sleepTimerRemainingSeconds!! / 60
+                                        val s = uiState.sleepTimerRemainingSeconds!! % 60
+                                        "Minuteur (%02d:%02d)".format(m, s)
+                                    }
+                                    else -> "Minuteur de veille"
+                                }
+                                Text(timerText, color = if (isSleepTimerActive) BlazeOrange else TextPrimary)
+                            },
                             onClick = {
-                                playerViewModel.onEvent(PlayerEvent.ToggleLike)
+                                showSleepTimerDialog = true
                                 menuExpanded = false
                             },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    Icons.Rounded.Bedtime,
                                     contentDescription = null,
-                                    tint = if (uiState.isCurrentTrackLiked) BlazeOrange else TextSecondary
+                                    tint = if (isSleepTimerActive) BlazeOrange else TextSecondary
                                 )
                             }
                         )
@@ -289,17 +371,81 @@ fun PlayerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .pointerInput(showQueue) {
+                        if (!showQueue) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    coroutineScope.launch {
+                                        if (screenOffsetY.value > dismissThreshold) {
+                                            screenOffsetY.animateTo(1200f, tween(180))
+                                            onNavigateBack()
+                                        } else {
+                                            screenOffsetY.animateTo(0f, spring())
+                                        }
+                                    }
+                                },
+                                onDragCancel = {
+                                    coroutineScope.launch { screenOffsetY.animateTo(0f, spring()) }
+                                },
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 0 || screenOffsetY.value > 0) {
+                                        change.consume()
+                                        coroutineScope.launch {
+                                            screenOffsetY.snapTo((screenOffsetY.value + dragAmount).coerceAtLeast(0f))
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
             ) {
                 if (!showQueue) {
                     // =========================================================
                     // VUE LECTEUR PLEIN ÉCRAN
                     // =========================================================
-                    // Large Artwork
+                    // Large Artwork with horizontal swipe gestures
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 32.dp, vertical = 8.dp)
                             .aspectRatio(1f)
+                            .offset { IntOffset(coverOffsetX.value.roundToInt(), 0) }
+                            .graphicsLayer {
+                                val absOffset = kotlin.math.abs(coverOffsetX.value)
+                                alpha = 1f - (absOffset / 600f).coerceIn(0f, 0.4f)
+                                rotationZ = (coverOffsetX.value / 40f).coerceIn(-8f, 8f)
+                            }
+                            .pointerInput(track.trackId) {
+                                detectHorizontalDragGestures(
+                                    onDragEnd = {
+                                        coroutineScope.launch {
+                                            val currentOffset = coverOffsetX.value
+                                            if (currentOffset < -swipeCoverThreshold) {
+                                                // Swipe gauche -> Morceau suivant
+                                                coverOffsetX.animateTo(-swipeCoverThreshold * 3f, tween(120))
+                                                playerViewModel.onEvent(PlayerEvent.Next)
+                                                coverOffsetX.snapTo(0f)
+                                            } else if (currentOffset > swipeCoverThreshold) {
+                                                // Swipe droite -> Morceau précédent
+                                                coverOffsetX.animateTo(swipeCoverThreshold * 3f, tween(120))
+                                                playerViewModel.onEvent(PlayerEvent.Previous)
+                                                coverOffsetX.snapTo(0f)
+                                            } else {
+                                                coverOffsetX.animateTo(0f, spring())
+                                            }
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        coroutineScope.launch { coverOffsetX.animateTo(0f, spring()) }
+                                    },
+                                    onHorizontalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        coroutineScope.launch {
+                                            coverOffsetX.snapTo(coverOffsetX.value + dragAmount)
+                                        }
+                                    }
+                                )
+                            }
                             .clip(RoundedCornerShape(20.dp))
                             .background(DarkGraphite)
                             .border(1.dp, HairlineDark, RoundedCornerShape(20.dp)),
@@ -427,14 +573,12 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = { playerViewModel.onEvent(PlayerEvent.ToggleLike) }) {
-                            Icon(
-                                imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
-                                tint = if (uiState.isCurrentTrackLiked) BlazeOrange else TextSecondary,
-                                modifier = Modifier.size(28.dp),
-                            )
-                        }
+                        FavoriteHeartButton(
+                            isLiked = uiState.isCurrentTrackLiked,
+                            onToggle = { playerViewModel.onEvent(PlayerEvent.ToggleLike) },
+                            size = 36.dp,
+                            iconSize = 28.dp
+                        )
                         // Ajouter à une playlist
                         IconButton(
                             onClick = { showSelectPlaylistDialog = true }
@@ -762,6 +906,23 @@ fun PlayerScreen(
             }
         )
     }
+
+    if (showSleepTimerDialog) {
+        SleepTimerDialog(
+            remainingSeconds = uiState.sleepTimerRemainingSeconds,
+            isEndOfTrack = uiState.isSleepTimerEndOfTrack,
+            onSetTimer = { minutes, endOfTrack ->
+                playerViewModel.onEvent(PlayerEvent.SetSleepTimer(minutes, endOfTrack))
+            },
+            onExtendTimer = { additionalMinutes ->
+                playerViewModel.onEvent(PlayerEvent.ExtendSleepTimer(additionalMinutes))
+            },
+            onCancelTimer = {
+                playerViewModel.onEvent(PlayerEvent.CancelSleepTimer)
+            },
+            onDismiss = { showSleepTimerDialog = false }
+        )
+    }
 }
 
 @Composable
@@ -1078,4 +1239,265 @@ private fun PlaybackProgressBlock(
             )
         }
     }
+}
+
+@Composable
+fun SleepTimerDialog(
+    remainingSeconds: Int?,
+    isEndOfTrack: Boolean,
+    onSetTimer: (minutes: Int, endOfTrack: Boolean) -> Unit,
+    onExtendTimer: (additionalMinutes: Int) -> Unit,
+    onCancelTimer: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isActive = remainingSeconds != null || isEndOfTrack
+    var customMinutes by remember { mutableStateOf(45f) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ElevatedGraphite,
+        shape = RoundedCornerShape(24.dp),
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(BlazeOrange.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Bedtime,
+                        contentDescription = null,
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Minuteur de veille",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = if (isActive) "Minuteur en cours d'exécution" else "Arrêter la musique automatiquement",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (isActive) {
+                    // Carte minuteur actif avec compte à rebours en temps réel
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(DarkGraphite)
+                            .border(1.dp, BlazeOrange.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                            .padding(16.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isEndOfTrack) {
+                                Text(
+                                    text = "À la fin du morceau en cours",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BlazeOrange
+                                )
+                            } else if (remainingSeconds != null) {
+                                val m = remainingSeconds / 60
+                                val s = remainingSeconds % 60
+                                Text(
+                                    text = "%02d:%02d".format(m, s),
+                                    style = MaterialTheme.typography.displaySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BlazeOrange
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Fondu sonore progressif sur les 10 dernières secondes",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Boutons d'extension rapide
+                    Text(
+                        text = "Prolonger le minuteur :",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(5 to "+5 min", 15 to "+15 min", 30 to "+30 min").forEach { (mins, label) ->
+                            OutlinedButton(
+                                onClick = { onExtendTimer(mins) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, HairlineDark),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    // Bouton désactiver
+                    Button(
+                        onClick = {
+                            onCancelTimer()
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SemanticError.copy(alpha = 0.2f),
+                            contentColor = SemanticError
+                        )
+                    ) {
+                        Icon(Icons.Rounded.TimerOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Désactiver le minuteur", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    // Grille des préréglages rapides
+                    Text(
+                        text = "Préréglages rapides :",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(15 to "15 min", 30 to "30 min", 45 to "45 min", 60 to "60 min").forEach { (mins, label) ->
+                            Button(
+                                onClick = {
+                                    onSetTimer(mins, false)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Bouton Fin du morceau
+                    Button(
+                        onClick = {
+                            onSetTimer(0, true)
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DarkGraphite,
+                            contentColor = BlazeOrange
+                        )
+                    ) {
+                        Icon(Icons.Rounded.SkipNext, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("À la fin du morceau en cours", fontWeight = FontWeight.Bold)
+                    }
+
+                    // Sélecteur personnalisé
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(DarkGraphite)
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Durée personnalisée :",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary
+                            )
+                            Text(
+                                text = "${customMinutes.toInt()} min",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = BlazeOrange
+                            )
+                        }
+
+                        Slider(
+                            value = customMinutes,
+                            onValueChange = { customMinutes = it },
+                            valueRange = 1f..120f,
+                            steps = 119,
+                            colors = SliderDefaults.colors(
+                                thumbColor = BlazeOrange,
+                                activeTrackColor = BlazeOrange,
+                                inactiveTrackColor = ElevatedGraphite
+                            ),
+                            modifier = Modifier.semantics {
+                                contentDescription = "${customMinutes.toInt()} minutes"
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Button(
+                            onClick = {
+                                onSetTimer(customMinutes.toInt(), false)
+                                onDismiss()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = BlazeOrange,
+                                contentColor = DeepBlack
+                            )
+                        ) {
+                            Text("Démarrer (${customMinutes.toInt()} min)", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Fermer", color = TextSecondary, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    )
 }

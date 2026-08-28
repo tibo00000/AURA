@@ -27,4 +27,7 @@ sealed interface PlayerEvent {
     data object ToggleShuffle : PlayerEvent
     data object CycleRepeatMode : PlayerEvent
     data object ToggleLike : PlayerEvent
+    data class SetSleepTimer(val durationMinutes: Int, val endOfTrack: Boolean = false) : PlayerEvent
+    data class ExtendSleepTimer(val additionalMinutes: Int) : PlayerEvent
+    data object CancelSleepTimer : PlayerEvent
 }

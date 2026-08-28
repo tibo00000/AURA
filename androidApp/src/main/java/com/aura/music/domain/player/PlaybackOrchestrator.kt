@@ -1,5 +1,7 @@
 package com.aura.music.domain.player
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -24,6 +26,8 @@ import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,6 +54,10 @@ class PlaybackOrchestrator(
     private val stateStore: PlaybackStateStore,
     private val repository: LocalLibraryRepository,
 ) {
+    companion object {
+        private const val SLEEP_TIMER_REQUEST_CODE = 10099
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -57,6 +65,12 @@ class PlaybackOrchestrator(
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+
+    // Sleep Timer state
+    private var sleepTimerJob: Job? = null
+    private var sleepTimerTargetEpochMs: Long? = null
+    private var sleepTimerIsEndOfTrack: Boolean = false
+    private var sleepTimerOriginalVolume: Float? = null
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -204,6 +218,10 @@ class PlaybackOrchestrator(
         syncUiState()
     }
 
+    init {
+        restorePersistedSleepTimerIfAny()
+    }
+
     /**
      * Traite un evenement utilisateur.
      */
@@ -223,6 +241,10 @@ class PlaybackOrchestrator(
             is PlayerEvent.ReorderMainQueue -> handleReorderMainQueue(event.fromInternalId, event.toInternalId)
             is PlayerEvent.ToggleShuffle -> handleToggleShuffle()
             is PlayerEvent.CycleRepeatMode -> handleCycleRepeatMode()
+            // Sleep Timer events
+            is PlayerEvent.SetSleepTimer -> setSleepTimer(event.durationMinutes, event.endOfTrack)
+            is PlayerEvent.ExtendSleepTimer -> extendSleepTimer(event.additionalMinutes)
+            is PlayerEvent.CancelSleepTimer -> cancelSleepTimer()
             // ToggleLike est traite dans PlayerViewModel (persistance Room, pas ExoPlayer)
             is PlayerEvent.ToggleLike -> Unit
         }
@@ -397,6 +419,14 @@ class PlaybackOrchestrator(
     }
 
     private fun handleTrackEnded() {
+        val remainingMs = sleepTimerTargetEpochMs?.let { it - System.currentTimeMillis() }
+        if (sleepTimerIsEndOfTrack || (remainingMs != null && remainingMs in 0L..10_000L)) {
+            android.util.Log.i("PlaybackOrchestrator", "Track ended with sleep timer active (endOfTrack=$sleepTimerIsEndOfTrack, remainingMs=$remainingMs). Pausing without advancing.")
+            handlePause()
+            cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+            _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+            return
+        }
         handleNext()
     }
 
@@ -857,6 +887,215 @@ class PlaybackOrchestrator(
             Player.STATE_READY -> "READY"
             Player.STATE_ENDED -> "ENDED"
             else -> "UNKNOWN($state)"
+        }
+    }
+
+    // =========================================================================
+    // Sleep Timer Engine (AlarmManager + Coroutine + Volume Fade-out)
+    // =========================================================================
+
+    fun setSleepTimer(minutes: Int, endOfTrack: Boolean = false) {
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+
+        if (endOfTrack) {
+            sleepTimerIsEndOfTrack = true
+            sleepTimerTargetEpochMs = null
+            persistSleepTimerState(targetEpochMs = 0L, isEndOfTrack = true)
+            _uiState.update { it.copy(isSleepTimerEndOfTrack = true, sleepTimerRemainingSeconds = null) }
+            android.util.Log.i("PlaybackOrchestrator", "Sleep timer set to: End of current track")
+            return
+        }
+
+        if (minutes <= 0) return
+
+        val now = System.currentTimeMillis()
+        val targetEpochMs = now + (minutes * 60 * 1000L)
+        sleepTimerTargetEpochMs = targetEpochMs
+        sleepTimerIsEndOfTrack = false
+
+        persistSleepTimerState(targetEpochMs = targetEpochMs, isEndOfTrack = false)
+        scheduleAlarmManagerWakeup(targetEpochMs)
+        startSleepTimerCountdownLoop(targetEpochMs)
+        android.util.Log.i("PlaybackOrchestrator", "Sleep timer set for $minutes min (targetEpochMs=$targetEpochMs)")
+    }
+
+    fun extendSleepTimer(additionalMinutes: Int) {
+        if (additionalMinutes <= 0) return
+
+        // If currently in fade-out, immediately restore original volume
+        if (sleepTimerOriginalVolume != null) {
+            controller?.volume = sleepTimerOriginalVolume ?: 1.0f
+            sleepTimerOriginalVolume = null
+        }
+
+        val baseEpochMs = maxOf(System.currentTimeMillis(), sleepTimerTargetEpochMs ?: System.currentTimeMillis())
+        val newTargetEpochMs = baseEpochMs + (additionalMinutes * 60 * 1000L)
+        sleepTimerTargetEpochMs = newTargetEpochMs
+        sleepTimerIsEndOfTrack = false
+
+        persistSleepTimerState(targetEpochMs = newTargetEpochMs, isEndOfTrack = false)
+        scheduleAlarmManagerWakeup(newTargetEpochMs)
+        startSleepTimerCountdownLoop(newTargetEpochMs)
+        android.util.Log.i("PlaybackOrchestrator", "Extended sleep timer by $additionalMinutes min (new targetEpochMs=$newTargetEpochMs)")
+    }
+
+    fun cancelSleepTimer() {
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+        _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+        android.util.Log.i("PlaybackOrchestrator", "Sleep timer cancelled")
+    }
+
+    private fun startSleepTimerCountdownLoop(targetEpochMs: Long) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = scope.launch {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val remainingMs = maxOf(0L, targetEpochMs - now)
+                val remainingSec = ((remainingMs + 999L) / 1000L).toInt()
+
+                if (remainingMs <= 0L) {
+                    onSleepTimerExpired()
+                    break
+                }
+
+                // Volume fade-out guard for the last 10 seconds
+                if (remainingMs <= 10_000L) {
+                    if (sleepTimerOriginalVolume == null) {
+                        sleepTimerOriginalVolume = controller?.volume ?: 1.0f
+                    }
+                    val progress = (remainingMs / 10_000f).coerceIn(0f, 1f)
+                    controller?.volume = (sleepTimerOriginalVolume ?: 1.0f) * progress
+                } else {
+                    if (sleepTimerOriginalVolume != null) {
+                        controller?.volume = sleepTimerOriginalVolume ?: 1.0f
+                        sleepTimerOriginalVolume = null
+                    }
+                }
+
+                _uiState.update { it.copy(sleepTimerRemainingSeconds = remainingSec, isSleepTimerEndOfTrack = false) }
+
+                delay(1000L)
+            }
+        }
+    }
+
+    private fun onSleepTimerExpired() {
+        android.util.Log.i("PlaybackOrchestrator", "Sleep timer countdown reached 0. Pausing playback.")
+        handlePause()
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+        _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+    }
+
+    fun onSleepTimerAlarmFired() {
+        android.util.Log.i("PlaybackOrchestrator", "onSleepTimerAlarmFired from AlarmManager")
+        handlePause()
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = false, clearStorage = true)
+        _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+    }
+
+    private fun cancelSleepTimerInternal(resetVolume: Boolean, cancelAlarm: Boolean, clearStorage: Boolean) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerTargetEpochMs = null
+        sleepTimerIsEndOfTrack = false
+
+        if (resetVolume && sleepTimerOriginalVolume != null) {
+            controller?.volume = sleepTimerOriginalVolume ?: 1.0f
+            sleepTimerOriginalVolume = null
+        }
+
+        if (cancelAlarm) {
+            cancelAlarmManagerWakeup()
+        }
+
+        if (clearStorage) {
+            persistSleepTimerState(targetEpochMs = 0L, isEndOfTrack = false)
+        }
+    }
+
+    private fun scheduleAlarmManagerWakeup(targetEpochMs: Long) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            val intent = Intent(context, com.aura.music.service.SleepTimerReceiver::class.java).apply {
+                action = com.aura.music.service.SleepTimerReceiver.ACTION_SLEEP_TIMER_EXPIRED
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                SLEEP_TIMER_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (alarmManager != null) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, targetEpochMs, pendingIntent)
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, targetEpochMs, pendingIntent)
+                }
+                android.util.Log.i("PlaybackOrchestrator", "Scheduled AlarmManager sleep timer wakeup at $targetEpochMs")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to schedule AlarmManager sleep timer", e)
+        }
+    }
+
+    private fun cancelAlarmManagerWakeup() {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            val intent = Intent(context, com.aura.music.service.SleepTimerReceiver::class.java).apply {
+                action = com.aura.music.service.SleepTimerReceiver.ACTION_SLEEP_TIMER_EXPIRED
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                SLEEP_TIMER_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (alarmManager != null && pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                pendingIntent.cancel()
+                android.util.Log.i("PlaybackOrchestrator", "Cancelled AlarmManager sleep timer wakeup")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to cancel AlarmManager sleep timer", e)
+        }
+    }
+
+    private fun persistSleepTimerState(targetEpochMs: Long, isEndOfTrack: Boolean) {
+        try {
+            val prefs = context.getSharedPreferences("aura_sleep_timer", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putLong("target_epoch_ms", targetEpochMs)
+                .putBoolean("is_end_of_track", isEndOfTrack)
+                .apply()
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to persist sleep timer state", e)
+        }
+    }
+
+    private fun restorePersistedSleepTimerIfAny() {
+        try {
+            val prefs = context.getSharedPreferences("aura_sleep_timer", Context.MODE_PRIVATE)
+            val targetEpochMs = prefs.getLong("target_epoch_ms", 0L)
+            val isEndOfTrack = prefs.getBoolean("is_end_of_track", false)
+
+            if (isEndOfTrack) {
+                sleepTimerIsEndOfTrack = true
+                _uiState.update { it.copy(isSleepTimerEndOfTrack = true, sleepTimerRemainingSeconds = null) }
+                android.util.Log.i("PlaybackOrchestrator", "Restored persisted sleep timer: End of Track")
+            } else if (targetEpochMs > 0L) {
+                val now = System.currentTimeMillis()
+                if (targetEpochMs > now) {
+                    sleepTimerTargetEpochMs = targetEpochMs
+                    scheduleAlarmManagerWakeup(targetEpochMs)
+                    startSleepTimerCountdownLoop(targetEpochMs)
+                    android.util.Log.i("PlaybackOrchestrator", "Restored persisted active sleep timer: $targetEpochMs")
+                } else {
+                    persistSleepTimerState(targetEpochMs = 0L, isEndOfTrack = false)
+                    android.util.Log.i("PlaybackOrchestrator", "Persisted sleep timer expired while process was idle. Cleaned up.")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to restore sleep timer state", e)
         }
     }
 }

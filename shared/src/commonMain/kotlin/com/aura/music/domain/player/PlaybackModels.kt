@@ -79,4 +79,6 @@ data class PlayerUiState(
     val contextId: String? = null,
     val errorMessage: String? = null,
     val isCurrentTrackLiked: Boolean = false,
+    val sleepTimerRemainingSeconds: Int? = null,
+    val isSleepTimerEndOfTrack: Boolean = false,
 )
