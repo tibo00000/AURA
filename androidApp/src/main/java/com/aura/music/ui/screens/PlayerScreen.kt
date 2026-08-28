@@ -248,16 +248,6 @@ fun PlayerScreen(
                 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Minuteur de veille (Bouton d'accès rapide)
-                val isSleepTimerActive = uiState.sleepTimerRemainingSeconds != null || uiState.isSleepTimerEndOfTrack
-                IconButton(onClick = { showSleepTimerDialog = true }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Bedtime,
-                        contentDescription = if (isSleepTimerActive) "Minuteur de veille actif" else "Minuteur de veille",
-                        tint = if (isSleepTimerActive) BlazeOrange else TextSecondary
-                    )
-                }
-
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(
@@ -273,6 +263,7 @@ fun PlayerScreen(
                             .background(ElevatedGraphite)
                             .border(1.dp, HairlineDark, RoundedCornerShape(12.dp))
                     ) {
+                        val isSleepTimerActive = uiState.sleepTimerRemainingSeconds != null || uiState.isSleepTimerEndOfTrack
                         // Minuteur de veille
                         DropdownMenuItem(
                             text = {
@@ -1296,7 +1287,7 @@ fun SleepTimerDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 if (isActive) {
                     // Carte minuteur actif avec compte à rebours en temps réel
@@ -1354,7 +1345,7 @@ fun SleepTimerDialog(
                         listOf(5 to "+5 min", 15 to "+15 min", 30 to "+30 min").forEach { (mins, label) ->
                             OutlinedButton(
                                 onClick = { onExtendTimer(mins) },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).height(42.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, HairlineDark),
                                 colors = ButtonDefaults.outlinedButtonColors(
@@ -1373,7 +1364,7 @@ fun SleepTimerDialog(
                             onCancelTimer()
                             onDismiss()
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SemanticError.copy(alpha = 0.2f),
@@ -1385,7 +1376,7 @@ fun SleepTimerDialog(
                         Text("Désactiver le minuteur", fontWeight = FontWeight.Bold)
                     }
                 } else {
-                    // Grille des préréglages rapides
+                    // Grille des préréglages rapides (2x2)
                     Text(
                         text = "Préréglages rapides :",
                         style = MaterialTheme.typography.labelMedium,
@@ -1393,24 +1384,74 @@ fun SleepTimerDialog(
                         color = TextSecondary
                     )
 
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(15 to "15 min", 30 to "30 min", 45 to "45 min", 60 to "60 min").forEach { (mins, label) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Button(
                                 onClick = {
-                                    onSetTimer(mins, false)
+                                    onSetTimer(15, false)
                                     onDismiss()
                                 },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).height(44.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = DarkGraphite,
                                     contentColor = TextPrimary
                                 )
                             ) {
-                                Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                Text("15 min", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            }
+                            Button(
+                                onClick = {
+                                    onSetTimer(30, false)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Text("30 min", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    onSetTimer(45, false)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Text("45 min", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            }
+                            Button(
+                                onClick = {
+                                    onSetTimer(60, false)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DarkGraphite,
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Text("60 min", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -1421,7 +1462,7 @@ fun SleepTimerDialog(
                             onSetTimer(0, true)
                             onDismiss()
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = DarkGraphite,
@@ -1433,13 +1474,14 @@ fun SleepTimerDialog(
                         Text("À la fin du morceau en cours", fontWeight = FontWeight.Bold)
                     }
 
-                    // Sélecteur personnalisé
+                    // Sélecteur personnalisé avec SleekSlider
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
                             .background(DarkGraphite)
-                            .padding(16.dp)
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1459,29 +1501,21 @@ fun SleepTimerDialog(
                             )
                         }
 
-                        Slider(
+                        SleekSlider(
                             value = customMinutes,
-                            onValueChange = { customMinutes = it },
+                            onValueChange = { customMinutes = it.roundToInt().toFloat() },
                             valueRange = 1f..120f,
-                            steps = 119,
-                            colors = SliderDefaults.colors(
-                                thumbColor = BlazeOrange,
-                                activeTrackColor = BlazeOrange,
-                                inactiveTrackColor = ElevatedGraphite
-                            ),
-                            modifier = Modifier.semantics {
-                                contentDescription = "${customMinutes.toInt()} minutes"
-                            }
+                            activeColor = BlazeOrange,
+                            inactiveColor = ElevatedGraphite,
+                            modifier = Modifier.padding(vertical = 4.dp)
                         )
-
-                        Spacer(modifier = Modifier.height(4.dp))
 
                         Button(
                             onClick = {
                                 onSetTimer(customMinutes.toInt(), false)
                                 onDismiss()
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = BlazeOrange,

@@ -53,7 +53,9 @@ class PlayerViewModel(
             old.contextType == new.contextType &&
             old.contextId == new.contextId &&
             old.errorMessage == new.errorMessage &&
-            old.isCurrentTrackLiked == new.isCurrentTrackLiked
+            old.isCurrentTrackLiked == new.isCurrentTrackLiked &&
+            old.sleepTimerRemainingSeconds == new.sleepTimerRemainingSeconds &&
+            old.isSleepTimerEndOfTrack == new.isSleepTimerEndOfTrack
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
 
@@ -103,6 +105,9 @@ class PlayerViewModel(
         val currentlyLiked = orchestrator.uiState.value.isCurrentTrackLiked
         val contextType = orchestrator.uiState.value.contextType
         val contextId = orchestrator.uiState.value.contextId
+
+        // Mise à jour optimiste immédiate (0 ms)
+        orchestrator.updateLikedState(!currentlyLiked)
 
         viewModelScope.launch {
             repository.toggleLike(

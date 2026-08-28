@@ -125,6 +125,24 @@ class PlaybackOrchestrator(
                 return
             }
 
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                if (sleepTimerIsEndOfTrack) {
+                    android.util.Log.i("PlaybackOrchestrator", "Auto transition occurred with sleepTimerIsEndOfTrack=true. Pausing playback immediately.")
+                    handlePause()
+                    cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+                    _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+                    return
+                }
+                val remainingMs = sleepTimerTargetEpochMs?.let { it - System.currentTimeMillis() }
+                if (remainingMs != null && remainingMs in 0L..10_000L) {
+                    android.util.Log.i("PlaybackOrchestrator", "Auto transition occurred during fade-out window ($remainingMs ms). Pausing playback.")
+                    handlePause()
+                    cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+                    _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+                    return
+                }
+            }
+
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                 if (ctrl.mediaItemCount >= 3) {
                     android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED stabilized queue.")
