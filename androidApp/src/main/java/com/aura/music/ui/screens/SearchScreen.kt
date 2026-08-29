@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Downloading
 import com.aura.music.ui.theme.TextPrimary
+import com.aura.music.ui.theme.TextSecondary
 import com.aura.music.ui.components.ShimmerTrackList
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -145,7 +146,7 @@ fun SearchScreen(
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             pendingDeleteTrackId?.let { trackId ->
                 scope.launch {
-                    repository.deleteTrack(trackId)
+                    repository.removeTrackFromDatabase(trackId)
                     pendingDeleteTrackId = null
                     viewModel.refreshDisplayedLocalResults()
                 }
@@ -252,18 +253,15 @@ fun SearchScreen(
                         },
                         onSelectOnlineTrack = { track ->
                             focusManager.clearFocus()
-                            viewModel.selectTab(1)
-                            viewModel.selectSuggestion(track.title)
+                            viewModel.selectSuggestion(track.title, targetTab = 1)
                         },
                         onSelectOnlineArtist = { artist ->
                             focusManager.clearFocus()
-                            viewModel.selectTab(1)
-                            viewModel.selectSuggestion(artist.name)
+                            viewModel.selectSuggestion(artist.name, targetTab = 1)
                         },
                         onSelectOnlineAlbum = { album ->
                             focusManager.clearFocus()
-                            viewModel.selectTab(1)
-                            viewModel.selectSuggestion(album.title)
+                            viewModel.selectSuggestion(album.title, targetTab = 1)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -271,7 +269,7 @@ fun SearchScreen(
             }
 
             // Recent searches (shown when no search is active and no suggestions)
-            if (!uiState.isSearchComplete && !uiState.shouldShowSuggestions && uiState.recentQueries.isNotEmpty()) {
+            if (!uiState.isLoadingFullSearch && !uiState.isSearchComplete && !uiState.shouldShowSuggestions && uiState.recentQueries.isNotEmpty()) {
                 item {
                     RecentSearchesSection(
                         queries = uiState.recentQueries,
@@ -284,16 +282,60 @@ fun SearchScreen(
                 }
             }
 
-            // Loading indicator
+            // Loading indicator with Shimmer skeleton
             if (uiState.isLoadingFullSearch) {
+                // Tab navigation displayed during loading
                 item {
-                    Box(
+                    TabRow(
+                        selectedTabIndex = uiState.selectedTab,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        CircularProgressIndicator()
+                        androidx.compose.material3.Tab(
+                            selected = uiState.selectedTab == 0,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(0)
+                            },
+                            text = { Text("Bibliothèque") }
+                        )
+                        androidx.compose.material3.Tab(
+                            selected = uiState.selectedTab == 1,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(1)
+                            },
+                            text = { Text("En ligne") }
+                        )
+                    }
+                }
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = BlazeOrange,
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = if (uiState.selectedTab == 1) "Recherche en ligne (Deezer & YouTube)..." else "Recherche en cours...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary
+                            )
+                        }
+                        ShimmerTrackList(count = 7)
                     }
                 }
             }
@@ -310,7 +352,7 @@ fun SearchScreen(
             }
 
             // Search results with tab navigation
-            if (uiState.isSearchComplete && uiState.displayResult != null) {
+            if (!uiState.isLoadingFullSearch && uiState.isSearchComplete && uiState.displayResult != null) {
                 val result = uiState.displayResult!!
 
                 // Tab navigation
@@ -404,6 +446,7 @@ fun SearchScreen(
                                 localTracks = localTracks,
                                 cloudFiles = cloudFiles,
                                 syncedCloudTrackIds = syncedCloudTrackIds,
+                                onLikeTrack = { track -> viewModel.likeOnlineTrack(track) },
                                 onPlayTrack = { track ->
                                     focusManager.clearFocus()
                                     val matchedLocal = localTracks.firstOrNull { local ->
@@ -756,6 +799,7 @@ private fun OnlineSearchTab(
     localTracks: List<TrackListRow> = emptyList(),
     cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
     syncedCloudTrackIds: Set<String> = emptySet(),
+    onLikeTrack: (TrackSummary) -> Unit,
     onPlayTrack: (TrackSummary) -> Unit,
     onAddToQueue: (TrackSummary) -> Unit,
     onDownloadTrack: (TrackSummary) -> Unit,
@@ -795,6 +839,7 @@ private fun OnlineSearchTab(
                         downloadStatus = effectiveDlStatus,
                         isDownloadedLocally = isDownloadedLocally,
                         isCloudOnly = isCloudOnly,
+                        onLikeTrack = onLikeTrack,
                         onPlayTrack = onPlayTrack,
                         onAddToQueue = onAddToQueue,
                         onDownloadTrack = onDownloadTrack,
@@ -1678,6 +1723,7 @@ private fun SearchOnlineTrackRowItem(
     downloadStatus: TrackDownloadStatus = TrackDownloadStatus.Idle,
     isDownloadedLocally: Boolean = false,
     isCloudOnly: Boolean = false,
+    onLikeTrack: ((TrackSummary) -> Unit)? = null,
     onPlayTrack: (TrackSummary) -> Unit,
     onAddToQueue: ((TrackSummary) -> Unit)? = null,
     onDownloadTrack: (TrackSummary) -> Unit,
@@ -1693,6 +1739,7 @@ private fun SearchOnlineTrackRowItem(
     val currentOnDeleteDownload = rememberUpdatedState(onDeleteDownload)
     val currentOnArtist = rememberUpdatedState(onOpenArtist)
     val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
+    val currentOnLike = rememberUpdatedState(onLikeTrack)
 
     val onClick = remember(track.id) { { currentOnPlay.value(track) } }
     val onAddToQueueClick = remember(track.id, currentOnQueue.value != null) {
@@ -1712,6 +1759,12 @@ private fun SearchOnlineTrackRowItem(
         val cb = currentOnDeleteDownload.value
         if (cb != null) {
             { cb(track.id) }
+        } else null
+    }
+    val onLikeClick = remember(track.id, currentOnLike.value != null) {
+        val cb = currentOnLike.value
+        if (cb != null) {
+            { cb(track) }
         } else null
     }
 
@@ -1748,8 +1801,11 @@ private fun SearchOnlineTrackRowItem(
         onClick = onClick,
         showCover = true,
         contextType = "search_online",
+        isLiked = track.isLiked,
         downloadStatus = effectiveDownloadStatus,
         isCloudOnly = isCloudOnly,
+        onLike = onLikeClick,
+        onUnlike = onLikeClick,
         onAddToQueue = onAddToQueueClick,
         onDownload = onDownload,
         onUploadToCloud = if (isDownloadedLocally && !isCloudOnly) onUpload else null,

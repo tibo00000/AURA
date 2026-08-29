@@ -152,6 +152,33 @@ class DownloadsViewModel(
         }
     }
 
+    /**
+     * Clear all download jobs from local database.
+     */
+    fun clearAllJobs() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                downloadRepository.clearAllJobs()
+            } catch (e: Exception) {
+                _errorMessage.value = "Erreur lors de la suppression de la file d'attente."
+            }
+        }
+    }
+
+    /**
+     * Delete a single download job by ID.
+     */
+    fun deleteJob(jobId: String) {
+        viewModelScope.launch {
+            try {
+                downloadRepository.deleteJob(jobId)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+
     fun dismissError() {
         _errorMessage.value = null
     }

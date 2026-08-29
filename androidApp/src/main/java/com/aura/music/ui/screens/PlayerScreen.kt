@@ -1530,7 +1530,7 @@ fun SleepTimerDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Fermer", color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                Text("Fermer", color = BlazeOrange, fontWeight = FontWeight.Bold)
             }
         }
     )

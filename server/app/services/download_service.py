@@ -169,6 +169,7 @@ class DownloadService:
         DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
         self.settings = get_settings()
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
+        self._download_semaphore = asyncio.Semaphore(2)
 
     def _resolve_official_video_id(
         self, artist: str, title: str, album: Optional[str] = None
@@ -538,7 +539,8 @@ class DownloadService:
 
     async def _run_download_job(self, job_id: str, source_hint: Optional[dict] = None) -> None:
         try:
-            await self._run_download_job_impl(job_id, source_hint)
+            async with self._download_semaphore:
+                await self._run_download_job_impl(job_id, source_hint)
         except Exception as e:
             logger.exception("Unexpected error in download worker for job %s", job_id)
             self._update_job_status(
@@ -552,7 +554,7 @@ class DownloadService:
         """
         Background download worker task using yt-dlp.
 
-        1. Resolves the track_id (calls Deezer API if it's an opaque AURA ID).
+        1. Resolves the track_id (calls Deezer API or parses source_hint).
         2. Initiates the yt-dlp download with progress hooks.
         3. Converts format, embeds metadata and saves file in volumes.
         4. Updates status to succeeded or failed with diagnostic messages.
@@ -572,6 +574,10 @@ class DownloadService:
         artist = None
         title = None
         album = None
+        duration_ms = None
+        artist_id = None
+        album_id = None
+        cover_uri = None
         ref = None
         try:
             # Check if this is a valid encoded stateless AURA ID
@@ -582,18 +588,43 @@ class DownloadService:
                 title = track_data.get("title", "")
                 artist = track_data.get("artist", {}).get("name", "")
                 album = track_data.get("album", {}).get("title", "")
+                duration_ms = int(track_data.get("duration", 0)) * 1000 if track_data.get("duration") else None
+                artist_id = f"artist:{artist.lower().strip()}" if artist else None
+                album_id = f"album:{artist.lower().strip()}:{album.lower().strip()}" if artist and album else None
+                cover_uri = (
+                    track_data.get("album", {}).get("cover_xl")
+                    or track_data.get("album", {}).get("cover_big")
+                    or track_data.get("album", {}).get("cover_medium")
+                    or track_data.get("album", {}).get("cover")
+                )
                 query = f"{artist} {title}".strip()
-                logger.info("Resolved query: %r, album: %r from Deezer ID: %s", query, album, ref.provider_id)
+                logger.info("Resolved query: %r, album: %r, cover: %r from Deezer ID: %s", query, album, cover_uri, ref.provider_id)
         except ValueError:
-            # Fallback for manual/test IDs (e.g. trk_01KSRA...)
+            # Fallback for manual/test IDs (e.g. trk_cloud_...)
             pass
+
+        if source_hint:
+            if not title and source_hint.get("title"):
+                title = source_hint["title"]
+            if not artist and source_hint.get("artist_name"):
+                artist = source_hint["artist_name"]
+            if not album and source_hint.get("album_title"):
+                album = source_hint["album_title"]
+            if not cover_uri and source_hint.get("cover_uri"):
+                cover_uri = source_hint["cover_uri"]
+            if artist and not artist_id:
+                artist_id = f"artist:{artist.lower().strip()}"
+            if artist and album and not album_id:
+                album_id = f"album:{artist.lower().strip()}:{album.lower().strip()}"
+            if artist and title and not query:
+                query = f"{artist} {title}".strip()
 
         # Try to resolve targeted YouTube Music videoId
         resolved_video_id = None
         if source_hint and source_hint.get("resolved_video_id"):
             resolved_video_id = source_hint["resolved_video_id"]
             logger.info("Direct videoId provided in source_hint: %s", resolved_video_id)
-        elif ref and ref.provider_name == "deezer" and artist and title:
+        elif artist and title:
             # We run the targeted search in a thread pool since ytmusicapi makes blocking HTTP requests
             def _run_resolve():
                 return self._resolve_official_video_id(artist, title, album)
@@ -619,17 +650,16 @@ class DownloadService:
             download_target = f"https://www.youtube.com/watch?v={resolved_video_id}"
             logger.info("Targeted search resolved official videoId: %s. Direct target: %s", resolved_video_id, download_target)
         else:
-            # If we couldn't resolve via Deezer, fallback to source_hint or track_id name
-            if not query:
-                if source_hint and source_hint.get("provider_track_id"):
-                    query = source_hint["provider_track_id"]
-                else:
-                    # Last resort fallback (uses track_id as a search query if test ID)
-                    query = job.track_id
+            if not query and artist and title:
+                query = f"{artist} {title}".strip()
+            elif not query and source_hint and source_hint.get("title"):
+                query = source_hint.get("title")
 
-            # Clean fallback in case query is too short
-            if not query or len(query) < 3:
-                query = "Booba DKR"  # Default fallback for testing
+            if not query or len(query) < 3 or query.startswith("trk_"):
+                if artist and title:
+                    query = f"{artist} {title}"
+                else:
+                    query = "Booba DKR"  # Default fallback for testing
                 
             download_target = query
             logger.info("Targeted search returned no candidate. Falling back to search query: %r", download_target)
@@ -693,6 +723,10 @@ class DownloadService:
                             title=title,
                             artist_name=artist,
                             album_title=album,
+                            duration_ms=duration_ms,
+                            artist_id=artist_id,
+                            album_id=album_id,
+                            cover_uri=cover_uri,
                         )
                         status = "succeeded"
                         progress_percent = 100.0

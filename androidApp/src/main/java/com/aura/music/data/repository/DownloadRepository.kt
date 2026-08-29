@@ -12,6 +12,7 @@ import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.DownloadRequestDto
+import com.aura.music.data.network.SourceHintDto
 import com.aura.music.data.network.CookieUploadRequestDto
 import com.aura.music.data.network.DownloadJobListResponseData
 import com.aura.music.data.network.ResolveDownloadRequestDto
@@ -204,7 +205,17 @@ class DownloadRepository(
             // 2. Submit download request to backend
             val response = apiService.createDownload(
                 token = userToken,
-                request = DownloadRequestDto(trackId = trackId)
+                request = DownloadRequestDto(
+                    trackId = trackId,
+                    sourceHint = SourceHintDto(
+                        providerName = "youtube",
+                        providerTrackId = trackId,
+                        title = title,
+                        artistName = artistName,
+                        albumTitle = albumTitle,
+                        coverUri = coverUri
+                    )
+                )
             )
 
             val createData = response.data
@@ -378,6 +389,28 @@ class DownloadRepository(
             }
 
             for (item in items) {
+                if (database.trackDao().getRawTrackById(item.trackId) == null) {
+                    val placeholderTrack = TrackEntity(
+                        id = item.trackId,
+                        primaryArtistId = null,
+                        albumId = null,
+                        title = "Piste ${item.trackId.takeLast(6)}",
+                        normalizedTitle = "piste",
+                        displayArtistName = "Téléchargement",
+                        displayAlbumTitle = null,
+                        durationMs = null,
+                        coverUri = null,
+                        canonicalAudioSourceType = if (item.status == "succeeded") "cloud" else "cloud_only",
+                        isLiked = false,
+                        isDownloadedByAura = false,
+                        isExplicit = null,
+                        popularity = null,
+                        genresJson = null,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                    database.trackDao().upsertTrack(placeholderTrack)
+                }
                 if (item.status == "succeeded") {
                     markJobAsCloudReady(item.trackId)
                 }
@@ -681,6 +714,20 @@ class DownloadRepository(
             emit(Result.failure(e))
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Clear all download jobs from local database.
+     */
+    suspend fun clearAllJobs(): Unit = withContext(Dispatchers.IO) {
+        database.downloadJobDao().clearAllJobs()
+    }
+
+    /**
+     * Delete a single download job by ID.
+     */
+    suspend fun deleteJob(jobId: String): Unit = withContext(Dispatchers.IO) {
+        database.downloadJobDao().deleteJob(jobId)
+    }
 
     /**
      * Fetch candidates for a specific job from the backend.

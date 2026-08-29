@@ -32,32 +32,46 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - les controles de transport restent secondaires par rapport a l'ouverture du Player
 
 ## TrackRow
-- Role : affichage standard d'une piste dans bibliotheque, playlists, historique, recherche locale et queue compacte.
+- Role : affichage standard d'une piste dans bibliotheque, playlists, historique, recherche locale, recherche en ligne et queue compacte.
 - Structure :
   - gauche : cover
   - centre : titre, artiste, album/context secondaire
-  - droite : `Like` visible si pertinent, puis menu `...`
+  - droite : bouton `FavoriteHeartButton` (cœur avec retour visuel optimiste 0 ms, rebond d'échelle et transition de couleur), indicateur de statut téléchargement/cloud si pertinent, puis menu `...`
 - Variantes :
-  - standard
+  - standard (`SharedTrackRowItem`)
   - compact
   - currently playing
-  - search-result online
+  - search-result online (`SearchOnlineTrackRowItem`)
+  - hybrid-detail online (`InteractiveOnlineTrackRow`)
 - Regles :
   - le titre a toujours la priorite visuelle
   - les metadonnees restent sur une seule ligne si possible
-  - les actions visibles restent limitees pour ne pas encombrer
-- Menu contextuel canonique :
-  - `Lire maintenant`
-  - `Ajouter a la file d'attente`
-  - `Ajouter a une playlist`
-  - `Voir l'artiste`
-  - `Voir l'album`
-  - `Modifier les informations` pour les pistes physiques locales (ouvre `EditTrackMetadataBottomSheet`)
-  - `Telecharger` uniquement si la piste n'est pas disponible localement
-  - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
-  - `Uploader vers le cloud` uniquement si la piste est locale (`contentUri` en `content://`), non téléchargée par Aura et absente du cloud
-  - `Récupérer depuis le cloud` uniquement si la piste est présente dans le cloud mais absente de l'appareil (`cloud_only` state)
-  - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
+  - le clic direct sur la rangée lance la lecture (`Lire maintenant` n'est pas présent dans le menu `...` pour éviter la redondance)
+  - le bouton favori (cœur) est présent directement sur la rangée et réagit instantanément (0 ms) en DB locale Room (la synchronisation REST et le téléchargement audio s'exécutent en tâche de fond asynchrone non-bloquante)
+- Menu contextuel hiérarchique épuré :
+  - **Niveau 1 — Actions musicales principales (4-5 items max)** :
+    - `Ajouter à la file d'attente` (`Icons.Rounded.QueueMusic`)
+    - `Ajouter à une playlist` (`Icons.Rounded.PlaylistAdd`)
+    - `Voir l'artiste` (`Icons.Rounded.Person`) (si l'artiste est résolu)
+    - `Voir l'album` (`Icons.Rounded.Album`) (si l'album est résolu)
+    - `Plus d'options  ›` (`Icons.Rounded.ChevronRight`) (si des actions avancées existent)
+  - **Niveau 2 — Fichiers, Cloud & Gestion avancée** :
+    - `‹ Retour` (`Icons.AutoMirrored.Rounded.ArrowBack`)
+    - `Retirer de la playlist` (contexte playlist)
+    - `Télécharger sur l'appareil` / `Ajouter au Cloud personnel` (si non disponible localement)
+    - `Supprimer du téléphone` (si disponible localement)
+    - `Ajouter au Cloud` (si fichier local éligible)
+    - `Récupérer depuis le Cloud` (si présent dans le cloud mais absent localement)
+    - `Supprimer du Cloud` (si présent dans le cloud)
+    - `Modifier les informations` (pour les fichiers locaux, ouvre `EditTrackMetadataBottomSheet`)
+
+## FavoriteHeartButton
+- Role : Bouton d'action rapide Favori/Like présent sur toutes les rangées de piste et le lecteur plein écran.
+- Caractéristiques :
+  - Animation de rebond d'échelle dynamique (`scale` spring bouncy) lors du basculement
+  - Transition de couleur animée (`BlazeOrange` lorsque actif, `TextSecondary`/`onSurfaceVariant` inactif)
+  - Optimistic UI immédiat à 0 ms côté composant
+  - Écriture locale instantanée en base Room sans blocage réseau/téléchargement
 
 ## PlayerQueueRow
 - Role : ligne dediee a la `priority queue` dans le Player.

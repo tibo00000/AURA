@@ -3,6 +3,7 @@ package com.aura.music.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.network.TrackSummary
 import com.aura.music.data.repository.SearchRepository
 import com.aura.music.data.repository.HybridSearchResult
 import com.aura.music.data.repository.BestMatchResult
@@ -40,13 +41,13 @@ data class SearchUiState(
      * Is the search complete and showing results
      */
     val isSearchComplete: Boolean
-        get() = currentFullSearchResult != null
+        get() = currentFullSearchResult != null && !isLoadingFullSearch
 
     /**
      * Should show the suggestions dropdown
      */
     val shouldShowSuggestions: Boolean
-        get() = !isSearchComplete && showLocalSuggestionsDropdown && query.length >= 3
+        get() = !isLoadingFullSearch && !isSearchComplete && showLocalSuggestionsDropdown && query.length >= 3
 }
 
 /**
@@ -67,6 +68,8 @@ class SearchViewModel(
         loadRecentQueries()
     }
 
+    private var suggestionsJob: kotlinx.coroutines.Job? = null
+
     /**
      * Load recent queries and display them.
      */
@@ -76,7 +79,7 @@ class SearchViewModel(
                 val recentList = withContext(Dispatchers.IO) {
                     searchRepository.getRecentQueries(10)
                 }
-                _uiState.update { it.copy(recentQueries = recentList) }
+                _uiState.update { state -> state.copy(recentQueries = recentList) }
             } catch (e: Exception) {
                 // Silent failure - no recent queries available
             }
@@ -87,14 +90,15 @@ class SearchViewModel(
      * Update the search query and refresh suggestions if 3+ characters.
      */
     fun updateQuery(newQuery: String) {
-        _uiState.update { it.copy(query = newQuery) }
+        _uiState.update { state -> state.copy(query = newQuery) }
 
         if (newQuery.length >= 3) {
             loadLocalSuggestions(newQuery)
-            _uiState.update { it.copy(showLocalSuggestionsDropdown = true) }
+            _uiState.update { state -> state.copy(showLocalSuggestionsDropdown = true) }
         } else {
-            _uiState.update {
-                it.copy(
+            suggestionsJob?.cancel()
+            _uiState.update { state ->
+                state.copy(
                     showLocalSuggestionsDropdown = false,
                     localSuggestions = null
                 )
@@ -103,15 +107,16 @@ class SearchViewModel(
     }
 
     fun selectTab(index: Int) {
-        _uiState.update { it.copy(selectedTab = index) }
+        _uiState.update { state -> state.copy(selectedTab = index) }
     }
 
     /**
      * Clear the search query and reset state.
      */
     fun clearQuery() {
-        _uiState.update {
-            it.copy(
+        suggestionsJob?.cancel()
+        _uiState.update { state ->
+            state.copy(
                 query = "",
                 showLocalSuggestionsDropdown = false,
                 localSuggestions = null,
@@ -128,8 +133,8 @@ class SearchViewModel(
     fun submitSearch() {
         val query = _uiState.value.query.trim()
         if (query.length < 3) {
-            _uiState.update {
-                it.copy(errorMessage = "Minimum 3 characters required")
+            _uiState.update { state ->
+                state.copy(errorMessage = "Minimum 3 characters required")
             }
             return
         }
@@ -167,7 +172,9 @@ class SearchViewModel(
      * Load suggestions (local + online if allowed) for display during typing.
      */
     private fun loadLocalSuggestions(query: String) {
-        viewModelScope.launch {
+        suggestionsJob?.cancel()
+        suggestionsJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(150L)
             try {
                 val settings = withContext(Dispatchers.IO) { searchRepository.getSettings() }
                 val onlineSearchEnabled = settings?.onlineSearchEnabled ?: true
@@ -181,7 +188,7 @@ class SearchViewModel(
                         context = appContext
                     )
                 }
-                _uiState.update { it.copy(localSuggestions = result) }
+                _uiState.update { state -> state.copy(localSuggestions = result) }
             } catch (e: Exception) {
                 // Silent failure for suggestions - show nothing if error
             }
@@ -192,10 +199,11 @@ class SearchViewModel(
      * Load hybrid search results (local + online).
      */
     private fun loadHybridSearch(query: String) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            state.copy(
                 isLoadingFullSearch = true,
                 showLocalSuggestionsDropdown = false,
+                currentFullSearchResult = null,
                 errorMessage = null
             )
         }
@@ -220,9 +228,22 @@ class SearchViewModel(
                 }
                 loadRecentQueries()
 
-                _uiState.update {
-                    it.copy(
+                val currentTab = _uiState.value.selectedTab
+                val targetTab = if (currentTab == 0 &&
+                    result.localTracks.isEmpty() &&
+                    result.localArtists.isEmpty() &&
+                    result.localAlbums.isEmpty() &&
+                    result.onlineTracks.isNotEmpty()
+                ) {
+                    1
+                } else {
+                    currentTab
+                }
+
+                _uiState.update { state ->
+                    state.copy(
                         currentFullSearchResult = result,
+                        selectedTab = targetTab,
                         isLoadingFullSearch = false,
                         errorMessage = result.onlineError // surface online error non-bloquant
                     )
@@ -254,8 +275,8 @@ class SearchViewModel(
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
+                _uiState.update { state ->
+                    state.copy(
                         isLoadingFullSearch = false,
                         errorMessage = "Erreur de recherche : ${e.message}"
                     )
@@ -265,10 +286,15 @@ class SearchViewModel(
     }
 
     /**
-     * Handle suggestion selection (fill query and search).
+     * Handle suggestion selection (fill query, optionally set tab, and search).
      */
-    fun selectSuggestion(query: String) {
-        _uiState.update { it.copy(query = query) }
+    fun selectSuggestion(query: String, targetTab: Int? = null) {
+        _uiState.update { state ->
+            state.copy(
+                query = query,
+                selectedTab = targetTab ?: state.selectedTab
+            )
+        }
         submitSearch()
     }
 
@@ -276,7 +302,7 @@ class SearchViewModel(
      * Handle recent query selection (fill query and search).
      */
     fun selectRecentQuery(query: String) {
-        _uiState.update { it.copy(query = query) }
+        _uiState.update { state -> state.copy(query = query) }
         submitSearch()
     }
 
@@ -284,7 +310,7 @@ class SearchViewModel(
      * Dismiss error message.
      */
     fun dismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        _uiState.update { state -> state.copy(errorMessage = null) }
     }
 
     /**
@@ -309,13 +335,62 @@ class SearchViewModel(
      * @param currentlyLiked the current like status
      */
     fun likeLocalTrack(trackId: String, currentlyLiked: Boolean) {
+        // Mise à jour optimiste immédiate dans le StateFlow
+        _uiState.update { current ->
+            val updateHybridResult: (HybridSearchResult?) -> HybridSearchResult? = { res ->
+                res?.let { r ->
+                    r.copy(
+                        localTracks = r.localTracks.map {
+                            if (it.id == trackId) it.copy(isLiked = !currentlyLiked) else it
+                        }
+                    )
+                }
+            }
+            current.copy(
+                currentFullSearchResult = updateHybridResult(current.currentFullSearchResult),
+                localSuggestions = updateHybridResult(current.localSuggestions)
+            )
+        }
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     searchRepository.toggleLike(trackId, currentlyLiked)
                 }
             } catch (e: Exception) {
-                // Log error or surface to UI if needed
+                _uiState.update {
+                    it.copy(errorMessage = "Erreur lors de la modification du favori")
+                }
+            }
+        }
+    }
+
+    /**
+     * Like or unlike an online track (toggle).
+     */
+    fun likeOnlineTrack(track: TrackSummary) {
+        val nextLiked = !track.isLiked
+        // Mise à jour optimiste immédiate dans le StateFlow
+        _uiState.update { current ->
+            val updateHybridResult: (HybridSearchResult?) -> HybridSearchResult? = { res ->
+                res?.let { r ->
+                    r.copy(
+                        onlineTracks = r.onlineTracks.map {
+                            if (it.id == track.id) it.copy(isLiked = nextLiked) else it
+                        }
+                    )
+                }
+            }
+            current.copy(
+                currentFullSearchResult = updateHybridResult(current.currentFullSearchResult),
+                localSuggestions = updateHybridResult(current.localSuggestions)
+            )
+        }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    searchRepository.toggleLike(track.id, track.isLiked)
+                }
+            } catch (e: Exception) {
                 _uiState.update {
                     it.copy(errorMessage = "Erreur lors de la modification du favori")
                 }

@@ -342,9 +342,6 @@ fun LibraryScreen(
                                     Text("Voir tout", color = BlazeOrange)
                                 }
                             }
-                            IconButton(onClick = { showImportPlaylistDialog = true }) {
-                                Icon(Icons.Rounded.PlaylistAdd, contentDescription = "Importer une playlist", tint = BlazeOrange)
-                            }
                             IconButton(onClick = { showCreatePlaylistDialog = true }) {
                                 Icon(Icons.Rounded.Add, contentDescription = "Créer une playlist", tint = BlazeOrange)
                             }
@@ -557,6 +554,10 @@ fun LibraryScreen(
                     refreshTick++
                 }
                 showCreatePlaylistDialog = false
+            },
+            onOpenImport = {
+                showCreatePlaylistDialog = false
+                showImportPlaylistDialog = true
             }
         )
     }
@@ -1198,33 +1199,16 @@ fun PlaylistsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Button(
+                        onClick = { showCreateDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = com.aura.music.ui.theme.BlazeOrange,
+                            contentColor = com.aura.music.ui.theme.DeepBlack
+                        )
                     ) {
-                        Button(
-                            onClick = { showCreateDialog = true },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = com.aura.music.ui.theme.BlazeOrange,
-                                contentColor = com.aura.music.ui.theme.DeepBlack
-                            )
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text("Créer", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
-                        }
-                        androidx.compose.material3.OutlinedButton(
-                            onClick = { showImportDialog = true },
-                            shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, com.aura.music.ui.theme.HairlineDark),
-                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                                containerColor = com.aura.music.ui.theme.DarkGraphite,
-                                contentColor = com.aura.music.ui.theme.TextPrimary
-                            )
-                        ) {
-                            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = com.aura.music.ui.theme.BlazeOrange, modifier = Modifier.size(18.dp))
-                            Text("Importer", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.SemiBold)
-                        }
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Créer une playlist", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1250,6 +1234,10 @@ fun PlaylistsScreen(
                 }
                 showCreateDialog = false
             },
+            onOpenImport = {
+                showCreateDialog = false
+                showImportDialog = true
+            }
         )
     }
 
@@ -2205,6 +2193,9 @@ fun DownloadsScreen(
         title = "Téléchargements",
         onNavigateBack = onNavigateBack,
         actions = {
+            IconButton(onClick = { viewModel.clearAllJobs() }) {
+                Icon(Icons.Rounded.Delete, contentDescription = "Vider la file d'attente", tint = TextPrimary)
+            }
             IconButton(onClick = { viewModel.forceRefresh() }) {
                 Icon(Icons.Rounded.Refresh, contentDescription = "Rafraîchir", tint = TextPrimary)
             }
@@ -2802,20 +2793,89 @@ fun PlaylistNameDialog(
     initialValue: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
+    onOpenImport: (() -> Unit)? = null,
 ) {
     var name by remember(initialValue) { mutableStateOf(initialValue) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        containerColor = ElevatedGraphite,
+        shape = RoundedCornerShape(24.dp),
+        title = { Text(title, fontWeight = FontWeight.Bold, color = TextPrimary) },
         text = {
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Playlist name") }, singleLine = true)
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(name.trim()) }, enabled = name.trim().isNotBlank()) {
-                Text(confirmLabel)
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nom de la playlist") },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BlazeOrange,
+                        unfocusedBorderColor = HairlineDark,
+                        focusedContainerColor = DarkGraphite,
+                        unfocusedContainerColor = DarkGraphite,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (onOpenImport != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(DarkGraphite)
+                            .border(1.dp, HairlineDark, RoundedCornerShape(14.dp))
+                            .clickable {
+                                onDismiss()
+                                onOpenImport()
+                            }
+                            .padding(14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDownload,
+                                contentDescription = null,
+                                tint = BlazeOrange,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Importer (Deezer, Spotify, M3U8...)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BlazeOrange
+                            )
+                        }
+                    }
+                }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name.trim()) },
+                enabled = name.trim().isNotBlank(),
+                shape = RoundedCornerShape(12.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = BlazeOrange,
+                    contentColor = DeepBlack
+                )
+            ) {
+                Text(confirmLabel, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler", color = BlazeOrange, fontWeight = FontWeight.Bold)
+            }
+        },
     )
 }
 

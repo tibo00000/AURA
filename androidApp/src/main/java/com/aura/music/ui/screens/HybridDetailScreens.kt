@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -1188,6 +1190,9 @@ fun InteractiveOnlineTrackRow(
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var menuPage by remember { mutableStateOf(0) } // 0 = Principal, 1 = Avancé
+
+    val hasAdvancedItems = (!isSyncedToCloud && !isDownloaded) || onEditMetadata != null
 
     Row(
         modifier = modifier
@@ -1243,6 +1248,12 @@ fun InteractiveOnlineTrackRow(
             )
         }
 
+        // Bouton Cœur avec retour instantané et rebond
+        FavoriteHeartButton(
+            isLiked = track.isLiked,
+            onToggle = onLike
+        )
+
         // Action / Status Icon
         when {
             downloadStatus is TrackDownloadStatus.Downloading -> {
@@ -1293,7 +1304,10 @@ fun InteractiveOnlineTrackRow(
 
         Box {
             IconButton(
-                onClick = { showMenu = true },
+                onClick = {
+                    menuPage = 0
+                    showMenu = true
+                },
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = "Options", tint = TextSecondary)
@@ -1301,59 +1315,75 @@ fun InteractiveOnlineTrackRow(
 
             DropdownMenu(
                 expanded = showMenu,
-                onDismissRequest = { showMenu = false },
+                onDismissRequest = {
+                    showMenu = false
+                    menuPage = 0
+                },
             ) {
-                DropdownMenuItem(
-                    text = { Text("Écouter") },
-                    onClick = {
-                        showMenu = false
-                        onPlay()
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.PlayArrow, contentDescription = null) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Ajouter à la file d'attente") },
-                    onClick = {
-                        showMenu = false
-                        onAddToQueue()
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.QueueMusic, contentDescription = null) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Ajouter à une playlist") },
-                    onClick = {
-                        showMenu = false
-                        onAddToPlaylist()
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Ajouter aux favoris") },
-                    onClick = {
-                        showMenu = false
-                        onLike()
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.Favorite, contentDescription = null) }
-                )
-                if (!isSyncedToCloud && !isDownloaded) {
+                if (menuPage == 0) {
+                    // ===== NIVEAU 1 : ACTIONS MUSICALES PRINCIPALES =====
                     DropdownMenuItem(
-                        text = { Text("Ajouter au Cloud personnel") },
+                        text = { Text("Ajouter à la file d'attente") },
                         onClick = {
                             showMenu = false
-                            onDownloadCloud()
+                            onAddToQueue()
                         },
-                        leadingIcon = { Icon(Icons.Rounded.CloudUpload, contentDescription = null) }
+                        leadingIcon = { Icon(Icons.Rounded.QueueMusic, contentDescription = null) }
                     )
-                }
-                if (onEditMetadata != null) {
                     DropdownMenuItem(
-                        text = { Text("Modifier les informations") },
+                        text = { Text("Ajouter à une playlist") },
                         onClick = {
                             showMenu = false
-                            onEditMetadata()
+                            onAddToPlaylist()
                         },
-                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
+                        leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null) }
                     )
+                    if (hasAdvancedItems) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Plus d'options")
+                                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                                }
+                            },
+                            onClick = {
+                                menuPage = 1
+                            }
+                        )
+                    }
+                } else {
+                    // ===== NIVEAU 2 : GESTION AVANCÉE =====
+                    DropdownMenuItem(
+                        text = { Text("Retour", color = BlazeOrange, fontWeight = FontWeight.SemiBold) },
+                        onClick = { menuPage = 0 },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = BlazeOrange) }
+                    )
+                    if (!isSyncedToCloud && !isDownloaded) {
+                        DropdownMenuItem(
+                            text = { Text("Ajouter au Cloud personnel") },
+                            onClick = {
+                                showMenu = false
+                                menuPage = 0
+                                onDownloadCloud()
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.CloudUpload, contentDescription = null) }
+                        )
+                    }
+                    if (onEditMetadata != null) {
+                        DropdownMenuItem(
+                            text = { Text("Modifier les informations") },
+                            onClick = {
+                                showMenu = false
+                                menuPage = 0
+                                onEditMetadata()
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
+                        )
+                    }
                 }
             }
         }

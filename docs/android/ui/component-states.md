@@ -31,53 +31,26 @@ Chaque ligne de morceau affiche un statut visuel clair basé sur la résolution 
 - **OFF** : Libère le stockage physique de l'appareil en supprimant les fichiers téléchargés locaux, tout en conservant intacts les fichiers sur le Cloud VPS.
 
 ### TrackRow - Architecture du Menu Contextuel
-Le menu contextuel du `TrackRow` est gere via le parametre `contextType` de `SharedTrackRowItem`. **Aucun `trailingIcon` custom ne doit etre passe** ; laisser le menu contextuel par defaut gerer les cas documentes.
+Le menu contextuel du `TrackRow` est structuré de façon hiérarchique à 2 niveaux dans `SharedTrackRowItem`.
+- Le **bouton cœur (`FavoriteHeartButton`)** est situé directement sur la ligne de chaque morceau et dispose d'une animation de rebond élastique et d'un retour optimiste immédiat (0 ms).
+- Le **menu contextuel (`...`)** est épuré à 4-5 options musicales directes au premier niveau, et regroupe les actions de gestion de fichiers/cloud/tags sous le sous-menu **"Plus d'options ›"**.
 
-**Parametres de SharedTrackRowItem** :
-```kotlin
-fun SharedTrackRowItem(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    contextType: String = "standard",  // "album", "playlist", "favorites", "search_online", "standard"
-    onAddToPlaylist: (() -> Unit)? = null,
-    onLike: (() -> Unit)? = null,
-    onUnlike: (() -> Unit)? = null,
-    onRemoveFromPlaylist: (() -> Unit)? = null,
-    onUploadToCloud: (() -> Unit)? = null,
-    onDownloadFromCloud: (() -> Unit)? = null,
-    onMore: (() -> Unit)? = null,
-    // ... autres parametres
-)
-```
-
-### Contextes et Actions Correspondantes
-
-**Contexte Standard** (`contextType = "standard"` ou defaut)
-- Utilise par : Search, Home, Album, Library
-- Actions affichees :
-  - "Ajouter a une playlist" (si `onAddToPlaylist` fourni)
-  - "Ajouter aux favoris" (si `onLike` fourni)
-  - "Uploader vers le cloud" (si `onUploadToCloud` fourni)
-  - "Récupérer depuis le cloud" (si `onDownloadFromCloud` fourni)
-  - "Plus" (si `onMore` fourni)
-
-```kotlin
-SharedTrackRowItem(
-    title = track.title,
-    subtitle = track.artistName,
-    onClick = { playTrack() },
-    contextType = "standard",
-    onAddToPlaylist = { /* ... */ },
-    onLike = { /* ... */ },
-)
-```
-
-**Contexte Playlist** (`contextType = "playlist"`)
-- Utilise par : PlaylistDetailScreen
-- Actions affichees :
-  - "Retirer de cette playlist" (si `onRemoveFromPlaylist` fourni)
-  - "Ajouter a une autre playlist" (si `onAddToPlaylist` fourni)
+**Niveaux du Menu Contextuel** :
+1. **Niveau 1 — Actions Musicales Principales** :
+   - `Ajouter à la file d'attente` (si `onAddToQueue` != null)
+   - `Ajouter à une playlist` (si `onAddToPlaylist` != null)
+   - `Voir l'artiste` (si `onViewArtist` != null)
+   - `Voir l'album` (si `onViewAlbum` != null)
+   - `Plus d'options  ›` (si des actions avancées sont disponibles)
+2. **Niveau 2 — Fichiers, Cloud & Gestion Avancée** :
+   - `‹ Retour` (revient au niveau 1)
+   - `Retirer de la playlist` (si `onRemoveFromPlaylist` != null)
+   - `Télécharger sur l'appareil` / `Ajouter au Cloud personnel` (si `onDownload` != null)
+   - `Supprimer du téléphone` (si `onDeleteDownload` != null)
+   - `Ajouter au Cloud` (si `onUploadToCloud` != null)
+   - `Récupérer depuis le Cloud` (si `onDownloadFromCloud` != null)
+   - `Supprimer du Cloud` (si `onDeleteFromCloud` != null)
+   - `Modifier les informations` (si `onEditMetadata` != null)
 
 ```kotlin
 SharedTrackRowItem(

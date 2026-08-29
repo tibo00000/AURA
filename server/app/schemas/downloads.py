@@ -11,8 +11,13 @@ from datetime import datetime
 
 class SourceHint(BaseModel):
     """Optional helper for locating the track source."""
-    provider_name: str
-    provider_track_id: str
+    provider_name: str = "youtube"
+    provider_track_id: str = ""
+    title: Optional[str] = None
+    artist_name: Optional[str] = None
+    album_title: Optional[str] = None
+    cover_uri: Optional[str] = None
+    resolved_video_id: Optional[str] = None
 
 
 class DownloadRequest(BaseModel):

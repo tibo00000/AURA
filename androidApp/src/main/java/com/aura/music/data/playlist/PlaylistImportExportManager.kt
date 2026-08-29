@@ -12,8 +12,7 @@ import com.aura.music.data.spotify.SpotifyAuthManager
 import com.aura.music.domain.search.SearchNormalizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -67,6 +66,14 @@ data class ExportReport(
     val outputFile: File
 )
 
+data class SpotifyPlaylistSummary(
+    val id: String,
+    val name: String,
+    val trackCount: Int,
+    val coverUrl: String?,
+    val isLikedSongs: Boolean = false
+)
+
 sealed class ImportStage {
     object FetchingMetadata : ImportStage()
     data class Reconciling(val progress: ImportProgress) : ImportStage()
@@ -79,25 +86,146 @@ class SpotifyAuthRequiredException(val sessionExpired: Boolean) : Exception("Aut
 /**
  * Gestionnaire d'Import et d'Export de Playlists pour AURA.
  * 
+ * - Affichage et sélection directe des playlists du compte Spotify connecté.
  * - Parsing universel tolérant (M3U, M3U8, CSV dynamique, TXT).
  * - Résolution Deezer sans clé et Spotify via API officielle sécurisée.
- * - Réconciliation Zero-Jank par lots sur Dispatchers.Default avec progression continue.
+ * - Réconciliation Zero-Jank par lots sur Dispatchers.Default avec progression continue sans violation de Flow context.
  * - Export standardisé .m3u8 avec résolution des chemins réels.
  */
 class PlaylistImportExportManager(
     private val context: Context,
     private val libraryRepository: LocalLibraryRepository,
-    private val spotifyAuthManager: SpotifyAuthManager
+    private val spotifyAuthManager: SpotifyAuthManager,
+    private val downloadRepository: com.aura.music.data.repository.DownloadRepository
 ) {
     companion object {
         private const val TAG = "PlaylistImportExportMgr"
     }
 
     /**
+     * Récupère la liste des playlists du compte Spotify connecté (avec "Titres Likés" en tête).
+     */
+    suspend fun getUserSpotifyPlaylists(): List<SpotifyPlaylistSummary> = withContext(Dispatchers.IO) {
+        val token = spotifyAuthManager.getValidAccessToken() ?: return@withContext emptyList()
+        val result = mutableListOf<SpotifyPlaylistSummary>()
+
+        try {
+            // 1. Récupération des Titres Likés (Compteur)
+            val likedConn = URL("https://api.spotify.com/v1/me/tracks?limit=1").openConnection() as HttpURLConnection
+            likedConn.setRequestProperty("Authorization", "Bearer $token")
+            likedConn.connectTimeout = 5_000
+            likedConn.readTimeout = 5_000
+            if (likedConn.responseCode in 200..299) {
+                val likedJson = JSONObject(likedConn.inputStream.bufferedReader().use { it.readText() })
+                val totalLiked = likedJson.optInt("total", 0)
+                if (totalLiked > 0) {
+                    result.add(
+                        SpotifyPlaylistSummary(
+                            id = "spotify:liked_songs",
+                            name = "Titres Likés (Spotify)",
+                            trackCount = totalLiked,
+                            coverUrl = null,
+                            isLikedSongs = true
+                        )
+                    )
+                }
+            }
+
+            // 2. Récupération des Playlists de l'utilisateur
+            val plConn = URL("https://api.spotify.com/v1/me/playlists?limit=50").openConnection() as HttpURLConnection
+            plConn.setRequestProperty("Authorization", "Bearer $token")
+            plConn.connectTimeout = 8_000
+            plConn.readTimeout = 8_000
+            if (plConn.responseCode in 200..299) {
+                val plJson = JSONObject(plConn.inputStream.bufferedReader().use { it.readText() })
+                val items = plJson.optJSONArray("items")
+                if (items != null) {
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val id = item.optString("id")
+                        val name = item.optString("name", "Sans titre")
+
+                        // Compatible anciens schémas ("tracks") et nouveaux schémas Spotify ("items")
+                        val totalTracks = item.optJSONObject("items")?.optInt("total", 0)
+                            ?: item.optJSONObject("tracks")?.optInt("total", 0)
+                            ?: item.optInt("total", 0)
+
+                        val images = item.optJSONArray("images")
+                        val coverUrl = if (images != null && images.length() > 0) {
+                            images.optJSONObject(0)?.optString("url")
+                        } else null
+
+                        if (id.isNotBlank()) {
+                            result.add(
+                                SpotifyPlaylistSummary(
+                                    id = id,
+                                    name = name,
+                                    trackCount = totalTracks,
+                                    coverUrl = coverUrl,
+                                    isLikedSongs = false
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Erreur récupération playlists utilisateur Spotify", e)
+        }
+
+        result
+    }
+
+    /**
+     * Importe directement une playlist Spotify par son ID ou depuis les Titres Likés.
+     */
+    fun importFromSpotifySelection(summary: SpotifyPlaylistSummary): Flow<ImportStage> = channelFlow {
+        send(ImportStage.FetchingMetadata)
+        try {
+            val (playlistName, rawTracks) = if (summary.isLikedSongs) {
+                fetchSpotifyLikedSongs()
+            } else {
+                fetchSpotifyPlaylistById(summary.id)
+            }
+
+            if (rawTracks.isEmpty()) {
+                send(ImportStage.Error("Aucun morceau trouvé dans la sélection Spotify."))
+                return@channelFlow
+            }
+
+            // Réconciliation locale
+            val matchedTracks = reconcileTracksWithProgress(rawTracks) { progress ->
+                send(ImportStage.Reconciling(progress))
+            }
+
+            val localMatchedCount = matchedTracks.count { it.isMatchedLocally }
+            val report = ImportReport(
+                playlistName = playlistName,
+                sourceDescription = "Spotify",
+                totalTracks = matchedTracks.size,
+                matchedLocalCount = localMatchedCount,
+                missingCount = matchedTracks.size - localMatchedCount,
+                tracks = matchedTracks
+            )
+
+            send(ImportStage.ReadyToCreate(report))
+        } catch (e: SpotifyAuthRequiredException) {
+            send(ImportStage.Error(
+                message = if (e.sessionExpired) "Votre session Spotify a expiré. Veuillez reconnecter votre compte." else "Connexion à Spotify requise.",
+                requiresSpotifyAuth = true,
+                sessionExpired = e.sessionExpired
+            ))
+        } catch (t: Throwable) {
+            Log.e(TAG, "Erreur import Spotify direct", t)
+            send(ImportStage.Error(t.message ?: "Erreur lors de la récupération de la playlist Spotify"))
+        }
+    }
+
+    /**
      * Importe une playlist depuis un lien Web (Deezer ou Spotify).
      */
-    fun importFromWeb(url: String): Flow<ImportStage> = flow {
-        emit(ImportStage.FetchingMetadata)
+    fun importFromWeb(url: String): Flow<ImportStage> = channelFlow {
+        send(ImportStage.FetchingMetadata)
         try {
             val cleanUrl = url.trim()
             val (playlistName, rawTracks) = when {
@@ -107,13 +235,13 @@ class PlaylistImportExportManager(
             }
 
             if (rawTracks.isEmpty()) {
-                emit(ImportStage.Error("Aucun morceau trouvé dans la playlist distante."))
-                return@flow
+                send(ImportStage.Error("Aucun morceau trouvé dans la playlist distante."))
+                return@channelFlow
             }
 
             // Réconciliation par lots
             val matchedTracks = reconcileTracksWithProgress(rawTracks) { progress ->
-                emit(ImportStage.Reconciling(progress))
+                send(ImportStage.Reconciling(progress))
             }
 
             val localMatchedCount = matchedTracks.count { it.isMatchedLocally }
@@ -126,24 +254,24 @@ class PlaylistImportExportManager(
                 tracks = matchedTracks
             )
 
-            emit(ImportStage.ReadyToCreate(report))
+            send(ImportStage.ReadyToCreate(report))
         } catch (e: SpotifyAuthRequiredException) {
-            emit(ImportStage.Error(
+            send(ImportStage.Error(
                 message = if (e.sessionExpired) "Votre session Spotify a expiré. Veuillez reconnecter votre compte." else "Connexion à Spotify requise pour importer cette playlist.",
                 requiresSpotifyAuth = true,
                 sessionExpired = e.sessionExpired
             ))
-        } catch (e: Exception) {
-            Log.e(TAG, "Erreur import web", e)
-            emit(ImportStage.Error(e.message ?: "Erreur lors de la récupération de la playlist"))
+        } catch (t: Throwable) {
+            Log.e(TAG, "Erreur import web", t)
+            send(ImportStage.Error(t.message ?: "Erreur lors de la récupération de la playlist"))
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     /**
      * Importe une playlist depuis un fichier local (M3U, M3U8, CSV, TXT).
      */
-    fun importFromFile(uri: Uri, contentResolver: ContentResolver): Flow<ImportStage> = flow {
-        emit(ImportStage.FetchingMetadata)
+    fun importFromFile(uri: Uri, contentResolver: ContentResolver): Flow<ImportStage> = channelFlow {
+        send(ImportStage.FetchingMetadata)
         try {
             val inputStream = contentResolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Impossible d'ouvrir le fichier sélectionné.")
@@ -151,13 +279,13 @@ class PlaylistImportExportManager(
             val (fileName, rawTracks) = parseFileContent(uri, inputStream)
 
             if (rawTracks.isEmpty()) {
-                emit(ImportStage.Error("Le fichier ne contient aucun titre valide."))
-                return@flow
+                send(ImportStage.Error("Le fichier ne contient aucun titre valide."))
+                return@channelFlow
             }
 
             // Réconciliation locale
             val matchedTracks = reconcileTracksWithProgress(rawTracks) { progress ->
-                emit(ImportStage.Reconciling(progress))
+                send(ImportStage.Reconciling(progress))
             }
 
             val localMatchedCount = matchedTracks.count { it.isMatchedLocally }
@@ -170,31 +298,65 @@ class PlaylistImportExportManager(
                 tracks = matchedTracks
             )
 
-            emit(ImportStage.ReadyToCreate(report))
-        } catch (e: Exception) {
-            Log.e(TAG, "Erreur import fichier", e)
-            emit(ImportStage.Error(e.message ?: "Erreur lors de la lecture du fichier"))
+            send(ImportStage.ReadyToCreate(report))
+        } catch (t: Throwable) {
+            Log.e(TAG, "Erreur import fichier", t)
+            send(ImportStage.Error(t.message ?: "Erreur lors de la lecture du fichier"))
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     /**
-     * Crée la playlist dans Room et associe les morceaux trouvés.
+     * Crée la playlist dans Room et associe les morceaux trouvés (locaux et Cloud sans téléchargement disque).
      */
-    suspend fun commitImport(report: ImportReport, playlistCustomName: String? = null): String = withContext(Dispatchers.IO) {
+    suspend fun commitImport(
+        report: ImportReport,
+        playlistCustomName: String? = null,
+        onProgress: ((current: Int, total: Int, trackName: String) -> Unit)? = null
+    ): String = withContext(Dispatchers.IO) {
         val finalName = playlistCustomName?.takeIf { it.isNotBlank() } ?: report.playlistName
         val playlistId = libraryRepository.createPlaylist(finalName)
+        val total = report.tracks.size
 
-        for (item in report.tracks) {
-            if (item.isMatchedLocally && item.localTrackId != null) {
-                try {
-                    libraryRepository.addTrackToPlaylist(playlistId, item.localTrackId, context = "playlist_import")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Erreur ajout titre ${item.localTrackId} à la playlist $playlistId", e)
+        for ((index, item) in report.tracks.withIndex()) {
+            try {
+                val trackId = if (item.isMatchedLocally && item.localTrackId != null) {
+                    item.localTrackId
+                } else {
+                    // Enregistrement Cloud placeholder (disponible en streaming sans téléchargement physique sur le téléphone)
+                    val cloudTrackId = libraryRepository.upsertCloudTrackPlaceholder(
+                        title = item.raw.title,
+                        artistName = item.raw.artist,
+                        albumTitle = item.raw.album,
+                        durationMs = item.raw.durationS.toLong() * 1000L,
+                        coverUri = item.raw.coverUrl
+                    )
+                    // Déclenchement automatique du téléchargement serveur Cloud en arrière-plan
+                    try {
+                        downloadRepository.triggerDownload(
+                            trackId = cloudTrackId,
+                            title = item.raw.title,
+                            artistName = item.raw.artist,
+                            albumTitle = item.raw.album,
+                            coverUri = item.raw.coverUrl,
+                            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                        ).collect { }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Erreur déclenchement téléchargement cloud pour ${item.raw.title}", e)
+                    }
+                    cloudTrackId
                 }
+                libraryRepository.addTrackToPlaylist(playlistId, trackId, contextType = "playlist_import")
+                onProgress?.invoke(index + 1, total, "${item.raw.artist} - ${item.raw.title}")
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "Erreur ajout titre ${item.raw.title} à la playlist $playlistId", e)
             }
         }
 
-        Log.i(TAG, "Playlist importée créée avec succès ID=$playlistId (${report.matchedLocalCount}/${report.totalTracks} liés)")
+        // Lancement immédiat de la boucle de rafraîchissement d'état des téléchargements
+        downloadRepository.ensurePollingStarted(com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
+
+        Log.i(TAG, "Playlist importée créée avec succès ID=$playlistId (${report.totalTracks} titres ajoutés dont ${report.matchedLocalCount} locaux)")
         playlistId
     }
 
@@ -202,22 +364,22 @@ class PlaylistImportExportManager(
      * Exporte une playlist AURA en fichier .m3u8 standard avec résolution des chemins réels.
      */
     suspend fun exportPlaylistToM3U8(playlistId: String): ExportReport = withContext(Dispatchers.IO) {
-        val playlist = libraryRepository.getPlaylistDetails(playlistId)
+        val playlist = libraryRepository.getPlaylistDetail(playlistId)
             ?: throw IllegalArgumentException("Playlist introuvable (ID: $playlistId)")
 
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val safeName = playlist.name.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(40)
+        val safeName = playlist.summary.name.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(40)
         val outputFile = File(exportDir, "${safeName}_export.m3u8")
 
         val sb = StringBuilder()
         sb.append("#EXTM3U\n")
-        sb.append("#PLAYLIST:${playlist.name}\n\n")
+        sb.append("#PLAYLIST:${playlist.summary.name}\n\n")
 
         var fullPathCount = 0
         var metadataOnlyCount = 0
 
         for (t in playlist.tracks) {
-            val durationS = (t.durationMs / 1000L).coerceAtLeast(0L)
+            val durationS = ((t.durationMs ?: 0L) / 1000L).coerceAtLeast(0L)
             sb.append("#EXTINF:$durationS,${t.artistName} - ${t.title}\n")
 
             // Tentative de résolution du chemin physique absolu
@@ -242,7 +404,7 @@ class PlaylistImportExportManager(
         )
 
         ExportReport(
-            playlistName = playlist.name,
+            playlistName = playlist.summary.name,
             totalTracks = playlist.tracks.size,
             fullPathCount = fullPathCount,
             metadataOnlyCount = metadataOnlyCount,
@@ -255,7 +417,7 @@ class PlaylistImportExportManager(
     // Résolution Web (Deezer & Spotify API Officielles)
     // =========================================================================
 
-    private suspend fun fetchDeezerPlaylist(urlStr: strToKotlin): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
+    private suspend fun fetchDeezerPlaylist(urlStr: String): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
         var finalUrl = urlStr
         // Résolution de lien court Deezer (link.deezer.com / deezer.page.link)
         if (urlStr.contains("link.deezer.com") || urlStr.contains("deezer.page.link")) {
@@ -271,7 +433,7 @@ class PlaylistImportExportManager(
             }
         }
 
-        val playlistId = Regex("playlist/(\\d+)").find(finalUrl)?.groupValues?.get(1)
+        val playlistId = Regex("""playlist/(\d+)""").find(finalUrl)?.groupValues?.get(1)
             ?: throw IllegalArgumentException("ID de playlist Deezer introuvable dans le lien.")
 
         val apiEndpoint = "https://api.deezer.com/playlist/$playlistId"
@@ -284,8 +446,8 @@ class PlaylistImportExportManager(
         val root = JSONObject(responseText)
 
         if (root.has("error")) {
-            val errObj = root.getJSONObject("error")
-            throw RuntimeException("Erreur Deezer : ${errObj.optString("message", "Erreur inconnue")}")
+            val errObj = root.optJSONObject("error")
+            throw RuntimeException("Erreur Deezer : ${errObj?.optString("message", "Erreur inconnue")}")
         }
 
         val title = root.optString("title", "Playlist Deezer")
@@ -295,7 +457,7 @@ class PlaylistImportExportManager(
 
         val rawTracks = mutableListOf<RawImportTrack>()
         for (i in 0 until tracksArray.length()) {
-            val t = tracksArray.getJSONObject(i)
+            val t = tracksArray.optJSONObject(i) ?: continue
             rawTracks.add(
                 RawImportTrack(
                     title = t.optString("title", "Sans titre"),
@@ -313,11 +475,15 @@ class PlaylistImportExportManager(
     }
 
     private suspend fun fetchSpotifyPlaylist(urlStr: String): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
+        val playlistId = Regex("""(?:playlist[/:]|open\.spotify\.com/(?:intl-[a-z]+/)?playlist/)([a-zA-Z0-9]+)""").find(urlStr)?.groupValues?.get(1)
+            ?: throw IllegalArgumentException("ID de playlist Spotify introuvable dans le lien.")
+
+        fetchSpotifyPlaylistById(playlistId)
+    }
+
+    private suspend fun fetchSpotifyPlaylistById(playlistId: String): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
         val token = spotifyAuthManager.getValidAccessToken()
             ?: throw SpotifyAuthRequiredException(sessionExpired = spotifyAuthManager.isConnected.value)
-
-        val playlistId = Regex("playlist/([a-zA-Z0-9]+)").find(urlStr)?.groupValues?.get(1)
-            ?: throw IllegalArgumentException("ID de playlist Spotify introuvable dans le lien.")
 
         val endpoint = "https://api.spotify.com/v1/playlists/$playlistId"
         val conn = URL(endpoint).openConnection() as HttpURLConnection
@@ -338,32 +504,38 @@ class PlaylistImportExportManager(
         val itemsObj = root.optJSONObject("items") ?: root.optJSONObject("tracks")
 
         val rawTracks = mutableListOf<RawImportTrack>()
-        var currentItemsArray = itemsObj?.optJSONArray("items")
+        var currentItemsArray = itemsObj?.optJSONArray("items") ?: root.optJSONArray("items")
 
         fun parseSpotifyItems(arr: org.json.JSONArray?) {
             if (arr == null) return
             for (i in 0 until arr.length()) {
-                val entry = arr.getJSONObject(i)
+                val entry = arr.optJSONObject(i) ?: continue
                 val t = entry.optJSONObject("item") ?: entry.optJSONObject("track") ?: continue
 
                 val artistsArr = t.optJSONArray("artists")
                 val artistNames = if (artistsArr != null && artistsArr.length() > 0) {
                     val list = mutableListOf<String>()
                     for (a in 0 until artistsArr.length()) {
-                        list.add(artistsArr.getJSONObject(a).optString("name"))
+                        val aObj = artistsArr.optJSONObject(a)
+                        if (aObj != null) {
+                            val name = aObj.optString("name", "")
+                            if (name.isNotBlank()) list.add(name)
+                        }
                     }
-                    list.joinToString(", ")
+                    list.joinToString(", ").ifBlank { "Inconnu" }
                 } else "Inconnu"
 
                 val albumObj = t.optJSONObject("album")
                 val imagesArr = albumObj?.optJSONArray("images")
                 val cover = if (imagesArr != null && imagesArr.length() > 0) {
-                    imagesArr.getJSONObject(0).optString("url")
+                    imagesArr.optJSONObject(0)?.optString("url")
                 } else null
+
+                val trackTitle = t.optString("name", "").takeIf { it.isNotBlank() } ?: continue
 
                 rawTracks.add(
                     RawImportTrack(
-                        title = t.optString("name", "Sans titre"),
+                        title = trackTitle,
                         artist = artistNames,
                         album = albumObj?.optString("name"),
                         durationS = t.optInt("duration_ms", 0) / 1000,
@@ -379,18 +551,96 @@ class PlaylistImportExportManager(
         // Pagination complète à travers `next`
         var nextUrl = itemsObj?.optString("next", null)
         while (!nextUrl.isNullOrBlank() && nextUrl != "null") {
-            val nextConn = URL(nextUrl).openConnection() as HttpURLConnection
-            nextConn.setRequestProperty("Authorization", "Bearer $token")
-            if (nextConn.responseCode in 200..299) {
-                val nextObj = JSONObject(nextConn.inputStream.bufferedReader().use { it.readText() })
-                parseSpotifyItems(nextObj.optJSONArray("items"))
-                nextUrl = nextObj.optString("next", null)
-            } else {
+            try {
+                val nextConn = URL(nextUrl).openConnection() as HttpURLConnection
+                nextConn.setRequestProperty("Authorization", "Bearer $token")
+                nextConn.connectTimeout = 10_000
+                nextConn.readTimeout = 10_000
+
+                if (nextConn.responseCode in 200..299) {
+                    val nextObj = JSONObject(nextConn.inputStream.bufferedReader().use { it.readText() })
+                    parseSpotifyItems(nextObj.optJSONArray("items"))
+                    nextUrl = nextObj.optString("next", null)
+                } else {
+                    break
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Arrêt pagination Spotify suite à erreur", e)
                 break
             }
         }
 
         Pair(title, rawTracks)
+    }
+
+    private suspend fun fetchSpotifyLikedSongs(): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
+        val token = spotifyAuthManager.getValidAccessToken()
+            ?: throw SpotifyAuthRequiredException(sessionExpired = spotifyAuthManager.isConnected.value)
+
+        val rawTracks = mutableListOf<RawImportTrack>()
+        var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
+
+        fun parseSpotifyItems(arr: org.json.JSONArray?) {
+            if (arr == null) return
+            for (i in 0 until arr.length()) {
+                val entry = arr.optJSONObject(i) ?: continue
+                val t = entry.optJSONObject("item") ?: entry.optJSONObject("track") ?: continue
+
+                val artistsArr = t.optJSONArray("artists")
+                val artistNames = if (artistsArr != null && artistsArr.length() > 0) {
+                    val list = mutableListOf<String>()
+                    for (a in 0 until artistsArr.length()) {
+                        val aObj = artistsArr.optJSONObject(a)
+                        if (aObj != null) {
+                            val name = aObj.optString("name", "")
+                            if (name.isNotBlank()) list.add(name)
+                        }
+                    }
+                    list.joinToString(", ").ifBlank { "Inconnu" }
+                } else "Inconnu"
+
+                val albumObj = t.optJSONObject("album")
+                val imagesArr = albumObj?.optJSONArray("images")
+                val cover = if (imagesArr != null && imagesArr.length() > 0) {
+                    imagesArr.optJSONObject(0)?.optString("url")
+                } else null
+
+                val trackTitle = t.optString("name", "").takeIf { it.isNotBlank() } ?: continue
+
+                rawTracks.add(
+                    RawImportTrack(
+                        title = trackTitle,
+                        artist = artistNames,
+                        album = albumObj?.optString("name"),
+                        durationS = t.optInt("duration_ms", 0) / 1000,
+                        isrc = t.optJSONObject("external_ids")?.optString("isrc"),
+                        coverUrl = cover
+                    )
+                )
+            }
+        }
+
+        while (!nextUrl.isNullOrBlank() && nextUrl != "null") {
+            try {
+                val conn = URL(nextUrl).openConnection() as HttpURLConnection
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 10_000
+                conn.readTimeout = 10_000
+
+                if (conn.responseCode in 200..299) {
+                    val root = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                    parseSpotifyItems(root.optJSONArray("items"))
+                    nextUrl = root.optString("next", null)
+                } else {
+                    break
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Arrêt pagination Titres Likés suite à erreur", e)
+                break
+            }
+        }
+
+        Pair("Titres Likés (Spotify)", rawTracks)
     }
 
     // =========================================================================
@@ -608,7 +858,7 @@ class PlaylistImportExportManager(
                 matchedList.add(
                     MatchedTrack(
                         raw = raw,
-                        localTrackId = match.first.trackId,
+                        localTrackId = match.first.id,
                         matchedTitle = match.first.title,
                         matchedArtist = match.first.artistName,
                         isMatchedLocally = true
@@ -668,5 +918,3 @@ class PlaylistImportExportManager(
         return null
     }
 }
-
-typealias strToKotlin = String

@@ -25,13 +25,16 @@ import com.aura.music.data.network.NetworkPolicyChecker
 import android.util.Log
 import androidx.room3.useWriterConnection
 import androidx.room3.immediateTransaction
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.call.body
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.aura.music.domain.search.LocalSearchEngine
+import com.aura.music.domain.search.LocalSearchIndex
+import java.util.concurrent.atomic.AtomicReference
 import java.util.UUID
 
 data class LibraryDashboardSummary(
@@ -67,7 +70,28 @@ class LocalLibraryRepository(
     private val apiService: AuraApiService,
     private val context: android.content.Context,
 ) {
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
+    private val searchIndexRef = AtomicReference<LocalSearchIndex?>(null)
+
+    suspend fun getOrBuildSearchIndex(): LocalSearchIndex {
+        val cached = searchIndexRef.get()
+        if (cached != null) return cached
+
+        return withContext(Dispatchers.Default) {
+            val allTracks = database.trackDao().getAllTracks()
+            val allArtists = database.artistDao().getAllBrowseArtists()
+            val allAlbums = database.albumDao().getAllBrowseAlbums()
+
+            val built = LocalSearchIndex.build(allTracks, allArtists, allAlbums)
+            searchIndexRef.set(built)
+            built
+        }
+    }
+
+    fun invalidateSearchIndex() {
+        searchIndexRef.set(null)
+    }
     suspend fun ensureDefaults() = withContext(Dispatchers.IO) {
         if (database.userSettingsDao().getSettings() == null) {
             database.userSettingsDao().insertOrReplace(
@@ -377,6 +401,7 @@ class LocalLibraryRepository(
             }
         }
 
+        invalidateSearchIndex()
         scannedTracks.size
     }
 
@@ -461,13 +486,90 @@ class LocalLibraryRepository(
         withContext(Dispatchers.IO) { database.trackDao().getDownloadedTracks() }
 
     suspend fun searchLocalTracks(query: String, limit: Int = 12): List<TrackListRow> =
-        withContext(Dispatchers.IO) {
-            if (query.isBlank()) {
+        withContext(Dispatchers.Default) {
+            val trimmed = query.trim()
+            if (trimmed.isBlank()) {
                 emptyList()
             } else {
-                database.trackDao().searchTracks(query.trim(), limit)
+                val index = getOrBuildSearchIndex()
+                LocalSearchEngine.searchTracks(
+                    index = index,
+                    query = trimmed,
+                    limit = limit
+                )
             }
         }
+
+    suspend fun upsertCloudTrackPlaceholder(
+        title: String,
+        artistName: String,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
+    ): String = withContext(Dispatchers.IO) {
+        val normArtist = normalize(artistName)
+        val normTitle = normalize(title)
+        val cleanArtist = normArtist.filter { it.isLetterOrDigit() || it == '_' }
+        val cleanTitle = normTitle.filter { it.isLetterOrDigit() || it == '_' }
+        val trackId = "trk_cloud_${cleanArtist}_${cleanTitle}".take(64)
+
+        val existing = database.trackDao().getTrackById(trackId)
+        if (existing != null) return@withContext trackId
+
+        val now = System.currentTimeMillis()
+        val artistId = "art_cloud_${cleanArtist}".take(64)
+        val albumId = albumTitle?.takeIf { it.isNotBlank() }?.let { "alb_cloud_${normalize(it).filter { it.isLetterOrDigit() || it == '_' }}".take(64) }
+
+        database.artistDao().insertArtistsIgnore(
+            listOf(
+                com.aura.music.data.local.ArtistEntity(
+                    id = artistId,
+                    name = artistName,
+                    normalizedName = normArtist,
+                    pictureUri = coverUri,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            )
+        )
+
+        if (albumId != null && !albumTitle.isNullOrBlank()) {
+            database.albumDao().insertAlbumsIgnore(
+                listOf(
+                    com.aura.music.data.local.AlbumEntity(
+                        id = albumId,
+                        primaryArtistId = artistId,
+                        title = albumTitle,
+                        normalizedTitle = normalize(albumTitle),
+                        coverUri = coverUri,
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                )
+            )
+        }
+
+        database.trackDao().upsertTrack(
+            com.aura.music.data.local.TrackEntity(
+                id = trackId,
+                primaryArtistId = artistId,
+                albumId = albumId,
+                title = title,
+                normalizedTitle = normTitle,
+                displayArtistName = artistName,
+                displayAlbumTitle = albumTitle,
+                durationMs = durationMs,
+                coverUri = coverUri,
+                canonicalAudioSourceType = "cloud",
+                isLiked = false,
+                isDownloadedByAura = false, // Pas de téléchargement local automatique sur le téléphone
+                createdAt = now,
+                updatedAt = now,
+            )
+        )
+
+        trackId
+    }
 
     suspend fun saveRecentSearch(query: String) = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
@@ -504,15 +606,33 @@ class LocalLibraryRepository(
         withContext(Dispatchers.IO) { database.albumDao().getAllBrowseAlbums() }
 
     suspend fun searchLocalArtists(query: String, limit: Int = 8): List<ArtistBrowseRow> =
-        withContext(Dispatchers.IO) {
-            if (query.isBlank()) emptyList()
-            else database.artistDao().searchArtists(query.trim(), limit)
+        withContext(Dispatchers.Default) {
+            val trimmed = query.trim()
+            if (trimmed.isBlank()) {
+                emptyList()
+            } else {
+                val index = getOrBuildSearchIndex()
+                LocalSearchEngine.searchArtists(
+                    index = index,
+                    query = trimmed,
+                    limit = limit
+                )
+            }
         }
 
     suspend fun searchLocalAlbums(query: String, limit: Int = 8): List<AlbumBrowseRow> =
-        withContext(Dispatchers.IO) {
-            if (query.isBlank()) emptyList()
-            else database.albumDao().searchAlbums(query.trim(), limit)
+        withContext(Dispatchers.Default) {
+            val trimmed = query.trim()
+            if (trimmed.isBlank()) {
+                emptyList()
+            } else {
+                val index = getOrBuildSearchIndex()
+                LocalSearchEngine.searchAlbums(
+                    index = index,
+                    query = trimmed,
+                    limit = limit
+                )
+            }
         }
 
     suspend fun getArtistDetail(
@@ -885,6 +1005,7 @@ class LocalLibraryRepository(
         contextId: String? = null,
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
+        // 1. Mise à jour Room locale synchrone immédiate (0 ms)
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
                 if (currentlyLiked) {
@@ -903,30 +1024,38 @@ class LocalLibraryRepository(
                 }
             }
         }
-        if (shouldSyncDirectly()) {
-            try {
-                if (currentlyLiked) {
-                    apiService.unlikeTrack(SyncRepository.AUTH_TOKEN, trackId)
-                } else {
-                    apiService.likeTrack(SyncRepository.AUTH_TOKEN, trackId, contextType, contextId)
-                }
-                Log.i("LocalLibraryRepository", "Successfully synced like/unlike for $trackId in real-time")
-            } catch (e: Exception) {
-                Log.w("LocalLibraryRepository", "Direct like/unlike REST failed: ${e.message}. Falling back to outbox.", e)
-                recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
-            }
-        } else {
-            recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
-        }
 
-        if (!currentlyLiked) {
-            val prefs = context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE)
-            if (prefs.getBoolean("auto_download_favorites", false)) {
-                try {
-                    cloudFileRepositoryProvider?.invoke()?.autoDownloadFavoriteTrack(trackId)
-                } catch (e: Exception) {
-                    Log.w("LocalLibraryRepository", "Auto download favorite failed: ${e.message}")
+        // 2. Synchronisation REST et auto-téléchargement déportés en arrière-plan asynchrone
+        repositoryScope.launch {
+            try {
+                if (shouldSyncDirectly()) {
+                    try {
+                        if (currentlyLiked) {
+                            apiService.unlikeTrack(SyncRepository.AUTH_TOKEN, trackId)
+                        } else {
+                            apiService.likeTrack(SyncRepository.AUTH_TOKEN, trackId, contextType, contextId)
+                        }
+                        Log.i("LocalLibraryRepository", "Successfully synced like/unlike for $trackId in real-time")
+                    } catch (e: Exception) {
+                        Log.w("LocalLibraryRepository", "Direct like/unlike REST failed: ${e.message}. Falling back to outbox.", e)
+                        recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
+                    }
+                } else {
+                    recordLikeOutbox(trackId, currentlyLiked, now, contextType, contextId)
                 }
+
+                if (!currentlyLiked) {
+                    val prefs = context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE)
+                    if (prefs.getBoolean("auto_download_favorites", false)) {
+                        try {
+                            cloudFileRepositoryProvider?.invoke()?.autoDownloadFavoriteTrack(trackId)
+                        } catch (e: Exception) {
+                            Log.w("LocalLibraryRepository", "Auto download favorite failed: ${e.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("LocalLibraryRepository", "Background like sync error: ${e.message}")
             }
         }
     }
@@ -969,6 +1098,27 @@ class LocalLibraryRepository(
             )
         }
 
+    suspend fun removeTrackFromDatabase(trackId: String) = withContext(Dispatchers.IO) {
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val isCloudSynced = cloudFileRepositoryProvider?.invoke()?.isCloudTrackSynced(trackId) == true
+                val downloadsDir = java.io.File(context.filesDir, "downloads")
+                val targetFile = java.io.File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+                if (targetFile.exists()) {
+                    targetFile.delete()
+                }
+                if (isCloudSynced) {
+                    // Conserve la ligne TrackEntity dans Room pour le streaming Cloud, supprime juste le lien local
+                    database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+                } else {
+                    // Non synchronisé au Cloud : suppression définitive de la base Room
+                    database.trackDao().deleteTracksByIds(listOf(trackId))
+                }
+            }
+        }
+        invalidateSearchIndex()
+    }
+
     suspend fun deleteTrack(trackId: String): android.app.PendingIntent? = withContext(Dispatchers.IO) {
         var pendingIntent: android.app.PendingIntent? = null
         val track = database.trackDao().getTrackById(trackId)
@@ -981,42 +1131,29 @@ class LocalLibraryRepository(
                     val uri = android.net.Uri.parse(uriString)
                     context.contentResolver.delete(uri, null, null)
                 } catch (securityException: SecurityException) {
-                    securityExceptionThrown = true
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                         val recoverableSecurityException = securityException as? android.app.RecoverableSecurityException
                         if (recoverableSecurityException != null) {
                             pendingIntent = recoverableSecurityException.userAction.actionIntent
+                            securityExceptionThrown = true
+                        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            val uriList = listOf(android.net.Uri.parse(uriString))
+                            pendingIntent = android.provider.MediaStore.createDeleteRequest(context.contentResolver, uriList)
+                            securityExceptionThrown = true
                         } else {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                val uriList = listOf(android.net.Uri.parse(uriString))
-                                pendingIntent = android.provider.MediaStore.createDeleteRequest(context.contentResolver, uriList)
-                            }
+                            securityExceptionThrown = true
                         }
                     } else {
-                        throw securityException
+                        securityExceptionThrown = true
                     }
+                } catch (e: Exception) {
+                    Log.w("LocalLibraryRepository", "MediaStore deletion non-security error: ${e.message}")
                 }
             }
         }
         
         if (!securityExceptionThrown) {
-            database.useWriterConnection { transactor ->
-                transactor.immediateTransaction {
-                    val isCloudSynced = cloudFileRepositoryProvider?.invoke()?.isCloudTrackSynced(trackId) == true
-                    val downloadsDir = java.io.File(context.filesDir, "downloads")
-                    val targetFile = java.io.File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-                    if (targetFile.exists()) {
-                        targetFile.delete()
-                    }
-                    if (isCloudSynced) {
-                        // Conserve la ligne TrackEntity dans Room pour le streaming Cloud, supprime juste le lien local
-                        database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
-                    } else {
-                        // Non synchronisé au Cloud : suppression définitive de la base Room
-                        database.trackDao().deleteTracksByIds(listOf(trackId))
-                    }
-                }
-            }
+            removeTrackFromDatabase(trackId)
         }
         pendingIntent
     }
@@ -1179,6 +1316,7 @@ class LocalLibraryRepository(
                 updatedAt = now
             )
             database.trackDao().upsertTrack(updatedTrack)
+            invalidateSearchIndex()
 
             TrackListRow(
                 id = updatedTrack.id,

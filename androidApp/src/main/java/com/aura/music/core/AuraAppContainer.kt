@@ -118,7 +118,8 @@ class AuraAppContainer(context: Context) {
         com.aura.music.data.playlist.PlaylistImportExportManager(
             context = appContext,
             libraryRepository = localLibraryRepository,
-            spotifyAuthManager = spotifyAuthManager
+            spotifyAuthManager = spotifyAuthManager,
+            downloadRepository = downloadRepository
         )
     }
 }

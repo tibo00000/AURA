@@ -602,6 +602,9 @@ interface PlaylistDao {
 
     @Query("UPDATE playlists SET updated_at = :updatedAt WHERE id = :playlistId")
     suspend fun touchPlaylist(playlistId: String, updatedAt: Long): Int
+
+    @Query("SELECT DISTINCT track_id FROM playlist_items")
+    suspend fun getAllPlaylistTrackIds(): List<String>
 }
 
 @Dao
@@ -784,6 +787,9 @@ interface DownloadJobDao {
 
     @Query("DELETE FROM download_jobs WHERE status IN ('succeeded', 'failed', 'cancelled')")
     suspend fun clearCompletedJobs(): Int
+
+    @Query("DELETE FROM download_jobs")
+    suspend fun clearAllJobs(): Int
 }
 
 @Dao

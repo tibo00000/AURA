@@ -206,8 +206,13 @@ data class ResolveAlbumResponseData(
 // Download & Job API DTOs
 @Serializable
 data class SourceHintDto(
-    @SerialName("provider_name") val providerName: String,
-    @SerialName("provider_track_id") val providerTrackId: String
+    @SerialName("provider_name") val providerName: String = "youtube",
+    @SerialName("provider_track_id") val providerTrackId: String = "",
+    @SerialName("title") val title: String? = null,
+    @SerialName("artist_name") val artistName: String? = null,
+    @SerialName("album_title") val albumTitle: String? = null,
+    @SerialName("cover_uri") val coverUri: String? = null,
+    @SerialName("resolved_video_id") val resolvedVideoId: String? = null
 )
 
 @Serializable

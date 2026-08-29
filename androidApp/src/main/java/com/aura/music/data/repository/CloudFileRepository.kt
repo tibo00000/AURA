@@ -67,9 +67,22 @@ class CloudFileRepository(
 
             // 1. Purge any orphan cloud-only tracks from Room that are no longer on the Cloud server
             val allTracks = database.trackDao().getAllTracks()
+            val activeJobTrackIds = try {
+                database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
+            } catch (e: Exception) {
+                emptySet()
+            }
+            val playlistTrackIds = try {
+                database.playlistDao().getAllPlaylistTrackIds().toSet()
+            } catch (e: Exception) {
+                emptySet()
+            }
             val orphanIds = allTracks.filter { track ->
                 track.contentUri.isNullOrBlank() &&
                 track.id !in serverCloudIds &&
+                track.id !in activeJobTrackIds &&
+                track.id !in playlistTrackIds &&
+                !track.isLiked &&
                 !serverCloudIds.any { com.aura.music.ui.screens.isDeezerTrackMatch(it, track.id) }
             }.map { it.id }
             if (orphanIds.isNotEmpty()) {
@@ -141,6 +154,20 @@ class CloudFileRepository(
                     )
                     database.trackDao().upsertTrack(newTrack)
                     Log.d(TAG, "Reconciled missing Cloud TrackEntity in Room for ${item.trackId} - $fileTitle")
+                } else {
+                    var updated = false
+                    var trackToUpdate = existingTrack
+                    if (existingTrack.coverUri.isNullOrBlank() && !item.coverUri.isNullOrBlank()) {
+                        trackToUpdate = trackToUpdate.copy(coverUri = item.coverUri)
+                        updated = true
+                    }
+                    if (trackToUpdate.canonicalAudioSourceType != "downloaded" && trackToUpdate.canonicalAudioSourceType != "local" && trackToUpdate.canonicalAudioSourceType != "cloud") {
+                        trackToUpdate = trackToUpdate.copy(canonicalAudioSourceType = "cloud")
+                        updated = true
+                    }
+                    if (updated) {
+                        database.trackDao().upsertTrack(trackToUpdate.copy(updatedAt = now))
+                    }
                 }
             }
         } catch (e: Exception) {

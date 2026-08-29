@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import com.aura.music.domain.search.SearchNormalizer
+import com.aura.music.domain.search.FuzzyMatcher
 
 /**
  * Result of a hybrid search combining local and online results.
@@ -345,8 +347,8 @@ class SearchRepository(
     }
 
     private fun scoreTextMatch(query: String, candidate: String?): Int {
-        val normalizedQuery = normalizeSearchText(query)
-        val normalizedCandidate = normalizeSearchText(candidate)
+        val normalizedQuery = SearchNormalizer.normalize(query)
+        val normalizedCandidate = SearchNormalizer.normalize(candidate)
 
         if (normalizedQuery.isEmpty() || normalizedCandidate.isEmpty()) {
             return 0
@@ -361,22 +363,33 @@ class SearchRepository(
             return 72
         }
 
-        val queryTokens = normalizedQuery.split(" ").filter { it.isNotBlank() }.toSet()
-        val candidateTokens = normalizedCandidate.split(" ").filter { it.isNotBlank() }.toSet()
-        val commonTokens = queryTokens intersect candidateTokens
-        if (commonTokens.isEmpty()) {
+        val queryTokens = SearchNormalizer.tokenize(query)
+        val candidateTokens = SearchNormalizer.tokenize(candidate)
+        if (queryTokens.isEmpty() || candidateTokens.isEmpty()) {
             return 0
         }
 
-        return minOf(60, 28 + commonTokens.size * 12)
+        var matchedCount = 0
+        var similaritySum = 0.0f
+        for (qToken in queryTokens) {
+            var bestSim = 0.0f
+            for (cToken in candidateTokens) {
+                val sim = FuzzyMatcher.fuzzySimilarity(qToken, cToken)
+                if (sim > bestSim) bestSim = sim
+            }
+            if (bestSim >= 0.7f) {
+                matchedCount++
+                similaritySum += bestSim
+            }
+        }
+
+        if (matchedCount == 0) return 0
+        val ratio = matchedCount.toFloat() / queryTokens.size
+        return minOf(70, (20 + (ratio * 30) + (similaritySum * 15)).toInt())
     }
 
     private fun normalizeSearchText(value: String?): String =
-        value
-            ?.trim()
-            ?.lowercase()
-            ?.replace(Regex("\\s+"), " ")
-            .orEmpty()
+        SearchNormalizer.normalize(value)
 
     /**
      * Get user settings.

@@ -311,7 +311,7 @@ fun AuraApp() {
                     if (result.resultCode == android.app.Activity.RESULT_OK) {
                         pendingDeleteTrackId?.let { trackId ->
                             scope.launch {
-                                repository.deleteTrack(trackId)
+                                repository.removeTrackFromDatabase(trackId)
                                 pendingDeleteTrackId = null
                                 vm.refreshLocal()
                             }
@@ -391,7 +391,7 @@ fun AuraApp() {
                     if (result.resultCode == android.app.Activity.RESULT_OK) {
                         pendingDeleteTrackId?.let { trackId ->
                             scope.launch {
-                                repository.deleteTrack(trackId)
+                                repository.removeTrackFromDatabase(trackId)
                                 pendingDeleteTrackId = null
                                 vm.refreshLocal()
                             }

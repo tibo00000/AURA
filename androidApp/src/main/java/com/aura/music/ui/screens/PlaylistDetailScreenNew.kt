@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -96,6 +97,7 @@ fun PlaylistDetailScreenNew(
     val context = androidx.compose.ui.platform.LocalContext.current
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
+    val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
         cloudFileRepository.listCloudFiles().collect { res ->
@@ -369,6 +371,7 @@ fun PlaylistDetailScreenNew(
                             cloudFileRepository = cloudFileRepository,
                             syncedCloudTrackIds = syncedCloudTrackIds,
                             cloudFiles = cloudFiles,
+                            downloadJobs = downloadJobs,
                             snackbarHostState = snackbarHostState,
                             onEditMetadata = { t -> trackToEditMetadata = t }
                         )
@@ -461,6 +464,7 @@ private fun PlaylistTrackRowItem(
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
     syncedCloudTrackIds: Set<String>,
     cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
+    downloadJobs: List<com.aura.music.data.local.DownloadJobEntity> = emptyList(),
     snackbarHostState: SnackbarHostState,
     onEditMetadata: ((com.aura.music.data.local.TrackListRow) -> Unit)? = null,
 ) {
@@ -531,11 +535,33 @@ private fun PlaylistTrackRowItem(
     }
 
     val isCloudOnly = track.contentUri.isNullOrBlank()
+    val job = remember(downloadJobs, track.trackId) {
+        downloadJobs.find { it.trackId == track.trackId }
+    }
+
+    val downloadStatus = when {
+        job != null && job.status == "queued" -> TrackDownloadStatus.Queued
+        job != null && job.status == "running" -> TrackDownloadStatus.Downloading(job.progressPercent ?: 0f)
+        job != null && job.status == "failed" -> TrackDownloadStatus.Failed(job.errorMessage ?: "Échec du téléchargement")
+        !isCloudOnly || isPresentInCloud -> TrackDownloadStatus.Downloaded
+        else -> TrackDownloadStatus.NotDownloaded
+    }
+
+    val onTrackRowClick: () -> Unit = {
+        if (downloadStatus is TrackDownloadStatus.Queued || downloadStatus is TrackDownloadStatus.Downloading) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Téléchargement Cloud en cours pour : ${track.title}")
+            }
+        } else {
+            onPlayTrack()
+        }
+    }
+
     val onDownloadFromCloudLambda = remember(track.trackId, isCloudOnly, isPresentInCloud) {
         if (isCloudOnly && isPresentInCloud) {
             {
                 scope.launch {
-                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                    snackbarHostState.showSnackbar("Téléchargement sur l'appareil lancé pour : ${track.title}")
                     cloudFileRepository.downloadTrack(
                         trackId = track.trackId,
                         title = track.title,
@@ -547,7 +573,7 @@ private fun PlaylistTrackRowItem(
                         coverUri = track.coverUri
                     ).collect { res ->
                         res.onSuccess {
-                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                            snackbarHostState.showSnackbar("Téléchargement réussi : ${track.title}")
                             repository.refreshLocalMediaIndex()
                             onRefresh()
                         }.onFailure { err ->
@@ -563,10 +589,12 @@ private fun PlaylistTrackRowItem(
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "Artiste inconnu",
-        onClick = onPlayTrack,
+        onClick = onTrackRowClick,
         coverUri = track.coverUri,
         contextType = "playlist",
         isLiked = track.isLiked,
+        downloadStatus = downloadStatus,
+        isCloudOnly = isCloudOnly,
         onRemoveFromPlaylist = onRemoveClick,
         onAddToQueue = onAddToQueue,
         onAddToPlaylist = onAddToPlaylistClick,
