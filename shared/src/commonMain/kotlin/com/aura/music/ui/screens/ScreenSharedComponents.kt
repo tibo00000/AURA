@@ -111,6 +111,7 @@ import com.aura.music.ui.theme.DeepBlack
 import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.HairlineDark
 import com.aura.music.ui.theme.RoseSignal
+import com.aura.music.ui.theme.SemanticSuccess
 import com.aura.music.ui.theme.TextMuted
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
@@ -716,7 +717,7 @@ fun SharedTrackRowItem(
                     Icon(
                         imageVector = Icons.Rounded.DownloadDone,
                         contentDescription = "Téléchargé sur l'appareil",
-                        tint = ElectricGreen,
+                        tint = SemanticSuccess,
                         modifier = Modifier.size(13.dp)
                     )
                 }
