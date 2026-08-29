@@ -9,12 +9,21 @@ android {
     namespace = "com.aura.music"
     compileSdk = 35
 
+    val localProperties = java.util.Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(localPropertiesFile.inputStream())
+    }
+    val spotifyClientId = localProperties.getProperty("SPOTIFY_CLIENT_ID", "")
+
     defaultConfig {
         applicationId = "com.aura.music"
         minSdk = 29
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClientId\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -43,6 +52,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -97,6 +107,12 @@ dependencies {
 
     // Android Auto Car App Library
     implementation("androidx.car.app:app:1.4.0-rc01")
+
+    // Security Crypto (EncryptedSharedPreferences & Keystore)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Custom Tabs for OAuth PKCE
+    implementation("androidx.browser:browser:1.8.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

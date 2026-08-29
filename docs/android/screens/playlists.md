@@ -35,8 +35,14 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `Play`
 - `Shuffle`
 - `Renommer`
+- `Exporter (.m3u8)` : génération d'un fichier standard M3U8 avec résolution des chemins physiques Scoped Storage et rapport transparent
 - `Supprimer`
 - Switch `Télécharger sur l'appareil` (téléchargement par lot automatique ou libération du stockage physique)
+
+## Import / Export Engine
+- **Parsing universel** : Détection automatique des encodages (BOM UTF-8, UTF-16, Latin-1, Windows-1252), détection dynamique des délimiteurs CSV (`,`, `;`, `\t`) et mapping d'en-têtes multilingues.
+- **Réconciliation Zero-Jank** : Matching insensible aux accents et à la casse via `SearchNormalizer` et `LocalSearchEngine` par lots de 25 titres sur `Dispatchers.Default` avec `StateFlow<ImportProgress>` et barre de progression continue.
+- **Sécurité** : Zéro secret hardcodé, tokens chiffrés avec AES-256 GCM adossé au Keystore Android (`MasterKey`), rotation systématique du refresh_token et ré-authentification avec reprise automatique du contexte.
 
 ## Playlist Detail - liste des pistes
 - `TrackRow` standard (pochette 44dp arrondie, typographie bodyLarge SemiBold)

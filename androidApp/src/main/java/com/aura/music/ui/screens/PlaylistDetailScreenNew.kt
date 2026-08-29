@@ -83,6 +83,7 @@ fun PlaylistDetailScreenNew(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showMenuOpen by remember { mutableStateOf(false) }
+    var exportReport by remember { mutableStateOf<com.aura.music.data.playlist.ExportReport?>(null) }
     val detail = detailState.value
  
     var activeTrackForPlaylist by remember { mutableStateOf<PlaylistTrackRow?>(null) }
@@ -204,6 +205,21 @@ fun PlaylistDetailScreenNew(
                                         showMenuOpen = false
                                     },
                                     leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Exporter (.m3u8)") },
+                                    onClick = {
+                                        showMenuOpen = false
+                                        scope.launch {
+                                            try {
+                                                val report = appContainer.playlistImportExportManager.exportPlaylistToM3U8(playlistId)
+                                                exportReport = report
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "Erreur export : ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null, tint = BlazeOrange) },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Supprimer") },
@@ -393,6 +409,13 @@ fun PlaylistDetailScreenNew(
                 showDeleteDialog = false
                 onNavigateBack()
             },
+        )
+    }
+
+    if (exportReport != null) {
+        PlaylistExportReportDialog(
+            report = exportReport!!,
+            onDismiss = { exportReport = null }
         )
     }
 

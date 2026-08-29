@@ -173,6 +173,7 @@ fun LibraryScreen(
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var showImportPlaylistDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -180,7 +181,7 @@ fun LibraryScreen(
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             pendingDeleteTrackId?.let { trackId ->
                 scope.launch {
-                    repository.deleteTrack(trackId)
+                    repository.removeTrackFromDatabase(trackId)
                     pendingDeleteTrackId = null
                     refreshTick++
                 }
@@ -340,6 +341,9 @@ fun LibraryScreen(
                                 TextButton(onClick = onOpenPlaylists) {
                                     Text("Voir tout", color = BlazeOrange)
                                 }
+                            }
+                            IconButton(onClick = { showImportPlaylistDialog = true }) {
+                                Icon(Icons.Rounded.PlaylistAdd, contentDescription = "Importer une playlist", tint = BlazeOrange)
                             }
                             IconButton(onClick = { showCreatePlaylistDialog = true }) {
                                 Icon(Icons.Rounded.Add, contentDescription = "Créer une playlist", tint = BlazeOrange)
@@ -556,6 +560,20 @@ fun LibraryScreen(
             }
         )
     }
+
+    if (showImportPlaylistDialog) {
+        val appContainer = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.aura.music.AuraApplication).container
+        PlaylistImportDialog(
+            importManager = appContainer.playlistImportExportManager,
+            spotifyAuthManager = appContainer.spotifyAuthManager,
+            onPlaylistCreated = { newPlId ->
+                refreshTick++
+                showImportPlaylistDialog = false
+                onOpenPlaylist(newPlId)
+            },
+            onDismiss = { showImportPlaylistDialog = false }
+        )
+    }
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -586,7 +604,7 @@ fun FavoritesScreen(
             pendingDeleteTrackId?.let { trackId ->
                 localTracksList = localTracksList?.filter { it.id != trackId }
                 scope.launch {
-                    repository.deleteTrack(trackId)
+                    repository.removeTrackFromDatabase(trackId)
                     pendingDeleteTrackId = null
                     refreshTick++
                 }
@@ -1152,7 +1170,10 @@ fun PlaylistsScreen(
         value = repository.getPlaylists()
     }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
 
     RouteScaffold(title="Playlists", onNavigateBack = onNavigateBack) {
         Column(
@@ -1171,15 +1192,39 @@ fun PlaylistsScreen(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("Construis tes contextes d'ecoute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Construis tes contextes d'écoute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        text = "Les playlists locales pilotent la lecture, la reprise et bientot la sync cloud.",
+                        text = "Crée des playlists locales ou importe tes playlists Deezer, Spotify et fichiers M3U8.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Button(onClick = { showCreateDialog = true }) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Text("Créer une playlist", modifier = Modifier.padding(start = 8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Button(
+                            onClick = { showCreateDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = com.aura.music.ui.theme.BlazeOrange,
+                                contentColor = com.aura.music.ui.theme.DeepBlack
+                            )
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Créer", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                        }
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { showImportDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, com.aura.music.ui.theme.HairlineDark),
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                containerColor = com.aura.music.ui.theme.DarkGraphite,
+                                contentColor = com.aura.music.ui.theme.TextPrimary
+                            )
+                        ) {
+                            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = com.aura.music.ui.theme.BlazeOrange, modifier = Modifier.size(18.dp))
+                            Text("Importer", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
@@ -1205,6 +1250,19 @@ fun PlaylistsScreen(
                 }
                 showCreateDialog = false
             },
+        )
+    }
+
+    if (showImportDialog) {
+        PlaylistImportDialog(
+            importManager = appContainer.playlistImportExportManager,
+            spotifyAuthManager = appContainer.spotifyAuthManager,
+            onPlaylistCreated = { newPlId ->
+                refreshTick++
+                showImportDialog = false
+                onOpenPlaylist(newPlId)
+            },
+            onDismiss = { showImportDialog = false }
         )
     }
 }
@@ -1412,7 +1470,7 @@ fun ArtistRouteScreen(
                     current.copy(topTracks = current.topTracks.filter { it.id != trackId })
                 }
                 scope.launch {
-                    repository.deleteTrack(trackId)
+                    repository.removeTrackFromDatabase(trackId)
                     pendingDeleteTrackId = null
                     refreshTick++
                 }
@@ -2214,15 +2272,31 @@ fun DownloadsScreen(
                 if (uiState.jobs.isEmpty()) {
                     item {
                         when (uiState.selectedTab) {
-                            "En attente", "En cours" -> DownloadStateCard(
-                                Icons.Rounded.Sync,
-                                "Pas de progression active",
-                                "Les barres de progression s'activent lorsque le téléchargement démarre."
-                            )
+                            "En attente", "En cours" -> {
+                                if (uiState.succeededCount > 0) {
+                                    DownloadStateCard(
+                                        Icons.Rounded.DownloadDone,
+                                        "Aucun téléchargement en cours",
+                                        "Vous avez ${uiState.succeededCount} téléchargement(s) terminé(s). Consultez l'onglet « Terminés » ci-dessus."
+                                    )
+                                } else if (uiState.failedCount > 0) {
+                                    DownloadStateCard(
+                                        Icons.Rounded.ErrorOutline,
+                                        "Aucun téléchargement en cours",
+                                        "Vous avez ${uiState.failedCount} tâche(s) en échec. Consultez l'onglet « Erreurs » ci-dessus."
+                                    )
+                                } else {
+                                    DownloadStateCard(
+                                        Icons.Rounded.Sync,
+                                        "Pas de progression active",
+                                        "Les barres de progression s'activent lorsque le téléchargement démarre."
+                                    )
+                                }
+                            }
                             "Terminés" -> DownloadStateCard(
                                 Icons.Rounded.DownloadDone,
                                 "Aucun download finalisé",
-                                "Quand un titre sera disponible localement, tu pourras l'ouvrir ou le lire depuis ici."
+                                "Quand un titre sera disponible sur le Cloud ou localement, tu pourras l'ouvrir ou le lire depuis ici."
                             )
                             else -> DownloadStateCard(
                                 Icons.Rounded.ErrorOutline,
@@ -3041,7 +3115,7 @@ fun LibraryTracksScreen(
             pendingDeleteTrackId?.let { trackId ->
                 localTracksList = localTracksList?.filter { it.id != trackId }
                 scope.launch {
-                    repository.deleteTrack(trackId)
+                    repository.removeTrackFromDatabase(trackId)
                     pendingDeleteTrackId = null
                     refreshTick++
                 }
@@ -3091,7 +3165,7 @@ fun LibraryTracksScreen(
             }
             when (selectedSort) {
                 "A-Z" -> filtered.sortedBy { it.title.lowercase() }
-                "Récents" -> filtered.sortedByDescending { it.updatedAt ?: it.createdAt }
+                "Récents" -> filtered.sortedByDescending { it.createdAt }
                 else -> filtered
             }
         }

@@ -109,5 +109,17 @@ class AuraAppContainer(context: Context) {
     val connectivityObserver by lazy {
         ConnectivityObserver(appContext)
     }
+
+    val spotifyAuthManager by lazy {
+        com.aura.music.data.spotify.SpotifyAuthManager(appContext)
+    }
+
+    val playlistImportExportManager by lazy {
+        com.aura.music.data.playlist.PlaylistImportExportManager(
+            context = appContext,
+            libraryRepository = localLibraryRepository,
+            spotifyAuthManager = spotifyAuthManager
+        )
+    }
 }
 
