@@ -1160,6 +1160,12 @@ fun LibraryGridItem(title: String, subtitle: String, icon: androidx.compose.ui.g
     }
 }
 
+enum class PlaylistSortOption(val label: String) {
+    RECENT("Récents"),
+    NAME("Nom A-Z"),
+    TRACK_COUNT("Nombre de titres")
+}
+
 @Composable
 fun PlaylistsScreen(
     repository: LocalLibraryRepository,
@@ -1170,53 +1176,175 @@ fun PlaylistsScreen(
     val playlistsState = produceState<List<PlaylistListRow>?>(initialValue = null, repository, refreshTick) {
         value = repository.getPlaylists()
     }
+    val playlistCoversState = produceState<Map<String, List<String>>>(initialValue = emptyMap(), playlistsState.value, refreshTick) {
+        val plList = playlistsState.value ?: emptyList()
+        val map = mutableMapOf<String, List<String>>()
+        plList.forEach { pl ->
+            map[pl.id] = repository.getPlaylistCoverPreviews(pl.id)
+        }
+        value = map
+    }
+
+    var sortOption by remember { mutableStateOf(PlaylistSortOption.RECENT) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
 
-    RouteScaffold(title="Playlists", onNavigateBack = onNavigateBack) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Card(
+    val rawPlaylists = playlistsState.value
+    val playlistCovers = playlistCoversState.value
+
+    val sortedPlaylists = remember(rawPlaylists, sortOption) {
+        val list = rawPlaylists ?: emptyList()
+        when (sortOption) {
+            PlaylistSortOption.RECENT -> list.sortedByDescending { it.updatedAt }
+            PlaylistSortOption.NAME -> list.sortedBy { it.name.lowercase() }
+            PlaylistSortOption.TRACK_COUNT -> list.sortedByDescending { it.itemCount }
+        }
+    }
+
+    RouteScaffold(
+        title = "Playlists",
+        onNavigateBack = onNavigateBack,
+        actions = {
+            IconButton(onClick = { showImportDialog = true }) {
+                Icon(Icons.Rounded.CloudDownload, contentDescription = "Importer des playlists", tint = TextSecondary)
+            }
+            IconButton(onClick = { showCreateDialog = true }) {
+                Icon(Icons.Rounded.Add, contentDescription = "Créer une playlist", tint = BlazeOrange)
+            }
+        }
+    ) {
+        if (rawPlaylists == null) {
+            ShimmerTrackList(count = 5)
+        } else if (rawPlaylists.isEmpty()) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(24.dp),
+                    .fillMaxSize()
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("Construis tes contextes d'écoute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = "Crée des playlists locales ou importe tes playlists Deezer, Spotify et fichiers M3U8.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Icon(
+                    imageVector = Icons.Rounded.QueueMusic,
+                    contentDescription = null,
+                    tint = BlazeOrange,
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Aucune playlist",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Créez ou importez vos premières playlists pour organiser vos morceaux favoris.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { showCreateDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = BlazeOrange,
+                        contentColor = DeepBlack
                     )
-                    Button(
-                        onClick = { showCreateDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = com.aura.music.ui.theme.BlazeOrange,
-                            contentColor = com.aura.music.ui.theme.DeepBlack
-                        )
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Créer une playlist", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold)
-                    }
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Créer une playlist", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold)
                 }
             }
-            val playlists = playlistsState.value
-            if (playlists == null) {
-                ShimmerTrackList(count = 4)
-            } else {
-                PlaylistPreviewList(playlists = playlists, onOpenPlaylist = onOpenPlaylist)
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Barre des Filtres / Options de Tri
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlaylistSortOption.entries.forEach { option ->
+                            val isSelected = sortOption == option
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { sortOption = option },
+                                label = { Text(option.label, style = MaterialTheme.typography.bodySmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BlazeOrange.copy(alpha = 0.2f),
+                                    selectedLabelColor = BlazeOrange,
+                                    containerColor = ElevatedGraphite,
+                                    labelColor = TextSecondary,
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    borderColor = Color.Transparent,
+                                    selectedBorderColor = BlazeOrange.copy(alpha = 0.6f),
+                                    enabled = true,
+                                    selected = isSelected
+                                )
+                            )
+                        }
+                    }
+                }
+
+                items(
+                    items = sortedPlaylists,
+                    key = { it.id },
+                    contentType = { "playlist_row" }
+                ) { playlist ->
+                    val covers = playlistCovers[playlist.id] ?: emptyList()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenPlaylist(playlist.id) }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        PlaylistMosaicCover(
+                            modifier = Modifier.size(56.dp),
+                            previewCovers = covers,
+                            shape = RoundedCornerShape(10.dp),
+                            iconSize = 28.dp,
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = playlist.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            val typeLabel = if (playlist.isPinned) "Épinglée • " else ""
+                            Text(
+                                text = "$typeLabel${playlist.itemCount} titre(s)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                                maxLines = 1,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = TextSecondary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
         }
     }

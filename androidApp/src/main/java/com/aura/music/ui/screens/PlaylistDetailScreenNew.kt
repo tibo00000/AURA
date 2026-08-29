@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
@@ -61,8 +62,10 @@ import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DarkGraphite
 import com.aura.music.ui.theme.DeepBlack
+import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
+import com.aura.music.ui.screens.PlaylistMosaicCover
 import com.aura.music.ui.toQueuedTrack
 import kotlinx.coroutines.launch
 
@@ -116,30 +119,32 @@ fun PlaylistDetailScreenNew(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item {
-                    // Hero Cover
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(280.dp)
-                                .background(
-                                    Brush.linearGradient(listOf(BlazeOrange, DeepBlack)),
-                                    RoundedCornerShape(24.dp),
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            // optional : large icon placeholder
-                        }
+                    // 1. Hero Cover (Mosaïque 2x2 ou Cover unique)
+                    val previewCovers = remember(detail.tracks) {
+                        detail.tracks.mapNotNull { it.coverUri }.filter { it.isNotBlank() }.distinct().take(4)
                     }
 
-                    // Metadata
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        PlaylistMosaicCover(
+                            modifier = Modifier.size(220.dp),
+                            coverUri = detail.summary.coverUri,
+                            previewCovers = previewCovers,
+                            shape = RoundedCornerShape(20.dp),
+                            iconSize = 64.dp,
+                        )
+                    }
+
+                    // 2. Metadata (Titre, Pistes, Durée totale)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
                             detail.summary.name,
@@ -147,8 +152,11 @@ fun PlaylistDetailScreenNew(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary,
                         )
+                        val totalDurationMs = remember(detail.tracks) { detail.tracks.sumOf { it.durationMs ?: 0L } }
+                        val durationMinutes = totalDurationMs / 60000L
+                        val durationText = if (durationMinutes > 0) " • ${durationMinutes} min" else ""
                         Text(
-                            "${detail.summary.itemCount} piste(s)",
+                            "${detail.summary.itemCount} piste(s)$durationText",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                         )
@@ -156,85 +164,7 @@ fun PlaylistDetailScreenNew(
                 }
 
                 item {
-                    // Action Bar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Button(
-                            onClick = {
-                                val tracks = detail.tracks.map { it.toTrackListRow() }
-                                if (tracks.isNotEmpty()) {
-                                    playPlaylist(playerViewModel, tracks, false, detail.summary.id)
-                                }
-                            },
-                            enabled = detail.tracks.isNotEmpty(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                            Text("Play")
-                        }
-
-                        Button(
-                            onClick = {
-                                val tracks = detail.tracks.map { it.toTrackListRow() }.shuffled()
-                                if (tracks.isNotEmpty()) {
-                                    playPlaylist(playerViewModel, tracks, true, detail.summary.id)
-                                }
-                            },
-                            enabled = detail.tracks.isNotEmpty(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                            Text("Shuffle")
-                        }
-
-                        Box {
-                            IconButton(onClick = { showMenuOpen = true }) {
-                                Icon(Icons.Rounded.MoreVert, contentDescription = "Menu actions supplémentaires")
-                            }
-
-                            DropdownMenu(
-                                expanded = showMenuOpen,
-                                onDismissRequest = { showMenuOpen = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Renommer") },
-                                    onClick = {
-                                        showRenameDialog = true
-                                        showMenuOpen = false
-                                    },
-                                    leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Exporter (.m3u8)") },
-                                    onClick = {
-                                        showMenuOpen = false
-                                        scope.launch {
-                                            try {
-                                                val report = appContainer.playlistImportExportManager.exportPlaylistToM3U8(playlistId)
-                                                exportReport = report
-                                            } catch (e: Exception) {
-                                                android.widget.Toast.makeText(context, "Erreur export : ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null, tint = BlazeOrange) },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Supprimer") },
-                                    onClick = {
-                                        showDeleteDialog = true
-                                        showMenuOpen = false
-                                    },
-                                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
-                                )
-                            }
-                        }
-                    }
-
+                    // 3. Action Bar (Boutons ronds Play & Shuffle à gauche, Switch & MoreVert à droite)
                     val notDownloadedTracks = remember(detail.tracks) {
                         detail.tracks.filter { it.contentUri.isNullOrBlank() }
                     }
@@ -246,38 +176,93 @@ fun PlaylistDetailScreenNew(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
+                        // Play & Shuffle
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
-                            Icon(
-                                if (isAllDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                                contentDescription = null,
-                                tint = if (isAllDownloaded) Color(0xFF00E676) else TextSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Télécharger sur l'appareil",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = TextPrimary
-                            )
+                            // Grand bouton Play principal
+                            IconButton(
+                                onClick = {
+                                    val tracks = detail.tracks.map { it.toTrackListRow() }
+                                    if (tracks.isNotEmpty()) {
+                                        playPlaylist(playerViewModel, tracks, false, detail.summary.id)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .background(BlazeOrange, CircleShape),
+                                enabled = detail.tracks.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = "Tout lire",
+                                    tint = DeepBlack,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            // Bouton Shuffle secondaire
+                            IconButton(
+                                onClick = {
+                                    val tracks = detail.tracks.map { it.toTrackListRow() }.shuffled()
+                                    if (tracks.isNotEmpty()) {
+                                        playPlaylist(playerViewModel, tracks, true, detail.summary.id)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(DarkGraphite, CircleShape),
+                                enabled = detail.tracks.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Shuffle,
+                                    contentDescription = "Lecture aléatoire",
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
 
-                        if (isBatchDownloading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 2.dp,
-                                color = BlazeOrange
-                            )
-                        } else {
+                        // Switch Téléchargement & Menu 3-points
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Switch(
                                 checked = isAllDownloaded,
-                                enabled = detail.tracks.isNotEmpty(),
+                                enabled = detail.tracks.isNotEmpty() && !isBatchDownloading,
+                                thumbContent = if (isBatchDownloading) {
+                                    {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = BlazeOrange
+                                        )
+                                    }
+                                } else if (isAllDownloaded) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DownloadDone,
+                                            contentDescription = "Disponible hors-ligne",
+                                            tint = BlazeOrange,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                } else {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Download,
+                                            contentDescription = "Télécharger la playlist",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                },
                                 onCheckedChange = { checked ->
                                     if (checked) {
                                         if (notDownloadedTracks.isNotEmpty()) {
@@ -323,10 +308,61 @@ fun PlaylistDetailScreenNew(
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = Color.White,
                                     checkedTrackColor = BlazeOrange,
-                                    uncheckedThumbColor = Color.Gray,
-                                    uncheckedTrackColor = DarkGraphite
+                                    uncheckedThumbColor = DarkGraphite,
+                                    uncheckedTrackColor = ElevatedGraphite,
+                                    uncheckedBorderColor = Color.Transparent
                                 )
                             )
+
+                            Box {
+                                IconButton(
+                                    onClick = { showMenuOpen = true },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.MoreVert,
+                                        contentDescription = "Options de la playlist",
+                                        tint = TextSecondary
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showMenuOpen,
+                                    onDismissRequest = { showMenuOpen = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Renommer") },
+                                        onClick = {
+                                            showRenameDialog = true
+                                            showMenuOpen = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Exporter (.m3u8)") },
+                                        onClick = {
+                                            showMenuOpen = false
+                                            scope.launch {
+                                                try {
+                                                    val report = appContainer.playlistImportExportManager.exportPlaylistToM3U8(playlistId)
+                                                    exportReport = report
+                                                } catch (e: Exception) {
+                                                    android.widget.Toast.makeText(context, "Erreur export : ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null, tint = BlazeOrange) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Supprimer la playlist", color = Color.Red) },
+                                        onClick = {
+                                            showDeleteDialog = true
+                                            showMenuOpen = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color.Red) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

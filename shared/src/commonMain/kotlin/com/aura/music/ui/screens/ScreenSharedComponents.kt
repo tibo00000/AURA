@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -700,13 +701,33 @@ fun SharedTrackRowItem(
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                if (isCloudOnly) {
+                    Icon(
+                        imageVector = Icons.Rounded.Cloud,
+                        contentDescription = "Disponible sur le Cloud",
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(13.dp)
+                    )
+                } else if (downloadStatus is TrackDownloadStatus.Downloaded) {
+                    Icon(
+                        imageVector = Icons.Rounded.DownloadDone,
+                        contentDescription = "Téléchargé sur l'appareil",
+                        tint = ElectricGreen,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -945,4 +966,96 @@ fun SelectPlaylistDialog(
             TextButton(onClick = onDismiss) { Text("Annuler") }
         }
     )
+}
+
+/**
+ * Pochette intelligente de playlist :
+ * - Si coverUri est non-nul : affiche l'image unique.
+ * - Si previewCovers a >= 4 éléments : compose une mosaïque 2x2.
+ * - Si previewCovers a entre 1 et 3 éléments : affiche la première pochette.
+ * - Si aucune pochette : affiche un placeholder avec dégradé AURA chaud et icône Playlist.
+ */
+@Composable
+fun PlaylistMosaicCover(
+    modifier: Modifier = Modifier,
+    coverUri: String? = null,
+    previewCovers: List<String> = emptyList(),
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(12.dp),
+    iconSize: androidx.compose.ui.unit.Dp = 36.dp,
+) {
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(shape)
+            .background(DarkGraphite),
+        contentAlignment = Alignment.Center,
+    ) {
+        val validPreviews = remember(previewCovers) { previewCovers.filter { it.isNotBlank() } }
+
+        if (!coverUri.isNullOrBlank()) {
+            AsyncImage(
+                model = coverUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (validPreviews.size >= 4) {
+            // Mosaïque 2x2
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    AsyncImage(
+                        model = validPreviews[0],
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                    AsyncImage(
+                        model = validPreviews[1],
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    AsyncImage(
+                        model = validPreviews[2],
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                    AsyncImage(
+                        model = validPreviews[3],
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
+            }
+        } else if (validPreviews.isNotEmpty()) {
+            AsyncImage(
+                model = validPreviews.first(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF2A1C12), Color(0xFF161616), Color(0xFF0F0F0F))
+                        )
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.QueueMusic,
+                    contentDescription = null,
+                    tint = BlazeOrange.copy(alpha = 0.85f),
+                    modifier = Modifier.size(iconSize),
+                )
+            }
+        }
+    }
 }

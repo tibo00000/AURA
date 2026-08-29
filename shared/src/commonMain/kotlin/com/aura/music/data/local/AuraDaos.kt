@@ -546,6 +546,20 @@ interface PlaylistDao {
 
     @Query(
         """
+        SELECT tracks.cover_uri
+        FROM playlist_items
+        JOIN tracks ON tracks.id = playlist_items.track_id
+        WHERE playlist_items.playlist_id = :playlistId 
+          AND tracks.cover_uri IS NOT NULL 
+          AND tracks.cover_uri != ''
+        ORDER BY playlist_items.position ASC
+        LIMIT 4
+        """
+    )
+    suspend fun getPlaylistCoverPreviews(playlistId: String): List<String>
+
+    @Query(
+        """
         SELECT
             playlists.id AS id,
             playlists.name AS name,

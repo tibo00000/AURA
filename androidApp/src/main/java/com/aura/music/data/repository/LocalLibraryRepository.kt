@@ -593,6 +593,9 @@ class LocalLibraryRepository(
     suspend fun getPlaylists(): List<PlaylistListRow> =
         withContext(Dispatchers.IO) { database.playlistDao().getPlaylists() }
 
+    suspend fun getPlaylistCoverPreviews(playlistId: String): List<String> =
+        withContext(Dispatchers.IO) { database.playlistDao().getPlaylistCoverPreviews(playlistId) }
+
     suspend fun getBrowseArtists(limit: Int = 8): List<ArtistBrowseRow> =
         withContext(Dispatchers.IO) { database.artistDao().getBrowseArtists(limit) }
 
