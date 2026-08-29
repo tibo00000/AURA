@@ -170,6 +170,19 @@ class DownloadService:
         self.settings = get_settings()
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
         self._download_semaphore = asyncio.Semaphore(2)
+        self._recover_stale_jobs_on_startup()
+
+    def _recover_stale_jobs_on_startup(self) -> None:
+        """Mark stale running jobs as failed on server startup so they don't block polling forever."""
+        try:
+            supabase.table("download_jobs").update({
+                "status": "failed",
+                "error_code": "server_restarted",
+                "error_message": "Téléchargement interrompu par le redémarrage du serveur.",
+            }).eq("status", "running").execute()
+            logger.info("Startup sweep: Marked orphaned 'running' download jobs as failed.")
+        except Exception as e:
+            logger.warning("Could not execute startup stale jobs sweep: %s", e)
 
     def _resolve_official_video_id(
         self, artist: str, title: str, album: Optional[str] = None
@@ -440,6 +453,22 @@ class DownloadService:
         except Exception as e:
             logger.error("Failed to retrieve job %s from Supabase: %s", job_id, e)
             raise BadRequest(f"Failed to retrieve job: {str(e)}")
+
+    def delete_job(self, user_id: str, job_id: str) -> None:
+        """Delete/cancel a specific download job for a user."""
+        try:
+            supabase.table("download_jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
+            # Clean up potential partial or downloaded files from disk
+            for pattern in (f"{job_id}.*", f"{job_id}.*.*"):
+                for p in DOWNLOADS_DIR.glob(pattern):
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
+            logger.info("Deleted download job %s for user %s", job_id, user_id)
+        except Exception as e:
+            logger.error("Failed to delete job %s: %s", job_id, e)
+            raise BadRequest(f"Failed to delete job: {str(e)}")
 
     def list_jobs(
         self, user_id: str, status: Optional[str] = None, limit: int = 20, cursor: Optional[str] = None

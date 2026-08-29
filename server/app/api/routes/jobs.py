@@ -13,7 +13,7 @@ from app.core.auth import AuthenticatedUser, get_current_user
 from app.schemas.downloads import JobStatusResponse
 from app.schemas.responses import ResponseEnvelope
 from app.services.download_service import DownloadService
-from app.services.exceptions import NotFound
+from app.services.exceptions import BadRequest, NotFound
 
 logger = logging.getLogger(__name__)
 
@@ -64,4 +64,15 @@ async def get_job_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
+        )
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error("Unexpected error retrieving job status for %s: %s", job_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unreachable, please retry.",
         )

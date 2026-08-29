@@ -249,12 +249,13 @@ class DownloadRepository(
 
     /**
      * Start the background polling loop for any queued or running jobs.
-     * Polls the backend every 2s. Automatically exits when there are no active jobs left.
+     * Uses batch listDownloads polling (1 network request for all jobs) every 2s to avoid server connection exhaustion.
+     * Automatically exits when there are no active jobs left.
      */
     suspend fun startPolling(userToken: String) = withContext(Dispatchers.IO) {
         if (isPolling) return@withContext
         isPolling = true
-        Log.d(TAG, "Starting active download jobs polling loop")
+        Log.d(TAG, "Starting active download jobs polling loop (batch-optimized)")
         try {
             while (isPolling) {
                 val activeJobs = database.downloadJobDao().getActiveJobs()
@@ -263,38 +264,54 @@ class DownloadRepository(
                     break
                 }
 
-                for (job in activeJobs) {
-                    try {
-                        val response = apiService.getJobStatus(userToken, job.id)
-                        val jobData = response.data
-                        if (jobData != null && response.error == null) {
-                            // Reset the failure counter for this job on success
-                            consecutiveFailures.remove(job.id)
+                try {
+                    val response = apiService.listDownloads(token = userToken, limit = 50)
+                    val items = response.data?.items
+                    if (items != null && response.error == null) {
+                        val now = System.currentTimeMillis()
+                        val activeJobMap = activeJobs.associateBy { it.id }
+                        val updatedEntities = mutableListOf<DownloadJobEntity>()
 
-                            val friendlyError = if (jobData.error != null) {
-                                mapFriendlyErrorMessage(jobData.error?.code, jobData.error?.message)
+                        for (item in items) {
+                            val existing = activeJobMap[item.id]
+                            val friendlyError = if (item.errorMessage != null || item.errorCode != null) {
+                                mapFriendlyErrorMessage(item.errorCode, item.errorMessage)
                             } else null
 
-                            val updatedJob = job.copy(
-                                status = jobData.status,
-                                progressPercent = jobData.progressPercent,
-                                errorCode = jobData.error?.code,
-                                errorMessage = friendlyError ?: jobData.error?.message,
-                                updatedAt = System.currentTimeMillis()
+                            val entity = DownloadJobEntity(
+                                id = item.id,
+                                trackId = item.trackId,
+                                providerName = item.providerName,
+                                status = item.status,
+                                progressPercent = item.progressPercent,
+                                errorCode = item.errorCode,
+                                errorMessage = friendlyError ?: item.errorMessage,
+                                attemptCount = item.attemptCount,
+                                createdAt = existing?.createdAt ?: parseIsoDateToEpoch(item.createdAt, now),
+                                updatedAt = now
                             )
-                            database.downloadJobDao().upsert(updatedJob)
-                            Log.d(TAG, "Polled job ${job.id}: status=${jobData.status}, progress=${jobData.progressPercent}%")
+                            updatedEntities.add(entity)
 
-                            if (jobData.status == "succeeded") {
-                                // Register as Cloud-ready track in Room & notify UI
-                                markJobAsCloudReady(job.trackId)
+                            if (item.status == "succeeded" && (existing == null || existing.status != "succeeded")) {
+                                markJobAsCloudReady(item.trackId)
                             }
-                        } else {
-                            handlePollingFailure(job)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to poll status for job ${job.id}", e)
-                        handlePollingFailure(job)
+
+                        if (updatedEntities.isNotEmpty()) {
+                            database.downloadJobDao().upsert(updatedEntities)
+                        }
+                    } else {
+                        // Fallback: poll top 3 active jobs with slight delay between requests
+                        for (job in activeJobs.take(3)) {
+                            pollSingleJob(userToken, job)
+                            delay(100)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during batch download polling, attempting fallback poll", e)
+                    for (job in activeJobs.take(2)) {
+                        pollSingleJob(userToken, job)
+                        delay(100)
                     }
                 }
                 delay(2000) // Poll interval of 2 seconds
@@ -302,6 +319,36 @@ class DownloadRepository(
         } finally {
             isPolling = false
             Log.d(TAG, "Stopped download jobs polling loop")
+        }
+    }
+
+    private suspend fun pollSingleJob(userToken: String, job: DownloadJobEntity) {
+        try {
+            val response = apiService.getJobStatus(userToken, job.id)
+            val jobData = response.data
+            if (jobData != null && response.error == null) {
+                consecutiveFailures.remove(job.id)
+                val friendlyError = if (jobData.error != null) {
+                    mapFriendlyErrorMessage(jobData.error?.code, jobData.error?.message)
+                } else null
+
+                val updatedJob = job.copy(
+                    status = jobData.status,
+                    progressPercent = jobData.progressPercent,
+                    errorCode = jobData.error?.code,
+                    errorMessage = friendlyError ?: jobData.error?.message,
+                    updatedAt = System.currentTimeMillis()
+                )
+                database.downloadJobDao().upsert(updatedJob)
+                if (jobData.status == "succeeded") {
+                    markJobAsCloudReady(job.trackId)
+                }
+            } else {
+                handlePollingFailure(job)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to poll status for job ${job.id}", e)
+            handlePollingFailure(job)
         }
     }
 
