@@ -778,7 +778,14 @@ interface DownloadJobDao {
             download_jobs.updated_at AS updatedAt
         FROM download_jobs
         LEFT JOIN tracks ON tracks.id = download_jobs.track_id
-        ORDER BY download_jobs.updated_at DESC
+        ORDER BY 
+            CASE 
+                WHEN download_jobs.status = 'running' THEN 0 
+                WHEN download_jobs.status = 'requires_resolution' THEN 1
+                WHEN download_jobs.status = 'queued' THEN 2 
+                ELSE 3 
+            END ASC,
+            download_jobs.created_at ASC
     """)
     fun getAllJobsWithTrackFlow(): kotlinx.coroutines.flow.Flow<List<DownloadJobRowModel>>
 
