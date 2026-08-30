@@ -570,7 +570,8 @@ private fun PlaylistTrackRowItem(
         } else null
     }
 
-    val isCloudOnly = track.contentUri.isNullOrBlank()
+    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+    val isCloudOnly = !isDownloadedLocally
     val job = remember(downloadJobs, track.trackId) {
         downloadJobs.find { it.trackId == track.trackId }
     }
@@ -579,7 +580,7 @@ private fun PlaylistTrackRowItem(
         job != null && job.status == "queued" -> TrackDownloadStatus.Queued
         job != null && job.status == "running" -> TrackDownloadStatus.Downloading(job.progressPercent ?: 0f)
         job != null && job.status == "failed" -> TrackDownloadStatus.Failed(job.errorMessage ?: "Échec du téléchargement")
-        !isCloudOnly || isPresentInCloud -> TrackDownloadStatus.Downloaded
+        isDownloadedLocally -> TrackDownloadStatus.Downloaded
         else -> TrackDownloadStatus.NotDownloaded
     }
 

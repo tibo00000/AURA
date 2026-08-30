@@ -991,7 +991,7 @@ fun FavoritesScreen(
                     }
 
                     val isDownloadedLocally = !track.contentUri.isNullOrBlank()
-                    val isCloudOnlyTrack = isCloudOnly && isPresentInCloud
+                    val isCloudOnlyTrack = !isDownloadedLocally
                     val isOfflineBlocked = isCloudOnlyTrack && !isOnline
 
                     val onDeleteDownloadLambda = remember(track.id, isDownloadedLocally) {
@@ -1855,7 +1855,7 @@ fun ArtistRouteScreen(
                 items(artist.topTracks, key = { it.id }) { track ->
                     val isDownloadedLocally = !track.contentUri.isNullOrBlank()
                     val isPresentInCloud = lookupIndex.isCloudSynced(track.id, track.title, track.artistName, track.albumTitle)
-                    val isCloudOnlyTrack = track.contentUri.isNullOrBlank() && isPresentInCloud
+                    val isCloudOnlyTrack = !isDownloadedLocally
                     val isOfflineBlocked = isCloudOnlyTrack && !isOnline
 
                     val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
@@ -3661,7 +3661,7 @@ fun LibraryTracksScreen(
                         } else null
                     }
 
-                    val isCloudOnlyTrack = !isDownloadedLocally && isPresentInCloud
+                    val isCloudOnlyTrack = !isDownloadedLocally
                     val onDownloadFromCloudLambda = remember(track.id, isCloudOnlyTrack, isPresentInCloud) {
                         if (isCloudOnlyTrack && isPresentInCloud) {
                             {

@@ -1662,7 +1662,7 @@ private fun SearchTrackRowItem(
         } else null
     }
 
-    val isCloudOnly = isPresentInCloud && !isDownloadedLocally
+    val isCloudOnly = !isDownloadedLocally
     val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
         if (isCloudOnly && isPresentInCloud) {
             {
