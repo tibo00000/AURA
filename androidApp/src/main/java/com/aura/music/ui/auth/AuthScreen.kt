@@ -55,8 +55,8 @@ import androidx.compose.ui.unit.sp
 import com.aura.music.core.AuthSessionManager
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DeepBlack
-import com.aura.music.ui.theme.GunmetalGrey
-import com.aura.music.ui.theme.VibrantSurface
+import com.aura.music.ui.theme.ElevatedGraphite
+import com.aura.music.ui.theme.HairlineDark
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,7 +108,7 @@ fun AuthScreen(
             // Carte d'état de session active
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = VibrantSurface),
+                colors = CardDefaults.cardColors(containerColor = ElevatedGraphite),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -200,7 +200,7 @@ fun AuthScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = BlazeOrange,
-                    unfocusedBorderColor = GunmetalGrey,
+                    unfocusedBorderColor = HairlineDark,
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
                     cursorColor = BlazeOrange
@@ -232,7 +232,7 @@ fun AuthScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = BlazeOrange,
-                    unfocusedBorderColor = GunmetalGrey,
+                    unfocusedBorderColor = HairlineDark,
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
                     cursorColor = BlazeOrange

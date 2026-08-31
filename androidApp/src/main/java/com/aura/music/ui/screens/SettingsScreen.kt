@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -478,7 +479,7 @@ fun SettingsScreen(
                                     uploadStatus = "Envoi en cours..."
                                     isSuccess = null
                                     scope.launch {
-                                        downloadRepository.uploadCookies(cookiesText, com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader())
+                                        downloadRepository.uploadCookies(cookiesText, com.aura.music.core.AuthSessionManager.getInstance(ctx).getBearerHeader())
                                             .collect { result ->
                                                 isUploading = false
                                                 result.fold(
@@ -517,7 +518,7 @@ fun SettingsScreen(
                             uploadStatus = "Envoi des cookies WebView..."
                             isSuccess = null
                             scope.launch {
-                                downloadRepository.uploadCookies(netscapeCookies, com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader())
+                                downloadRepository.uploadCookies(netscapeCookies, com.aura.music.core.AuthSessionManager.getInstance(ctx).getBearerHeader())
                                     .collect { result ->
                                         isUploading = false
                                         result.fold(

@@ -548,7 +548,7 @@ fun SearchScreen(
                                                     artistName = track.displayArtistName,
                                                     albumTitle = track.displayAlbumTitle,
                                                     coverUri = track.coverUri,
-                                                    userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+                                                    userToken = application.container.authSessionManager.getBearerHeader()
                                                 ).collect { result ->
                                                     if (result.isSuccess) {
                                                         scope.launch {

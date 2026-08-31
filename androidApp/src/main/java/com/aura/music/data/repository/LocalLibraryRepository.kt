@@ -387,7 +387,7 @@ class LocalLibraryRepository(
                         }
                     }
                 } else {
-                    Log.w(TAG, "MediaStore scan incomplete or permission missing. Skipped purging local MediaStore tracks to prevent data loss.")
+                    Log.w("LocalLibraryRepository", "MediaStore scan incomplete or permission missing. Skipped purging local MediaStore tracks to prevent data loss.")
                 }
 
                 // Purge obsolete downloaded tracks based on physical file scan
