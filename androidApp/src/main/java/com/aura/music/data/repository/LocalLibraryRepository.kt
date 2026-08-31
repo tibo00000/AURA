@@ -439,15 +439,6 @@ class LocalLibraryRepository(
     suspend fun getPlaylistCandidateTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getAllTracks() }
 
-    fun observePlaylists(): Flow<List<PlaylistListRow>> =
-        database.playlistDao().observePlaylists()
-
-    fun observePlaylistDetail(playlistId: String): Flow<PlaylistDetailRow?> =
-        database.playlistDao().observePlaylistDetail(playlistId)
-
-    fun observePlaylistTracks(playlistId: String): Flow<List<PlaylistTrackRow>> =
-        database.playlistDao().observePlaylistTracks(playlistId)
-
     suspend fun getSettings(): UserSettingsEntity? =
         withContext(Dispatchers.IO) { database.userSettingsDao().getSettings() }
 
@@ -639,31 +630,25 @@ class LocalLibraryRepository(
         pendingIntent
     }
 
-    suspend fun editTrackMetadata(
+    suspend fun updateTrackMetadata(
         trackId: String,
         newTitle: String,
         newArtistName: String,
         newAlbumTitle: String?,
-        trackNumber: Int?,
-        year: Int?,
         coverSourceUriOrUrl: String? = null,
         coverSourceBytes: ByteArray? = null,
-    ): TrackListRow = audioMetadataEditor.editTrackMetadata(
+        trackNumber: String? = null,
+        year: String? = null,
+    ): Result<TrackListRow> = audioMetadataEditor.updateTrackMetadata(
         trackId = trackId,
-        title = newTitle.trim(),
-        artistName = newArtistName.trim().ifBlank { "Artiste inconnu" },
-        albumTitle = newAlbumTitle?.trim()?.ifBlank { null },
-        trackNumber = trackNumber,
-        year = year,
+        newTitle = newTitle,
+        newArtistName = newArtistName,
+        newAlbumTitle = newAlbumTitle,
         coverSourceUriOrUrl = coverSourceUriOrUrl,
         coverSourceBytes = coverSourceBytes,
+        trackNumber = trackNumber,
+        year = year,
     )
-
-    private suspend fun normalizePlaylistPositions(playlistId: String) {
-        database.playlistDao().getPlaylistTracks(playlistId).forEachIndexed { index, row ->
-            database.playlistDao().updatePlaylistItemPosition(row.playlistItemId, index)
-        }
-    }
 
     companion object {
         const val ACTIVE_SNAPSHOT_ID = "active"

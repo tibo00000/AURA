@@ -4,7 +4,6 @@ import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.PlaylistDetailRow
 import com.aura.music.data.local.PlaylistEntity
 import com.aura.music.data.local.PlaylistItemEntity
-import com.aura.music.data.local.PlaylistItemWithTrack
 import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.local.TrackListRow
 import androidx.room3.useWriterConnection
