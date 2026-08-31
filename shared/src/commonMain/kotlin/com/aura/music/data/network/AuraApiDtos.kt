@@ -95,6 +95,10 @@ data class TrackSummary(
     val durationMs: Int,
     @SerialName("cover_uri")
     val coverUri: String?,
+    @SerialName("artist_id")
+    val artistId: String? = null,
+    @SerialName("album_id")
+    val albumId: String? = null,
     @SerialName("is_explicit")
     val isExplicit: Boolean = false,
     @SerialName("is_liked")

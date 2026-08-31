@@ -90,6 +90,8 @@ class TrackSummaryResponse(BaseModel):
     display_album_title: Optional[str] = None
     duration_ms: Optional[int] = None
     cover_uri: Optional[str] = None
+    artist_id: Optional[str] = None
+    album_id: Optional[str] = None
     is_explicit: Optional[bool] = None
     is_liked: bool = False
     is_local_available: bool = False

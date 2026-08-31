@@ -38,6 +38,8 @@ def _normalize_release_type(value) -> str:
 
 
 def _to_track_summary(track) -> TrackSummaryResponse:
+    artist_id = build_aura_id("artist", track.artist.provider_name, track.artist.provider_id) if track.artist else None
+    album_id = build_aura_id("album", track.album.provider_name, track.album.provider_id) if track.album else None
     return TrackSummaryResponse(
         id=build_aura_id("track", track.provider_name, track.provider_id),
         title=track.display_title,
@@ -45,6 +47,8 @@ def _to_track_summary(track) -> TrackSummaryResponse:
         display_album_title=track.album.display_title if track.album else None,
         duration_ms=track.duration_ms,
         cover_uri=(track.album.metadata.get("cover_medium") or track.album.metadata.get("cover")) if track.album else None,
+        artist_id=artist_id,
+        album_id=album_id,
         is_explicit=bool(track.metadata.get("explicit_lyrics")) if track.metadata.get("explicit_lyrics") is not None else None,
     )
 

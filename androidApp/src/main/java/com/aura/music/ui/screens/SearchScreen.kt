@@ -1777,18 +1777,16 @@ private fun SearchOnlineTrackRowItem(
         else -> TrackDownloadStatus.NotDownloaded
     }
 
-    val onViewArtist = remember(track.displayArtistName, artists) {
+    val onViewArtist = remember(track.id, track.artistId, track.displayArtistName, artists) {
         {
-            val matchedArtist = artists.firstOrNull { it.name.trim().lowercase() == track.displayArtistName.trim().lowercase() }
-            val artistIdToOpen = matchedArtist?.id ?: "artist:${normalize(track.displayArtistName)}"
+            val artistIdToOpen = track.artistId ?: artists.firstOrNull { it.name.trim().equals(track.displayArtistName.trim(), ignoreCase = true) }?.id ?: "artist:${normalize(track.displayArtistName)}"
             currentOnArtist.value(artistIdToOpen)
         }
     }
-    val onViewAlbum = remember(track.displayArtistName, track.displayAlbumTitle, albums) {
+    val onViewAlbum = remember(track.id, track.albumId, track.displayArtistName, track.displayAlbumTitle, albums) {
         track.displayAlbumTitle?.let { albumTitle ->
             {
-                val matchedAlbum = albums.firstOrNull { it.title.trim().lowercase() == albumTitle.trim().lowercase() }
-                val albumIdToOpen = matchedAlbum?.id ?: "album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}"
+                val albumIdToOpen = track.albumId ?: albums.firstOrNull { it.title.trim().equals(albumTitle.trim(), ignoreCase = true) }?.id ?: "album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}"
                 currentOnAlbum.value(albumIdToOpen)
             }
         }
