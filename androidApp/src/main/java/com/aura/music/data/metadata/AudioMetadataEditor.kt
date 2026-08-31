@@ -149,7 +149,7 @@ class AudioMetadataEditor(
             )
             database.artistDao().upsertArtists(listOf(artistEntity))
 
-            if (albumId != null && albumTitle != null) {
+            if (albumId != null && !albumTitle.isNullOrBlank()) {
                 val albumEntity = AlbumEntity(
                     id = albumId,
                     primaryArtistId = artistId,

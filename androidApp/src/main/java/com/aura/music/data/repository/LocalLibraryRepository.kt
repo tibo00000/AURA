@@ -482,7 +482,7 @@ class LocalLibraryRepository(
 
     /**
      * Bascule l'etat de like d'une piste de maniere atomique.
-     * La transaction garantit l'invaiant : tracks.is_liked reflete track_likes.
+     * La transaction garantit l'invariant : tracks.is_liked reflete track_likes.
      * Gouverne par : docs/android/room-schema.md, docs/android/local-persistence.md
      *
      * @param trackId identifiant AURA de la piste
@@ -490,7 +490,7 @@ class LocalLibraryRepository(
      * @param contextType contexte source du like (optionnel)
      * @param contextId identifiant du contexte source (optionnel)
      */
-    suspend fun setTrackIsLiked(
+    suspend fun toggleLike(
         trackId: String,
         currentlyLiked: Boolean,
         contextType: String? = null,

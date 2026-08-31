@@ -15,7 +15,8 @@ Architecture Decision Records
 - `docs/adrs/006-online-search-backend-only.md`: decision de garder la recherche online v1 exclusivement derriere le backend AURA.
 - `docs/adrs/007-desktop-client-cmp.md`: decision d'utiliser Compose Multiplatform pour le client Bureau et Web avec optimisations de ressources.
 
-Documentation Governance
+Documentation Governance & Engineering Rules
+- `docs/architecture/engineering-rules.md`: regles canoniques d'ingenierie, zero-jank, OSA, atomicite Outbox, Scoped Storage, RLS et QueueManager.
 - `docs/documentation/style-guide.md`: normes d'ecriture intemporelles et regles de mise a jour.
 
 Product
