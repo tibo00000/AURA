@@ -18,23 +18,36 @@ class ArtworkContentProvider : ContentProvider() {
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
         val context = context ?: throw FileNotFoundException("Context is null")
-        
+        if (mode != "r") {
+            throw SecurityException("ArtworkContentProvider only supports read-only mode ('r')")
+        }
+
         // Format attendu: content://com.aura.music.artwork/covers/filename.jpg
         val pathSegments = uri.pathSegments
-        if (pathSegments.isNotEmpty()) {
-            val fileName = pathSegments.last()
-            val candidateFiles = listOf(
-                File(File(context.filesDir, "covers"), fileName),
-                File(context.filesDir, fileName),
-                File(File(context.cacheDir, "covers"), fileName),
-                File(context.cacheDir, fileName)
-            )
-            for (file in candidateFiles) {
-                if (file.exists() && file.isFile) {
-                    return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                }
+        if (pathSegments.isEmpty()) {
+            throw FileNotFoundException("Invalid artwork URI format: $uri")
+        }
+
+        val fileName = pathSegments.last()
+
+        // 1. Protection Anti-Path Traversal
+        if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\") || fileName.contains("\u0000")) {
+            throw SecurityException("Illegal characters detected in filename: $fileName")
+        }
+
+        // 2. Répertoires de pochettes autorisés
+        val allowedDirectories = listOf(
+            File(context.filesDir, "covers").canonicalFile,
+            File(context.cacheDir, "covers").canonicalFile
+        )
+
+        for (dir in allowedDirectories) {
+            val candidateFile = File(dir, fileName).canonicalFile
+            if (candidateFile.path.startsWith(dir.path) && candidateFile.exists() && candidateFile.isFile) {
+                return ParcelFileDescriptor.open(candidateFile, ParcelFileDescriptor.MODE_READ_ONLY)
             }
         }
+
         throw FileNotFoundException("Artwork file not found for URI: $uri")
     }
 

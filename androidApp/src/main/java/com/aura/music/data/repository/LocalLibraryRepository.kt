@@ -74,6 +74,8 @@ class LocalLibraryRepository(
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
     private val searchIndexRef = AtomicReference<LocalSearchIndex?>(null)
 
+    private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+
     suspend fun getOrBuildSearchIndex(): LocalSearchIndex {
         val cached = searchIndexRef.get()
         if (cached != null) return cached
@@ -272,8 +274,9 @@ class LocalLibraryRepository(
         }
 
         // 2. Scan MediaStore if permission is granted
-        if (mediaStoreAudioDataSource.hasReadPermission()) {
-            val mediaFiles = mediaStoreAudioDataSource.getLocalAudioFiles()
+        val mediaScanResult = mediaStoreAudioDataSource.getLocalAudioFilesResult()
+        if (mediaScanResult.isComplete) {
+            val mediaFiles = mediaScanResult.tracks
             for (media in mediaFiles) {
                 val trackId = trackIdOf(media.mediaStoreId)
                 val existingTrack = database.trackDao().getRawTrackById(trackId)
@@ -372,16 +375,23 @@ class LocalLibraryRepository(
 
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
-                val existingLocalIds = database.trackDao().getLocalTrackIds()
-                val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
                 val scannedIds = scannedTracks.map { it.id }.toSet()
-
                 val obsoleteIds = mutableListOf<String>()
-                for (id in existingLocalIds) {
-                    if (id !in scannedIds) {
-                        obsoleteIds.add(id)
+
+                // Purge obsolete MediaStore tracks ONLY if the MediaStore scan completed successfully
+                if (mediaScanResult.isComplete) {
+                    val existingLocalIds = database.trackDao().getLocalTrackIds()
+                    for (id in existingLocalIds) {
+                        if (id !in scannedIds) {
+                            obsoleteIds.add(id)
+                        }
                     }
+                } else {
+                    Log.w(TAG, "MediaStore scan incomplete or permission missing. Skipped purging local MediaStore tracks to prevent data loss.")
                 }
+
+                // Purge obsolete downloaded tracks based on physical file scan
+                val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
                 for (id in existingDownloadedIds) {
                     if (id !in scannedIds) {
                         obsoleteIds.add(id)
@@ -457,7 +467,7 @@ class LocalLibraryRepository(
     suspend fun getRecentPlaybackHistory(limit: Int = 12): List<TrackListRow> = withContext(Dispatchers.IO) {
         if (shouldSyncDirectly()) {
             try {
-                val response = apiService.getHistory(SyncRepository.AUTH_TOKEN)
+                val response = apiService.getHistory(getAuthToken())
                 val data = response.data
                 if (response.error == null && data != null) {
                     val historyItems = data.items.take(limit)
@@ -696,7 +706,7 @@ class LocalLibraryRepository(
         if (shouldSyncDirectly()) {
             try {
                 apiService.createPlaylist(
-                    token = SyncRepository.AUTH_TOKEN,
+                    token = getAuthToken(),
                     request = com.aura.music.data.network.PlaylistCreate(
                         id = playlistId,
                         name = name.trim(),
@@ -752,7 +762,7 @@ class LocalLibraryRepository(
         database.playlistDao().deletePlaylist(playlistId)
         if (shouldSyncDirectly()) {
             try {
-                apiService.deletePlaylist(SyncRepository.AUTH_TOKEN, playlistId)
+                apiService.deletePlaylist(getAuthToken(), playlistId)
                 Log.i("LocalLibraryRepository", "Successfully synced deleted playlist $playlistId in real-time")
             } catch (e: Exception) {
                 Log.w("LocalLibraryRepository", "Direct playlist deletion REST failed: ${e.message}. Falling back to outbox.", e)
@@ -799,7 +809,7 @@ class LocalLibraryRepository(
         if (shouldSyncDirectly()) {
             try {
                 apiService.appendTrackToPlaylist(
-                    token = SyncRepository.AUTH_TOKEN,
+                    token = getAuthToken(),
                     id = playlistId,
                     request = com.aura.music.data.network.PlaylistItemCreate(
                         id = itemId,
@@ -855,7 +865,7 @@ class LocalLibraryRepository(
         }
         if (shouldSyncDirectly() && trackId != null) {
             try {
-                apiService.removeTrackFromPlaylist(SyncRepository.AUTH_TOKEN, playlistId, trackId)
+                apiService.removeTrackFromPlaylist(getAuthToken(), playlistId, trackId)
                 Log.i("LocalLibraryRepository", "Successfully synced removed track $trackId from playlist $playlistId in real-time")
             } catch (e: Exception) {
                 Log.w("LocalLibraryRepository", "Direct remove track REST failed: ${e.message}. Falling back to outbox.", e)
@@ -1034,9 +1044,9 @@ class LocalLibraryRepository(
                 if (shouldSyncDirectly()) {
                     try {
                         if (currentlyLiked) {
-                            apiService.unlikeTrack(SyncRepository.AUTH_TOKEN, trackId)
+                            apiService.unlikeTrack(getAuthToken(), trackId)
                         } else {
-                            apiService.likeTrack(SyncRepository.AUTH_TOKEN, trackId, contextType, contextId)
+                            apiService.likeTrack(getAuthToken(), trackId, contextType, contextId)
                         }
                         Log.i("LocalLibraryRepository", "Successfully synced like/unlike for $trackId in real-time")
                     } catch (e: Exception) {

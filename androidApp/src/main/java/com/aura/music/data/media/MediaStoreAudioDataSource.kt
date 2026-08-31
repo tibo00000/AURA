@@ -24,6 +24,11 @@ data class LocalAudioFile(
     val dateModifiedEpochMs: Long?,
 )
 
+data class MediaScanResult(
+    val tracks: List<LocalAudioFile>,
+    val isComplete: Boolean
+)
+
 class MediaStoreAudioDataSource(
     private val context: Context,
 ) {
@@ -39,6 +44,23 @@ class MediaStoreAudioDataSource(
 
     companion object {
         private const val MIN_DURATION_MS = 30_000L
+    }
+
+    suspend fun getLocalAudioFilesResult(): MediaScanResult = withContext(Dispatchers.IO) {
+        if (!hasReadPermission()) {
+            return@withContext MediaScanResult(emptyList(), isComplete = false)
+        }
+
+        try {
+            val files = getLocalAudioFiles()
+            MediaScanResult(files, isComplete = true)
+        } catch (e: SecurityException) {
+            android.util.Log.e("MediaStoreAudioDataSource", "SecurityException during MediaStore scan", e)
+            MediaScanResult(emptyList(), isComplete = false)
+        } catch (e: Exception) {
+            android.util.Log.e("MediaStoreAudioDataSource", "Unexpected exception during MediaStore scan", e)
+            MediaScanResult(emptyList(), isComplete = false)
+        }
     }
 
     suspend fun getLocalAudioFiles(): List<LocalAudioFile> = withContext(Dispatchers.IO) {

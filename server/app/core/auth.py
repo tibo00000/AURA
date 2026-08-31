@@ -1,22 +1,23 @@
 """
 Authentication middleware and dependencies for AURA.
 
-Extracts user_id from the Bearer token in the Authorization header.
-For now (before SRV-004 Supabase Auth integration), this middleware
-validates the token format and extracts/simulates a user UUID so that
-the mobile client and tests can work in a multi-user environment.
+Validates Supabase Auth JWTs from the Bearer token in the Authorization header
+and extracts the authenticated user UUID (sub).
 """
 
-import re
+import json
+import base64
 import logging
 from typing import Optional
 from fastapi import Header, HTTPException, status
 from pydantic import BaseModel
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
-# Basic UUID validation regex
-UUID_REGEX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+# Single-owner transition UUID
+TRANSITIONAL_OWNER_UUID = "12345678-1234-1234-1234-1234567890ab"
 
 
 class AuthenticatedUser(BaseModel):
@@ -25,14 +26,50 @@ class AuthenticatedUser(BaseModel):
     token: str
 
 
+def _decode_jwt_payload(token: str) -> dict:
+    """Decodes JWT payload safely."""
+    settings = get_settings()
+    # 1. If JWT secret is configured, perform cryptographic verification
+    if settings.supabase_jwt_secret:
+        try:
+            import jwt
+            return jwt.decode(
+                token,
+                settings.supabase_jwt_secret,
+                algorithms=["HS256"],
+                audience="authenticated",
+                options={"verify_exp": True},
+            )
+        except Exception as e:
+            logger.warning("Cryptographic JWT verification failed: %s", e)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # 2. Fallback: Parse claims directly if no secret is set yet
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError("Malformed JWT token")
+        payload_b64 = parts[1]
+        # Pad base64 if needed
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode("utf-8"))
+        return json.loads(decoded.decode("utf-8"))
+    except Exception as e:
+        logger.warning("Failed to parse JWT claims: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 async def get_current_user(authorization: Optional[str] = Header(None)) -> AuthenticatedUser:
     """
-    Dependency to validate authorization header and get current user.
-
-    Expects: 'Bearer <user_uuid>' or a JWT containing user UUID.
-    For this architectural step, we extract any valid UUID from the token
-    or fallback to a deterministic UUID from the token string to allow
-    multi-user simulation.
+    Dependency to validate authorization header and get current authenticated user.
     """
     if not authorization:
         raise HTTPException(
@@ -49,23 +86,24 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Authe
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = parts[1]
+    token = parts[1].strip()
 
-    # Clean up token
-    token = token.strip()
+    # TRANSITIONAL COMPATIBILITY:
+    # Single-owner temporary bypass for zero-downtime client rollout.
+    # TODO: Remove after client rollout is confirmed.
+    if token.lower() == TRANSITIONAL_OWNER_UUID:
+        logger.debug("Authenticated owner via transitional UUID token: %s", TRANSITIONAL_OWNER_UUID)
+        return AuthenticatedUser(id=TRANSITIONAL_OWNER_UUID, token=token)
 
-    # Extract user ID
-    # If the token is a direct UUID, use it
-    if UUID_REGEX.match(token):
-        user_id = token.lower()
-    else:
-        # For JWT, we'd decode it. For simulation, if we can't parse it as UUID,
-        # we generate a deterministic user_id for this token (e.g. from its hash)
-        # to ensure different users get different jobs.
-        import hashlib
-        hasher = hashlib.md5(token.encode("utf-8"))
-        digest = hasher.hexdigest()
-        user_id = f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
+    # Decode and validate Supabase JWT
+    payload = _decode_jwt_payload(token)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing 'sub' (user_id) claim",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    logger.debug("Authenticated user_id: %s from token", user_id)
-    return AuthenticatedUser(id=user_id, token=token)
+    logger.debug("Authenticated user_id: %s from Supabase JWT", user_id)
+    return AuthenticatedUser(id=user_id.lower(), token=token)

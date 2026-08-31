@@ -30,8 +30,7 @@ object MediaCacheManager {
 
     fun createMediaSourceFactory(context: Context): DefaultMediaSourceFactory {
         val appContext = context.applicationContext
-        val rawToken = SyncRepository.AUTH_TOKEN.trim()
-        val authHeader = if (rawToken.startsWith("Bearer ", ignoreCase = true)) rawToken else "Bearer $rawToken"
+        val authHeader = AuthSessionManager.getInstance(appContext).getBearerHeader()
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(mapOf("Authorization" to authHeader))
             .setAllowCrossProtocolRedirects(true)

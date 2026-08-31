@@ -34,6 +34,8 @@ class CloudFileRepository(
         private const val TAG = "CloudFileRepository"
     }
 
+    private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+
     private val _syncedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val syncedTrackIds = _syncedTrackIds.asStateFlow()
 
@@ -48,7 +50,7 @@ class CloudFileRepository(
 
     suspend fun refreshSyncedTrackIds() {
         try {
-            val response = apiService.listSyncFiles(SyncRepository.AUTH_TOKEN)
+            val response = apiService.listSyncFiles(getAuthToken())
             val data = response.data
             if (response.error == null && data != null) {
                 _syncedTrackIds.value = data.items.map { it.trackId }.toSet()
@@ -273,7 +275,7 @@ class CloudFileRepository(
             }
 
             val response = apiService.uploadSyncFile(
-                token = SyncRepository.AUTH_TOKEN,
+                token = getAuthToken(),
                 trackId = trackId,
                 fileBytes = fileBytes,
                 mimeType = mimeType,
@@ -317,7 +319,7 @@ class CloudFileRepository(
     ): Flow<Result<File>> = flow {
         try {
             Log.i(TAG, "Downloading track $trackId from cloud...")
-            val response = apiService.downloadSyncFile(SyncRepository.AUTH_TOKEN, trackId)
+            val response = apiService.downloadSyncFile(getAuthToken(), trackId)
             
             if (response.status.value !in 200..299) {
                 emit(Result.failure(Exception("Erreur serveur lors du téléchargement: HTTP ${response.status.value}")))
@@ -524,7 +526,7 @@ class CloudFileRepository(
      */
     fun listCloudFiles(): Flow<Result<List<SyncedFileResponseData>>> = flow {
         try {
-            val response = apiService.listSyncFiles(SyncRepository.AUTH_TOKEN)
+            val response = apiService.listSyncFiles(getAuthToken())
             val data = response.data
             if (response.error != null || data == null) {
                 val errorMsg = response.error?.message ?: "Erreur inconnue de l'API cloud list"
@@ -557,7 +559,7 @@ class CloudFileRepository(
     fun deleteSyncFile(trackId: String): Flow<Result<Unit>> = flow {
         try {
             Log.i(TAG, "Deleting track $trackId from cloud...")
-            val response = apiService.deleteSyncFile(SyncRepository.AUTH_TOKEN, trackId)
+            val response = apiService.deleteSyncFile(getAuthToken(), trackId)
             val data = response.data
             if (response.error != null || data == null || !data.deleted) {
                 val errorMsg = response.error?.message ?: "Erreur de suppression du fichier cloud"

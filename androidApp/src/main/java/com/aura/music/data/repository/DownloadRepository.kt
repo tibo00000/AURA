@@ -608,7 +608,7 @@ class DownloadRepository(
                     val finalTrack = database.trackDao().getRawTrackById(trackId)
                     if (finalTrack != null) {
                         val uploadResponse = apiService.uploadSyncFile(
-                            token = SyncRepository.AUTH_TOKEN,
+                            token = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader(),
                             trackId = trackId,
                             fileBytes = fileBytes,
                             mimeType = mimeType,

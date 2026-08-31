@@ -35,18 +35,17 @@ import kotlinx.serialization.encodeToString
 class SyncRepository(
     private val database: AuraDatabase,
     private val apiService: AuraApiService,
-    private val context: Context
+    private val context: Context,
+    private val authSessionManager: com.aura.music.core.AuthSessionManager? = null
 ) {
     companion object {
         private const val TAG = "SyncRepository"
         const val AUTH_TOKEN = "Bearer 12345678-1234-1234-1234-1234567890ab"
         private const val WORK_NAME_PERIODIC = "aura_periodic_sync"
         private const val WORK_NAME_ONETIME = "aura_onetime_sync"
-
-        // Global flag to prevent writing to sync_outbox during pulled changes integration
-        @Volatile
-        var isSyncingFromServer: Boolean = false
     }
+
+    private fun getAuthToken(): String = authSessionManager?.getBearerHeader() ?: AUTH_TOKEN
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -80,11 +79,6 @@ class SyncRepository(
         operationType: String,
         payload: Map<String, Any?>
     ) = withContext(Dispatchers.IO) {
-        if (isSyncingFromServer) {
-            Log.d(TAG, "Ignore logging operation because sync is in progress from server: $entityType / $entityId")
-            return@withContext
-        }
-
         val settings = database.userSettingsDao().getSettings()
         if (settings == null || !settings.syncEnabled) {
             Log.d(TAG, "Sync is disabled. Do not record operation.")
@@ -188,7 +182,6 @@ class SyncRepository(
             return@withContext false
         }
 
-        isSyncingFromServer = true
         var success = false
 
         try {
@@ -203,8 +196,6 @@ class SyncRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Sync routine failed: ${e.message}", e)
             success = false
-        } finally {
-            isSyncingFromServer = false
         }
 
         return@withContext success
@@ -219,7 +210,7 @@ class SyncRepository(
             capabilities = mapOf("supports_batch_push" to "true")
         )
         
-        val response = apiService.bootstrap(AUTH_TOKEN, request)
+        val response = apiService.bootstrap(getAuthToken(), request)
         val error = response.error
         val data = response.data
         if (error != null) {
@@ -383,7 +374,7 @@ class SyncRepository(
                 operations = syncOps
             )
 
-            val response = apiService.pushBatch(AUTH_TOKEN, request)
+            val response = apiService.pushBatch(getAuthToken(), request)
             val error = response.error
             val data = response.data
             if (error != null) {
@@ -418,7 +409,7 @@ class SyncRepository(
             limit = 200
         )
 
-        val pullResponse = apiService.pullBatch(AUTH_TOKEN, pullRequest)
+        val pullResponse = apiService.pullBatch(getAuthToken(), pullRequest)
         val error = pullResponse.error
         val pullData = pullResponse.data
         if (error != null) {
@@ -458,9 +449,9 @@ class SyncRepository(
                     val localSettings = database.userSettingsDao().getSettings()
                     if (localSettings != null) {
                         val updated = localSettings.copy(
-                            onlineSearchEnabled = (payload["online_search_enabled"] as? Boolean) ?: localSettings.onlineSearchEnabled,
-                            onlineSearchNetworkPolicy = (payload["online_search_network_policy"] as? String) ?: localSettings.onlineSearchNetworkPolicy,
-                            statsSyncNetworkPolicy = (payload["stats_sync_network_policy"] as? String) ?: localSettings.statsSyncNetworkPolicy
+                            onlineSearchEnabled = payload.boolean("online_search_enabled") ?: localSettings.onlineSearchEnabled,
+                            onlineSearchNetworkPolicy = payload.string("online_search_network_policy") ?: localSettings.onlineSearchNetworkPolicy,
+                            statsSyncNetworkPolicy = payload.string("stats_sync_network_policy") ?: localSettings.statsSyncNetworkPolicy
                         )
                         database.userSettingsDao().insertOrReplace(updated)
                     }
@@ -470,11 +461,11 @@ class SyncRepository(
                         database.playlistDao().deletePlaylist(entityId)
                         Log.d(TAG, "Pulled DELETE playlist $entityId")
                     } else {
-                        val name = payload["name"] as? String ?: "Unnamed Playlist"
-                        val isPinned = (payload["is_pinned"] as? Boolean) ?: false
-                        val coverUri = payload["cover_uri"] as? String
-                        val createdStr = payload["created_at"] as? String
-                        val updatedStr = payload["updated_at"] as? String
+                        val name = payload.string("name") ?: "Unnamed Playlist"
+                        val isPinned = payload.boolean("is_pinned") ?: false
+                        val coverUri = payload.string("cover_uri")
+                        val createdStr = payload.string("created_at")
+                        val updatedStr = payload.string("updated_at")
                         
                         val pl = PlaylistEntity(
                             id = entityId,
@@ -493,10 +484,10 @@ class SyncRepository(
                         database.playlistDao().deletePlaylistItem(entityId)
                         Log.d(TAG, "Pulled DELETE playlist_item $entityId")
                     } else {
-                        val playlistId = payload["playlist_id"] as? String ?: return
-                        val trackId = payload["track_id"] as? String ?: return
-                        val position = (payload["position"] as? Double)?.toInt() ?: 0
-                        val addedStr = payload["added_at"] as? String
+                        val playlistId = payload.string("playlist_id") ?: return
+                        val trackId = payload.string("track_id") ?: return
+                        val position = payload.int("position") ?: (payload.double("position")?.toInt() ?: 0)
+                        val addedStr = payload.string("added_at")
                         
                         ensureTrackStub(trackId)
                         
@@ -506,8 +497,8 @@ class SyncRepository(
                             trackId = trackId,
                             position = position,
                             addedAt = parseIsoDateToMillis(addedStr),
-                            addedFromContextType = payload["added_from_context_type"] as? String,
-                            addedFromContextId = payload["added_from_context_id"] as? String
+                            addedFromContextType = payload.string("added_from_context_type"),
+                            addedFromContextId = payload.string("added_from_context_id")
                         )
                         database.playlistDao().insertPlaylistItem(item)
                         Log.d(TAG, "Pulled UPSERT playlist_item $entityId (pos $position)")
@@ -515,12 +506,12 @@ class SyncRepository(
                 }
                 "track_like" -> {
                     val trackId = entityId
-                    if (change.changeType == "delete" || (payload["is_liked"] as? Boolean == false)) {
+                    if (change.changeType == "delete" || (payload.boolean("is_liked") == false)) {
                         database.trackLikeDao().deleteLike(trackId)
                         database.trackLikeDao().setTrackIsLiked(trackId, false, System.currentTimeMillis())
                         Log.d(TAG, "Pulled DELETE track_like $trackId")
                     } else {
-                        val likedAtStr = payload["liked_at"] as? String
+                        val likedAtStr = payload.string("liked_at")
                         val likedAt = parseIsoDateToMillis(likedAtStr)
                         
                         ensureTrackStub(trackId)
@@ -528,8 +519,8 @@ class SyncRepository(
                         val like = TrackLikeEntity(
                             trackId = trackId,
                             likedAt = likedAt,
-                            sourceContextType = payload["source_context_type"] as? String,
-                            sourceContextId = payload["source_context_id"] as? String
+                            sourceContextType = payload.string("source_context_type"),
+                            sourceContextId = payload.string("source_context_id")
                         )
                         database.trackLikeDao().insertLike(like)
                         database.trackLikeDao().setTrackIsLiked(trackId, true, likedAt)
@@ -538,17 +529,17 @@ class SyncRepository(
                 }
                 "playback_snapshot" -> {
                     // Update the active playback snapshot
-                    val currentTrackId = payload["current_track_id"] as? String
-                    val positionMs = (payload["position_ms"] as? Double)?.toLong() ?: 0L
-                    val shuffleEnabled = (payload["shuffle_enabled"] as? Boolean) ?: false
-                    val repeatMode = payload["repeat_mode"] as? String ?: "none"
+                    val currentTrackId = payload.string("current_track_id")
+                    val positionMs = payload.long("position_ms") ?: (payload.double("position_ms")?.toLong() ?: 0L)
+                    val shuffleEnabled = payload.boolean("shuffle_enabled") ?: false
+                    val repeatMode = payload.string("repeat_mode") ?: "none"
                     
                     val snapshot = com.aura.music.data.local.PlaybackSnapshotEntity(
                         id = "active",
                         currentTrackId = currentTrackId,
-                        playbackContextType = payload["playback_context_type"] as? String,
-                        playbackContextId = payload["playback_context_id"] as? String,
-                        playbackContextIndex = (payload["playback_context_index"] as? Double)?.toInt(),
+                        playbackContextType = payload.string("playback_context_type"),
+                        playbackContextId = payload.string("playback_context_id"),
+                        playbackContextIndex = payload.int("playback_context_index") ?: payload.double("playback_context_index")?.toInt(),
                         positionMs = positionMs,
                         shuffleEnabled = shuffleEnabled,
                         repeatMode = repeatMode,

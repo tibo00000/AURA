@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
     deezer_api_base_url: str = "https://api.deezer.com"

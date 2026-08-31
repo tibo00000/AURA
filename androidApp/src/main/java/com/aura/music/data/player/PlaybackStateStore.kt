@@ -98,7 +98,8 @@ class PlaybackStateStore(
                     repeatMode = repeatMode.name.lowercase(),
                     updatedAt = isoDate
                 )
-                val res = apiService.updatePlaybackSnapshot(SyncRepository.AUTH_TOKEN, snapshotResponse)
+                val authToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+                val res = apiService.updatePlaybackSnapshot(authToken, snapshotResponse)
                 if (res.error != null) {
                     Log.w("PlaybackStateStore", "Direct save snapshot REST returned API error: ${res.error?.message} (code: ${res.error?.code})")
                 } else {
@@ -113,7 +114,8 @@ class PlaybackStateStore(
     suspend fun restore(): PersistedPlaybackSnapshot? = withContext(Dispatchers.IO) {
         if (shouldSyncDirectly()) {
             try {
-                val response = apiService.getPlaybackSnapshot(SyncRepository.AUTH_TOKEN)
+                val authToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+                val response = apiService.getPlaybackSnapshot(authToken)
                 val remote = response.data
                 if (response.error == null && remote != null) {
                     val entity = PlaybackSnapshotEntity(

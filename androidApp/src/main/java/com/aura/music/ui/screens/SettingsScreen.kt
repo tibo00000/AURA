@@ -112,6 +112,10 @@ fun SettingsScreen(
 
     var isIndexing by remember { mutableStateOf(false) }
     var indexResult by remember { mutableStateOf<String?>(null) }
+    var showAuthDialog by remember { mutableStateOf(false) }
+
+    val authManager = remember { com.aura.music.core.AuthSessionManager.getInstance(ctx) }
+    val currentUserEmail by authManager.userEmail.collectAsState()
 
     val settingsState = produceState<UserSettingsEntity?>(initialValue = null, repository, refreshTick) {
         repository.ensureDefaults()
@@ -121,6 +125,17 @@ fun SettingsScreen(
         value = repository.getLibraryDashboardSummary()
     }
     val settings = settingsState.value
+
+    if (showAuthDialog) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showAuthDialog = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            com.aura.music.ui.auth.AuthScreen(
+                onNavigateBack = { showAuthDialog = false }
+            )
+        }
+    }
 
     // Pas de fleche de retour car c'est un onglet principal du menu inferieur
     RouteScaffold(title = "Paramètres") {
@@ -144,6 +159,37 @@ fun SettingsScreen(
                     title = "Synchronisation & Cloud",
                     icon = Icons.Rounded.Cloud
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAuthDialog = true }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Compte & Authentification",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = androidx.compose.ui.graphics.Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = currentUserEmail ?: "Non connecté",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                        Text(
+                            text = "Gérer",
+                            color = BlazeOrange,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    HorizontalDivider(color = HairlineDark, modifier = Modifier.padding(vertical = 4.dp))
+
                     SettingToggleRow(
                         title = "Synchronisation Cloud",
                         subtitle = "Sauvegardez vos titres et playlists sur votre serveur privé.",
@@ -432,7 +478,7 @@ fun SettingsScreen(
                                     uploadStatus = "Envoi en cours..."
                                     isSuccess = null
                                     scope.launch {
-                                        downloadRepository.uploadCookies(cookiesText, com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
+                                        downloadRepository.uploadCookies(cookiesText, com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader())
                                             .collect { result ->
                                                 isUploading = false
                                                 result.fold(
@@ -471,7 +517,7 @@ fun SettingsScreen(
                             uploadStatus = "Envoi des cookies WebView..."
                             isSuccess = null
                             scope.launch {
-                                downloadRepository.uploadCookies(netscapeCookies, com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
+                                downloadRepository.uploadCookies(netscapeCookies, com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader())
                                     .collect { result ->
                                         isUploading = false
                                         result.fold(

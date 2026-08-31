@@ -338,7 +338,7 @@ class PlaylistImportExportManager(
                             artistName = item.raw.artist,
                             albumTitle = item.raw.album,
                             coverUri = item.raw.coverUrl,
-                            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                            userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
                         ).collect { }
                     } catch (e: Exception) {
                         Log.w(TAG, "Erreur déclenchement téléchargement cloud pour ${item.raw.title}", e)
@@ -354,7 +354,7 @@ class PlaylistImportExportManager(
         }
 
         // Lancement immédiat de la boucle de rafraîchissement d'état des téléchargements
-        downloadRepository.ensurePollingStarted(com.aura.music.data.repository.SyncRepository.AUTH_TOKEN)
+        downloadRepository.ensurePollingStarted(com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader())
 
         Log.i(TAG, "Playlist importée créée avec succès ID=$playlistId (${report.totalTracks} titres ajoutés dont ${report.matchedLocalCount} locaux)")
         playlistId

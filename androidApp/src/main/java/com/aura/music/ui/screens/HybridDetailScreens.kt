@@ -363,7 +363,7 @@ fun HybridArtistScreen(
                                         artistName = track.displayArtistName,
                                         albumTitle = track.displayAlbumTitle,
                                         coverUri = track.coverUri,
-                                        userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                        userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
                                     ).collect { }
                                 }
                             }
@@ -377,7 +377,7 @@ fun HybridArtistScreen(
                                     artistName = track.displayArtistName,
                                     albumTitle = track.displayAlbumTitle,
                                     coverUri = track.coverUri,
-                                    userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                    userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
                                 ).collect { }
                             }
                         },
@@ -774,7 +774,7 @@ fun HybridAlbumScreen(
                                         artistName = track.displayArtistName,
                                         albumTitle = track.displayAlbumTitle,
                                         coverUri = track.coverUri,
-                                        userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                        userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
                                     ).collect { }
                                 }
                             }
@@ -788,7 +788,7 @@ fun HybridAlbumScreen(
                                     artistName = track.displayArtistName,
                                     albumTitle = track.displayAlbumTitle,
                                     coverUri = track.coverUri,
-                                    userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+                                    userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
                                 ).collect { }
                             }
                         },

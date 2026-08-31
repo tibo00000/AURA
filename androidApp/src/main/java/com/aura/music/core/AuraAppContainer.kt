@@ -20,11 +20,16 @@ class AuraAppContainer(context: Context) {
     private val database by lazy { AuraDatabase.getInstance(appContext) }
     private val mediaStoreAudioDataSource by lazy { MediaStoreAudioDataSource(appContext) }
 
+    val authSessionManager by lazy {
+        AuthSessionManager.getInstance(appContext)
+    }
+
     val syncRepository by lazy {
         com.aura.music.data.repository.SyncRepository(
             database = database,
             apiService = auraApiService,
             context = appContext,
+            authSessionManager = authSessionManager,
         )
     }
 
@@ -78,7 +83,7 @@ class AuraAppContainer(context: Context) {
     val downloadsViewModelFactory by lazy {
         DownloadsViewModel.Factory(
             downloadRepository = downloadRepository,
-            userToken = com.aura.music.data.repository.SyncRepository.AUTH_TOKEN
+            userToken = authSessionManager.getBearerHeader()
         )
     }
 
