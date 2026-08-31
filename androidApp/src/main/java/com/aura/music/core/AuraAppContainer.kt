@@ -17,6 +17,10 @@ import com.aura.music.ui.player.PlayerViewModel
 class AuraAppContainer(context: Context) {
     private val appContext = context.applicationContext
 
+    val applicationScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
+    )
+
     private val database by lazy { AuraDatabase.getInstance(appContext) }
     private val mediaStoreAudioDataSource by lazy { MediaStoreAudioDataSource(appContext) }
 

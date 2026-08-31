@@ -45,7 +45,13 @@ class PlaybackStateStore(
 ) {
     companion object {
         private const val ACTIVE_ID = "active"
+        private const val DEBOUNCE_DELAY_MS = 1_500L
     }
+
+    private val storeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private var pendingSyncJob: kotlinx.coroutines.Job? = null
+    @Volatile
+    private var pendingSnapshotPayload: com.aura.music.data.network.PlaybackSnapshotResponse? = null
 
     private suspend fun shouldSyncDirectly(): Boolean {
         val settings = database.userSettingsDao().getSettings()
@@ -63,7 +69,7 @@ class PlaybackStateStore(
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         
-        // Save locally first
+        // 1. Save locally first (synchronous 0 ms)
         snapshotDao.upsert(
             PlaybackSnapshotEntity(
                 id = ACTIVE_ID,
@@ -78,37 +84,61 @@ class PlaybackStateStore(
             ),
         )
 
-        // Sync directly to backend if online and sync enabled
+        // 2. Debounced remote sync (1500 ms)
         if (shouldSyncDirectly()) {
-            try {
-                val isoDate = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    java.time.Instant.ofEpochMilli(now).toString()
-                } else {
-                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
-                    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-                    sdf.format(java.util.Date(now))
-                }
-                val snapshotResponse = com.aura.music.data.network.PlaybackSnapshotResponse(
-                    currentTrackId = currentTrackId,
-                    playbackContextType = contextType,
-                    playbackContextId = contextId,
-                    playbackContextIndex = contextIndex,
-                    positionMs = positionMs,
-                    shuffleEnabled = shuffleEnabled,
-                    repeatMode = repeatMode.name.lowercase(),
-                    updatedAt = isoDate
-                )
-                val authToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
-                val res = apiService.updatePlaybackSnapshot(authToken, snapshotResponse)
-                if (res.error != null) {
-                    Log.w("PlaybackStateStore", "Direct save snapshot REST returned API error: ${res.error?.message} (code: ${res.error?.code})")
-                } else {
-                    Log.i("PlaybackStateStore", "Direct save snapshot REST succeeded")
-                }
-            } catch (e: Exception) {
-                Log.w("PlaybackStateStore", "Direct save snapshot REST failed: ${e.message}", e)
+            val isoDate = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                java.time.Instant.ofEpochMilli(now).toString()
+            } else {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                sdf.format(java.util.Date(now))
+            }
+            val payload = com.aura.music.data.network.PlaybackSnapshotResponse(
+                currentTrackId = currentTrackId,
+                playbackContextType = contextType,
+                playbackContextId = contextId,
+                playbackContextIndex = contextIndex,
+                positionMs = positionMs,
+                shuffleEnabled = shuffleEnabled,
+                repeatMode = repeatMode.name.lowercase(),
+                updatedAt = isoDate
+            )
+            pendingSnapshotPayload = payload
+
+            pendingSyncJob?.cancel()
+            pendingSyncJob = storeScope.launch {
+                kotlinx.coroutines.delay(DEBOUNCE_DELAY_MS)
+                performPushSnapshot(payload)
             }
         }
+    }
+
+    private suspend fun performPushSnapshot(payload: com.aura.music.data.network.PlaybackSnapshotResponse) {
+        try {
+            val authToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+            val res = apiService.updatePlaybackSnapshot(authToken, payload)
+            if (res.error != null) {
+                Log.w("PlaybackStateStore", "Debounced save snapshot REST error: ${res.error?.message}")
+            } else {
+                Log.d("PlaybackStateStore", "Debounced save snapshot REST succeeded")
+                if (pendingSnapshotPayload == payload) {
+                    pendingSnapshotPayload = null
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("PlaybackStateStore", "Debounced save snapshot REST failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Exécute immédiatement tout envoi réseau en attente lors des transitions de cycle de vie critiques (onDestroy, onTaskRemoved).
+     * Protégé par NonCancellable pour garantir que la requête réseau va jusqu'au bout.
+     */
+    suspend fun flushPendingPlaybackSnapshot() = withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+        val payload = pendingSnapshotPayload ?: return@withContext
+        pendingSyncJob?.cancel()
+        pendingSyncJob = null
+        performPushSnapshot(payload)
     }
 
     suspend fun restore(): PersistedPlaybackSnapshot? = withContext(Dispatchers.IO) {

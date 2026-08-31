@@ -224,6 +224,7 @@ class PlaybackOrchestrator(
      * Deconnecte le MediaController. Appele lors de la destruction de l'app.
      */
     fun disconnect() {
+        scope.launch { stateStore.flushPendingPlaybackSnapshot() }
         controller?.removeListener(playerListener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null
@@ -329,6 +330,7 @@ class PlaybackOrchestrator(
     private fun handlePause() {
         controller?.pause()
         saveSnapshot()
+        scope.launch { stateStore.flushPendingPlaybackSnapshot() }
     }
 
     private fun handleTogglePlayPause() {
@@ -790,7 +792,6 @@ class PlaybackOrchestrator(
             return null
         }
         
-        var artworkData: ByteArray? = null
         val artworkUri = track.coverUri?.let { uriStr ->
             if (uriStr.startsWith("/") || uriStr.startsWith("file://")) {
                 val filePath = if (uriStr.startsWith("file://")) {
@@ -798,58 +799,26 @@ class PlaybackOrchestrator(
                 } else {
                     uriStr
                 }
-                artworkData = getArtworkBytes(filePath)
                 val file = java.io.File(filePath)
-                // Serve cover art via public ArtworkContentProvider
+                // Serve cover art via public ArtworkContentProvider (Zero-Jank async I/O)
                 Uri.parse("content://com.aura.music.artwork/covers/${file.name}")
             } else {
                 Uri.parse(uriStr)
             }
         }
 
-        val metadataBuilder = MediaMetadata.Builder()
+        val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artistName)
             .setAlbumTitle(track.albumTitle)
             .setArtworkUri(artworkUri)
-
-        if (artworkData != null) {
-            metadataBuilder.setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-        }
+            .build()
 
         return MediaItem.Builder()
             .setMediaId(track.trackId)
             .setUri(Uri.parse(uri))
-            .setMediaMetadata(metadataBuilder.build())
+            .setMediaMetadata(metadata)
             .build()
-    }
-
-    private fun getArtworkBytes(filePath: String): ByteArray? {
-        val file = java.io.File(filePath)
-        if (!file.exists()) return null
-        try {
-            val size = file.length()
-            if (size in 1..100_000) {
-                return file.readBytes()
-            }
-            val options = android.graphics.BitmapFactory.Options().apply {
-                inSampleSize = 2
-            }
-            var bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
-            if (bitmap != null) {
-                if (bitmap.width > 300 || bitmap.height > 300) {
-                    bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 300, 300, true)
-                }
-                val stream = java.io.ByteArrayOutputStream()
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
-                val bytes = stream.toByteArray()
-                bitmap.recycle()
-                return bytes
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("PlaybackOrchestrator", "Error reading/compressing artwork bytes", e)
-        }
-        return null
     }
 
     private suspend fun handleExternalTrackTransition(trackId: String) {

@@ -332,11 +332,15 @@ class QueueManager {
 
     /**
      * Retire une piste de la liste "À suivre", modifiant le contexte effectif ou le shuffle partiel.
+     * La piste actuellement en cours de lecture ne peut jamais être supprimée par cet appel.
      */
     fun removeUpcomingContextTrack(internalId: String) {
         _state.update { current ->
             val ctx = current.context ?: return@update current
+            if (ctx.tracks.isEmpty() || ctx.currentIndex !in ctx.tracks.indices) return@update current
+
             val trackIndex = ctx.tracks.indexOfFirst { it.internalId == internalId }
+            // Interdiction de supprimer le morceau actuellement en cours de lecture
             if (trackIndex == -1 || trackIndex == ctx.currentIndex) return@update current
             
             val newTracks = ctx.tracks.toMutableList().apply { removeAt(trackIndex) }
@@ -356,38 +360,49 @@ class QueueManager {
     }
 
     /**
-     * Réordonne la liste "À suivre". Si le shuffle est activé, seul l'ordre mélangé est réassemblé. 
+     * Réordonne la liste "À suivre".
+     * En mode séquentiel comme en mode Shuffle, garantit que les mutations s'exécutent strictement
+     * dans la fenêtre à venir (> currentIndex), préservant l'invariance absolue de la piste active.
      */
     fun reorderUpcomingContextTrack(fromInternalId: String, toInternalId: String) {
         _state.update { current ->
             val ctx = current.context ?: return@update current
+            if (ctx.tracks.isEmpty() || ctx.currentIndex !in ctx.tracks.indices) return@update current
+            if (fromInternalId == toInternalId) return@update current
+
             if (current.shuffledContextIndices != null) {
-                // Shuffle is ON
+                // Mode Shuffle : permutation dans shuffledContextIndices
                 val newShuffled = current.shuffledContextIndices.toMutableList()
                 val fromArrayIdx = ctx.tracks.indexOfFirst { it.internalId == fromInternalId }
                 val toArrayIdx = ctx.tracks.indexOfFirst { it.internalId == toInternalId }
-                
+                if (fromArrayIdx == -1 || toArrayIdx == -1) return@update current
+
                 val fromShufflePos = newShuffled.indexOf(fromArrayIdx)
                 val toShufflePos = newShuffled.indexOf(toArrayIdx)
-                if (fromShufflePos != -1 && toShufflePos != -1) {
-                    newShuffled.add(toShufflePos, newShuffled.removeAt(fromShufflePos))
-                    return@update current.copy(shuffledContextIndices = newShuffled)
-                }
+                val currentShufflePos = newShuffled.indexOf(ctx.currentIndex)
+
+                // Les deux éléments doivent appartenir strictement à la section à venir (> currentShufflePos)
+                if (fromShufflePos <= currentShufflePos || toShufflePos <= currentShufflePos) return@update current
+
+                val movedItem = newShuffled.removeAt(fromShufflePos)
+                newShuffled.add(toShufflePos, movedItem)
+                return@update current.copy(shuffledContextIndices = newShuffled)
             } else {
-                // Shuffle is OFF
-                val trackIndexFrom = ctx.tracks.indexOfFirst { it.internalId == fromInternalId }
-                val trackIndexTo = ctx.tracks.indexOfFirst { it.internalId == toInternalId }
-                if (trackIndexFrom == -1 || trackIndexTo == -1) return@update current
-                
+                // Mode Séquentiel standard
+                val fromIdx = ctx.tracks.indexOfFirst { it.internalId == fromInternalId }
+                val toIdx = ctx.tracks.indexOfFirst { it.internalId == toInternalId }
+                if (fromIdx == -1 || toIdx == -1) return@update current
+
+                // Les deux éléments doivent appartenir strictement à la section à venir (> currentIndex)
+                if (fromIdx <= ctx.currentIndex || toIdx <= ctx.currentIndex) return@update current
+
                 val newTracks = ctx.tracks.toMutableList()
-                newTracks.add(trackIndexTo, newTracks.removeAt(trackIndexFrom))
-                
-                val currentTrackId = ctx.tracks[ctx.currentIndex].internalId
-                val newCurrentIndex = newTracks.indexOfFirst { it.internalId == currentTrackId }
-                
-                return@update current.copy(context = ctx.copy(tracks = newTracks, currentIndex = newCurrentIndex))
+                val movedItem = newTracks.removeAt(fromIdx)
+                newTracks.add(toIdx, movedItem)
+
+                // currentIndex reste parfaitement inchangé car la mutation a lieu strictement après
+                return@update current.copy(context = ctx.copy(tracks = newTracks, currentIndex = ctx.currentIndex))
             }
-            current
         }
     }
 

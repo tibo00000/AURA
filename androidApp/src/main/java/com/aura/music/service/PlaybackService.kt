@@ -455,6 +455,10 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        val container = (application as? AuraApplication)?.container
+        container?.applicationScope?.launch(Dispatchers.IO) {
+            container.playbackStateStore.flushPendingPlaybackSnapshot()
+        }
         val currentPlayer = mediaSession?.player
         if (currentPlayer == null || !currentPlayer.playWhenReady ||
             currentPlayer.mediaItemCount == 0 ||
@@ -465,6 +469,10 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        val container = (application as? AuraApplication)?.container
+        container?.applicationScope?.launch(Dispatchers.IO) {
+            container.playbackStateStore.flushPendingPlaybackSnapshot()
+        }
         serviceScope.cancel() // Annulation propre pour eviter les fuites memoire
         mediaSession?.run {
             player.release()
@@ -482,7 +490,6 @@ fun TrackListRow.toMediaItem(
     clientPackageName: String? = null,
     connectedPackages: List<String> = emptyList()
 ): MediaItem {
-    var artworkData: ByteArray? = null
     val artworkUri = coverUri?.let { uriStr ->
         if (uriStr.startsWith("/") || uriStr.startsWith("file://")) {
             val filePath = if (uriStr.startsWith("file://")) {
@@ -490,9 +497,8 @@ fun TrackListRow.toMediaItem(
             } else {
                 uriStr
             }
-            artworkData = getArtworkBytes(filePath)
             val file = java.io.File(filePath)
-            // Serve cover art via public ArtworkContentProvider
+            // Serve cover art via public ArtworkContentProvider (Zero-Jank async I/O)
             Uri.parse("content://com.aura.music.artwork/covers/${file.name}")
         } else {
             Uri.parse(uriStr)
@@ -503,7 +509,7 @@ fun TrackListRow.toMediaItem(
     } else if (id.isNotBlank()) {
         Uri.parse("${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$id")
     } else null
-    val metadataBuilder = MediaMetadata.Builder()
+    val metadata = MediaMetadata.Builder()
         .setTitle(title)
         .setArtist(artistName)
         .setAlbumTitle(albumTitle)
@@ -511,46 +517,13 @@ fun TrackListRow.toMediaItem(
         .setFolderType(MediaMetadata.FOLDER_TYPE_NONE)
         .setIsPlayable(true)
         .setIsBrowsable(false)
-
-    if (artworkData != null) {
-        metadataBuilder.setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-    }
+        .build()
 
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(mediaUri)
-        .setMediaMetadata(metadataBuilder.build())
+        .setMediaMetadata(metadata)
         .build()
-}
-
-private fun getArtworkBytes(filePath: String): ByteArray? {
-    val file = java.io.File(filePath)
-    if (!file.exists()) return null
-    try {
-        val size = file.length()
-        // If file is very small (< 100 KB), read directly to save performance
-        if (size in 1..100_000) {
-            return file.readBytes()
-        }
-        // Downsample and compress to JPEG to prevent TransactionTooLargeException (limited Binder buffer)
-        val options = android.graphics.BitmapFactory.Options().apply {
-            inSampleSize = 2
-        }
-        var bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
-        if (bitmap != null) {
-            if (bitmap.width > 300 || bitmap.height > 300) {
-                bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 300, 300, true)
-            }
-            val stream = java.io.ByteArrayOutputStream()
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
-            val bytes = stream.toByteArray()
-            bitmap.recycle()
-            return bytes
-        }
-    } catch (e: Exception) {
-        android.util.Log.e("PlaybackService", "Error reading/compressing artwork bytes", e)
-    }
-    return null
 }
 
 fun <T> List<T>.paginate(page: Int, pageSize: Int): List<T> {

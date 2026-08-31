@@ -68,7 +68,8 @@ object FuzzyMatcher {
     }
 
     /**
-     * Distance de Damerau-Levenshtein avec court-circuit précoce pour performance O(N*M) minimale.
+     * Distance OSA / Damerau-Levenshtein haute performance avec fenêtre glissante à 3 tableaux
+     * et court-circuit précoce pour un coût mémoire quasi nul (zéro GC thrashing).
      */
     fun calculateDamerauLevenshtein(s1: String, s2: String, maxDistance: Int): Int {
         val len1 = s1.length
@@ -78,14 +79,18 @@ object FuzzyMatcher {
         if (len1 == 0) return len2
         if (len2 == 0) return len1
 
-        // Matrice de dimension (len1 + 1) x (len2 + 1)
-        val dp = Array(len1 + 1) { IntArray(len2 + 1) }
+        // Fenêtre glissante de 3 tableaux d'entiers évitant l'allocation d'une matrice (N+1)*(M+1)
+        var twoAgoRow = IntArray(len2 + 1)
+        var prevRow = IntArray(len2 + 1)
+        var currRow = IntArray(len2 + 1)
 
-        for (i in 0..len1) dp[i][0] = i
-        for (j in 0..len2) dp[0][j] = j
+        for (j in 0..len2) {
+            prevRow[j] = j
+        }
 
         for (i in 1..len1) {
-            var minRowCost = dp[i][0]
+            currRow[0] = i
+            var minRowCost = i
             val char1 = s1[i - 1]
 
             for (j in 1..len2) {
@@ -93,19 +98,19 @@ object FuzzyMatcher {
                 val cost = if (char1 == char2) 0 else 1
 
                 var current = min(
-                    dp[i - 1][j] + 1,      // suppression
+                    prevRow[j] + 1,       // suppression
                     min(
-                        dp[i][j - 1] + 1,  // insertion
-                        dp[i - 1][j - 1] + cost // substitution
+                        currRow[j - 1] + 1,   // insertion
+                        prevRow[j - 1] + cost // substitution
                     )
                 )
 
-                // Transposition de caractères adjacents
+                // Transposition de caractères adjacents (OSA / Damerau-Levenshtein)
                 if (i > 1 && j > 1 && char1 == s2[j - 2] && s1[i - 2] == char2) {
-                    current = min(current, dp[i - 2][j - 2] + 1)
+                    current = min(current, twoAgoRow[j - 2] + 1)
                 }
 
-                dp[i][j] = current
+                currRow[j] = current
                 minRowCost = min(minRowCost, current)
             }
 
@@ -113,8 +118,14 @@ object FuzzyMatcher {
             if (minRowCost > maxDistance) {
                 return maxDistance + 1
             }
+
+            // Rotation des 3 pointeurs sans réallocation
+            val temp = twoAgoRow
+            twoAgoRow = prevRow
+            prevRow = currRow
+            currRow = temp
         }
 
-        return dp[len1][len2]
+        return prevRow[len2]
     }
 }

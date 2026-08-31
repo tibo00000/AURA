@@ -70,6 +70,30 @@ class SyncRepository(
     private fun JsonObject.double(key: String): Double? = get(key)?.jsonPrimitive?.doubleOrNull
 
     /**
+     * Crée une entité SyncOutbox prête à être insérée dans une transaction SQLite Room atomique.
+     */
+    fun createOutboxEntity(
+        entityType: String,
+        entityId: String,
+        operationType: String,
+        payload: Map<String, Any?>
+    ): SyncOutboxEntity {
+        val payloadJson = json.encodeToString(payload.toJsonObject())
+        val now = System.currentTimeMillis()
+        return SyncOutboxEntity(
+            id = "op_${UUID.randomUUID()}",
+            entityType = entityType,
+            entityId = entityId,
+            operationType = operationType,
+            payloadJson = payloadJson,
+            status = "pending",
+            attemptCount = 0,
+            createdAt = now,
+            updatedAt = now
+        )
+    }
+
+    /**
      * Inscrire une mutation locale dans la table sync_outbox.
      * Appelé depuis LocalLibraryRepository.
      */
@@ -86,18 +110,7 @@ class SyncRepository(
         }
 
         try {
-            val payloadJson = json.encodeToString(payload.toJsonObject())
-            val operation = SyncOutboxEntity(
-                id = "op_${UUID.randomUUID()}",
-                entityType = entityType,
-                entityId = entityId,
-                operationType = operationType,
-                payloadJson = payloadJson,
-                status = "pending",
-                attemptCount = 0,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
-            )
+            val operation = createOutboxEntity(entityType, entityId, operationType, payload)
             database.syncOutboxDao().insert(operation)
             Log.i(TAG, "Successfully recorded local operation: ${operation.id} ($entityType / $operationType)")
             

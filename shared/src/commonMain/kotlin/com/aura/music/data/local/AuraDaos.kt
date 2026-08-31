@@ -827,7 +827,7 @@ interface SyncOutboxDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: SyncOutboxEntity)
 
-    @Query("SELECT * FROM sync_outbox WHERE status = 'pending' ORDER BY created_at ASC")
+    @Query("SELECT * FROM sync_outbox WHERE status = 'pending' ORDER BY rowid ASC")
     suspend fun getPendingOperations(): List<SyncOutboxEntity>
 
     @Query("UPDATE sync_outbox SET status = :status, attempt_count = attempt_count + 1, updated_at = :now WHERE id = :id")
