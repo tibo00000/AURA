@@ -19,9 +19,9 @@ interface AuraApiService {
 
     suspend fun getAlbum(id: String): AuraResponse<AlbumDetailResponseData>
 
-    suspend fun resolveArtist(name: String): AuraResponse<ResolveArtistResponseData>
+    suspend fun resolveArtist(name: String, trackTitle: String? = null, albumTitle: String? = null): AuraResponse<ResolveArtistResponseData>
 
-    suspend fun resolveAlbum(title: String, artistName: String? = null): AuraResponse<ResolveAlbumResponseData>
+    suspend fun resolveAlbum(title: String, artistName: String? = null, trackTitle: String? = null): AuraResponse<ResolveAlbumResponseData>
 
     suspend fun createDownload(token: String, request: DownloadRequestDto): AuraResponse<DownloadCreateResponseData>
 

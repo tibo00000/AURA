@@ -1248,11 +1248,13 @@ fun InteractiveOnlineTrackRow(
             )
         }
 
-        // Bouton Cœur avec retour instantané et rebond
-        FavoriteHeartButton(
-            isLiked = track.isLiked,
-            onToggle = onLike
-        )
+        // Bouton Cœur avec retour instantané et rebond (uniquement si sur l'appareil ou sur le Cloud)
+        if (isDownloaded || isSyncedToCloud) {
+            FavoriteHeartButton(
+                isLiked = track.isLiked,
+                onToggle = onLike
+            )
+        }
 
         // Action / Status Icon
         when {

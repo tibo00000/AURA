@@ -264,6 +264,9 @@ interface AlbumDao {
      */
     @Query("SELECT artwork_last_resolved_at FROM albums WHERE id = :albumId LIMIT 1")
     suspend fun getArtworkLastResolvedAt(albumId: String): Long?
+
+    @Query("SELECT title FROM albums WHERE primary_artist_id = :artistId AND title IS NOT NULL LIMIT 1")
+    suspend fun getSampleAlbumTitleForArtist(artistId: String): String?
 }
 
 @Dao
@@ -279,6 +282,12 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getRawTrackById(trackId: String): TrackEntity?
+
+    @Query("SELECT title FROM tracks WHERE primary_artist_id = :artistId AND title IS NOT NULL LIMIT 1")
+    suspend fun getSampleTrackTitleForArtist(artistId: String): String?
+
+    @Query("SELECT title FROM tracks WHERE album_id = :albumId AND title IS NOT NULL LIMIT 1")
+    suspend fun getSampleTrackTitleForAlbum(albumId: String): String?
 
     @Query("SELECT content_uri FROM track_media_links WHERE track_id = :trackId LIMIT 1")
     suspend fun getTrackContentUri(trackId: String): String?

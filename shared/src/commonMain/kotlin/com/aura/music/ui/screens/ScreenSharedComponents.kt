@@ -742,7 +742,20 @@ fun SharedTrackRowItem(
                 )
             }
 
-            if (contextType == "search_online" && onDownload != null && downloadStatus is TrackDownloadStatus.NotDownloaded) {
+            if (downloadStatus is TrackDownloadStatus.Downloading) {
+                CircularProgressIndicator(
+                    progress = { (downloadStatus as TrackDownloadStatus.Downloading).progressPercent },
+                    modifier = Modifier.size(24.dp),
+                    color = BlazeOrange,
+                    strokeWidth = 2.dp
+                )
+            } else if (downloadStatus is TrackDownloadStatus.Queued) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = BlazeOrange,
+                    strokeWidth = 2.dp
+                )
+            } else if (contextType == "search_online" && onDownload != null && downloadStatus is TrackDownloadStatus.NotDownloaded) {
                 IconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.Rounded.CloudDownload,

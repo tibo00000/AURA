@@ -108,7 +108,9 @@ class ArtistDetailViewModel(
                 } else {
                     // Enrich artwork (persists in Room automatically)
                     val artistName = localDetail?.summary?.name ?: return@launch
-                    enrichmentRepo.enrichArtistArtwork(artistId, artistName)
+                    val trackHint = localDetail.topTracks.firstOrNull()?.title
+                    val albumHint = localDetail.albums.firstOrNull()?.title
+                    enrichmentRepo.enrichArtistArtwork(artistId, artistName, trackHint = trackHint, albumHint = albumHint)
 
                     // Reload local after artwork enrichment
                     val refreshed = localRepo.getArtistDetail(artistId)
@@ -230,9 +232,10 @@ class AlbumDetailViewModel(
                 } else {
                     val albumTitle = localDetail?.summary?.title ?: return@launch
                     val artistName = localDetail.summary.artistName
+                    val trackHint = localDetail.tracks.firstOrNull()?.title
 
                     // Enrich artwork (persists in Room automatically)
-                    enrichmentRepo.enrichAlbumArtwork(albumId, albumTitle, artistName)
+                    enrichmentRepo.enrichAlbumArtwork(albumId, albumTitle, artistName, trackHint = trackHint)
 
                     // Reload local after artwork enrichment
                     val refreshed = localRepo.getAlbumDetail(albumId)

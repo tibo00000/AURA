@@ -57,6 +57,8 @@ class EnrichmentRepository(
     suspend fun enrichArtistArtwork(
         artistId: String,
         artistName: String,
+        trackHint: String? = null,
+        albumHint: String? = null,
     ): String? = withContext(Dispatchers.IO) {
         // 1. Vérification politique réseau
         val settings = database.userSettingsDao().getSettings() ?: return@withContext null
@@ -77,9 +79,17 @@ class EnrichmentRepository(
             return@withContext database.artistDao().getArtistDetail(artistId)?.pictureUri
         }
 
-        // 3. Appel backend
+        // 3. Extraction d'échantillons de discographie si non fournis pour désambiguïser les homonymes
+        val resolvedTrackHint = trackHint ?: database.trackDao().getSampleTrackTitleForArtist(artistId)
+        val resolvedAlbumHint = albumHint ?: database.albumDao().getSampleAlbumTitleForArtist(artistId)
+
+        // 4. Appel backend
         val response = runCatching {
-            apiService.resolveArtist(artistName)
+            apiService.resolveArtist(
+                name = artistName,
+                trackTitle = resolvedTrackHint,
+                albumTitle = resolvedAlbumHint
+            )
         }.getOrElse { e ->
             Log.w(TAG, "enrichArtistArtwork: network error for $artistId", e)
             return@withContext null
@@ -94,7 +104,7 @@ class EnrichmentRepository(
         val artistData = resolveData.artist ?: return@withContext null
         val pictureUri = artistData.pictureUri ?: return@withContext null
 
-        // 4. Persistance
+        // 5. Persistance
         val now = System.currentTimeMillis()
         database.artistDao().updateArtwork(
             artistId = artistId,
@@ -134,11 +144,13 @@ class EnrichmentRepository(
      * @param albumId    ID AURA local de l'album (ex: "album:daft-punk:discovery")
      * @param albumTitle Titre de l'album utilisé pour la résolution
      * @param artistName Nom de l'artiste (hint, fortement recommandé)
+     * @param trackHint  Titre d'un morceau de l'album pour désambiguïser
      */
     suspend fun enrichAlbumArtwork(
         albumId: String,
         albumTitle: String,
         artistName: String?,
+        trackHint: String? = null,
     ): String? = withContext(Dispatchers.IO) {
         // 1. Vérification politique réseau
         val settings = database.userSettingsDao().getSettings() ?: return@withContext null
@@ -159,9 +171,16 @@ class EnrichmentRepository(
             return@withContext database.albumDao().getAlbumDetail(albumId)?.coverUri
         }
 
-        // 3. Appel backend
+        // 3. Extraction d'échantillon de morceau si non fourni
+        val resolvedTrackHint = trackHint ?: database.trackDao().getSampleTrackTitleForAlbum(albumId)
+
+        // 4. Appel backend
         val response = runCatching {
-            apiService.resolveAlbum(albumTitle, artistName)
+            apiService.resolveAlbum(
+                title = albumTitle,
+                artistName = artistName,
+                trackTitle = resolvedTrackHint
+            )
         }.getOrElse { e ->
             Log.w(TAG, "enrichAlbumArtwork: network error for $albumId", e)
             return@withContext null
@@ -176,7 +195,7 @@ class EnrichmentRepository(
         val albumData = resolveData.album ?: return@withContext null
         val coverUri = albumData.coverUri ?: return@withContext null
 
-        // 4. Persistance
+        // 5. Persistance
         val now = System.currentTimeMillis()
         database.albumDao().updateArtwork(
             albumId = albumId,

@@ -961,8 +961,8 @@ fun FavoritesScreen(
                     }
 
                     val isCloudOnly = track.contentUri.isNullOrBlank()
-                    val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
-                        if (isCloudOnly && isPresentInCloud) {
+                    val onDownloadFromCloudLambda = remember(track.id, isCloudOnly) {
+                        if (isCloudOnly) {
                             {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
@@ -3662,8 +3662,8 @@ fun LibraryTracksScreen(
                     }
 
                     val isCloudOnlyTrack = !isDownloadedLocally
-                    val onDownloadFromCloudLambda = remember(track.id, isCloudOnlyTrack, isPresentInCloud) {
-                        if (isCloudOnlyTrack && isPresentInCloud) {
+                    val onDownloadFromCloudLambda = remember(track.id, isCloudOnlyTrack) {
+                        if (isCloudOnlyTrack) {
                             {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")

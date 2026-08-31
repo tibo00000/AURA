@@ -594,8 +594,8 @@ private fun PlaylistTrackRowItem(
         }
     }
 
-    val onDownloadFromCloudLambda = remember(track.trackId, isCloudOnly, isPresentInCloud) {
-        if (isCloudOnly && isPresentInCloud) {
+    val onDownloadFromCloudLambda = remember(track.trackId, isCloudOnly) {
+        if (isCloudOnly) {
             {
                 scope.launch {
                     snackbarHostState.showSnackbar("Téléchargement sur l'appareil lancé pour : ${track.title}")

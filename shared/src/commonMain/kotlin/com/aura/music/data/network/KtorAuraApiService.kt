@@ -42,13 +42,16 @@ class KtorAuraApiService(
 
     override suspend fun getAlbum(id: String): AuraResponse<AlbumDetailResponseData> = client.get("$cleanBaseUrl/albums/$id").body()
 
-    override suspend fun resolveArtist(name: String): AuraResponse<ResolveArtistResponseData> = client.get("$cleanBaseUrl/resolve/artist") {
+    override suspend fun resolveArtist(name: String, trackTitle: String?, albumTitle: String?): AuraResponse<ResolveArtistResponseData> = client.get("$cleanBaseUrl/resolve/artist") {
         parameter("name", name)
+        trackTitle?.let { parameter("track_title", it) }
+        albumTitle?.let { parameter("album_title", it) }
     }.body()
 
-    override suspend fun resolveAlbum(title: String, artistName: String?): AuraResponse<ResolveAlbumResponseData> = client.get("$cleanBaseUrl/resolve/album") {
+    override suspend fun resolveAlbum(title: String, artistName: String?, trackTitle: String?): AuraResponse<ResolveAlbumResponseData> = client.get("$cleanBaseUrl/resolve/album") {
         parameter("title", title)
         artistName?.let { parameter("artist_name", it) }
+        trackTitle?.let { parameter("track_title", it) }
     }.body()
 
     override suspend fun createDownload(token: String, request: DownloadRequestDto): AuraResponse<DownloadCreateResponseData> = client.post("$cleanBaseUrl/downloads") {

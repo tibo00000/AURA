@@ -548,18 +548,13 @@ private fun AuraAppScaffold(
                                     if (isRouteInTab(currentRoute, destination.route)) {
                                         if (currentRoute != destination.route) {
                                             navController.popBackStack(destination.route, inclusive = false)
-                                        } else {
-                                            navController.navigate(destination.route) {
-                                                popUpTo(destination.route) { inclusive = true }
-                                            }
                                         }
                                     } else {
                                         navController.navigate(destination.route) {
                                             popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                                                saveState = false
                                             }
                                             launchSingleTop = true
-                                            restoreState = true
                                         }
                                     }
                                 },
@@ -982,14 +977,14 @@ private fun isRouteInTab(route: String?, tabRoute: String): Boolean {
     if (route == null) return false
     if (route == tabRoute) return true
     return when (tabRoute) {
-        AuraRoute.Home -> route == AuraRoute.ArtistPattern || route == AuraRoute.AlbumPattern
+        AuraRoute.Home -> false
         AuraRoute.Search -> route == AuraRoute.Downloads
         AuraRoute.Library -> route == AuraRoute.Playlists ||
                 route == AuraRoute.Favorites ||
                 route == AuraRoute.LibraryTracks ||
                 route == AuraRoute.LibraryArtists ||
                 route == AuraRoute.PlaylistDetailPattern
-        AuraRoute.Settings -> route == AuraRoute.Sandbox
+        AuraRoute.Settings -> route == AuraRoute.Sandbox || route == AuraRoute.CloudSync
         else -> false
     }
 }
