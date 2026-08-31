@@ -74,6 +74,30 @@ class LocalLibraryRepository(
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
     private val searchIndexRef = AtomicReference<LocalSearchIndex?>(null)
 
+    private val localMediaScanner by lazy {
+        com.aura.music.data.media.LocalMediaScanner(
+            database = database,
+            mediaStoreAudioDataSource = mediaStoreAudioDataSource,
+            context = context,
+            onInvalidateSearchIndex = { invalidateSearchIndex() }
+        )
+    }
+
+    private val audioMetadataEditor by lazy {
+        com.aura.music.data.metadata.AudioMetadataEditor(
+            database = database,
+            context = context,
+            onInvalidateSearchIndex = { invalidateSearchIndex() }
+        )
+    }
+
+    private val playlistManager by lazy {
+        PlaylistManager(
+            database = database,
+            syncRepositoryProvider = syncRepositoryProvider
+        )
+    }
+
     private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
 
     suspend fun getOrBuildSearchIndex(): LocalSearchIndex {
@@ -114,306 +138,7 @@ class LocalLibraryRepository(
         return settings != null && settings.syncEnabled && NetworkPolicyChecker.isConnected(context)
     }
 
-    suspend fun refreshLocalMediaIndex(): Int = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val scannedTracks = mutableListOf<TrackEntity>()
-        val scannedMediaLinks = mutableListOf<TrackMediaLinkEntity>()
-        val scannedArtists = mutableMapOf<String, ArtistEntity>()
-        val scannedAlbums = mutableMapOf<String, AlbumEntity>()
-
-        // 1. Scan Private downloads directory (always available, requires no permissions)
-        val downloadsDir = java.io.File(context.filesDir, "downloads")
-        if (downloadsDir.exists() && downloadsDir.isDirectory) {
-            val supportedExtensions = setOf("mp3", "m4a", "wav")
-            val audioFiles = downloadsDir.listFiles { file -> file.isFile && file.extension.lowercase() in supportedExtensions } ?: emptyArray()
-            for (file in audioFiles) {
-                try {
-                    val trackId = file.nameWithoutExtension.replace(';', ':')
-                    val existingTrack = database.trackDao().getRawTrackById(trackId)
-
-                    var rawTitle: String? = null
-                    var rawArtist: String? = null
-                    var rawAlbum: String? = null
-                    var durationMs: Long? = existingTrack?.durationMs
-                    var coverUri: String? = existingTrack?.coverUri
-
-                    // If existingTrack has valid title and artist, reuse without calling native retriever
-                    if (existingTrack == null || existingTrack.title.isBlank() || existingTrack.displayArtistName.isNullOrBlank()) {
-                        val retriever = android.media.MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(file.absolutePath)
-                            rawTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
-                            rawArtist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                            rawAlbum = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                            durationMs = durationStr?.toLongOrNull() ?: durationMs
-
-                            if (coverUri == null) {
-                                val embeddedPicture = retriever.embeddedPicture
-                                if (embeddedPicture != null) {
-                                    val coversDir = java.io.File(context.filesDir, "covers")
-                                    if (!coversDir.exists()) coversDir.mkdirs()
-                                    val coverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
-                                    java.io.FileOutputStream(coverFile).use { fos ->
-                                        fos.write(embeddedPicture)
-                                    }
-                                    coverUri = android.net.Uri.fromFile(coverFile).toString()
-                                }
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.w("LocalLibraryRepository", "Could not extract metadata via retriever for ${file.name}: ${e.message}")
-                        } finally {
-                            try {
-                                retriever.release()
-                            } catch (e: Exception) {
-                                // ignore
-                            }
-                        }
-                    }
-
-                    val title = if (existingTrack != null && existingTrack.title.isNotBlank()) {
-                        existingTrack.title
-                    } else {
-                        rawTitle?.ifBlank { null } ?: file.nameWithoutExtension
-                    }
-
-                    val artistName = if (existingTrack != null && !existingTrack.displayArtistName.isNullOrBlank()) {
-                        existingTrack.displayArtistName ?: "Unknown artist"
-                    } else {
-                        rawArtist?.ifBlank { null } ?: "Unknown artist"
-                    }
-
-                    val albumTitle = if (existingTrack != null && !existingTrack.displayAlbumTitle.isNullOrBlank()) {
-                        existingTrack.displayAlbumTitle
-                    } else {
-                        rawAlbum?.ifBlank { null }
-                    }
-
-                    val artistId = existingTrack?.primaryArtistId ?: artistIdOf(artistName)
-                    val albumId = existingTrack?.albumId ?: albumTitle?.let { albumIdOf(artistName, it) }
-
-                    val fileUri = android.net.Uri.fromFile(file).toString()
-
-                    // Upsert artist
-                    if (!scannedArtists.containsKey(artistId)) {
-                        scannedArtists[artistId] = ArtistEntity(
-                            id = artistId,
-                            name = artistName,
-                            normalizedName = normalize(artistName),
-                            pictureUri = null,
-                            summary = null,
-                            createdAt = now,
-                            updatedAt = now,
-                        )
-                    }
-
-                    // Upsert album
-                    if (albumId != null && albumTitle != null) {
-                        if (!scannedAlbums.containsKey(albumId)) {
-                            scannedAlbums[albumId] = AlbumEntity(
-                                id = albumId,
-                                primaryArtistId = artistId,
-                                title = albumTitle,
-                                normalizedTitle = normalize(albumTitle),
-                                coverUri = coverUri,
-                                releaseDate = null,
-                                trackCount = null,
-                                createdAt = now,
-                                updatedAt = now,
-                            )
-                        }
-                    }
-
-                    // Create track
-                    scannedTracks.add(
-                        TrackEntity(
-                            id = trackId,
-                            primaryArtistId = artistId,
-                            albumId = albumId,
-                            title = title,
-                            normalizedTitle = normalize(title),
-                            displayArtistName = artistName,
-                            displayAlbumTitle = albumTitle,
-                            durationMs = durationMs,
-                            coverUri = coverUri,
-                            canonicalAudioSourceType = "downloaded",
-                            isLiked = existingTrack?.isLiked ?: false,
-                            isDownloadedByAura = true,
-                            isExplicit = null,
-                            popularity = null,
-                            genresJson = null,
-                            createdAt = file.lastModified(),
-                            updatedAt = file.lastModified(),
-                        )
-                    )
-
-                    val mimeType = when (file.extension.lowercase()) {
-                        "m4a" -> "audio/mp4"
-                        "wav" -> "audio/wav"
-                        else -> "audio/mpeg"
-                    }
-
-                    // Create media link
-                    scannedMediaLinks.add(
-                        TrackMediaLinkEntity(
-                            id = "media-link:${file.nameWithoutExtension.hashCode()}",
-                            trackId = trackId,
-                            mediaStoreId = file.nameWithoutExtension.hashCode().toLong(),
-                            contentUri = fileUri,
-                            fileSizeBytes = file.length(),
-                            mimeType = mimeType,
-                            dateModifiedEpochMs = file.lastModified(),
-                            availabilityStatus = "present",
-                            lastScannedAt = now,
-                        )
-                    )
-                } catch (e: Exception) {
-                    android.util.Log.e("LocalLibraryRepository", "Error retrieving metadata for private file ${file.name}", e)
-                }
-            }
-        }
-
-        // 2. Scan MediaStore if permission is granted
-        val mediaScanResult = mediaStoreAudioDataSource.getLocalAudioFilesResult()
-        if (mediaScanResult.isComplete) {
-            val mediaFiles = mediaScanResult.tracks
-            for (media in mediaFiles) {
-                val trackId = trackIdOf(media.mediaStoreId)
-                val existingTrack = database.trackDao().getRawTrackById(trackId)
-
-                val title = if (existingTrack != null && existingTrack.title.isNotBlank()) {
-                    existingTrack.title
-                } else {
-                    media.title
-                }
-
-                val artistName = if (existingTrack != null && !existingTrack.displayArtistName.isNullOrBlank()) {
-                    existingTrack.displayArtistName ?: media.artistName
-                } else {
-                    media.artistName
-                }
-
-                val albumTitle = if (existingTrack != null && !existingTrack.displayAlbumTitle.isNullOrBlank()) {
-                    existingTrack.displayAlbumTitle
-                } else {
-                    media.albumTitle
-                }
-
-                val artistId = existingTrack?.primaryArtistId ?: artistIdOf(artistName)
-                val albumId = existingTrack?.albumId ?: albumTitle?.let { albumIdOf(artistName, it) }
-                val coverUri = existingTrack?.coverUri ?: media.coverUri
-
-                // Upsert artist
-                if (!scannedArtists.containsKey(artistId)) {
-                    scannedArtists[artistId] = ArtistEntity(
-                        id = artistId,
-                        name = artistName,
-                        normalizedName = normalize(artistName),
-                        pictureUri = null,
-                        summary = null,
-                        createdAt = now,
-                        updatedAt = now,
-                    )
-                }
-
-                // Upsert album
-                if (albumId != null && albumTitle != null) {
-                    if (!scannedAlbums.containsKey(albumId)) {
-                        scannedAlbums[albumId] = AlbumEntity(
-                            id = albumId,
-                            primaryArtistId = artistId,
-                            title = albumTitle,
-                            normalizedTitle = normalize(albumTitle),
-                            coverUri = coverUri,
-                            releaseDate = null,
-                            trackCount = null,
-                            createdAt = now,
-                            updatedAt = now,
-                        )
-                    }
-                }
-
-                // Create track
-                scannedTracks.add(
-                    TrackEntity(
-                        id = trackId,
-                        primaryArtistId = artistId,
-                        albumId = albumId,
-                        title = title,
-                        normalizedTitle = normalize(title),
-                        displayArtistName = artistName,
-                        displayAlbumTitle = albumTitle,
-                        durationMs = existingTrack?.durationMs ?: media.durationMs,
-                        coverUri = coverUri,
-                        canonicalAudioSourceType = "local",
-                        isLiked = existingTrack?.isLiked ?: false,
-                        isDownloadedByAura = false,
-                        isExplicit = null,
-                        popularity = null,
-                        genresJson = null,
-                        createdAt = existingTrack?.createdAt ?: (media.dateModifiedEpochMs ?: now),
-                        updatedAt = existingTrack?.updatedAt ?: (media.dateModifiedEpochMs ?: now),
-                    )
-                )
-
-                // Create media link
-                scannedMediaLinks.add(
-                    TrackMediaLinkEntity(
-                        id = "media-link:${media.mediaStoreId}",
-                        trackId = trackId,
-                        mediaStoreId = media.mediaStoreId,
-                        contentUri = media.contentUri,
-                        fileSizeBytes = media.fileSizeBytes,
-                        mimeType = media.mimeType,
-                        dateModifiedEpochMs = media.dateModifiedEpochMs,
-                        availabilityStatus = "present",
-                        lastScannedAt = now,
-                    )
-                )
-            }
-        }
-
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                val scannedIds = scannedTracks.map { it.id }.toSet()
-                val obsoleteIds = mutableListOf<String>()
-
-                // Purge obsolete MediaStore tracks ONLY if the MediaStore scan completed successfully
-                if (mediaScanResult.isComplete) {
-                    val existingLocalIds = database.trackDao().getLocalTrackIds()
-                    for (id in existingLocalIds) {
-                        if (id !in scannedIds) {
-                            obsoleteIds.add(id)
-                        }
-                    }
-                } else {
-                    Log.w("LocalLibraryRepository", "MediaStore scan incomplete or permission missing. Skipped purging local MediaStore tracks to prevent data loss.")
-                }
-
-                // Purge obsolete downloaded tracks based on physical file scan
-                val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
-                for (id in existingDownloadedIds) {
-                    if (id !in scannedIds) {
-                        obsoleteIds.add(id)
-                    }
-                }
-
-                if (obsoleteIds.isNotEmpty()) {
-                    database.trackDao().deleteTracksByIds(obsoleteIds)
-                }
-
-                if (scannedTracks.isNotEmpty()) {
-                    database.artistDao().upsertArtists(scannedArtists.values.toList())
-                    database.albumDao().upsertAlbums(scannedAlbums.values.toList())
-                    database.trackDao().upsertTracks(scannedTracks)
-                    database.trackDao().upsertTrackMediaLinks(scannedMediaLinks)
-                }
-            }
-        }
-
-        invalidateSearchIndex()
-        scannedTracks.size
-    }
+    suspend fun refreshLocalMediaIndex(): Int = localMediaScanner.syncLocalMedia()
 
     suspend fun getLibraryDashboardSummary(): LibraryDashboardSummary = coroutineScope {
         val hasPermission = mediaStoreAudioDataSource.hasReadPermission()
@@ -682,223 +407,46 @@ class LocalLibraryRepository(
     }
 
     suspend fun getPlaylistDetail(playlistId: String): PlaylistDetail? =
-        withContext(Dispatchers.IO) {
-            val summary = database.playlistDao().getPlaylistDetail(playlistId) ?: return@withContext null
-            PlaylistDetail(
-                summary = summary,
-                tracks = database.playlistDao().getPlaylistTracks(playlistId),
-            )
-        }
+        playlistManager.getPlaylistDetail(playlistId)
 
-    suspend fun createPlaylist(name: String): String = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val playlistId = "playlist:${normalize(name)}:${UUID.randomUUID().toString().take(8)}"
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist",
-            entityId = playlistId,
-            operationType = "create",
-            payload = mapOf(
-                "name" to name.trim(),
-                "is_pinned" to false,
-                "cover_uri" to null,
-                "created_at" to formatMillisToIsoDate(now),
-                "updated_at" to formatMillisToIsoDate(now)
-            )
-        )
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                database.playlistDao().insertPlaylist(
-                    PlaylistEntity(
-                        id = playlistId,
-                        name = name.trim(),
-                        coverUri = null,
-                        isPinned = false,
-                        createdAt = now,
-                        updatedAt = now,
-                    ),
-                )
-                database.syncOutboxDao().insert(outboxOp)
-            }
-        }
-        syncRepository.triggerManualSync()
-        playlistId
-    }
+    suspend fun createPlaylist(name: String): String =
+        playlistManager.createPlaylist(name)
 
-    suspend fun renamePlaylist(playlistId: String, name: String) = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist",
-            entityId = playlistId,
-            operationType = "update",
-            payload = mapOf(
-                "name" to name.trim(),
-                "updated_at" to formatMillisToIsoDate(now)
-            )
-        )
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                database.playlistDao().renamePlaylist(
-                    playlistId = playlistId,
-                    name = name.trim(),
-                    updatedAt = now,
-                )
-                database.syncOutboxDao().insert(outboxOp)
-            }
-        }
-        syncRepository.triggerManualSync()
-    }
+    suspend fun renamePlaylist(playlistId: String, name: String) =
+        playlistManager.renamePlaylist(playlistId, name)
 
-    suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist",
-            entityId = playlistId,
-            operationType = "delete",
-            payload = emptyMap()
-        )
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                database.playlistDao().deletePlaylist(playlistId)
-                database.syncOutboxDao().insert(outboxOp)
-            }
-        }
-        syncRepository.triggerManualSync()
-    }
+    suspend fun deletePlaylist(playlistId: String) =
+        playlistManager.deletePlaylist(playlistId)
 
     suspend fun addTrackToPlaylist(
         playlistId: String,
         trackId: String,
         contextType: String = "playlist_detail",
-    ) = withContext(Dispatchers.IO) {
-        val nextPosition = database.playlistDao().getNextPlaylistPosition(playlistId)
-        val now = System.currentTimeMillis()
-        val itemId = "playlist-item:${UUID.randomUUID()}"
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist_item",
-            entityId = itemId,
-            operationType = "create",
-            payload = mapOf(
-                "playlist_id" to playlistId,
-                "track_id" to trackId,
-                "position" to nextPosition,
-                "added_at" to formatMillisToIsoDate(now),
-                "added_from_context_type" to contextType,
-                "added_from_context_id" to playlistId
-            )
-        )
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                database.playlistDao().insertPlaylistItem(
-                    PlaylistItemEntity(
-                        id = itemId,
-                        playlistId = playlistId,
-                        trackId = trackId,
-                        position = nextPosition,
-                        addedAt = now,
-                        addedFromContextType = contextType,
-                        addedFromContextId = playlistId,
-                    ),
-                )
-                database.playlistDao().touchPlaylist(playlistId, now)
-                database.syncOutboxDao().insert(outboxOp)
-            }
-        }
-        syncRepository.triggerManualSync()
-    }
+    ) = playlistManager.addTrackToPlaylist(playlistId, trackId, contextType)
 
-    suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = withContext(Dispatchers.IO) {
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist_item",
-            entityId = playlistItemId,
-            operationType = "delete",
-            payload = mapOf(
-                "playlist_id" to playlistId
-            )
-        )
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                database.playlistDao().deletePlaylistItem(playlistItemId)
-                normalizePlaylistPositions(playlistId)
-                database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
-                database.syncOutboxDao().insert(outboxOp)
-            }
-        }
-        syncRepository.triggerManualSync()
-    }
+    suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) =
+        playlistManager.removeTrackFromPlaylist(playlistId, playlistItemId)
 
     suspend fun movePlaylistItem(
         playlistId: String,
         playlistItemId: String,
         moveBy: Int,
-    ) = withContext(Dispatchers.IO) {
-        var baseOrderToken = ""
-        val itemsToReorder = mutableListOf<Map<String, Any?>>()
-        
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                val items = database.playlistDao().getPlaylistTracks(playlistId).toMutableList()
-                val pl = database.playlistDao().getPlaylistDetail(playlistId)
-                if (pl != null) {
-                    val updatedStr = formatMillisToIsoDate(pl.updatedAt)
-                    val digest = java.security.MessageDigest.getInstance("MD5").digest(updatedStr.toByteArray(Charsets.UTF_8))
-                    val hex = digest.joinToString("") { "%02x".format(it) }
-                    baseOrderToken = "ord_${hex.take(8)}"
-                }
-
-                val currentIndex = items.indexOfFirst { it.playlistItemId == playlistItemId }
-                if (currentIndex == -1) return@immediateTransaction
-                val targetIndex = (currentIndex + moveBy).coerceIn(0, items.lastIndex)
-                if (currentIndex == targetIndex) return@immediateTransaction
-
-                val item = items.removeAt(currentIndex)
-                items.add(targetIndex, item)
-
-                items.forEachIndexed { index, row ->
-                    database.playlistDao().updatePlaylistItemPosition(row.playlistItemId, index)
-                    itemsToReorder.add(
-                        mapOf(
-                            "playlist_item_id" to row.playlistItemId,
-                            "position" to index
-                        )
-                    )
-                }
-                database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
-
-                val outboxOp = syncRepository.createOutboxEntity(
-                    entityType = "playlist_reorder",
-                    entityId = playlistId,
-                    operationType = "update",
-                    payload = mapOf(
-                        "base_order_token" to baseOrderToken,
-                        "items" to itemsToReorder
-                    )
-                )
-                database.syncOutboxDao().insert(outboxOp)
-            }
-        }
-
-        syncRepository.triggerManualSync()
-    }
+    ) = playlistManager.movePlaylistItem(playlistId, playlistItemId, moveBy)
 
     suspend fun getPlaylistTrackQueue(playlistId: String): List<TrackListRow> =
-        withContext(Dispatchers.IO) {
-            database.playlistDao().getPlaylistTracks(playlistId).map { row ->
-                TrackListRow(
-                    id = row.trackId,
-                    artistId = null,
-                    albumId = null,
-                    title = row.title,
-                    artistName = row.artistName,
-                    albumTitle = row.albumTitle,
-                    contentUri = row.contentUri,
-                    coverUri = row.coverUri,
-                    durationMs = row.durationMs,
-                    isLiked = row.isLiked,
-                )
-            }
-        }
+        playlistManager.getPlaylistTrackQueue(playlistId)
 
     suspend fun getPlaylistCandidateTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getAllTracks() }
+
+    fun observePlaylists(): Flow<List<PlaylistListRow>> =
+        database.playlistDao().observePlaylists()
+
+    fun observePlaylistDetail(playlistId: String): Flow<PlaylistDetailRow?> =
+        database.playlistDao().observePlaylistDetail(playlistId)
+
+    fun observePlaylistTracks(playlistId: String): Flow<List<PlaylistTrackRow>> =
+        database.playlistDao().observePlaylistTracks(playlistId)
 
     suspend fun getSettings(): UserSettingsEntity? =
         withContext(Dispatchers.IO) { database.userSettingsDao().getSettings() }
@@ -951,7 +499,7 @@ class LocalLibraryRepository(
      * @param contextType contexte source du like (optionnel)
      * @param contextId identifiant du contexte source (optionnel)
      */
-    suspend fun toggleLike(
+    suspend fun setTrackIsLiked(
         trackId: String,
         currentlyLiked: Boolean,
         contextType: String? = null,
@@ -1021,7 +569,7 @@ class LocalLibraryRepository(
                     id = ACTIVE_SNAPSHOT_ID,
                     currentTrackId = trackId,
                     playbackContextType = contextType,
-                    playbackContextId = trackId,
+                    playbackContextId = null,
                     playbackContextIndex = 0,
                     positionMs = 0L,
                     shuffleEnabled = false,
@@ -1091,180 +639,25 @@ class LocalLibraryRepository(
         pendingIntent
     }
 
-    /**
-     * Met à jour les métadonnées d'un titre local sur les 3 couches :
-     * 1. Sauvegarde et compression de la pochette (si fournie)
-     * 2. Écriture physique atomique des tags ID3 (si fichier accessible / MP3)
-     * 3. Mise à jour de la base de données Room (Track, Artist, Album)
-     * 4. Notification MediaScanner pour le système Android
-     */
-    suspend fun updateTrackMetadata(
+    suspend fun editTrackMetadata(
         trackId: String,
         newTitle: String,
         newArtistName: String,
         newAlbumTitle: String?,
+        trackNumber: Int?,
+        year: Int?,
         coverSourceUriOrUrl: String? = null,
         coverSourceBytes: ByteArray? = null,
-        trackNumber: String? = null,
-        year: String? = null
-    ): Result<TrackListRow> = withContext(Dispatchers.IO) {
-        runCatching {
-            val now = System.currentTimeMillis()
-            val existingTrack = database.trackDao().getRawTrackById(trackId)
-                ?: throw IllegalArgumentException("Track not found: $trackId")
-
-            val artistName = newArtistName.trim().ifBlank { "Artiste inconnu" }
-            val title = newTitle.trim().ifBlank { existingTrack.title }
-            val albumTitle = newAlbumTitle?.trim()?.ifBlank { null }
-
-            // Résolution des IDs avec les méthodes de normalisation canoniques
-            val artistId = artistIdOf(artistName)
-            val albumId = albumTitle?.let { albumIdOf(artistName, it) }
-
-            // 1. Gestion et compression de la pochette (500x500 max, JPEG 80%)
-            var finalCoverUri: String? = existingTrack.coverUri
-            var coverJpegBytes: ByteArray? = null
-
-            val coversDir = java.io.File(context.filesDir, "covers")
-            if (!coversDir.exists()) coversDir.mkdirs()
-            val targetCoverFile = java.io.File(coversDir, "${trackId.replace(':', ';')}.jpg")
-
-            if (coverSourceBytes != null && coverSourceBytes.isNotEmpty()) {
-                val success = com.aura.music.core.ImageCompressionUtils.compressAndSaveBytes(coverSourceBytes, targetCoverFile)
-                if (success) {
-                    finalCoverUri = android.net.Uri.fromFile(targetCoverFile).toString()
-                    coverJpegBytes = com.aura.music.core.ImageCompressionUtils.getCompressedJpegBytes(targetCoverFile)
-                }
-            } else if (!coverSourceUriOrUrl.isNullOrBlank()) {
-                val success = if (coverSourceUriOrUrl.startsWith("http://") || coverSourceUriOrUrl.startsWith("https://")) {
-                    com.aura.music.core.ImageCompressionUtils.downloadAndCompressImage(coverSourceUriOrUrl, targetCoverFile)
-                } else {
-                    val uri = android.net.Uri.parse(coverSourceUriOrUrl)
-                    com.aura.music.core.ImageCompressionUtils.compressAndSaveUri(context, uri, targetCoverFile)
-                }
-                if (success) {
-                    finalCoverUri = android.net.Uri.fromFile(targetCoverFile).toString()
-                    coverJpegBytes = com.aura.music.core.ImageCompressionUtils.getCompressedJpegBytes(targetCoverFile)
-                }
-            } else if (targetCoverFile.exists()) {
-                coverJpegBytes = com.aura.music.core.ImageCompressionUtils.getCompressedJpegBytes(targetCoverFile)
-            }
-
-            // 2. Écriture physique atomique des tags ID3 si fichier présent
-            val contentUri = database.trackDao().getTrackContentUri(trackId)
-            var physicalFile: java.io.File? = null
-
-            if (!contentUri.isNullOrBlank()) {
-                if (contentUri.startsWith("file://") || contentUri.startsWith("/")) {
-                    val path = if (contentUri.startsWith("file://")) contentUri.removePrefix("file://") else contentUri
-                    val f = java.io.File(path)
-                    if (f.exists()) physicalFile = f
-                } else if (contentUri.startsWith("content://")) {
-                    try {
-                        val uri = android.net.Uri.parse(contentUri)
-                        val proj = arrayOf(android.provider.MediaStore.Audio.Media.DATA)
-                        context.contentResolver.query(uri, proj, null, null, null)?.use { cursor ->
-                            if (cursor.moveToFirst()) {
-                                val dataIdx = cursor.getColumnIndex(android.provider.MediaStore.Audio.Media.DATA)
-                                if (dataIdx != -1) {
-                                    val path = cursor.getString(dataIdx)
-                                    if (!path.isNullOrBlank()) {
-                                        val f = java.io.File(path)
-                                        if (f.exists()) physicalFile = f
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("LocalLibraryRepository", "Could not resolve physical file from contentUri: ${e.message}")
-                    }
-                }
-            }
-
-            // Recherche alternative dans le dossier downloads interne
-            if (physicalFile == null) {
-                val localFile = java.io.File(context.filesDir, "downloads/${trackId.replace(':', ';')}.mp3")
-                if (localFile.exists()) physicalFile = localFile
-            }
-
-            val targetFile = physicalFile
-            if (targetFile != null && targetFile.exists()) {
-                try {
-                    com.aura.music.data.metadata.AudioTagWriter.writeMp3Tags(
-                        audioFile = targetFile,
-                        title = title,
-                        artistName = artistName,
-                        albumTitle = albumTitle,
-                        trackNumber = trackNumber,
-                        year = year,
-                        coverJpegBytes = coverJpegBytes
-                    )
-                    // Notification MediaScanner
-                    android.media.MediaScannerConnection.scanFile(
-                        context,
-                        arrayOf(targetFile.absolutePath),
-                        arrayOf("audio/mpeg"),
-                        null
-                    )
-                } catch (e: Exception) {
-                    android.util.Log.w("LocalLibraryRepository", "Physical tag write failed: ${e.message}")
-                }
-            }
-
-            // 3. Persistance Room (Artist, Album, Track)
-            val artistEntity = ArtistEntity(
-                id = artistId,
-                name = artistName,
-                normalizedName = normalize(artistName),
-                pictureUri = null,
-                summary = null,
-                createdAt = now,
-                updatedAt = now
-            )
-            database.artistDao().upsertArtists(listOf(artistEntity))
-
-            if (albumId != null && albumTitle != null) {
-                val albumEntity = AlbumEntity(
-                    id = albumId,
-                    primaryArtistId = artistId,
-                    title = albumTitle,
-                    normalizedTitle = normalize(albumTitle),
-                    coverUri = finalCoverUri,
-                    releaseDate = year,
-                    trackCount = null,
-                    createdAt = now,
-                    updatedAt = now
-                )
-                database.albumDao().upsertAlbums(listOf(albumEntity))
-            }
-
-            val updatedTrack = existingTrack.copy(
-                title = title,
-                normalizedTitle = normalize(title),
-                displayArtistName = artistName,
-                displayAlbumTitle = albumTitle,
-                primaryArtistId = artistId,
-                albumId = albumId,
-                coverUri = finalCoverUri,
-                updatedAt = now
-            )
-            database.trackDao().upsertTrack(updatedTrack)
-            invalidateSearchIndex()
-
-            TrackListRow(
-                id = updatedTrack.id,
-                artistId = artistId,
-                albumId = albumId,
-                title = updatedTrack.title,
-                artistName = updatedTrack.displayArtistName,
-                albumTitle = updatedTrack.displayAlbumTitle,
-                contentUri = contentUri,
-                durationMs = updatedTrack.durationMs ?: 0L,
-                coverUri = updatedTrack.coverUri,
-                isLiked = updatedTrack.isLiked
-            )
-        }
-    }
+    ): TrackListRow = audioMetadataEditor.editTrackMetadata(
+        trackId = trackId,
+        title = newTitle.trim(),
+        artistName = newArtistName.trim().ifBlank { "Artiste inconnu" },
+        albumTitle = newAlbumTitle?.trim()?.ifBlank { null },
+        trackNumber = trackNumber,
+        year = year,
+        coverSourceUriOrUrl = coverSourceUriOrUrl,
+        coverSourceBytes = coverSourceBytes,
+    )
 
     private suspend fun normalizePlaylistPositions(playlistId: String) {
         database.playlistDao().getPlaylistTracks(playlistId).forEachIndexed { index, row ->

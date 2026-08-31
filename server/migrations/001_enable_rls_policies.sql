@@ -63,3 +63,24 @@ ALTER TABLE IF EXISTS playback_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users isolate own playback events" ON playback_events;
 CREATE POLICY "Users isolate own playback events" ON playback_events
     FOR ALL USING (auth.uid() = user_id);
+
+-- 11. Processed Operations & Batches (Idempotence)
+CREATE TABLE IF NOT EXISTS processed_batches (
+    batch_id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE IF EXISTS processed_batches ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users isolate own processed batches" ON processed_batches;
+CREATE POLICY "Users isolate own processed batches" ON processed_batches
+    FOR ALL USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS processed_operations (
+    operation_id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE IF EXISTS processed_operations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users isolate own processed operations" ON processed_operations;
+CREATE POLICY "Users isolate own processed operations" ON processed_operations
+    FOR ALL USING (auth.uid() = user_id);

@@ -172,10 +172,38 @@ class SyncService:
     def push_batch(self, user_id: str, device_id: str, batch_id: str, operations: List[dict]) -> dict:
         """
         Process a batch of sync operations sequentially.
-        Guarantees idempotency and resolves concurrency conflicts based on LWW or order tokens.
+        Guarantees idempotency at both batch and operation levels and resolves concurrency conflicts based on LWW or order tokens.
         """
         logger.info("Sync Push Batch %s received with %d operations for user %s", batch_id, len(operations), user_id)
         
+        # 0. Batch-Level Idempotency Check
+        if batch_id:
+            try:
+                batch_res = supabase.table("processed_batches").select("*").eq("batch_id", batch_id).eq("user_id", user_id).execute()
+                if batch_res.data:
+                    logger.info("Batch %s already processed for user %s. Returning idempotent duplicate response.", batch_id, user_id)
+                    return {
+                        "batch_id": batch_id,
+                        "results": [
+                            {
+                                "operation_id": op.get("operation_id", "unknown"),
+                                "entity_type": op.get("entity_type", "unknown"),
+                                "entity_id": op.get("entity_id", "unknown"),
+                                "status": "ignored_duplicate",
+                                "server_updated_at": datetime.now(timezone.utc).isoformat(),
+                                "resolved_entity": None,
+                                "conflict": None,
+                            }
+                            for op in operations
+                        ],
+                        "next_pull_token": {
+                            "value": generate_sync_token(),
+                            "issued_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    }
+            except Exception as be:
+                logger.debug("processed_batches lookup skipped/failed: %s", be)
+
         # Ensure user profile exists in profiles table to satisfy Foreign Key constraints
         try:
             prof_res = supabase.table("profiles").select("*").eq("id", user_id).execute()
@@ -290,6 +318,17 @@ class SyncService:
                 "resolved_entity": resolved_entity,
                 "conflict": conflict,
             })
+
+        # Record completed batch for future idempotency checks
+        if batch_id:
+            try:
+                supabase.table("processed_batches").insert({
+                    "batch_id": batch_id,
+                    "user_id": user_id,
+                    "processed_at": datetime.now(timezone.utc).isoformat(),
+                }).execute()
+            except Exception as be:
+                logger.debug("Failed to record processed_batches for %s: %s", batch_id, be)
 
         return {
             "batch_id": batch_id,
