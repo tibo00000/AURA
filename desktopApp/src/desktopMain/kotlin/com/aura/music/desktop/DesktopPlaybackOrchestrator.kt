@@ -9,6 +9,8 @@ import com.aura.music.data.player.QueueManager
 import com.aura.music.desktop.domain.DesktopCloudSyncManager
 import com.aura.music.desktop.domain.DesktopDownloadManager
 import com.aura.music.desktop.domain.DesktopPlaylistManager
+import com.aura.music.desktop.domain.DesktopTrackHydrator
+import com.aura.music.desktop.media.DesktopMediaMetadataReader
 import com.aura.music.domain.player.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -689,7 +691,8 @@ class DesktopPlaybackOrchestrator(
 
                     val trackId = "track_${file.absolutePath.hashCode()}"
                     val artistId = "artist_${meta.artist.hashCode()}"
-                    val albumId = meta.album?.let { "album_${(meta.artist + "_" + it).hashCode()}" }
+                    val currentAlbum = meta.album
+                    val albumId = if (currentAlbum != null) "album_${(meta.artist + "_" + currentAlbum).hashCode()}" else null
 
                     database.useWriterConnection { transactor ->
                         transactor.immediateTransaction {
@@ -708,14 +711,14 @@ class DesktopPlaybackOrchestrator(
                             )
 
                             // 2. Album
-                            if (albumId != null && meta.album != null) {
+                            if (albumId != null && currentAlbum != null) {
                                 database.albumDao().upsertAlbums(
                                     listOf(
                                         AlbumEntity(
                                             id = albumId,
                                             primaryArtistId = artistId,
-                                            title = meta.album!!,
-                                            normalizedTitle = meta.album!!.lowercase(),
+                                            title = currentAlbum,
+                                            normalizedTitle = currentAlbum.lowercase(),
                                             coverUri = meta.localCoverUri,
                                             createdAt = now,
                                             updatedAt = now
