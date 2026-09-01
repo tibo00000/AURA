@@ -254,6 +254,7 @@ fun SearchScreen(
                 onlineResults != null -> {
                     OnlineSearchResultsView(
                         results = onlineResults!!,
+                        allTracks = allTracks,
                         orchestrator = orchestrator,
                         appState = appState
                     )
@@ -275,6 +276,7 @@ fun SearchScreen(
 @Composable
 private fun OnlineSearchResultsView(
     results: SearchResponseData,
+    allTracks: List<TrackListRow>,
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState
 ) {
