@@ -228,6 +228,25 @@ class KtorAuraApiService(
         header("Authorization", token)
     }.body()
 
+    override suspend fun updateSyncFileMetadata(
+        token: String,
+        trackId: String,
+        request: SyncedFileMetadataUpdateRequest
+    ): AuraResponse<SyncedFileResponseData> = client.put("$cleanBaseUrl/me/sync/files/$trackId/metadata") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
+
+    override suspend fun batchUpdateSyncFilesMetadata(
+        token: String,
+        items: List<SyncedFileMetadataUpdateRequest>
+    ): AuraResponse<SyncedFileBatchMetadataResponse> = client.post("$cleanBaseUrl/me/sync/files/batch-metadata") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(items)
+    }.body()
+
     override suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse> = client.delete("$cleanBaseUrl/me/sync/files/$trackId") {
         header("Authorization", token)
     }.body()

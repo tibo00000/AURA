@@ -597,6 +597,78 @@ class CloudFileRepository(
         database.userSettingsDao().updateSyncEnabled(enabled)
     }
 
+    /**
+     * Répare et synchronise toutes les métadonnées locales vers le serveur Cloud.
+     * Pour tous les morceaux du Cloud dont le titre ou l'artiste est inconnu ou qui correspondent
+     * à un morceau local du téléphone, pousse les vraies métadonnées locales vers le serveur.
+     */
+    fun repairAndSyncAllCloudMetadata(): Flow<Result<Int>> = flow {
+        try {
+            Log.i(TAG, "Starting Cloud metadata repair and synchronization from local phone...")
+            val localTracks = database.trackDao().getAllTracks()
+            val cloudFilesResponse = apiService.listSyncFiles(getAuthToken())
+            val cloudItems = cloudFilesResponse.data?.items ?: emptyList()
+
+            if (cloudItems.isEmpty()) {
+                emit(Result.success(0))
+                return@flow
+            }
+
+            val updates = mutableListOf<com.aura.music.data.network.SyncedFileMetadataUpdateRequest>()
+
+            for (cloudItem in cloudItems) {
+                // Trouver la correspondance locale
+                val matchingLocal = localTracks.firstOrNull { local ->
+                    local.id == cloudItem.trackId ||
+                    (local.title.equals(cloudItem.title, ignoreCase = true) && local.artistName.equals(cloudItem.artistName, ignoreCase = true)) ||
+                    (cloudItem.title == null && local.durationMs != null && cloudItem.durationMs != null && Math.abs(local.durationMs - cloudItem.durationMs) < 2000)
+                }
+
+                if (matchingLocal != null) {
+                    val resolvedTitle = matchingLocal.title
+                    val resolvedArtist = matchingLocal.artistName ?: "Artiste Inconnu"
+                    val resolvedAlbum = matchingLocal.albumTitle
+                    val resolvedDuration = matchingLocal.durationMs ?: cloudItem.durationMs
+                    val resolvedCover = matchingLocal.coverUri ?: cloudItem.coverUri
+
+                    val needsUpdate = cloudItem.title.isNullOrBlank() ||
+                            cloudItem.title?.startsWith("Piste ", ignoreCase = true) == true ||
+                            cloudItem.title.equals("Titre inconnu", ignoreCase = true) ||
+                            cloudItem.artistName.isNullOrBlank() ||
+                            cloudItem.artistName.equals("Artiste Inconnu", ignoreCase = true) ||
+                            cloudItem.durationMs == null || cloudItem.durationMs == 0L ||
+                            (cloudItem.coverUri.isNullOrBlank() && !resolvedCover.isNullOrBlank())
+
+                    if (needsUpdate) {
+                        updates.add(
+                            com.aura.music.data.network.SyncedFileMetadataUpdateRequest(
+                                trackId = cloudItem.trackId,
+                                title = resolvedTitle,
+                                artistName = resolvedArtist,
+                                albumTitle = resolvedAlbum,
+                                durationMs = resolvedDuration,
+                                artistId = matchingLocal.artistId,
+                                albumId = matchingLocal.albumId,
+                                coverUri = resolvedCover
+                            )
+                        )
+                    }
+                }
+            }
+
+            if (updates.isNotEmpty()) {
+                Log.i(TAG, "Pushing ${updates.size} metadata fixes to cloud server...")
+                apiService.batchUpdateSyncFilesMetadata(getAuthToken(), updates)
+                refreshSyncedTrackIds()
+            }
+
+            emit(Result.success(updates.size))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to repair cloud metadata", e)
+            emit(Result.failure(e))
+        }
+    }.flowOn(Dispatchers.IO)
+
     suspend fun removeLocalFile(trackId: String) = withContext(Dispatchers.IO) {
         try {
             val trackRow = database.trackDao().getTrackById(trackId) ?: return@withContext

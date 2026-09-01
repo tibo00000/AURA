@@ -105,5 +105,16 @@ interface AuraApiService {
 
     suspend fun listSyncFiles(token: String): AuraResponse<SyncedFileListResponseData>
 
+    suspend fun updateSyncFileMetadata(
+        token: String,
+        trackId: String,
+        request: SyncedFileMetadataUpdateRequest
+    ): AuraResponse<SyncedFileResponseData>
+
+    suspend fun batchUpdateSyncFilesMetadata(
+        token: String,
+        items: List<SyncedFileMetadataUpdateRequest>
+    ): AuraResponse<SyncedFileBatchMetadataResponse>
+
     suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse>
 }

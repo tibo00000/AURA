@@ -134,6 +134,89 @@ async def download_sync_file(
     )
 
 
+@router.put(
+    "/{track_id}/metadata",
+    response_model=ResponseEnvelope[dict[str, Any]],
+)
+async def update_sync_file_metadata(
+    track_id: str,
+    payload: dict[str, Any],
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    target_file, metadata_file = _paths(current_user.id, track_id)
+    existing = _read_metadata(metadata_file) or {
+        "track_id": track_id,
+        "synced": True,
+        "size_bytes": target_file.stat().st_size if target_file.exists() else 0,
+        "mime_type": "audio/mpeg",
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    now = datetime.now(timezone.utc).isoformat()
+    if "title" in payload and payload["title"]:
+        existing["title"] = payload["title"]
+    if "artist_name" in payload and payload["artist_name"]:
+        existing["artist_name"] = payload["artist_name"]
+    if "album_title" in payload:
+        existing["album_title"] = payload["album_title"]
+    if "duration_ms" in payload and payload["duration_ms"]:
+        existing["duration_ms"] = payload["duration_ms"]
+    if "artist_id" in payload:
+        existing["artist_id"] = payload["artist_id"]
+    if "album_id" in payload:
+        existing["album_id"] = payload["album_id"]
+    if "cover_uri" in payload:
+        existing["cover_uri"] = payload["cover_uri"]
+    existing["updated_at"] = now
+
+    metadata_file.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+    return ResponseEnvelope(data=existing)
+
+
+@router.post(
+    "/batch-metadata",
+    response_model=ResponseEnvelope[dict[str, Any]],
+)
+async def batch_update_sync_files_metadata(
+    payload: list[dict[str, Any]],
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc).isoformat()
+    updated_count = 0
+    for item in payload:
+        track_id = item.get("track_id")
+        if not track_id:
+            continue
+        target_file, metadata_file = _paths(current_user.id, track_id)
+        existing = _read_metadata(metadata_file) or {
+            "track_id": track_id,
+            "synced": True,
+            "size_bytes": target_file.stat().st_size if target_file.exists() else 0,
+            "mime_type": "audio/mpeg",
+            "uploaded_at": now,
+        }
+        if item.get("title"):
+            existing["title"] = item["title"]
+        if item.get("artist_name"):
+            existing["artist_name"] = item["artist_name"]
+        if "album_title" in item:
+            existing["album_title"] = item["album_title"]
+        if item.get("duration_ms"):
+            existing["duration_ms"] = item["duration_ms"]
+        if "artist_id" in item:
+            existing["artist_id"] = item["artist_id"]
+        if "album_id" in item:
+            existing["album_id"] = item["album_id"]
+        if "cover_uri" in item:
+            existing["cover_uri"] = item["cover_uri"]
+        existing["updated_at"] = now
+
+        metadata_file.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+        updated_count += 1
+
+    return ResponseEnvelope(data={"updated_count": updated_count})
+
+
 @router.delete(
     "/{track_id}",
     response_model=ResponseEnvelope[dict[str, Any]],

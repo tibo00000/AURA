@@ -518,3 +518,20 @@ data class SyncedFileDeleteResponse(
     @SerialName("track_id") val trackId: String,
     @SerialName("deleted") val deleted: Boolean
 )
+
+@Serializable
+data class SyncedFileMetadataUpdateRequest(
+    @SerialName("track_id") val trackId: String,
+    @SerialName("title") val title: String? = null,
+    @SerialName("artist_name") val artistName: String? = null,
+    @SerialName("album_title") val albumTitle: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("artist_id") val artistId: String? = null,
+    @SerialName("album_id") val albumId: String? = null,
+    @SerialName("cover_uri") val coverUri: String? = null
+)
+
+@Serializable
+data class SyncedFileBatchMetadataResponse(
+    @SerialName("updated_count") val updatedCount: Int
+)

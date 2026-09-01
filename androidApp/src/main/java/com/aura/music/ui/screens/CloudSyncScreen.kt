@@ -83,6 +83,7 @@ fun CloudSyncScreen(
 
     // Progress operations tracking (set of trackIds currently operating)
     var activeOperations by remember { mutableStateOf(setOf<String>()) }
+    var isRepairingMetadata by remember { mutableStateOf(false) }
 
     // Load data asynchronously on IO
     LaunchedEffect(refreshTick) {
@@ -330,6 +331,61 @@ fun CloudSyncScreen(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = TextSecondary
                                             )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Quick Metadata Repair Card
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = DarkGraphite)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp))
+                                                Text("Réparer les métadonnées Cloud", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                            }
+                                            Text(
+                                                "Synchronise les vrais titres, artistes et pochettes du téléphone vers le serveur pour réparer les 'Titres inconnus'.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextSecondary
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    isRepairingMetadata = true
+                                                    cloudFileRepository.repairAndSyncAllCloudMetadata().collect { res ->
+                                                        res.onSuccess { count ->
+                                                            snackbarHostState.showSnackbar("Succès : $count métadonnées réparées sur le Cloud !")
+                                                            refreshTick++
+                                                        }.onFailure { err ->
+                                                            snackbarHostState.showSnackbar("Erreur : ${err.message}")
+                                                        }
+                                                        isRepairingMetadata = false
+                                                    }
+                                                }
+                                            },
+                                            enabled = !isRepairingMetadata,
+                                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange, contentColor = DeepBlack),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            if (isRepairingMetadata) {
+                                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = DeepBlack, strokeWidth = 2.dp)
+                                            } else {
+                                                Text("Réparer", fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                     }
                                 }
