@@ -85,28 +85,32 @@ object DesktopTrackHydrator {
                 val albumId = if (albumTitle != null) "album:${artistName.lowercase().trim().replace(" ", "_")}:${albumTitle.lowercase().trim().replace(" ", "_")}" else null
 
                 // Mettre à jour / insérer l'artiste
-                database.artistDao().insertArtistIgnore(
-                    ArtistEntity(
-                        id = artistId,
-                        name = artistName,
-                        normalizedName = SearchNormalizer.normalize(artistName),
-                        pictureUri = artistPicture,
-                        createdAt = now,
-                        updatedAt = now
+                database.artistDao().insertArtistsIgnore(
+                    listOf(
+                        ArtistEntity(
+                            id = artistId,
+                            name = artistName,
+                            normalizedName = SearchNormalizer.normalize(artistName),
+                            pictureUri = artistPicture,
+                            createdAt = now,
+                            updatedAt = now
+                        )
                     )
                 )
 
                 // Mettre à jour / insérer l'album
                 if (albumId != null && albumTitle != null) {
-                    database.albumDao().insertAlbumIgnore(
-                        AlbumEntity(
-                            id = albumId,
-                            primaryArtistId = artistId,
-                            title = albumTitle,
-                            normalizedTitle = SearchNormalizer.normalize(albumTitle),
-                            coverUri = coverUri,
-                            createdAt = now,
-                            updatedAt = now
+                    database.albumDao().insertAlbumsIgnore(
+                        listOf(
+                            AlbumEntity(
+                                id = albumId,
+                                primaryArtistId = artistId,
+                                title = albumTitle,
+                                normalizedTitle = SearchNormalizer.normalize(albumTitle),
+                                coverUri = coverUri,
+                                createdAt = now,
+                                updatedAt = now
+                            )
                         )
                     )
                 }
