@@ -31,6 +31,7 @@ class DesktopPlaybackOrchestrator(
 ) {
     var apiToken: String? = null
     var autoSyncEnabled: Boolean = true
+    var isWindowVisible: Boolean = true
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val loomDispatcher = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
@@ -43,7 +44,7 @@ class DesktopPlaybackOrchestrator(
 
     fun connect() {
         audioPlayer.onCompletionListener = {
-            scope.launch {
+            scope.launch(Dispatchers.Default) {
                 next()
             }
         }
@@ -52,10 +53,10 @@ class DesktopPlaybackOrchestrator(
             _uiState.update { it.copy(playbackState = PlaybackState.Error, errorMessage = error) }
         }
 
-        // Periodically refresh track progress slider in the UI
-        progressJob = scope.launch {
+        // Periodically refresh track progress slider in the UI (paused if window is hidden)
+        progressJob = scope.launch(Dispatchers.Default) {
             while (isActive) {
-                if (audioPlayer.isPlaying()) {
+                if (isWindowVisible && audioPlayer.isPlaying()) {
                     val pos = audioPlayer.getCurrentPosition()
                     val dur = audioPlayer.getDuration()
                     _uiState.update { it.copy(positionMs = pos, durationMs = dur) }
@@ -179,6 +180,157 @@ class DesktopPlaybackOrchestrator(
         queueManager.cycleRepeatMode()
         syncUiState(if (audioPlayer.isPlaying()) PlaybackState.Playing else PlaybackState.Paused)
         saveSnapshot()
+    }
+
+    fun toggleRepeat() {
+        cycleRepeatMode()
+    }
+
+    fun toQueuedTrack(row: TrackListRow): QueuedTrack {
+        return QueuedTrack(
+            internalId = UUID.randomUUID().toString(),
+            trackId = row.id,
+            title = row.title,
+            displayArtist = row.displayArtist,
+            displayAlbum = row.displayAlbum,
+            durationMs = row.durationMs ?: 0L,
+            coverUri = row.coverUri,
+            contentUri = row.contentUri ?: "",
+            artistId = row.artistId,
+            albumId = row.albumId,
+            isLiked = row.isLiked
+        )
+    }
+
+    fun playTrackDirectly(track: QueuedTrack) {
+        val uri = track.contentUri
+        if (uri.isNotBlank()) {
+            audioPlayer.play(uri)
+            syncUiState(PlaybackState.Playing)
+            saveSnapshot()
+        }
+    }
+
+    suspend fun createPlaylist(name: String) = withContext(Dispatchers.IO) {
+        val plId = "pl_desk_${UUID.randomUUID().toString().take(12)}"
+        val now = System.currentTimeMillis()
+        database.playlistDao().insertPlaylist(
+            PlaylistEntity(
+                id = plId,
+                name = name,
+                description = "",
+                coverUri = null,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+    }
+
+    suspend fun renamePlaylist(id: String, newName: String) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        database.playlistDao().renamePlaylist(id, newName, now)
+    }
+
+    suspend fun addTrackToPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
+        val count = database.playlistDao().getPlaylistTrackCount(playlistId)
+        val now = System.currentTimeMillis()
+        database.playlistDao().insertPlaylistTrack(
+            PlaylistTrackCrossRef(
+                playlistId = playlistId,
+                trackId = trackId,
+                position = count,
+                addedAt = now
+            )
+        )
+    }
+
+    suspend fun scanDirectory(dir: File) = withContext(loomDispatcher) {
+        scanLocalFolder(dir.absolutePath)
+    }
+
+    fun triggerTrackDownload(track: com.aura.music.data.network.TrackSummary) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            try {
+                apiService.createDownload(
+                    token = token,
+                    request = com.aura.music.data.network.DownloadRequestDto(
+                        trackId = track.id,
+                        sourceHint = com.aura.music.data.network.SourceHintDto(
+                            providerName = "deezer",
+                            providerTrackId = track.id,
+                            title = track.title,
+                            artistName = track.displayArtistName,
+                            albumTitle = track.displayAlbumTitle,
+                            coverUri = track.coverUri
+                        )
+                    )
+                )
+            } catch (e: Exception) {
+                System.err.println("Failed to request download: ${e.message}")
+            }
+        }
+    }
+
+    fun triggerSingleFileDownload(track: TrackListRow) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            downloadCloudTrack(token, track.id)
+        }
+    }
+
+    fun triggerSingleFileUpload(track: TrackListRow) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            uploadCloudTrack(token, track.id)
+        }
+    }
+
+    fun triggerCloudDownloadAll(tracks: List<TrackListRow>) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            tracks.forEach { trk ->
+                downloadCloudTrack(token, trk.id)
+            }
+        }
+    }
+
+    fun triggerCloudUploadAll(tracks: List<TrackListRow>) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            tracks.forEach { trk ->
+                uploadCloudTrack(token, trk.id)
+            }
+        }
+    }
+
+    fun clearCompletedDownloadJobs() {
+        scope.launch(Dispatchers.IO) {
+            database.downloadJobDao().clearCompletedAndFailedJobs()
+        }
+    }
+
+    fun retryDownloadJob(jobId: String) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            try {
+                apiService.retryDownload(token, jobId)
+            } catch (e: Exception) {
+                System.err.println("Failed to retry job: ${e.message}")
+            }
+        }
+    }
+
+    fun cancelDownloadJob(jobId: String) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            try {
+                apiService.deleteDownload(token, jobId)
+                database.downloadJobDao().deleteJob(jobId)
+            } catch (e: Exception) {
+                System.err.println("Failed to cancel job: ${e.message}")
+            }
+        }
     }
 
     fun toggleLike(trackId: String, onComplete: (() -> Unit)? = null) {

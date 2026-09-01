@@ -21,8 +21,9 @@ kotlin {
                 implementation(compose.components.resources)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
                 
-                // JNativeHook for global OS key shortcuts
-                implementation("com.github.kwhat:jnativehook:2.2.2")
+                // Native platform integration (DPAPI on Windows)
+                implementation("net.java.dev.jna:jna:5.14.0")
+                implementation("net.java.dev.jna:jna-platform:5.14.0")
                 
                 // JavaFX Media for native JNI audio playback
                 val osName = System.getProperty("os.name").lowercase()
