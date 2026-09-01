@@ -1147,7 +1147,10 @@ class DesktopPlaybackOrchestrator(
                             trackId = cloudFile.trackId,
                             mediaStoreId = System.currentTimeMillis(),
                             contentUri = fileUri,
-                            canonicalSourceType = "downloaded",
+                            fileSizeBytes = targetFile.length(),
+                            mimeType = "audio/mpeg",
+                            dateModifiedEpochMs = targetFile.lastModified(),
+                            availabilityStatus = "present",
                             lastScannedAt = now
                         )
                     )
@@ -1176,7 +1179,7 @@ class DesktopPlaybackOrchestrator(
                 val likesResp = apiService.getLikes(token)
                 val likes = likesResp.data ?: emptyList()
                 for (like in likes) {
-                    database.trackDao().setTrackIsLiked(like.trackId, true, now)
+                    database.trackLikeDao().setTrackIsLiked(like.trackId, true, now)
                 }
             } catch (e: Exception) {
                 System.err.println("Failed to sync likes: ${e.message}")
