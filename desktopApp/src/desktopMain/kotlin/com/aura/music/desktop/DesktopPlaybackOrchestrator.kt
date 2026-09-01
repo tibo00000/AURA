@@ -251,37 +251,167 @@ class DesktopPlaybackOrchestrator(
     }
 
     suspend fun createPlaylist(name: String) = withContext(Dispatchers.IO) {
-        val plId = "pl_desk_${UUID.randomUUID().toString().take(12)}"
+        val plId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        database.playlistDao().insertPlaylist(
-            PlaylistEntity(
-                id = plId,
-                name = name,
-                coverUri = null,
-                isPinned = false,
-                createdAt = now,
-                updatedAt = now
-            )
-        )
+        val opId = "outbox_pl_${UUID.randomUUID().toString().take(12)}"
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().insertPlaylist(
+                    PlaylistEntity(
+                        id = plId,
+                        name = name,
+                        coverUri = null,
+                        isPinned = false,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+                database.syncOutboxDao().insert(
+                    SyncOutboxEntity(
+                        id = opId,
+                        entityType = "playlist",
+                        entityId = plId,
+                        operationType = "create",
+                        payloadJson = name,
+                        status = "pending",
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+            }
+        }
+
+        apiToken?.let { token ->
+            scope.launch(Dispatchers.IO) {
+                flushSyncOutbox(token)
+            }
+        }
     }
 
     suspend fun renamePlaylist(id: String, newName: String) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        database.playlistDao().renamePlaylist(id, newName, now)
+        val opId = "outbox_pl_ren_${UUID.randomUUID().toString().take(12)}"
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().renamePlaylist(id, newName, now)
+                database.syncOutboxDao().insert(
+                    SyncOutboxEntity(
+                        id = opId,
+                        entityType = "playlist",
+                        entityId = id,
+                        operationType = "update",
+                        payloadJson = newName,
+                        status = "pending",
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+            }
+        }
+
+        apiToken?.let { token ->
+            scope.launch(Dispatchers.IO) {
+                flushSyncOutbox(token)
+            }
+        }
+    }
+
+    suspend fun deletePlaylist(id: String) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val opId = "outbox_pl_del_${UUID.randomUUID().toString().take(12)}"
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().deletePlaylist(id)
+                database.syncOutboxDao().insert(
+                    SyncOutboxEntity(
+                        id = opId,
+                        entityType = "playlist",
+                        entityId = id,
+                        operationType = "delete",
+                        payloadJson = "",
+                        status = "pending",
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+            }
+        }
+
+        apiToken?.let { token ->
+            scope.launch(Dispatchers.IO) {
+                flushSyncOutbox(token)
+            }
+        }
     }
 
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
         val nextPos = database.playlistDao().getNextPlaylistPosition(playlistId)
         val now = System.currentTimeMillis()
-        database.playlistDao().insertPlaylistItem(
-            PlaylistItemEntity(
-                id = UUID.randomUUID().toString(),
-                playlistId = playlistId,
-                trackId = trackId,
-                position = nextPos,
-                addedAt = now
-            )
-        )
+        val opId = "outbox_pli_${UUID.randomUUID().toString().take(12)}"
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().insertPlaylistItem(
+                    PlaylistItemEntity(
+                        id = UUID.randomUUID().toString(),
+                        playlistId = playlistId,
+                        trackId = trackId,
+                        position = nextPos,
+                        addedAt = now
+                    )
+                )
+                database.syncOutboxDao().insert(
+                    SyncOutboxEntity(
+                        id = opId,
+                        entityType = "playlist_item",
+                        entityId = playlistId,
+                        operationType = "create",
+                        payloadJson = trackId,
+                        status = "pending",
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+            }
+        }
+
+        apiToken?.let { token ->
+            scope.launch(Dispatchers.IO) {
+                flushSyncOutbox(token)
+            }
+        }
+    }
+
+    suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val opId = "outbox_pli_del_${UUID.randomUUID().toString().take(12)}"
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                database.playlistDao().deletePlaylistItemByTrack(playlistId, trackId)
+                database.syncOutboxDao().insert(
+                    SyncOutboxEntity(
+                        id = opId,
+                        entityType = "playlist_item",
+                        entityId = playlistId,
+                        operationType = "delete",
+                        payloadJson = trackId,
+                        status = "pending",
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+            }
+        }
+
+        apiToken?.let { token ->
+            scope.launch(Dispatchers.IO) {
+                flushSyncOutbox(token)
+            }
+        }
     }
 
     suspend fun scanDirectory(dir: File) = withContext(loomDispatcher) {
@@ -388,12 +518,25 @@ class DesktopPlaybackOrchestrator(
             val trackRow = database.trackDao().getTrackById(trackId) ?: return@launch
             val currentlyLiked = trackRow.isLiked
             val now = System.currentTimeMillis()
+            val opId = "outbox_like_${UUID.randomUUID().toString().take(12)}"
             
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
                     if (currentlyLiked) {
                         database.trackLikeDao().deleteLike(trackId)
                         database.trackLikeDao().setTrackIsLiked(trackId, liked = false, updatedAt = now)
+                        database.syncOutboxDao().insert(
+                            SyncOutboxEntity(
+                                id = opId,
+                                entityType = "track_like",
+                                entityId = trackId,
+                                operationType = "delete",
+                                payloadJson = "",
+                                status = "pending",
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
                     } else {
                         database.trackLikeDao().insertLike(
                             TrackLikeEntity(
@@ -404,6 +547,18 @@ class DesktopPlaybackOrchestrator(
                             )
                         )
                         database.trackLikeDao().setTrackIsLiked(trackId, liked = true, updatedAt = now)
+                        database.syncOutboxDao().insert(
+                            SyncOutboxEntity(
+                                id = opId,
+                                entityType = "track_like",
+                                entityId = trackId,
+                                operationType = "set",
+                                payloadJson = "",
+                                status = "pending",
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
                     }
                 }
             }
@@ -420,23 +575,134 @@ class DesktopPlaybackOrchestrator(
                 }
             }
 
-            // Sync with backend API
-            val token = apiToken
-            if (token != null) {
-                try {
-                    if (currentlyLiked) {
-                        apiService.unlikeTrack(token, trackId)
-                    } else {
-                        apiService.likeTrack(
-                            token = token,
-                            trackId = trackId,
-                            sourceContextType = _uiState.value.contextType,
-                            sourceContextId = _uiState.value.contextId
-                        )
-                    }
-                } catch (e: Exception) {
-                    System.err.println("Failed to sync liked track to backend: ${e.message}")
+            // Flush outbox in background if connected
+            apiToken?.let { token ->
+                scope.launch(Dispatchers.IO) {
+                    flushSyncOutbox(token)
                 }
+            }
+        }
+    }
+
+    suspend fun flushSyncOutbox(token: String) = withContext(Dispatchers.IO) {
+        val pendingOps = database.syncOutboxDao().getPendingOperations()
+        if (pendingOps.isEmpty()) return@withContext
+
+        System.out.println("Flushing ${pendingOps.size} pending outbox operations...")
+        for (op in pendingOps) {
+            try {
+                var success = false
+                when (op.entityType) {
+                    "track_like" -> {
+                        if (op.operationType == "set" || op.operationType == "create") {
+                            val resp = apiService.likeTrack(token, op.entityId, null, null)
+                            if (resp.error == null) success = true
+                        } else if (op.operationType == "delete") {
+                            val resp = apiService.unlikeTrack(token, op.entityId)
+                            if (resp.error == null) success = true
+                        }
+                    }
+                    "playlist" -> {
+                        if (op.operationType == "create") {
+                            val resp = apiService.createPlaylist(
+                                token = token,
+                                request = com.aura.music.data.network.PlaylistCreate(
+                                    name = op.payloadJson.ifBlank { "Nouvelle Playlist" }
+                                )
+                            )
+                            if (resp.error == null) success = true
+                        } else if (op.operationType == "delete") {
+                            val resp = apiService.deletePlaylist(token, op.entityId)
+                            if (resp.error == null) success = true
+                        }
+                    }
+                    "playlist_item" -> {
+                        if (op.operationType == "create" || op.operationType == "append") {
+                            val playlistId = op.entityId
+                            val trackId = op.payloadJson
+                            val resp = apiService.appendTrackToPlaylist(
+                                token = token,
+                                id = playlistId,
+                                request = com.aura.music.data.network.PlaylistItemCreate(
+                                    trackId = trackId
+                                )
+                            )
+                            if (resp.error == null) success = true
+                        } else if (op.operationType == "delete") {
+                            val playlistId = op.entityId
+                            val trackId = op.payloadJson
+                            val resp = apiService.removeTrackFromPlaylist(
+                                token = token,
+                                id = playlistId,
+                                trackId = trackId
+                            )
+                            if (resp.error == null) success = true
+                        }
+                    }
+                }
+
+                if (success) {
+                    database.syncOutboxDao().deleteOperation(op.id)
+                } else {
+                    database.syncOutboxDao().updateStatus(op.id, "failed", System.currentTimeMillis())
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to process outbox op ${op.id}: ${e.message}")
+                database.syncOutboxDao().updateStatus(op.id, "failed", System.currentTimeMillis())
+                break // Stop on network error to preserve strict FIFO order
+            }
+        }
+    }
+
+    fun playOnlineTrack(
+        track: com.aura.music.data.network.TrackSummary,
+        contextTracks: List<com.aura.music.data.network.TrackSummary>
+    ) {
+        val queuedTracks = contextTracks.map { t ->
+            QueuedTrack(
+                trackId = t.id,
+                title = t.title,
+                artistName = t.displayArtistName,
+                albumTitle = t.displayAlbumTitle,
+                contentUri = null,
+                durationMs = t.durationMs,
+                coverUri = t.coverUri,
+                source = TrackSource.CONTEXT
+            )
+        }
+
+        val startIndex = contextTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        
+        queueManager.setContext(
+            type = "online_search",
+            id = "search_${track.id}",
+            tracks = queuedTracks,
+            startIndex = startIndex
+        )
+
+        // Lance le streaming à la demande
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            try {
+                downloadCloudTrack(
+                    token = token,
+                    trackId = track.id,
+                    title = track.title,
+                    artistName = track.displayArtistName,
+                    albumTitle = track.displayAlbumTitle,
+                    durationMs = track.durationMs ?: 0L,
+                    coverUri = track.coverUri
+                )
+                val localUri = database.trackDao().getTrackContentUri(track.id)
+                if (localUri != null) {
+                    withContext(Dispatchers.Main) {
+                        audioPlayer.play(localUri)
+                        saveSnapshot()
+                        syncUiState(PlaybackState.Playing)
+                    }
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to stream online search track ${track.id}: ${e.message}")
             }
         }
     }
@@ -533,8 +799,37 @@ class DesktopPlaybackOrchestrator(
     }
 
     private suspend fun restoreSnapshot() {
-        val entity = database.playbackSnapshotDao().getActiveSnapshot() ?: return
-        val trackId = entity.currentTrackId ?: return
+        val localEntity = database.playbackSnapshotDao().getActiveSnapshot()
+        var targetTrackId = localEntity?.currentTrackId
+        var targetContextType = localEntity?.playbackContextType
+        var targetContextId = localEntity?.playbackContextId
+        var targetPositionMs = localEntity?.positionMs ?: 0L
+        var targetShuffle = localEntity?.shuffleEnabled ?: false
+        var targetRepeatStr = localEntity?.repeatMode ?: "off"
+
+        // Interroger le Cloud si un token est disponible (comparaison LWW serveur)
+        val token = apiToken
+        if (!token.isNullOrBlank()) {
+            try {
+                val cloudResp = apiService.getPlaybackSnapshot(token)
+                val cloudSnap = cloudResp.data
+                if (cloudSnap != null && cloudSnap.currentTrackId != null) {
+                    val localUpdatedAt = localEntity?.updatedAt ?: 0L
+                    if (localEntity == null || (cloudSnap.updatedAt ?: 0L) >= localUpdatedAt) {
+                        targetTrackId = cloudSnap.currentTrackId
+                        targetContextType = cloudSnap.playbackContextType
+                        targetContextId = cloudSnap.playbackContextId
+                        targetPositionMs = cloudSnap.positionMs ?: 0L
+                        targetShuffle = cloudSnap.shuffleEnabled ?: false
+                        targetRepeatStr = cloudSnap.repeatMode ?: "off"
+                    }
+                }
+            } catch (e: Exception) {
+                System.err.println("Could not fetch remote playback snapshot: ${e.message}")
+            }
+        }
+
+        val trackId = targetTrackId ?: return
         val trackRow = database.trackDao().getTrackById(trackId) ?: return
 
         val queuedTrack = QueuedTrack(
@@ -548,8 +843,8 @@ class DesktopPlaybackOrchestrator(
             source = TrackSource.CONTEXT
         )
 
-        val contextType = entity.playbackContextType ?: "single_track"
-        val contextId = entity.playbackContextId ?: trackId
+        val contextType = targetContextType ?: "single_track"
+        val contextId = targetContextId ?: trackId
 
         val contextTracks = reloadContextTracks(contextType, contextId)
         var startIndex = contextTracks.indexOfFirst { it.trackId == trackId }
@@ -557,13 +852,13 @@ class DesktopPlaybackOrchestrator(
             startIndex = 0
         }
 
-        val repeat = when (entity.repeatMode) {
+        val repeat = when (targetRepeatStr) {
             "one" -> RepeatMode.One
             "all" -> RepeatMode.All
             else -> RepeatMode.Off
         }
 
-        queueManager.restoreModes(entity.shuffleEnabled, repeat)
+        queueManager.restoreModes(targetShuffle, repeat)
         queueManager.setContext(
             type = contextType,
             id = contextId,
@@ -576,9 +871,9 @@ class DesktopPlaybackOrchestrator(
             current.copy(
                 playbackState = PlaybackState.Paused,
                 currentTrack = currentTrack,
-                positionMs = entity.positionMs,
+                positionMs = targetPositionMs,
                 durationMs = trackRow.durationMs ?: 0L,
-                shuffleEnabled = entity.shuffleEnabled,
+                shuffleEnabled = targetShuffle,
                 repeatMode = repeat,
                 priorityQueue = queueManager.state.value.priorityQueue,
                 mainQueueTracks = queueManager.getUpcomingContextTracks(),
@@ -591,7 +886,7 @@ class DesktopPlaybackOrchestrator(
         if (trackRow.contentUri != null) {
             audioPlayer.play(trackRow.contentUri!!)
             audioPlayer.pause()
-            audioPlayer.seekTo(entity.positionMs)
+            audioPlayer.seekTo(targetPositionMs)
         }
     }
 
@@ -1192,6 +1487,7 @@ class DesktopPlaybackOrchestrator(
         if (!isSyncingCloud.compareAndSet(false, true)) return
         try {
             System.out.println("Starting background Cloud Metadata Sync...")
+            flushSyncOutbox(token)
             syncCloudData(token, onDataChanged)
             System.out.println("Background Cloud Metadata Sync finished.")
         } finally {

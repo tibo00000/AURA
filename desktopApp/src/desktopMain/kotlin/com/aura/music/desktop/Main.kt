@@ -86,6 +86,17 @@ fun main() = application {
                     playlistTracks = database.playlistDao().getPlaylistTracks(id)
                 }
             }
+
+            orchestrator.apiToken?.let { token ->
+                try {
+                    val resp = apiService.getHistory(token)
+                    if (resp.data?.items != null) {
+                        history = resp.data!!.items.take(20)
+                    }
+                } catch (e: Exception) {
+                    // Ignore transient history errors
+                }
+            }
         }
     }
 

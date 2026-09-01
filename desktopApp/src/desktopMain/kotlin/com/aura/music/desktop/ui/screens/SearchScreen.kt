@@ -335,6 +335,9 @@ private fun OnlineSearchResultsView(
             items(results.tracks, key = { it.id }) { track ->
                 OnlineTrackRow(
                     track = track,
+                    onPlay = {
+                        orchestrator.playOnlineTrack(track, results.tracks)
+                    },
                     onDownload = {
                         orchestrator.triggerTrackDownload(track)
                     },
@@ -391,19 +394,43 @@ private fun OnlineAlbumCard(album: AlbumSummary, onClick: () -> Unit) {
 @Composable
 private fun OnlineTrackRow(
     track: TrackSummary,
+    onPlay: () -> Unit,
     onDownload: () -> Unit,
     onOpenArtist: () -> Unit,
     onOpenAlbum: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(DarkGraphite.copy(alpha = 0.5f))
+            .background(if (isHovered) DarkGraphite else DarkGraphite.copy(alpha = 0.5f))
+            .hoverable(interactionSource)
+            .clickable(onClick = onPlay)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        DesktopArtworkCover(coverUri = track.coverUri, size = 44.dp, shapeRadius = 6.dp)
+        Box(contentAlignment = Alignment.Center) {
+            DesktopArtworkCover(coverUri = track.coverUri, size = 44.dp, shapeRadius = 6.dp)
+            if (isHovered) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = "Écouter",
+                        tint = PureWhite,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(2f)) {
             Text(text = track.title, color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)

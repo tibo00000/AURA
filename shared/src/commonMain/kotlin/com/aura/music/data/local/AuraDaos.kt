@@ -620,6 +620,9 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_items WHERE id = :playlistItemId")
     suspend fun deletePlaylistItem(playlistItemId: String): Int
 
+    @Query("DELETE FROM playlist_items WHERE playlist_id = :playlistId AND track_id = :trackId")
+    suspend fun deletePlaylistItemByTrack(playlistId: String, trackId: String): Int
+
     @Query("UPDATE playlist_items SET position = :position WHERE id = :playlistItemId")
     suspend fun updatePlaylistItemPosition(playlistItemId: String, position: Int): Int
 
