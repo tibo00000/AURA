@@ -199,7 +199,7 @@ private fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            text = album.artistName,
+            text = album.artistName ?: "Artiste inconnu",
             color = PureWhite.copy(alpha = 0.5f),
             fontSize = 12.sp,
             maxLines = 1,

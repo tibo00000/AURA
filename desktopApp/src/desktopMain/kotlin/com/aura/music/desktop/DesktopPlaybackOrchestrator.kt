@@ -216,8 +216,8 @@ class DesktopPlaybackOrchestrator(
             PlaylistEntity(
                 id = plId,
                 name = name,
-                description = "",
                 coverUri = null,
+                isPinned = false,
                 createdAt = now,
                 updatedAt = now
             )
@@ -274,7 +274,15 @@ class DesktopPlaybackOrchestrator(
     fun triggerSingleFileDownload(track: TrackListRow) {
         scope.launch(Dispatchers.IO) {
             val token = apiToken ?: return@launch
-            downloadCloudTrack(token, track.id)
+            downloadCloudTrack(
+                token = token,
+                trackId = track.id,
+                title = track.title,
+                artistName = track.artistName,
+                albumTitle = track.albumTitle,
+                durationMs = track.durationMs ?: 0L,
+                coverUri = track.coverUri
+            )
         }
     }
 
@@ -289,7 +297,15 @@ class DesktopPlaybackOrchestrator(
         scope.launch(Dispatchers.IO) {
             val token = apiToken ?: return@launch
             tracks.forEach { trk ->
-                downloadCloudTrack(token, trk.id)
+                downloadCloudTrack(
+                    token = token,
+                    trackId = trk.id,
+                    title = trk.title,
+                    artistName = trk.artistName,
+                    albumTitle = trk.albumTitle,
+                    durationMs = trk.durationMs ?: 0L,
+                    coverUri = trk.coverUri
+                )
             }
         }
     }
