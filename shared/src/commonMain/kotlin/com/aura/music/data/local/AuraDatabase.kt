@@ -26,7 +26,7 @@ import androidx.sqlite.execSQL
         UserSettingsEntity::class,
     ],
     version = 5,
-    exportSchema = true,
+    exportSchema = false,
 )
 @ConstructedBy(AuraDatabaseConstructor::class)
 abstract class AuraDatabase : RoomDatabase() {

@@ -436,6 +436,8 @@ interface TrackDao {
         ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
         """,
     )
+    suspend fun getAllTracks(): List<TrackListRow>
+
     @Query(
         """
         SELECT
