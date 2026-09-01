@@ -981,35 +981,9 @@ class DesktopPlaybackOrchestrator(
 
             System.out.println("Downloaded file saved successfully to ${targetFile.absolutePath} (size: ${targetFile.length()} bytes)")
 
-            var localCoverUri: String? = null
-            val rawTrack = database.trackDao().getRawTrackById(trackId)
-            val imageUrl = rawTrack?.coverUri
-            if (imageUrl != null && imageUrl.startsWith("http")) {
-                val client = HttpClient()
-                try {
-                    val imageResponse = client.get(imageUrl)
-                    if (imageResponse.status.value in 200..299) {
-                        val imageBytes = imageResponse.body<ByteArray>()
-                        val coversDir = File(appDir, "covers")
-                        if (!coversDir.exists()) {
-                            coversDir.mkdirs()
-                        }
-                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
-                        java.io.FileOutputStream(coverFile).use { fos ->
-                            fos.write(imageBytes)
-                        }
-                        localCoverUri = coverFile.toURI().toString()
-                        System.out.println("Downloaded remote cover from $imageUrl for $trackId to $localCoverUri")
-                    }
-                } catch (e: Exception) {
-                    System.err.println("Failed to download remote cover fallback for $trackId: ${e.message}")
-                } finally {
-                    client.close()
-                }
-            }
-
             val now = System.currentTimeMillis()
             val fileUri = targetFile.toURI().toString()
+            val rawTrack = database.trackDao().getRawTrackById(trackId)
 
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
@@ -1031,7 +1005,6 @@ class DesktopPlaybackOrchestrator(
                         val updatedTrack = rawTrack.copy(
                             canonicalAudioSourceType = "downloaded",
                             isDownloadedByAura = true,
-                            coverUri = localCoverUri ?: rawTrack.coverUri,
                             updatedAt = now
                         )
                         database.trackDao().upsertTracks(listOf(updatedTrack))
@@ -1315,44 +1288,6 @@ class DesktopPlaybackOrchestrator(
 
             System.out.println("Downloaded cloud file saved to ${targetFile.absolutePath}")
 
-            // Download cover artwork
-            var resolvedCoverUri = coverUri
-            if (resolvedCoverUri.isNullOrBlank() || !resolvedCoverUri.startsWith("http")) {
-                try {
-                    val searchResult = apiService.search("$title $artistName", limitTracks = 3)
-                    val resolved = searchResult.data?.tracks?.firstOrNull { it.coverUri?.startsWith("http") == true }?.coverUri
-                    if (resolved != null) {
-                        resolvedCoverUri = resolved
-                    }
-                } catch (e: Exception) {
-                    System.err.println("Failed to resolve cover online for download of cloud track $trackId: ${e.message}")
-                }
-            }
-
-            var localCoverUri: String? = null
-            if (resolvedCoverUri != null && resolvedCoverUri.startsWith("http")) {
-                val client = HttpClient()
-                try {
-                    val imageResponse = client.get(resolvedCoverUri)
-                    if (imageResponse.status.value in 200..299) {
-                        val imageBytes = imageResponse.body<ByteArray>()
-                        val coversDir = File(appDir, "covers")
-                        if (!coversDir.exists()) {
-                            coversDir.mkdirs()
-                        }
-                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
-                        java.io.FileOutputStream(coverFile).use { fos ->
-                            fos.write(imageBytes)
-                        }
-                        localCoverUri = coverFile.toURI().toString()
-                    }
-                } catch (e: Exception) {
-                    System.err.println("Failed to download cover for cloud track $trackId: ${e.message}")
-                } finally {
-                    client.close()
-                }
-            }
-
             val now = System.currentTimeMillis()
             val fileUri = targetFile.toURI().toString()
 
@@ -1388,7 +1323,7 @@ class DesktopPlaybackOrchestrator(
                                     primaryArtistId = primaryArtistId,
                                     title = albumTitle,
                                     normalizedTitle = albumTitle.lowercase(),
-                                    coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri,
+                                    coverUri = coverUri,
                                     releaseDate = null,
                                     trackCount = null,
                                     createdAt = now,
@@ -1409,7 +1344,7 @@ class DesktopPlaybackOrchestrator(
                         displayArtistName = artistName,
                         displayAlbumTitle = albumTitle,
                         durationMs = durationMs,
-                        coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri ?: existingTrack?.coverUri,
+                        coverUri = coverUri ?: existingTrack?.coverUri,
                         canonicalAudioSourceType = "downloaded",
                         isLiked = existingTrack?.isLiked ?: false,
                         isDownloadedByAura = true,
