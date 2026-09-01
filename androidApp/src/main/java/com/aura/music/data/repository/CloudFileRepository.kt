@@ -617,11 +617,13 @@ class CloudFileRepository(
             val updates = mutableListOf<com.aura.music.data.network.SyncedFileMetadataUpdateRequest>()
 
             for (cloudItem in cloudItems) {
+                val cloudDur = cloudItem.durationMs
                 // Trouver la correspondance locale
                 val matchingLocal = localTracks.firstOrNull { local ->
+                    val localDur = local.durationMs
                     local.id == cloudItem.trackId ||
                     (local.title.equals(cloudItem.title, ignoreCase = true) && local.artistName.equals(cloudItem.artistName, ignoreCase = true)) ||
-                    (cloudItem.title == null && local.durationMs != null && cloudItem.durationMs != null && Math.abs(local.durationMs - cloudItem.durationMs) < 2000)
+                    (cloudItem.title == null && localDur != null && cloudDur != null && Math.abs(localDur - cloudDur) < 2000L)
                 }
 
                 if (matchingLocal != null) {
