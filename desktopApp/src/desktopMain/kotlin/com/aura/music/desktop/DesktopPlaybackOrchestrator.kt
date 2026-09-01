@@ -607,6 +607,7 @@ class DesktopPlaybackOrchestrator(
                             val resp = apiService.createPlaylist(
                                 token = token,
                                 request = com.aura.music.data.network.PlaylistCreate(
+                                    id = op.entityId,
                                     name = op.payloadJson.ifBlank { "Nouvelle Playlist" }
                                 )
                             )
@@ -624,7 +625,9 @@ class DesktopPlaybackOrchestrator(
                                 token = token,
                                 id = playlistId,
                                 request = com.aura.music.data.network.PlaylistItemCreate(
-                                    trackId = trackId
+                                    id = op.id,
+                                    trackId = trackId,
+                                    position = 0
                                 )
                             )
                             if (resp.error == null) success = true
@@ -665,7 +668,7 @@ class DesktopPlaybackOrchestrator(
                 artistName = t.displayArtistName,
                 albumTitle = t.displayAlbumTitle,
                 contentUri = null,
-                durationMs = t.durationMs,
+                durationMs = t.durationMs.toLong(),
                 coverUri = t.coverUri,
                 source = TrackSource.CONTEXT
             )
@@ -690,7 +693,7 @@ class DesktopPlaybackOrchestrator(
                     title = track.title,
                     artistName = track.displayArtistName,
                     albumTitle = track.displayAlbumTitle,
-                    durationMs = track.durationMs ?: 0L,
+                    durationMs = track.durationMs.toLong(),
                     coverUri = track.coverUri
                 )
                 val localUri = database.trackDao().getTrackContentUri(track.id)
@@ -815,13 +818,18 @@ class DesktopPlaybackOrchestrator(
                 val cloudSnap = cloudResp.data
                 if (cloudSnap != null && cloudSnap.currentTrackId != null) {
                     val localUpdatedAt = localEntity?.updatedAt ?: 0L
-                    if (localEntity == null || (cloudSnap.updatedAt ?: 0L) >= localUpdatedAt) {
+                    val cloudEpochMs = try {
+                        cloudSnap.updatedAt?.let { java.time.Instant.parse(it).toEpochMilli() } ?: 0L
+                    } catch (e: Exception) {
+                        0L
+                    }
+                    if (localEntity == null || cloudEpochMs >= localUpdatedAt) {
                         targetTrackId = cloudSnap.currentTrackId
                         targetContextType = cloudSnap.playbackContextType
                         targetContextId = cloudSnap.playbackContextId
-                        targetPositionMs = cloudSnap.positionMs ?: 0L
-                        targetShuffle = cloudSnap.shuffleEnabled ?: false
-                        targetRepeatStr = cloudSnap.repeatMode ?: "off"
+                        targetPositionMs = cloudSnap.positionMs
+                        targetShuffle = cloudSnap.shuffleEnabled
+                        targetRepeatStr = cloudSnap.repeatMode
                     }
                 }
             } catch (e: Exception) {
