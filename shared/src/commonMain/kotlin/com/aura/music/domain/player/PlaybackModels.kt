@@ -81,4 +81,7 @@ data class PlayerUiState(
     val isCurrentTrackLiked: Boolean = false,
     val sleepTimerRemainingSeconds: Int? = null,
     val isSleepTimerEndOfTrack: Boolean = false,
-)
+) {
+    val isPlaying: Boolean
+        get() = playbackState == PlaybackState.Playing
+}

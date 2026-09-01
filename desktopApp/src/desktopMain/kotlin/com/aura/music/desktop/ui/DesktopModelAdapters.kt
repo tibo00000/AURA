@@ -11,7 +11,6 @@ import com.aura.music.domain.player.QueuedTrack
 /**
  * Constantes et extensions d'adaptation pour l'UI Desktop AURA.
  */
-val PureWhite = Color(0xFFFFFFFF)
 
 // Extensions pour TrackListRow
 val TrackListRow.displayArtist: String get() = artistName
@@ -34,4 +33,3 @@ val QueuedTrack.isCloudOnly: Boolean get() = contentUri.isNullOrBlank()
 // Extensions pour les états de lecture
 val QueueState.isShuffle: Boolean get() = shuffleEnabled
 val PlayerUiState.isShuffle: Boolean get() = shuffleEnabled
-val PlayerUiState.isPlaying: Boolean get() = playbackState == com.aura.music.domain.player.PlaybackState.Playing

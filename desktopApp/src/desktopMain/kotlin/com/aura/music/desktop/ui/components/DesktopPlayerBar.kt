@@ -182,15 +182,12 @@ fun DesktopPlayerBar(
                             onClick = { orchestrator.toggleRepeat() },
                             modifier = Modifier.size(32.dp)
                         ) {
-                            val (tint, icon) = when (queueState.repeatMode) {
-                                RepeatMode.One -> BlazeOrange to Icons.Rounded.RepeatOne
-                                RepeatMode.All -> BlazeOrange to Icons.Rounded.Repeat
-                                RepeatMode.Off -> PureWhite.copy(alpha = 0.5f) to Icons.Rounded.Repeat
-                            }
+                            val repeatIcon = if (queueState.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
+                            val repeatTint = if (queueState.repeatMode != RepeatMode.Off) BlazeOrange else PureWhite.copy(alpha = 0.5f)
                             Icon(
-                                imageVector = icon,
+                                imageVector = repeatIcon,
                                 contentDescription = "Mode de répétition",
-                                tint = tint,
+                                tint = repeatTint,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
