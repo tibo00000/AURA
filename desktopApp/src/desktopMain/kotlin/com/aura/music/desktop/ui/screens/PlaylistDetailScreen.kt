@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DarkGraphite
-import com.aura.music.ui.theme.PureWhite
 import kotlinx.coroutines.withContext
 
 @Composable
