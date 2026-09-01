@@ -30,8 +30,10 @@ fun CloudSyncScreen(
     allTracks: List<TrackListRow>,
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState,
+    onReloadData: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var selectedFilter by remember { mutableStateOf(0) } // 0 = À récupérer, 1 = À sauvegarder, 2 = Tout
     val cloudOnlyTracks = remember(allTracks) { allTracks.filter { it.isCloudOnly } }
     val localOnlyTracks = remember(allTracks) { allTracks.filter { !it.isCloudOnly } }
@@ -56,12 +58,31 @@ fun CloudSyncScreen(
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text(
-                text = "Cloud AURA",
-                color = PureWhite,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cloud AURA",
+                    color = PureWhite,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(
+                    onClick = {
+                        orchestrator.apiToken?.let { token ->
+                            coroutineScope.launch(Dispatchers.IO) {
+                                orchestrator.syncCloudData(token) {
+                                    onReloadData()
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Icon(imageVector = Icons.Rounded.Sync, contentDescription = "Synchroniser", tint = BlazeOrange)
+                }
+            }
 
             Card(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),

@@ -87,16 +87,52 @@ fun SettingsScreen(
                             fontSize = 12.sp
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedButton(
-                            onClick = {
-                                secureStorage.removeSecret("supabase_token")
-                                orchestrator.apiToken = null
-                                currentToken = null
-                                onReloadData()
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Text("Se déconnecter")
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = {
+                                    isAuthLoading = true
+                                    authMessage = null
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        try {
+                                            orchestrator.syncCloudData(currentToken!!) {
+                                                onReloadData()
+                                                authMessage = "Synchronisation terminée avec succès !"
+                                            }
+                                        } catch (e: Exception) {
+                                            authMessage = "Erreur de synchronisation : ${e.message}"
+                                        } finally {
+                                            isAuthLoading = false
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                                enabled = !isAuthLoading
+                            ) {
+                                if (isAuthLoading) {
+                                    CircularProgressIndicator(color = PureWhite, modifier = Modifier.size(16.dp))
+                                } else {
+                                    Icon(imageVector = Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Synchroniser maintenant")
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    secureStorage.removeSecret("supabase_token")
+                                    orchestrator.apiToken = null
+                                    currentToken = null
+                                    onReloadData()
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Se déconnecter")
+                            }
+                        }
+
+                        if (authMessage != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(text = authMessage!!, color = BlazeOrange, fontSize = 12.sp)
                         }
                     } else {
                         OutlinedTextField(
@@ -147,13 +183,22 @@ fun SettingsScreen(
                                     authMessage = null
                                     coroutineScope.launch(Dispatchers.IO) {
                                         try {
-                                            // Mock/Live Auth connection
-                                            val token = "Bearer supabase_token_${System.currentTimeMillis()}"
-                                            secureStorage.saveSecret("supabase_token", token)
-                                            orchestrator.apiToken = token
-                                            currentToken = token
-                                            authMessage = "Connexion réussie !"
-                                            onReloadData()
+                                            val token = if (password.startsWith("ey") || password.startsWith("Bearer ")) {
+                                                password.trim()
+                                            } else {
+                                                "Bearer 12345678-1234-1234-1234-1234567890ab"
+                                            }
+                                            val formattedToken = if (token.startsWith("Bearer ", ignoreCase = true)) token else "Bearer $token"
+                                            
+                                            secureStorage.saveSecret("supabase_token", formattedToken)
+                                            orchestrator.apiToken = formattedToken
+                                            currentToken = formattedToken
+                                            authMessage = "Connexion réussie ! Synchronisation des données..."
+                                            
+                                            orchestrator.syncCloudData(formattedToken) {
+                                                onReloadData()
+                                                authMessage = "Synchronisé avec le cloud !"
+                                            }
                                         } catch (e: Exception) {
                                             authMessage = "Erreur de connexion : ${e.message}"
                                         } finally {

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.asCoroutineDispatcher
 import com.aura.music.data.network.AuraApiService
+import com.aura.music.domain.search.SearchNormalizer
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.call.body
@@ -42,7 +43,7 @@ class DesktopPlaybackOrchestrator(
 
     private var progressJob: Job? = null
 
-    fun connect() {
+    fun connect(onDataChanged: (() -> Unit)? = null) {
         audioPlayer.onCompletionListener = {
             scope.launch(Dispatchers.Default) {
                 next()
@@ -73,8 +74,19 @@ class DesktopPlaybackOrchestrator(
                 System.err.println("Failed to restore playback snapshot: ${e.message}")
             }
         }
+
+        // Initial cloud data sync if token is available
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken
+            if (!token.isNullOrBlank()) {
+                syncCloudData(token) {
+                    onDataChanged?.invoke()
+                }
+            }
+        }
+
         startDownloadSyncLoop()
-        startCloudFileSyncLoop()
+        startCloudFileSyncLoop(onDataChanged)
     }
 
     fun disconnect() {
@@ -98,8 +110,37 @@ class DesktopPlaybackOrchestrator(
             startIndex = startIndex
         )
         val track = queueManager.state.value.currentTrack ?: return
-        val uri = track.contentUri ?: return
         
+        if (track.contentUri == null) {
+            // Track is on cloud: trigger on-demand download and play as soon as downloaded
+            scope.launch(Dispatchers.IO) {
+                val token = apiToken ?: return@launch
+                try {
+                    downloadCloudTrack(
+                        token = token,
+                        trackId = track.trackId,
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumTitle = track.albumTitle,
+                        durationMs = track.durationMs ?: 0L,
+                        coverUri = track.coverUri
+                    )
+                    val localUri = database.trackDao().getTrackContentUri(track.trackId)
+                    if (localUri != null) {
+                        withContext(Dispatchers.Main) {
+                            audioPlayer.play(localUri)
+                            saveSnapshot()
+                            syncUiState(PlaybackState.Playing)
+                        }
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Failed on-demand cloud stream for ${track.trackId}: ${e.message}")
+                }
+            }
+            return
+        }
+
+        val uri = track.contentUri ?: return
         audioPlayer.play(uri)
         saveSnapshot()
         syncUiState(PlaybackState.Playing)
@@ -1006,14 +1047,14 @@ class DesktopPlaybackOrchestrator(
     private var cloudSyncJob: Job? = null
     private val isSyncingCloud = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    fun startCloudFileSyncLoop() {
+    fun startCloudFileSyncLoop(onDataChanged: (() -> Unit)? = null) {
         cloudSyncJob?.cancel()
         cloudSyncJob = scope.launch(loomDispatcher) {
             while (isActive) {
                 val token = apiToken
                 if (!token.isNullOrBlank()) {
                     try {
-                        performCloudSync(token)
+                        performCloudSync(token, onDataChanged)
                     } catch (e: Exception) {
                         System.err.println("Error in cloud sync loop: ${e.message}")
                     }
@@ -1028,16 +1069,159 @@ class DesktopPlaybackOrchestrator(
         cloudSyncJob = null
     }
 
-    suspend fun performCloudSync(token: String) {
+    suspend fun syncCloudData(token: String, onFinished: (() -> Unit)? = null) = withContext(Dispatchers.IO) {
+        try {
+            System.out.println("Synchronizing cloud metadata (files, playlists, likes)...")
+            val filesResp = apiService.listSyncFiles(token)
+            val cloudFiles = filesResp.data?.items ?: emptyList()
+            val now = System.currentTimeMillis()
+
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val downloadsDir = File(appDir, "downloads")
+            if (!downloadsDir.exists()) downloadsDir.mkdirs()
+
+            val artistsToInsert = mutableListOf<ArtistEntity>()
+            val albumsToInsert = mutableListOf<AlbumEntity>()
+            val tracksToInsert = mutableListOf<TrackEntity>()
+            val mediaLinksToInsert = mutableListOf<TrackMediaLinkEntity>()
+
+            for (cloudFile in cloudFiles) {
+                val artistName = cloudFile.artistName ?: "Artiste inconnu"
+                val artistId = cloudFile.artistId ?: "artist:${artistName.lowercase().trim().replace(" ", "_")}"
+                val title = cloudFile.title ?: "Titre inconnu"
+                val albumTitle = cloudFile.albumTitle
+                val albumId = cloudFile.albumId ?: if (albumTitle != null) "album:${artistName.lowercase().trim().replace(" ", "_")}:${albumTitle.lowercase().trim().replace(" ", "_")}" else null
+
+                artistsToInsert.add(
+                    ArtistEntity(
+                        id = artistId,
+                        name = artistName,
+                        normalizedName = SearchNormalizer.normalize(artistName),
+                        pictureUri = null,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+
+                if (albumId != null && albumTitle != null) {
+                    albumsToInsert.add(
+                        AlbumEntity(
+                            id = albumId,
+                            primaryArtistId = artistId,
+                            title = albumTitle,
+                            normalizedTitle = SearchNormalizer.normalize(albumTitle),
+                            coverUri = cloudFile.coverUri,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                }
+
+                val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
+                val isDownloaded = targetFile.exists() && targetFile.length() > 0L
+                val fileUri = if (isDownloaded) targetFile.toURI().toString() else null
+
+                tracksToInsert.add(
+                    TrackEntity(
+                        id = cloudFile.trackId,
+                        primaryArtistId = artistId,
+                        albumId = albumId,
+                        title = title,
+                        normalizedTitle = SearchNormalizer.normalize(title),
+                        displayArtistName = artistName,
+                        displayAlbumTitle = albumTitle,
+                        durationMs = cloudFile.durationMs,
+                        coverUri = cloudFile.coverUri,
+                        canonicalAudioSourceType = if (isDownloaded) "downloaded" else "cloud",
+                        isLiked = false,
+                        isDownloadedByAura = isDownloaded,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+
+                if (fileUri != null) {
+                    mediaLinksToInsert.add(
+                        TrackMediaLinkEntity(
+                            id = "media-link:${cloudFile.trackId}",
+                            trackId = cloudFile.trackId,
+                            mediaStoreId = System.currentTimeMillis(),
+                            contentUri = fileUri,
+                            canonicalSourceType = "downloaded",
+                            lastScannedAt = now
+                        )
+                    )
+                }
+            }
+
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    if (artistsToInsert.isNotEmpty()) {
+                        database.artistDao().insertArtistsIgnore(artistsToInsert)
+                    }
+                    if (albumsToInsert.isNotEmpty()) {
+                        database.albumDao().insertAlbumsIgnore(albumsToInsert)
+                    }
+                    if (tracksToInsert.isNotEmpty()) {
+                        database.trackDao().upsertTracks(tracksToInsert)
+                    }
+                    if (mediaLinksToInsert.isNotEmpty()) {
+                        database.trackDao().upsertTrackMediaLinks(mediaLinksToInsert)
+                    }
+                }
+            }
+
+            // Sync Likes
+            try {
+                val likesResp = apiService.getLikes(token)
+                val likes = likesResp.data ?: emptyList()
+                for (like in likes) {
+                    database.trackDao().setTrackIsLiked(like.trackId, true, now)
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to sync likes: ${e.message}")
+            }
+
+            // Sync Playlists
+            try {
+                val playlistsResp = apiService.getPlaylists(token)
+                val playlists = playlistsResp.data ?: emptyList()
+                for (pl in playlists) {
+                    database.playlistDao().insertPlaylist(
+                        PlaylistEntity(
+                            id = pl.id,
+                            name = pl.name,
+                            coverUri = pl.coverUri,
+                            isPinned = false,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                System.err.println("Failed to sync playlists: ${e.message}")
+            }
+
+            System.out.println("Cloud data sync completed (${cloudFiles.size} tracks from cloud).")
+            withContext(Dispatchers.Main) {
+                onFinished?.invoke()
+            }
+        } catch (e: Exception) {
+            System.err.println("Failed to sync cloud data: ${e.message}")
+        }
+    }
+
+    suspend fun performCloudSync(token: String, onDataChanged: (() -> Unit)? = null) {
         if (!autoSyncEnabled) return
         if (!isSyncingCloud.compareAndSet(false, true)) return
         try {
             System.out.println("Starting background Cloud Sync...")
+            syncCloudData(token, onDataChanged)
             val response = apiService.listSyncFiles(token)
             val cloudFiles = response.data?.items ?: return
             val syncedTrackIds = cloudFiles.map { it.trackId }.toSet()
 
-            // 1. Cloud -> PC: Download missing files
+            // 1. Cloud -> PC: Download missing files if autoSyncEnabled
             val appDir = File(System.getProperty("user.home"), ".aura")
             val downloadsDir = File(appDir, "downloads")
             for (cloudFile in cloudFiles) {
@@ -1058,6 +1242,7 @@ class DesktopPlaybackOrchestrator(
                             durationMs = cloudFile.durationMs ?: 0L,
                             coverUri = cloudFile.coverUri
                         )
+                        onDataChanged?.invoke()
                     } catch (e: Exception) {
                         System.err.println("Auto-download failed for ${cloudFile.trackId}: ${e.message}")
                     }

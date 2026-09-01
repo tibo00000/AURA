@@ -83,7 +83,9 @@ fun main() = application {
     }
 
     LaunchedEffect(Unit) {
-        orchestrator.connect()
+        orchestrator.connect {
+            reloadDbData()
+        }
         reloadDbData()
     }
 
@@ -268,7 +270,8 @@ fun main() = application {
                                     "cloud_sync" -> CloudSyncScreen(
                                         allTracks = allTracks,
                                         orchestrator = orchestrator,
-                                        appState = appState
+                                        appState = appState,
+                                        onReloadData = { reloadDbData() }
                                     )
                                     "settings" -> SettingsScreen(
                                         orchestrator = orchestrator,
