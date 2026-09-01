@@ -1191,57 +1191,9 @@ class DesktopPlaybackOrchestrator(
         if (!autoSyncEnabled) return
         if (!isSyncingCloud.compareAndSet(false, true)) return
         try {
-            System.out.println("Starting background Cloud Sync...")
+            System.out.println("Starting background Cloud Metadata Sync...")
             syncCloudData(token, onDataChanged)
-            val response = apiService.listSyncFiles(token)
-            val cloudFiles = response.data?.items ?: return
-            val syncedTrackIds = cloudFiles.map { it.trackId }.toSet()
-
-            // 1. Cloud -> PC: Download missing files if autoSyncEnabled
-            val appDir = File(System.getProperty("user.home"), ".aura")
-            val downloadsDir = File(appDir, "downloads")
-            for (cloudFile in cloudFiles) {
-                val rawTrack = database.trackDao().getRawTrackById(cloudFile.trackId)
-                val targetFile = File(downloadsDir, "${cloudFile.trackId.replace(':', ';')}.mp3")
-                
-                val existsLocally = targetFile.exists() && targetFile.length() > 0L
-                val isDbDownloaded = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded"
-                
-                if (!existsLocally || !isDbDownloaded) {
-                    try {
-                        downloadCloudTrack(
-                            token = token,
-                            trackId = cloudFile.trackId,
-                            title = cloudFile.title ?: "Titre inconnu",
-                            artistName = cloudFile.artistName ?: "Artiste inconnu",
-                            albumTitle = cloudFile.albumTitle,
-                            durationMs = cloudFile.durationMs ?: 0L,
-                            coverUri = cloudFile.coverUri
-                        )
-                        onDataChanged?.invoke()
-                    } catch (e: Exception) {
-                        System.err.println("Auto-download failed for ${cloudFile.trackId}: ${e.message}")
-                    }
-                }
-            }
-
-            // 2. PC -> Cloud: Auto-upload local files if autoSyncEnabled
-            if (autoSyncEnabled) {
-                val localTracks = database.trackDao().getAllTracks()
-                for (track in localTracks) {
-                    val rawTrack = database.trackDao().getRawTrackById(track.id)
-                    if (rawTrack != null && rawTrack.canonicalAudioSourceType == "local") {
-                        if (!syncedTrackIds.contains(track.id)) {
-                            try {
-                                uploadCloudTrack(token, track.id)
-                            } catch (e: Exception) {
-                                System.err.println("Auto-upload failed for ${track.id}: ${e.message}")
-                            }
-                        }
-                    }
-                }
-            }
-            System.out.println("Background Cloud Sync finished.")
+            System.out.println("Background Cloud Metadata Sync finished.")
         } finally {
             isSyncingCloud.set(false)
         }
