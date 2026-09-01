@@ -25,7 +25,6 @@ import com.aura.music.data.network.AlbumSummary
 import com.aura.music.data.network.ArtistDetailResponseData
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
-import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
@@ -44,6 +43,7 @@ fun ArtistDetailScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     var artistData by remember { mutableStateOf<ArtistDetailResponseData?>(null) }
+    var resolvedCoverUri by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
     val localArtistTracks = remember(artistId, allLocalTracks) {
@@ -54,6 +54,7 @@ fun ArtistDetailScreen(
         artistData?.name ?: localArtistTracks.firstOrNull()?.artistName ?: artistId.removePrefix("artist:")
     }
 
+    // Résolution hybride automatique & mise en cache Room (Point 3 de l'audit)
     LaunchedEffect(artistId) {
         if (artistId.startsWith("art_")) {
             isLoading = true
@@ -62,11 +63,36 @@ fun ArtistDetailScreen(
                     val resp = orchestrator.apiService.getArtist(artistId)
                     if (resp.data != null) {
                         artistData = resp.data
+                        resolvedCoverUri = resp.data?.pictureUri
                     }
                 } catch (e: Exception) {
                     System.err.println("Failed to load remote artist: ${e.message}")
                 } finally {
                     isLoading = false
+                }
+            }
+        } else {
+            // Artiste local sans ID backend : appel de résolution non-bloquant
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val sampleTrack = localArtistTracks.firstOrNull()?.title
+                    val resp = orchestrator.apiService.resolveArtist(name = artistName, trackTitle = sampleTrack)
+                    val resolved = resp.data
+                    if (resolved != null) {
+                        resolvedCoverUri = resolved.pictureUri
+                        if (!resolved.pictureUri.isNullOrBlank()) {
+                            val now = System.currentTimeMillis()
+                            orchestrator.database.artistDao().updateArtwork(
+                                artistId = artistId,
+                                pictureUri = resolved.pictureUri!!,
+                                artworkOrigin = "backend_resolve",
+                                resolvedAt = now,
+                                updatedAt = now
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore transient resolution errors
                 }
             }
         }
@@ -83,7 +109,7 @@ fun ArtistDetailScreen(
             tag = "ARTISTE",
             title = artistName,
             subtitle = if (artistData != null) "${artistData!!.topTracks.size} titres populaires" else "${localArtistTracks.size} morceaux dans votre bibliothèque",
-            coverUri = artistData?.pictureUri ?: localArtistTracks.firstOrNull()?.coverUri,
+            coverUri = resolvedCoverUri ?: artistData?.pictureUri ?: localArtistTracks.firstOrNull()?.coverUri,
             onBack = { appState.navigateBack() },
             onPlayAll = {
                 if (localArtistTracks.isNotEmpty()) {
@@ -105,86 +131,82 @@ fun ArtistDetailScreen(
                         contextTracks = localArtistTracks.map { orchestrator.toQueuedTrack(it) },
                         startIndex = 0
                     )
-                    if (!orchestrator.queueManager.state.value.shuffleEnabled) {
-                        orchestrator.toggleShuffle()
-                    }
+                    orchestrator.toggleShuffle()
                 }
             }
         )
 
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = BlazeOrange)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // Section Discographie (si artiste en ligne)
-                if (artistData?.albums?.isNotEmpty() == true) {
-                    item {
-                        Text(
-                            text = "DISCOGRAPHIE",
-                            color = PureWhite.copy(alpha = 0.5f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(artistData!!.albums, key = { it.id }) { album ->
-                                ArtistAlbumCard(album = album, onClick = { appState.openAlbum(album.id) })
-                            }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 32.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp)
+        ) {
+            // Discographie en ligne si disponible
+            if (artistData?.albums?.isNotEmpty() == true) {
+                item {
+                    Text(
+                        text = "Discographie",
+                        color = PureWhite,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) {
+                        items(artistData!!.albums, key = { it.id }) { album ->
+                            DesktopArtistAlbumCard(
+                                album = album,
+                                onClick = {
+                                    appState.navigateTo("album_detail")
+                                    appState.selectedAlbumId = album.id
+                                }
+                            )
                         }
                     }
                 }
+            }
 
-                // Section Morceaux
-                item {
-                    Text(
-                        text = "TITRES",
-                        color = PureWhite.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+            // Morceaux
+            item {
+                Text(
+                    text = if (artistData != null) "Titres populaires" else "Morceaux locaux",
+                    color = PureWhite,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(14.dp))
 
-                    val tracksToShow = if (localArtistTracks.isNotEmpty()) localArtistTracks else {
-                        artistData?.topTracks?.map { tt ->
-                            TrackListRow(
-                                id = tt.id,
-                                artistId = tt.artistId ?: artistId,
-                                albumId = tt.albumId,
-                                title = tt.title,
-                                artistName = tt.displayArtistName,
-                                albumTitle = tt.displayAlbumTitle,
-                                contentUri = null,
-                                durationMs = tt.durationMs.toLong(),
-                                coverUri = tt.coverUri,
-                                isLiked = tt.isLiked,
-                                createdAt = 0L,
-                                updatedAt = 0L
-                            )
-                        } ?: emptyList()
-                    }
-
+                if (localArtistTracks.isNotEmpty()) {
                     DesktopTrackTable(
-                        tracks = tracksToShow,
-                        activeTrackId = uiState.currentTrack?.trackId,
-                        isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
-                        onTrackClick = { track, index ->
+                        tracks = localArtistTracks,
+                        currentPlayingTrackId = uiState.currentTrack?.trackId,
+                        isPlaying = uiState.isPlaying,
+                        orchestrator = orchestrator,
+                        database = orchestrator.database,
+                        appState = appState,
+                        onTrackClick = { clickedTrack ->
                             orchestrator.playTrack(
-                                trackId = track.id,
+                                trackId = clickedTrack.id,
                                 contextType = "artist",
                                 contextId = artistId,
-                                contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
-                                startIndex = index
+                                contextTracks = localArtistTracks.map { orchestrator.toQueuedTrack(it) },
+                                startIndex = localArtistTracks.indexOf(clickedTrack).coerceAtLeast(0)
                             )
                         },
-                        onToggleLike = onToggleLike,
-                        onOpenAlbum = { appState.openAlbum(it) }
+                        onToggleLike = onToggleLike
+                    )
+                } else if (isLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = BlazeOrange)
+                    }
+                } else {
+                    Text(
+                        text = "Aucun morceau trouvé pour cet artiste.",
+                        color = PureWhite.copy(alpha = 0.5f),
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -193,20 +215,27 @@ fun ArtistDetailScreen(
 }
 
 @Composable
-private fun ArtistAlbumCard(album: AlbumSummary, onClick: () -> Unit) {
+private fun DesktopArtistAlbumCard(
+    album: AlbumSummary,
+    onClick: () -> Unit
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
     Column(
         modifier = Modifier
-            .width(140.dp)
+            .width(150.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
-        DesktopArtworkCover(coverUri = album.coverUri, size = 120.dp, shapeRadius = 6.dp)
+        DesktopArtworkCover(
+            coverUri = album.coverUri,
+            size = 130.dp,
+            cornerRadius = 6.dp
+        )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = album.title,
@@ -216,10 +245,12 @@ private fun ArtistAlbumCard(album: AlbumSummary, onClick: () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text(
-            text = album.releaseDate?.take(4) ?: "Album",
-            color = PureWhite.copy(alpha = 0.5f),
-            fontSize = 11.sp
-        )
+        if (album.releaseDate != null) {
+            Text(
+                text = album.releaseDate.take(4),
+                color = PureWhite.copy(alpha = 0.5f),
+                fontSize = 11.sp
+            )
+        }
     }
 }

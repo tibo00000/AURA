@@ -6,11 +6,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.AlbumDetailResponseData
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
-import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.ui.theme.BlazeOrange
@@ -29,6 +29,7 @@ fun AlbumDetailScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     var albumData by remember { mutableStateOf<AlbumDetailResponseData?>(null) }
+    var resolvedCoverUri by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
     val localAlbumTracks = remember(albumId, allLocalTracks) {
@@ -43,10 +44,7 @@ fun AlbumDetailScreen(
         albumData?.primaryArtistName ?: localAlbumTracks.firstOrNull()?.artistName ?: "Artiste inconnu"
     }
 
-    val coverUri = remember(albumData, localAlbumTracks) {
-        albumData?.coverUri ?: localAlbumTracks.firstOrNull()?.coverUri
-    }
-
+    // Résolution hybride album et mise en cache Room (Point 3 de l'audit)
     LaunchedEffect(albumId) {
         if (albumId.startsWith("alb_")) {
             isLoading = true
@@ -55,6 +53,7 @@ fun AlbumDetailScreen(
                     val resp = orchestrator.apiService.getAlbum(albumId)
                     if (resp.data != null) {
                         albumData = resp.data
+                        resolvedCoverUri = resp.data?.coverUri
                     }
                 } catch (e: Exception) {
                     System.err.println("Failed to load remote album: ${e.message}")
@@ -62,7 +61,39 @@ fun AlbumDetailScreen(
                     isLoading = false
                 }
             }
+        } else {
+            // Album local sans ID distant : tentative de résolution
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val sampleTrack = localAlbumTracks.firstOrNull()?.title
+                    val resp = orchestrator.apiService.resolveAlbum(
+                        title = albumTitle,
+                        artistName = artistName,
+                        trackTitle = sampleTrack
+                    )
+                    val resolved = resp.data
+                    if (resolved != null) {
+                        resolvedCoverUri = resolved.coverUri
+                        if (!resolved.coverUri.isNullOrBlank()) {
+                            val now = System.currentTimeMillis()
+                            orchestrator.database.albumDao().updateArtwork(
+                                albumId = albumId,
+                                coverUri = resolved.coverUri!!,
+                                artworkOrigin = "backend_resolve",
+                                resolvedAt = now,
+                                updatedAt = now
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore transient resolution errors
+                }
+            }
         }
+    }
+
+    val coverUri = remember(albumData, localAlbumTracks, resolvedCoverUri) {
+        resolvedCoverUri ?: albumData?.coverUri ?: localAlbumTracks.firstOrNull()?.coverUri
     }
 
     val tracksToShow = remember(albumData, localAlbumTracks) {
@@ -98,8 +129,7 @@ fun AlbumDetailScreen(
         DesktopHeroHeader(
             tag = "ALBUM",
             title = albumTitle,
-            subtitle = "$artistName • ${tracksToShow.size} titres",
-            extraMetadata = formatTotalDuration(totalDurationMs),
+            subtitle = "$artistName • ${tracksToShow.size} titres • ${totalDurationMs / 60000} min",
             coverUri = coverUri,
             onBack = { appState.navigateBack() },
             onPlayAll = {
@@ -122,42 +152,40 @@ fun AlbumDetailScreen(
                         contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
                         startIndex = 0
                     )
-                    if (!orchestrator.queueManager.state.value.shuffleEnabled) {
-                        orchestrator.toggleShuffle()
-                    }
+                    orchestrator.toggleShuffle()
                 }
             }
         )
 
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = BlazeOrange)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 32.dp, vertical = 16.dp)
+        ) {
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BlazeOrange)
+                }
+            } else {
+                DesktopTrackTable(
+                    tracks = tracksToShow,
+                    currentPlayingTrackId = uiState.currentTrack?.trackId,
+                    isPlaying = uiState.isPlaying,
+                    orchestrator = orchestrator,
+                    database = orchestrator.database,
+                    appState = appState,
+                    onTrackClick = { clickedTrack ->
+                        orchestrator.playTrack(
+                            trackId = clickedTrack.id,
+                            contextType = "album",
+                            contextId = albumId,
+                            contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
+                            startIndex = tracksToShow.indexOf(clickedTrack).coerceAtLeast(0)
+                        )
+                    },
+                    onToggleLike = onToggleLike
+                )
             }
-        } else {
-            DesktopTrackTable(
-                tracks = tracksToShow,
-                activeTrackId = uiState.currentTrack?.trackId,
-                isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
-                onTrackClick = { track, index ->
-                    orchestrator.playTrack(
-                        trackId = track.id,
-                        contextType = "album",
-                        contextId = albumId,
-                        contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = index
-                    )
-                },
-                onToggleLike = onToggleLike,
-                onOpenArtist = { appState.openArtist(it) },
-                showAlbumColumn = false
-            )
         }
     }
-}
-
-private fun formatTotalDuration(ms: Long): String {
-    val totalMinutes = ms / 1000 / 60
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    return if (hours > 0) "$hours h $minutes min" else "$minutes min"
 }

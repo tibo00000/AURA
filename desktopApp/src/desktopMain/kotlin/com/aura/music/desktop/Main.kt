@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,34 +19,19 @@ import com.aura.music.data.local.*
 import com.aura.music.data.network.HistoryItemResponse
 import com.aura.music.data.network.KtorAuraApiService
 import com.aura.music.data.player.QueueManager
+import com.aura.music.desktop.domain.DesktopCloudSyncManager
+import com.aura.music.desktop.domain.DesktopDownloadManager
+import com.aura.music.desktop.domain.DesktopPlaylistManager
 import com.aura.music.desktop.security.DesktopSecureStorage
 import com.aura.music.desktop.state.DesktopAppState
-import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.*
 import com.aura.music.desktop.ui.screens.*
-import coil3.ImageLoader
-import coil3.compose.setSingletonImageLoaderFactory
-import coil3.network.ktor3.KtorNetworkFetcherFactory
-import coil3.memory.MemoryCache
+import com.aura.music.desktop.ui.theme.*
 import com.aura.music.domain.player.DesktopAudioPlayer
-import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 fun main() = application {
-    setSingletonImageLoaderFactory { context ->
-        ImageLoader.Builder(context)
-            .components {
-                add(KtorNetworkFetcherFactory())
-            }
-            .memoryCache {
-                MemoryCache.Builder()
-                    .maxSizePercent(context, 0.25)
-                    .build()
-            }
-            .build()
-    }
-
     var isVisible by remember { mutableStateOf(true) }
     val windowState = rememberWindowState(
         position = WindowPosition(Alignment.Center),
@@ -56,9 +43,22 @@ fun main() = application {
     val audioPlayer = remember { DesktopAudioPlayer() }
     val queueManager = remember { QueueManager() }
     val apiService = remember { KtorAuraApiService.createDefault() }
+    val coroutineScope = rememberCoroutineScope()
+
+    val cloudSyncManager = remember { DesktopCloudSyncManager(database, apiService, coroutineScope) }
+    val downloadManager = remember { DesktopDownloadManager(database, apiService, coroutineScope) }
+    val playlistManager = remember { DesktopPlaylistManager(database, cloudSyncManager) }
 
     val orchestrator = remember {
-        DesktopPlaybackOrchestrator(database, audioPlayer, queueManager, apiService).apply {
+        DesktopPlaybackOrchestrator(
+            database = database,
+            audioPlayer = audioPlayer,
+            queueManager = queueManager,
+            apiService = apiService,
+            playlistManager = playlistManager,
+            cloudSyncManager = cloudSyncManager,
+            downloadManager = downloadManager
+        ).apply {
             val savedToken = secureStorage.getSecret("supabase_token")
             apiToken = if (savedToken != null && !savedToken.contains("supabase_token_")) {
                 savedToken
@@ -71,40 +71,39 @@ fun main() = application {
     }
 
     val appState = remember { DesktopAppState() }
-    val coroutineScope = rememberCoroutineScope()
 
-    // Données réactives de la base Room
-    var allTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
-    var likedTracks by remember { mutableStateOf<List<TrackListRow>>(emptyList()) }
-    var playlists by remember { mutableStateOf<List<PlaylistListRow>>(emptyList()) }
-    var playlistTracks by remember { mutableStateOf<List<PlaylistTrackRow>>(emptyList()) }
-    var currentPlaylistName by remember { mutableStateOf("") }
-    var localAlbums by remember { mutableStateOf<List<AlbumBrowseRow>>(emptyList()) }
-    var localArtists by remember { mutableStateOf<List<ArtistBrowseRow>>(emptyList()) }
-    var history by remember { mutableStateOf<List<HistoryItemResponse>>(emptyList()) }
+    // =======================================================================
+    // FLUX RÉACTIFS ROOM (ZÉRO RELOAD MANUEL)
+    // =======================================================================
+    val allTracks by remember(database) {
+        database.trackDao().getAllTracksFlow()
+    }.collectAsState(initial = emptyList())
+
+    val likedTracks by remember(database) {
+        database.trackDao().getLikedTracksFlow()
+    }.collectAsState(initial = emptyList())
+
+    val playlists by remember(database) {
+        database.playlistDao().getPlaylistsFlow()
+    }.collectAsState(initial = emptyList())
+
+    val localAlbums by remember(database) {
+        database.albumDao().getAllBrowseAlbumsFlow()
+    }.collectAsState(initial = emptyList())
+
+    val localArtists by remember(database) {
+        database.artistDao().getAllBrowseArtistsFlow()
+    }.collectAsState(initial = emptyList())
 
     val downloadJobs by remember(database) {
         database.downloadJobDao().getAllJobsWithTrackFlow()
     }.collectAsState(initial = emptyList())
 
-    // Méthode de rechargement des données locales
-    fun reloadDbData() {
-        coroutineScope.launch(Dispatchers.IO) {
-            allTracks = database.trackDao().getAllTracks()
-            likedTracks = database.trackDao().getLikedTracks()
-            playlists = database.playlistDao().getPlaylists()
-            localAlbums = database.albumDao().getAllBrowseAlbums()
-            localArtists = database.artistDao().getAllBrowseArtists()
+    var history by remember { mutableStateOf<List<HistoryItemResponse>>(emptyList()) }
 
-            appState.selectedPlaylistId?.let { id ->
-                val pl = database.playlistDao().getPlaylistDetail(id)
-                if (pl != null) {
-                    currentPlaylistName = pl.name
-                    playlistTracks = database.playlistDao().getPlaylistTracks(id)
-                }
-            }
-
-            orchestrator.apiToken?.let { token ->
+    fun refreshHistory() {
+        orchestrator.apiToken?.let { token ->
+            coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val resp = apiService.getHistory(token)
                     if (resp.data?.items != null) {
@@ -119,12 +118,11 @@ fun main() = application {
 
     LaunchedEffect(Unit) {
         orchestrator.connect {
-            reloadDbData()
+            refreshHistory()
         }
-        reloadDbData()
+        refreshHistory()
     }
 
-    // Gestion de la visibilité pour l'orchestrateur (pause du rendu/tickers en arrière-plan)
     LaunchedEffect(isVisible) {
         orchestrator.isWindowVisible = isVisible
     }
@@ -139,13 +137,16 @@ fun main() = application {
             orchestrator.isWindowVisible = true
         },
         menu = {
-            Item("Ouvrir AURA", onClick = {
+            Item("Afficher AURA", onClick = {
                 isVisible = true
                 orchestrator.isWindowVisible = true
             })
-            Item("Lecture / Pause", onClick = { orchestrator.togglePlayPause() })
-            Item("Suivant", onClick = { orchestrator.next() })
-            Item("Précédent", onClick = { orchestrator.previous() })
+            Separator()
+            Item(if (orchestrator.audioPlayer.isPlaying()) "Mettre en pause" else "Lecture", onClick = {
+                orchestrator.togglePlayPause()
+            })
+            Item("Piste suivante", onClick = { orchestrator.next() })
+            Item("Piste précédente", onClick = { orchestrator.previous() })
             Separator()
             Item("Quitter", onClick = {
                 orchestrator.disconnect()
@@ -157,64 +158,126 @@ fun main() = application {
     if (isVisible) {
         Window(
             onCloseRequest = {
-                // Réduction dans le System Tray (pause rendu Skia et maintien de la musique)
                 isVisible = false
                 orchestrator.isWindowVisible = false
             },
             state = windowState,
-            title = "AURA Music Player",
+            title = "AURA",
+            undecorated = false,
             onKeyEvent = { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown && !appState.isInputFocused) {
-                    when {
-                        // Play / Pause sur Espace (si aucun champ texte focalisé)
-                        keyEvent.key == Key.Spacebar -> {
-                            orchestrator.togglePlayPause()
-                            true
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    val isCtrl = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
+                    val isAlt = keyEvent.isAltPressed
+                    val isShift = keyEvent.isShiftPressed
+
+                    // Tous les raccourcis globaux sont strictement désactivés si la saisie a le focus
+                    if (!appState.isInputFocused) {
+                        when {
+                            // Espace : Play / Pause
+                            keyEvent.key == Key.Spacebar && !isCtrl && !isAlt -> {
+                                orchestrator.togglePlayPause()
+                                true
+                            }
+                            // Ctrl + Flèche Droite : Piste suivante
+                            keyEvent.key == Key.DirectionRight && isCtrl -> {
+                                orchestrator.next()
+                                true
+                            }
+                            // Ctrl + Flèche Gauche : Piste précédente
+                            keyEvent.key == Key.DirectionLeft && isCtrl -> {
+                                orchestrator.previous()
+                                true
+                            }
+                            // Flèche Droite seule : Avance rapide de 5 secondes
+                            keyEvent.key == Key.DirectionRight && !isCtrl && !isAlt -> {
+                                val currentPos = orchestrator.audioPlayer.getCurrentPosition()
+                                val duration = orchestrator.audioPlayer.getDuration()
+                                orchestrator.seekTo((currentPos + 5000L).coerceAtMost(duration))
+                                true
+                            }
+                            // Flèche Gauche seule : Recul rapide de 5 secondes
+                            keyEvent.key == Key.DirectionLeft && !isCtrl && !isAlt -> {
+                                val currentPos = orchestrator.audioPlayer.getCurrentPosition()
+                                orchestrator.seekTo((currentPos - 5000L).coerceAtLeast(0L))
+                                true
+                            }
+                            // Ctrl + Flèche Haut : Volume +5%
+                            keyEvent.key == Key.DirectionUp && isCtrl -> {
+                                orchestrator.setVolume((orchestrator.audioPlayer.getVolume() + 0.05f).coerceAtMost(1f))
+                                true
+                            }
+                            // Ctrl + Flèche Bas : Volume -5%
+                            keyEvent.key == Key.DirectionDown && isCtrl -> {
+                                orchestrator.setVolume((orchestrator.audioPlayer.getVolume() - 0.05f).coerceAtLeast(0f))
+                                true
+                            }
+                            // L : Toggle Like du titre en cours
+                            keyEvent.key == Key.L && !isCtrl && !isAlt -> {
+                                orchestrator.uiState.value.currentTrack?.let { current ->
+                                    orchestrator.toggleLike(current.trackId)
+                                }
+                                true
+                            }
+                            // Alt + Flèche Gauche : Navigation retour
+                            keyEvent.key == Key.DirectionLeft && isAlt -> {
+                                appState.navigateBack()
+                                true
+                            }
+                            // Ctrl + F : Recherche
+                            keyEvent.key == Key.F && isCtrl -> {
+                                appState.navigateTo("search")
+                                true
+                            }
+                            // Ctrl + Shift + Q : Tiroir de file d'attente
+                            keyEvent.key == Key.Q && isCtrl && isShift -> {
+                                appState.toggleQueue()
+                                true
+                            }
+                            // Ctrl + Q : Masquer dans le Tray
+                            keyEvent.key == Key.Q && isCtrl && !isShift -> {
+                                isVisible = false
+                                orchestrator.isWindowVisible = false
+                                true
+                            }
+                            else -> false
                         }
-                        // Suivant : Ctrl + Flèche Droite
-                        keyEvent.isCtrlPressed && keyEvent.key == Key.DirectionRight -> {
-                            orchestrator.next()
-                            true
-                        }
-                        // Précédent : Ctrl + Flèche Gauche
-                        keyEvent.isCtrlPressed && keyEvent.key == Key.DirectionLeft -> {
-                            orchestrator.previous()
-                            true
-                        }
-                        // Focus Recherche : Ctrl + F
-                        keyEvent.isCtrlPressed && keyEvent.key == Key.F -> {
-                            appState.navigateToRoot("search")
-                            true
-                        }
-                        // Ouvrir/Fermer Queue : Ctrl + Shift + Q (pas de conflit avec Ctrl+Q)
-                        keyEvent.isCtrlPressed && keyEvent.isShiftPressed && keyEvent.key == Key.Q -> {
-                            appState.toggleQueue()
-                            true
-                        }
-                        // Quitter : Ctrl + Q
-                        keyEvent.isCtrlPressed && !keyEvent.isShiftPressed && keyEvent.key == Key.Q -> {
-                            orchestrator.disconnect()
-                            exitApplication()
-                            true
-                        }
-                        else -> false
+                    } else {
+                        false
                     }
-                } else false
+                } else {
+                    false
+                }
             }
         ) {
-            AuraTheme {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = BlazeOrange,
+                    background = DeepBlack,
+                    surface = CardDark,
+                    onPrimary = PureWhite,
+                    onBackground = PureWhite,
+                    onSurface = PureWhite
+                )
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = DeepBlack
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // 1. Structure 3 Volets
-                        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            // Volet Gauche : Sidebar
+                        // 1. Zone Supérieure (3 volets widescreen)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
+                            // Volet Gauche : Navigation & Playlists
                             DesktopSidebar(
                                 appState = appState,
                                 playlists = playlists,
-                                activeDownloadsCount = downloadJobs.count { it.status == "running" || it.status == "queued" }
+                                onPlaylistSelected = { plId ->
+                                    appState.navigateTo("playlist_detail")
+                                    appState.selectedPlaylistId = plId
+                                }
                             )
 
                             // Volet Central : Écrans
@@ -239,9 +302,7 @@ fun main() = application {
                                         allArtists = localArtists,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = {
-                                            orchestrator.toggleLike(it) { reloadDbData() }
-                                        }
+                                        onToggleLike = { orchestrator.toggleLike(it) }
                                     )
                                     "library" -> LibraryScreen(
                                         allTracks = allTracks,
@@ -250,33 +311,30 @@ fun main() = application {
                                         playlists = playlists,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = {
-                                            orchestrator.toggleLike(it) { reloadDbData() }
-                                        }
+                                        onToggleLike = { orchestrator.toggleLike(it) }
                                     )
                                     "favorites" -> FavoritesScreen(
                                         likedTracks = likedTracks,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = {
-                                            orchestrator.toggleLike(it) { reloadDbData() }
-                                        }
+                                        onToggleLike = { orchestrator.toggleLike(it) }
                                     )
                                     "playlist_detail" -> {
                                         val plId = appState.selectedPlaylistId ?: ""
-                                        LaunchedEffect(plId) {
-                                            reloadDbData()
-                                        }
+                                        val playlistDetailTracks by remember(database, plId) {
+                                            database.playlistDao().getPlaylistTracksFlow(plId)
+                                        }.collectAsState(initial = emptyList())
+
+                                        val currentPlaylist = playlists.firstOrNull { it.id == plId }
+
                                         PlaylistDetailScreen(
                                             playlistId = plId,
-                                            playlistName = currentPlaylistName,
-                                            playlistTracks = playlistTracks,
+                                            playlistName = currentPlaylist?.name ?: "Playlist",
+                                            playlistTracks = playlistDetailTracks,
                                             orchestrator = orchestrator,
                                             appState = appState,
-                                            onToggleLike = {
-                                                orchestrator.toggleLike(it) { reloadDbData() }
-                                            },
-                                            onReloadData = { reloadDbData() }
+                                            onToggleLike = { orchestrator.toggleLike(it) },
+                                            onReloadData = { }
                                         )
                                     }
                                     "artist_detail" -> ArtistDetailScreen(
@@ -284,18 +342,14 @@ fun main() = application {
                                         allLocalTracks = allTracks,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = {
-                                            orchestrator.toggleLike(it) { reloadDbData() }
-                                        }
+                                        onToggleLike = { orchestrator.toggleLike(it) }
                                     )
                                     "album_detail" -> AlbumDetailScreen(
                                         albumId = appState.selectedAlbumId ?: "",
                                         allLocalTracks = allTracks,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = {
-                                            orchestrator.toggleLike(it) { reloadDbData() }
-                                        }
+                                        onToggleLike = { orchestrator.toggleLike(it) }
                                     )
                                     "downloads" -> DownloadsScreen(
                                         downloadJobs = downloadJobs,
@@ -306,13 +360,13 @@ fun main() = application {
                                         allTracks = allTracks,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onReloadData = { reloadDbData() }
+                                        onReloadData = { }
                                     )
                                     "settings" -> SettingsScreen(
                                         orchestrator = orchestrator,
                                         appState = appState,
                                         secureStorage = secureStorage,
-                                        onReloadData = { reloadDbData() }
+                                        onReloadData = { }
                                     )
                                 }
                             }
@@ -330,9 +384,7 @@ fun main() = application {
                         DesktopPlayerBar(
                             orchestrator = orchestrator,
                             appState = appState,
-                            onToggleLike = {
-                                orchestrator.toggleLike(it) { reloadDbData() }
-                            }
+                            onToggleLike = { orchestrator.toggleLike(it) }
                         )
                     }
 
@@ -340,20 +392,27 @@ fun main() = application {
                     DesktopCreatePlaylistDialog(
                         appState = appState,
                         orchestrator = orchestrator,
-                        onPlaylistCreated = { reloadDbData() }
+                        onPlaylistCreated = { }
                     )
 
                     DesktopRenamePlaylistDialog(
                         appState = appState,
                         orchestrator = orchestrator,
-                        onPlaylistRenamed = { reloadDbData() }
+                        onPlaylistRenamed = { }
                     )
 
                     DesktopAddToPlaylistDialog(
                         appState = appState,
                         playlists = playlists,
                         orchestrator = orchestrator,
-                        onTrackAdded = { reloadDbData() }
+                        onTrackAdded = { }
+                    )
+
+                    DesktopImportPlaylistDialog(
+                        appState = appState,
+                        allTracks = allTracks,
+                        playlistManager = playlistManager,
+                        onPlaylistImported = { }
                     )
                 }
             }

@@ -2,30 +2,33 @@ package com.aura.music.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import com.aura.music.data.local.PlaylistTrackRow
-import com.aura.music.data.local.TrackListRow
-import com.aura.music.desktop.DesktopPlaybackOrchestrator
-import com.aura.music.desktop.state.DesktopAppState
-import com.aura.music.desktop.ui.*
-import com.aura.music.desktop.ui.components.DesktopHeroHeader
-import com.aura.music.desktop.ui.components.DesktopTrackTable
-import com.aura.music.ui.theme.DeepBlack
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aura.music.data.local.PlaylistTrackRow
+import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.playlist.PlaylistImportExportEngine
+import com.aura.music.desktop.DesktopPlaybackOrchestrator
+import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.components.DesktopHeroHeader
+import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.DarkGraphite
+import com.aura.music.ui.theme.DeepBlack
+import com.aura.music.ui.theme.PureWhite
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun PlaylistDetailScreen(
@@ -41,9 +44,8 @@ fun PlaylistDetailScreen(
     val coroutineScope = rememberCoroutineScope()
     val uiState by orchestrator.uiState.collectAsState()
     var showOptionsMenu by remember { mutableStateOf(false) }
-    var deduplicationMessage by remember { mutableStateOf<String?>(null) }
+    var notificationMessage by remember { mutableStateOf<String?>(null) }
 
-    // Conversion en TrackListRow pour le tableau
     val convertedTracks = remember(playlistTracks) {
         playlistTracks.map { pt ->
             TrackListRow(
@@ -137,10 +139,37 @@ fun PlaylistDetailScreen(
                             val removedCount = orchestrator.deduplicatePlaylist(playlistId)
                             withContext(Dispatchers.Main) {
                                 onReloadData()
-                                deduplicationMessage = if (removedCount > 0) {
+                                notificationMessage = if (removedCount > 0) {
                                     "$removedCount doublon(s) supprimé(s)"
                                 } else {
                                     "Aucun doublon trouvé"
+                                }
+                            }
+                        }
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Exporter en .m3u8", color = PureWhite, fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Rounded.FileDownload, contentDescription = null, tint = PureWhite, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        showOptionsMenu = false
+                        val chooser = JFileChooser().apply {
+                            dialogTitle = "Exporter la playlist en .m3u8"
+                            fileFilter = FileNameExtensionFilter("Playlist M3U8 (*.m3u8)", "m3u8")
+                            selectedFile = File("$playlistName.m3u8")
+                        }
+                        if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                try {
+                                    val m3u8Content = PlaylistImportExportEngine.exportToM3u8(playlistName, convertedTracks)
+                                    chooser.selectedFile.writeText(m3u8Content)
+                                    withContext(Dispatchers.Main) {
+                                        notificationMessage = "Playlist exportée avec succès en M3U8 !"
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        notificationMessage = "Erreur d'export : ${e.message}"
+                                    }
                                 }
                             }
                         }
@@ -157,10 +186,10 @@ fun PlaylistDetailScreen(
             }
         }
 
-        if (deduplicationMessage != null) {
-            LaunchedEffect(deduplicationMessage) {
-                kotlinx.coroutines.delay(3000)
-                deduplicationMessage = null
+        if (notificationMessage != null) {
+            LaunchedEffect(notificationMessage) {
+                kotlinx.coroutines.delay(3500)
+                notificationMessage = null
             }
             Surface(
                 color = DarkGraphite,
@@ -173,27 +202,28 @@ fun PlaylistDetailScreen(
                 ) {
                     Icon(Icons.Rounded.Info, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(text = deduplicationMessage!!, color = PureWhite, fontSize = 13.sp)
+                    Text(text = notificationMessage!!, color = PureWhite, fontSize = 13.sp)
                 }
             }
         }
 
         DesktopTrackTable(
             tracks = convertedTracks,
-            activeTrackId = uiState.currentTrack?.trackId,
-            isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
-            onTrackClick = { track, index ->
+            currentPlayingTrackId = uiState.currentTrack?.trackId,
+            isPlaying = uiState.isPlaying,
+            orchestrator = orchestrator,
+            database = orchestrator.database,
+            appState = appState,
+            onTrackClick = { clickedTrack ->
                 orchestrator.playTrack(
-                    trackId = track.id,
+                    trackId = clickedTrack.id,
                     contextType = "playlist",
                     contextId = playlistId,
                     contextTracks = convertedTracks.map { orchestrator.toQueuedTrack(it) },
-                    startIndex = index
+                    startIndex = convertedTracks.indexOf(clickedTrack).coerceAtLeast(0)
                 )
             },
-            onToggleLike = onToggleLike,
-            onOpenArtist = { appState.openArtist(it) },
-            onOpenAlbum = { appState.openAlbum(it) }
+            onToggleLike = onToggleLike
         )
     }
 }

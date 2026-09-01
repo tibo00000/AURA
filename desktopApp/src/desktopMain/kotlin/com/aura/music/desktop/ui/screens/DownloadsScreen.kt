@@ -1,6 +1,7 @@
 package com.aura.music.desktop.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,8 +21,8 @@ import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
-import com.aura.music.desktop.ui.*
-import com.aura.music.ui.theme.*
+import com.aura.music.desktop.ui.components.DesktopDownloadErrorDetailDialog
+import com.aura.music.desktop.ui.theme.*
 
 @Composable
 fun DownloadsScreen(
@@ -30,6 +31,8 @@ fun DownloadsScreen(
     appState: DesktopAppState,
     modifier: Modifier = Modifier
 ) {
+    var selectedJobForError by remember { mutableStateOf<DownloadJobRowModel?>(null) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -50,7 +53,7 @@ fun DownloadsScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${downloadJobs.size} tâches au total",
+                    text = "${downloadJobs.size} tâches au total (moteur de téléchargement : yt-dlp / deezer)",
                     color = PureWhite.copy(alpha = 0.5f),
                     fontSize = 14.sp
                 )
@@ -100,11 +103,22 @@ fun DownloadsScreen(
                     DownloadJobRowItem(
                         jobItem = jobItem,
                         onRetry = { orchestrator.retryDownloadJob(jobItem.jobId) },
-                        onCancel = { orchestrator.cancelDownloadJob(jobItem.jobId) }
+                        onCancel = { orchestrator.cancelDownloadJob(jobItem.jobId) },
+                        onErrorClick = { selectedJobForError = jobItem }
                     )
                 }
             }
         }
+    }
+
+    if (selectedJobForError != null) {
+        DesktopDownloadErrorDetailDialog(
+            job = selectedJobForError,
+            onDismiss = { selectedJobForError = null },
+            onRetry = {
+                orchestrator.retryDownloadJob(selectedJobForError!!.jobId)
+            }
+        )
     }
 }
 
@@ -112,10 +126,16 @@ fun DownloadsScreen(
 private fun DownloadJobRowItem(
     jobItem: DownloadJobRowModel,
     onRetry: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onErrorClick: () -> Unit
 ) {
+    val isFailed = jobItem.status.equals("failed", ignoreCase = true)
+
     Card(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = isFailed, onClick = onErrorClick),
         colors = CardDefaults.cardColors(containerColor = OffBlack)
     ) {
         Row(
@@ -174,7 +194,7 @@ private fun DownloadJobRowItem(
                 if (!jobItem.errorMessage.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = jobItem.errorMessage!!,
+                        text = "${jobItem.errorMessage} (cliquez pour voir les logs yt-dlp)",
                         color = MaterialTheme.colorScheme.error,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -201,7 +221,7 @@ private fun DownloadJobRowItem(
             )
 
             // Actions
-            if (jobItem.status.equals("failed", ignoreCase = true)) {
+            if (isFailed) {
                 IconButton(onClick = onRetry) {
                     Icon(imageVector = Icons.Rounded.Refresh, contentDescription = "Réessayer", tint = BlazeOrange)
                 }

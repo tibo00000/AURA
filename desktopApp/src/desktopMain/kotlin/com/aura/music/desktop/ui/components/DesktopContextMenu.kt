@@ -12,8 +12,8 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.TrackListRow
-import com.aura.music.desktop.ui.*
-import com.aura.music.ui.theme.*
+import com.aura.music.desktop.ui.isCloudOnly
+import com.aura.music.desktop.ui.theme.*
 
 @Composable
 fun DesktopTrackContextMenu(
@@ -26,6 +26,7 @@ fun DesktopTrackContextMenu(
     onOpenArtist: () -> Unit,
     onOpenAlbum: () -> Unit,
     onToggleLike: () -> Unit,
+    onEditMetadata: (() -> Unit)? = null,
     onDownloadCloud: (() -> Unit)? = null,
     onUploadCloud: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
@@ -36,7 +37,7 @@ fun DesktopTrackContextMenu(
         onDismissRequest = onDismissRequest,
         offset = offset,
         modifier = Modifier
-            .width(220.dp)
+            .width(230.dp)
             .background(DarkGraphite)
     ) {
         ContextMenuItem(
@@ -80,6 +81,17 @@ fun DesktopTrackContextMenu(
                 label = "Voir l'album",
                 onClick = {
                     onOpenAlbum()
+                    onDismissRequest()
+                }
+            )
+        }
+
+        if (onEditMetadata != null && !track.contentUri.isNullOrBlank()) {
+            ContextMenuItem(
+                icon = Icons.Rounded.Edit,
+                label = "Modifier les métadonnées",
+                onClick = {
+                    onEditMetadata()
                     onDismissRequest()
                 }
             )

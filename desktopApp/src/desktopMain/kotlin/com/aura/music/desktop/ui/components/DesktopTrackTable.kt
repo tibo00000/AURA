@@ -24,12 +24,109 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.desktop.DesktopPlaybackOrchestrator
+import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.*
 import com.aura.music.ui.theme.*
 
 enum class TrackSortField {
     DEFAULT, TITLE, ARTIST, ALBUM, DURATION, DATE_ADDED
+}
+
+@Composable
+fun DesktopTrackTable(
+    tracks: List<TrackListRow>,
+    currentPlayingTrackId: String?,
+    isPlaying: Boolean,
+    orchestrator: DesktopPlaybackOrchestrator,
+    database: AuraDatabase,
+    appState: DesktopAppState,
+    onTrackClick: (TrackListRow) -> Unit,
+    onToggleLike: (String) -> Unit,
+    showAlbumColumn: Boolean = true,
+    showDateAddedColumn: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    var trackForContextMenu by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackForMetadataEdit by remember { mutableStateOf<TrackListRow?>(null) }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        DesktopTrackTable(
+            tracks = tracks,
+            activeTrackId = currentPlayingTrackId,
+            isPlaying = isPlaying,
+            onTrackClick = { trk, _ -> onTrackClick(trk) },
+            onToggleLike = onToggleLike,
+            onOpenArtist = { artId ->
+                appState.navigateTo("artist_detail")
+                appState.selectedArtistId = artId
+            },
+            onOpenAlbum = { albId ->
+                appState.navigateTo("album_detail")
+                appState.selectedAlbumId = albId
+            },
+            onContextMenu = { trk ->
+                trackForContextMenu = trk
+            },
+            showAlbumColumn = showAlbumColumn,
+            showDateAddedColumn = showDateAddedColumn
+        )
+
+        // Menu contextuel
+        if (trackForContextMenu != null) {
+            val trk = trackForContextMenu!!
+            DesktopTrackContextMenu(
+                expanded = true,
+                onDismissRequest = { trackForContextMenu = null },
+                track = trk,
+                onPlayNext = {
+                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
+                },
+                onAddToQueue = {
+                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
+                },
+                onAddToPlaylist = {
+                    appState.trackIdToAddToPlaylist = trk.id
+                    appState.showAddToPlaylistDialog = true
+                },
+                onOpenArtist = {
+                    appState.navigateTo("artist_detail")
+                    appState.selectedArtistId = trk.artistId ?: "artist:${trk.artistName}"
+                },
+                onOpenAlbum = {
+                    trk.albumId?.let {
+                        appState.navigateTo("album_detail")
+                        appState.selectedAlbumId = it
+                    }
+                },
+                onToggleLike = {
+                    onToggleLike(trk.id)
+                },
+                onEditMetadata = {
+                    trackForMetadataEdit = trk
+                },
+                onDownloadCloud = {
+                    orchestrator.triggerSingleFileDownload(trk)
+                },
+                onUploadCloud = {
+                    orchestrator.triggerSingleFileUpload(trk)
+                }
+            )
+        }
+
+        // Dialogue d'édition de métadonnées
+        if (trackForMetadataEdit != null) {
+            DesktopEditMetadataDialog(
+                track = trackForMetadataEdit,
+                database = database,
+                appState = appState,
+                onDismiss = { trackForMetadataEdit = null },
+                onSaved = { }
+            )
+        }
+    }
 }
 
 @Composable
@@ -49,7 +146,6 @@ fun DesktopTrackTable(
     var sortField by remember { mutableStateOf(TrackSortField.DEFAULT) }
     var sortAscending by remember { mutableStateOf(true) }
 
-    // Tri mémoïsé (ne se recalcule QUE lors d'un changement de champ/ordre ou de liste)
     val sortedTracks = remember(tracks, sortField, sortAscending) {
         when (sortField) {
             TrackSortField.DEFAULT -> tracks
@@ -62,7 +158,6 @@ fun DesktopTrackTable(
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // En-tête des colonnes
         TrackTableHeaderRow(
             sortField = sortField,
             sortAscending = sortAscending,
@@ -80,7 +175,6 @@ fun DesktopTrackTable(
 
         HorizontalDivider(color = HairlineDark, thickness = 1.dp)
 
-        // Liste virtualisée des lignes
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -258,7 +352,6 @@ private fun TrackTableRowItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Numéro ou icône Play / Égaliseur
         Box(
             modifier = Modifier.width(40.dp),
             contentAlignment = Alignment.Center
@@ -291,7 +384,6 @@ private fun TrackTableRowItem(
             }
         }
 
-        // Titre & Pochette
         Row(
             modifier = Modifier.weight(2.5f),
             verticalAlignment = Alignment.CenterVertically
@@ -332,7 +424,6 @@ private fun TrackTableRowItem(
             }
         }
 
-        // Artiste
         Text(
             text = track.displayArtist,
             color = PureWhite.copy(alpha = 0.7f),
@@ -344,7 +435,6 @@ private fun TrackTableRowItem(
                 .clickable { onOpenArtist() }
         )
 
-        // Album
         if (showAlbumColumn) {
             Text(
                 text = track.displayAlbum ?: "-",
@@ -358,7 +448,6 @@ private fun TrackTableRowItem(
             )
         }
 
-        // Date d'ajout
         if (showDateAddedColumn) {
             Text(
                 text = formatTimestamp(track.createdAt),
@@ -368,7 +457,6 @@ private fun TrackTableRowItem(
             )
         }
 
-        // Actions & Durée
         Row(
             modifier = Modifier.width(100.dp),
             horizontalArrangement = Arrangement.End,
@@ -397,7 +485,7 @@ private fun TrackTableRowItem(
             )
 
             IconButton(
-                onClick = onContextMenu ?: {},
+                onClick = { onContextMenu?.invoke(track) },
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(

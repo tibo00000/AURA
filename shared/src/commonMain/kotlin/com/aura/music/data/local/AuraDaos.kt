@@ -5,6 +5,7 @@ import androidx.room3.Insert
 import androidx.room3.OnConflictStrategy
 import androidx.room3.Query
 import androidx.room3.Upsert
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ArtistDao {
@@ -50,6 +51,24 @@ interface ArtistDao {
         """,
     )
     suspend fun getAllBrowseArtists(): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
+        FROM artists
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        GROUP BY artists.id
+        ORDER BY lower(artists.name) ASC
+        """,
+    )
+    fun getAllBrowseArtistsFlow(): Flow<List<ArtistBrowseRow>>
 
     @Query(
         """
@@ -158,6 +177,24 @@ interface AlbumDao {
         """,
     )
     suspend fun getAllBrowseAlbums(): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        INNER JOIN tracks ON tracks.album_id = albums.id
+        GROUP BY albums.id
+        ORDER BY albums.title ASC
+        """,
+    )
+    fun getAllBrowseAlbumsFlow(): Flow<List<AlbumBrowseRow>>
 
     @Query(
         """
@@ -418,59 +455,10 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.primary_artist_id = :artistId
-        ORDER BY tracks.created_at DESC, tracks.title ASC
-        LIMIT :limit
+        ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
         """,
     )
-    suspend fun getTracksForArtist(artistId: String, limit: Int): List<TrackListRow>
-
-    @Query(
-        """
-        SELECT
-            tracks.id AS id,
-            tracks.primary_artist_id AS artist_id,
-            tracks.album_id AS album_id,
-            tracks.title AS title,
-            tracks.display_artist_name AS artist_name,
-            tracks.display_album_title AS album_title,
-            track_media_links.content_uri AS content_uri,
-            tracks.duration_ms AS duration_ms,
-            tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked,
-            tracks.created_at AS created_at,
-            tracks.updated_at AS updated_at
-        FROM tracks
-        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.album_id = :albumId
-        ORDER BY tracks.title ASC, tracks.created_at DESC
-        """,
-    )
-    suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
-
-    @Query(
-        """
-        SELECT
-            tracks.id AS id,
-            tracks.primary_artist_id AS artist_id,
-            tracks.album_id AS album_id,
-            tracks.title AS title,
-            tracks.display_artist_name AS artist_name,
-            tracks.display_album_title AS album_title,
-            track_media_links.content_uri AS content_uri,
-            tracks.duration_ms AS duration_ms,
-            tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked,
-            tracks.created_at AS created_at,
-            tracks.updated_at AS updated_at
-        FROM tracks
-        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE lower(tracks.display_album_title) = lower(:albumTitle)
-          AND lower(tracks.display_artist_name) = lower(:artistName)
-        ORDER BY tracks.title ASC, tracks.created_at DESC
-        """
-    )
-    suspend fun getTracksForAlbumByText(albumTitle: String, artistName: String): List<TrackListRow>
+    fun getAllTracksFlow(): Flow<List<TrackListRow>>
 
     @Query(
         """
@@ -495,6 +483,30 @@ interface TrackDao {
         """,
     )
     suspend fun getLikedTracks(): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        INNER JOIN track_likes ON track_likes.track_id = tracks.id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.is_liked = 1
+        ORDER BY track_likes.liked_at DESC
+        """,
+    )
+    fun getLikedTracksFlow(): Flow<List<TrackListRow>>
 
     @Query(
         """
@@ -567,6 +579,22 @@ interface PlaylistDao {
 
     @Query(
         """
+        SELECT
+            playlists.id AS id,
+            playlists.name AS name,
+            playlists.is_pinned AS is_pinned,
+            COUNT(playlist_items.id) AS item_count,
+            playlists.updated_at AS updated_at
+        FROM playlists
+        LEFT JOIN playlist_items ON playlist_items.playlist_id = playlists.id
+        GROUP BY playlists.id
+        ORDER BY is_pinned DESC, updated_at DESC
+        """,
+    )
+    fun getPlaylistsFlow(): Flow<List<PlaylistListRow>>
+
+    @Query(
+        """
         SELECT tracks.cover_uri
         FROM playlist_items
         JOIN tracks ON tracks.id = playlist_items.track_id
@@ -622,6 +650,32 @@ interface PlaylistDao {
         """,
     )
     suspend fun getPlaylistTracks(playlistId: String): List<PlaylistTrackRow>
+
+    @Query(
+        """
+        SELECT
+            playlist_items.id AS playlist_item_id,
+            playlist_items.playlist_id AS playlist_id,
+            playlist_items.track_id AS track_id,
+            playlist_items.position AS position,
+            playlist_items.added_at AS added_at,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.is_liked AS is_liked
+        FROM playlist_items
+        INNER JOIN tracks ON tracks.id = playlist_items.track_id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE playlist_items.playlist_id = :playlistId
+        ORDER BY playlist_items.position ASC
+        """,
+    )
+    fun getPlaylistTracksFlow(playlistId: String): Flow<List<PlaylistTrackRow>>
 
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_items WHERE playlist_id = :playlistId")
     suspend fun getNextPlaylistPosition(playlistId: String): Int
