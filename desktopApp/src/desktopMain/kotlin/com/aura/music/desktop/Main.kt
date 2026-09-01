@@ -35,7 +35,11 @@ fun main() = application {
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
             .components {
-                add(KtorNetworkFetcherFactory())
+                add(KtorNetworkFetcherFactory(httpClient = {
+                    io.ktor.client.HttpClient(io.ktor.client.engine.okhttp.OkHttp) {
+                        followRedirects = true
+                    }
+                }))
             }
             .memoryCache {
                 MemoryCache.Builder()

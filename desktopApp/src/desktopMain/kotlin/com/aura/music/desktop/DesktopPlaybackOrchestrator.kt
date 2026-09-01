@@ -82,6 +82,9 @@ class DesktopPlaybackOrchestrator(
                 syncCloudData(token) {
                     onDataChanged?.invoke()
                 }
+                if (!audioPlayer.isPlaying() && queueManager.state.value.currentTrack == null) {
+                    restoreSnapshot()
+                }
             }
         }
 
@@ -151,17 +154,47 @@ class DesktopPlaybackOrchestrator(
         if (audioPlayer.isPlaying()) {
             audioPlayer.pause()
             syncUiState(PlaybackState.Paused)
+            saveSnapshot()
         } else {
-            val currentPos = audioPlayer.getCurrentPosition()
-            if (currentPos == 0L && currentTrack.contentUri != null) {
+            val currentPos = _uiState.value.positionMs
+            if (currentTrack.contentUri != null) {
                 audioPlayer.play(currentTrack.contentUri!!)
+                if (currentPos > 0) {
+                    audioPlayer.seekTo(currentPos)
+                }
+                syncUiState(PlaybackState.Playing)
+                saveSnapshot()
             } else {
-                audioPlayer.play(currentTrack.contentUri ?: return)
-                audioPlayer.seekTo(currentPos)
+                // Track is on cloud: trigger on-demand download and play at restored position
+                scope.launch(Dispatchers.IO) {
+                    val token = apiToken ?: return@launch
+                    try {
+                        downloadCloudTrack(
+                            token = token,
+                            trackId = currentTrack.trackId,
+                            title = currentTrack.title,
+                            artistName = currentTrack.artistName,
+                            albumTitle = currentTrack.albumTitle,
+                            durationMs = currentTrack.durationMs ?: 0L,
+                            coverUri = currentTrack.coverUri
+                        )
+                        val localUri = database.trackDao().getTrackContentUri(currentTrack.trackId)
+                        if (localUri != null) {
+                            withContext(Dispatchers.Main) {
+                                audioPlayer.play(localUri)
+                                if (currentPos > 0) {
+                                    audioPlayer.seekTo(currentPos)
+                                }
+                                saveSnapshot()
+                                syncUiState(PlaybackState.Playing)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        System.err.println("Failed on-demand cloud stream for ${currentTrack.trackId}: ${e.message}")
+                    }
+                }
             }
-            syncUiState(PlaybackState.Playing)
         }
-        saveSnapshot()
     }
 
     fun pause() {
@@ -838,16 +871,29 @@ class DesktopPlaybackOrchestrator(
         }
 
         val trackId = targetTrackId ?: return
-        val trackRow = database.trackDao().getTrackById(trackId) ?: return
+        val trackRow = database.trackDao().getTrackById(trackId)
+        val rawTrack = if (trackRow == null) database.trackDao().getRawTrackById(trackId) else null
+        if (trackRow == null && rawTrack == null) {
+            System.err.println("Snapshot track $trackId not found in local database yet.")
+            return
+        }
+
+        val trackTitle = trackRow?.title ?: rawTrack?.title ?: "Piste $trackId"
+        val artistName = trackRow?.artistName ?: rawTrack?.displayArtistName ?: "Artiste inconnu"
+        val albumTitle = trackRow?.albumTitle ?: rawTrack?.displayAlbumTitle
+        val contentUri = trackRow?.contentUri ?: (if (rawTrack != null) database.trackDao().getTrackContentUri(rawTrack.id) else null)
+        val durationMs = trackRow?.durationMs ?: rawTrack?.durationMs ?: 0L
+        val coverUri = trackRow?.coverUri ?: rawTrack?.coverUri
+        val isLiked = trackRow?.isLiked ?: rawTrack?.isLiked ?: false
 
         val queuedTrack = QueuedTrack(
-            trackId = trackRow.id,
-            title = trackRow.title,
-            artistName = trackRow.artistName,
-            albumTitle = trackRow.albumTitle,
-            contentUri = trackRow.contentUri,
-            durationMs = trackRow.durationMs,
-            coverUri = trackRow.coverUri,
+            trackId = trackId,
+            title = trackTitle,
+            artistName = artistName,
+            albumTitle = albumTitle,
+            contentUri = contentUri,
+            durationMs = durationMs,
+            coverUri = coverUri,
             source = TrackSource.CONTEXT
         )
 
@@ -880,19 +926,19 @@ class DesktopPlaybackOrchestrator(
                 playbackState = PlaybackState.Paused,
                 currentTrack = currentTrack,
                 positionMs = targetPositionMs,
-                durationMs = trackRow.durationMs ?: 0L,
+                durationMs = durationMs,
                 shuffleEnabled = targetShuffle,
                 repeatMode = repeat,
                 priorityQueue = queueManager.state.value.priorityQueue,
                 mainQueueTracks = queueManager.getUpcomingContextTracks(),
                 contextType = contextType,
                 contextId = contextId,
-                isCurrentTrackLiked = trackRow.isLiked
+                isCurrentTrackLiked = isLiked
             )
         }
 
-        if (trackRow.contentUri != null) {
-            audioPlayer.play(trackRow.contentUri!!)
+        if (contentUri != null) {
+            audioPlayer.play(contentUri)
             audioPlayer.pause()
             audioPlayer.seekTo(targetPositionMs)
         }
@@ -1455,7 +1501,38 @@ class DesktopPlaybackOrchestrator(
                 val likesResp = apiService.getLikes(token)
                 val likes = likesResp.data ?: emptyList()
                 for (like in likes) {
-                    database.trackLikeDao().setTrackIsLiked(like.trackId, true, now)
+                    val existingTrack = database.trackDao().getRawTrackById(like.trackId)
+                    if (existingTrack == null) {
+                        database.trackDao().upsertTrack(
+                            TrackEntity(
+                                id = like.trackId,
+                                primaryArtistId = null,
+                                albumId = null,
+                                title = "Piste ${like.trackId.takeLast(6)}",
+                                normalizedTitle = SearchNormalizer.normalize("Piste ${like.trackId.takeLast(6)}"),
+                                displayArtistName = "Artiste inconnu",
+                                displayAlbumTitle = null,
+                                durationMs = 0L,
+                                coverUri = null,
+                                canonicalAudioSourceType = "cloud",
+                                isLiked = true,
+                                isDownloadedByAura = false,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
+                    } else {
+                        database.trackLikeDao().setTrackIsLiked(like.trackId, true, now)
+                    }
+                    val likedAtEpoch = try { java.time.Instant.parse(like.likedAt).toEpochMilli() } catch (e: Exception) { now }
+                    database.trackLikeDao().insertLike(
+                        TrackLikeEntity(
+                            trackId = like.trackId,
+                            likedAt = likedAtEpoch,
+                            sourceContextType = like.sourceContextType,
+                            sourceContextId = like.sourceContextId
+                        )
+                    )
                 }
             } catch (e: Exception) {
                 System.err.println("Failed to sync likes: ${e.message}")
@@ -1479,6 +1556,27 @@ class DesktopPlaybackOrchestrator(
                         )
                     )
                     for (item in pl.items) {
+                        val existingTrack = database.trackDao().getRawTrackById(item.trackId)
+                        if (existingTrack == null) {
+                            database.trackDao().upsertTrack(
+                                TrackEntity(
+                                    id = item.trackId,
+                                    primaryArtistId = null,
+                                    albumId = null,
+                                    title = "Piste ${item.trackId.takeLast(6)}",
+                                    normalizedTitle = SearchNormalizer.normalize("Piste ${item.trackId.takeLast(6)}"),
+                                    displayArtistName = "Artiste inconnu",
+                                    displayAlbumTitle = null,
+                                    durationMs = 0L,
+                                    coverUri = null,
+                                    canonicalAudioSourceType = "cloud",
+                                    isLiked = false,
+                                    isDownloadedByAura = false,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
                         val itemAddedAt = try { java.time.Instant.parse(item.addedAt).toEpochMilli() } catch (e: Exception) { now }
                         database.playlistDao().upsertPlaylistItem(
                             PlaylistItemEntity(

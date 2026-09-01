@@ -333,10 +333,27 @@ private fun OnlineSearchResultsView(
             }
 
             items(results.tracks, key = { it.id }) { track ->
+                val isInLibrary = allTracks.any { it.id == track.id }
                 OnlineTrackRow(
                     track = track,
+                    isInLibrary = isInLibrary,
                     onPlay = {
-                        orchestrator.playOnlineTrack(track, results.tracks)
+                        if (isInLibrary) {
+                            val localTrack = allTracks.firstOrNull { it.id == track.id }
+                            if (localTrack != null) {
+                                orchestrator.playTrack(
+                                    trackId = localTrack.id,
+                                    contextType = "all",
+                                    contextId = "all",
+                                    contextTracks = allTracks.map { orchestrator.toQueuedTrack(it) },
+                                    startIndex = allTracks.indexOfFirst { it.id == localTrack.id }.coerceAtLeast(0)
+                                )
+                            } else {
+                                orchestrator.playOnlineTrack(track, results.tracks)
+                            }
+                        } else {
+                            orchestrator.playOnlineTrack(track, results.tracks)
+                        }
                     },
                     onDownload = {
                         orchestrator.triggerTrackDownload(track)
@@ -394,6 +411,7 @@ private fun OnlineAlbumCard(album: AlbumSummary, onClick: () -> Unit) {
 @Composable
 private fun OnlineTrackRow(
     track: TrackSummary,
+    isInLibrary: Boolean,
     onPlay: () -> Unit,
     onDownload: () -> Unit,
     onOpenArtist: () -> Unit,
@@ -438,8 +456,28 @@ private fun OnlineTrackRow(
         }
         Text(text = track.displayAlbumTitle ?: "-", color = PureWhite.copy(alpha = 0.5f), fontSize = 12.sp, modifier = Modifier.weight(1.5f).clickable(onClick = onOpenAlbum), maxLines = 1)
 
-        IconButton(onClick = onDownload) {
-            Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = "Télécharger", tint = BlazeOrange)
+        if (isInLibrary) {
+            IconButton(
+                onClick = onPlay,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CloudDone,
+                    contentDescription = "Dans votre bibliothèque",
+                    tint = PureWhite.copy(alpha = 0.7f)
+                )
+            }
+        } else {
+            IconButton(
+                onClick = onDownload,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CloudDownload,
+                    contentDescription = "Télécharger sur le cloud",
+                    tint = BlazeOrange
+                )
+            }
         }
     }
 }
