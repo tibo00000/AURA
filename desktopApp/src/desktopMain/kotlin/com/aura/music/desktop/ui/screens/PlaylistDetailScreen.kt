@@ -15,6 +15,19 @@ import com.aura.music.ui.theme.DeepBlack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aura.music.ui.theme.BlazeOrange
+import com.aura.music.ui.theme.DarkGraphite
+import com.aura.music.ui.theme.PureWhite
+import kotlinx.coroutines.withContext
+
 @Composable
 fun PlaylistDetailScreen(
     playlistId: String,
@@ -28,6 +41,8 @@ fun PlaylistDetailScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val uiState by orchestrator.uiState.collectAsState()
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var deduplicationMessage by remember { mutableStateOf<String?>(null) }
 
     // Conversion en TrackListRow pour le tableau
     val convertedTracks = remember(playlistTracks) {
@@ -96,9 +111,73 @@ fun PlaylistDetailScreen(
                 }
             },
             onMoreOptions = {
-                appState.playlistToRename = playlistId to playlistName
+                showOptionsMenu = true
             }
         )
+
+        Box(modifier = Modifier.padding(horizontal = 24.dp)) {
+            DropdownMenu(
+                expanded = showOptionsMenu,
+                onDismissRequest = { showOptionsMenu = false },
+                modifier = Modifier.background(DarkGraphite)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Renommer la playlist", color = PureWhite, fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null, tint = PureWhite, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        showOptionsMenu = false
+                        appState.playlistToRename = playlistId to playlistName
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Supprimer les doublons", color = PureWhite, fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        showOptionsMenu = false
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val removedCount = orchestrator.deduplicatePlaylist(playlistId)
+                            withContext(Dispatchers.Main) {
+                                onReloadData()
+                                deduplicationMessage = if (removedCount > 0) {
+                                    "$removedCount doublon(s) supprimé(s)"
+                                } else {
+                                    "Aucun doublon trouvé"
+                                }
+                            }
+                        }
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Supprimer la playlist", color = Color(0xFFFF453A), fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color(0xFFFF453A), modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        showOptionsMenu = false
+                        appState.playlistToDelete = playlistId to playlistName
+                    }
+                )
+            }
+        }
+
+        if (deduplicationMessage != null) {
+            LaunchedEffect(deduplicationMessage) {
+                kotlinx.coroutines.delay(3000)
+                deduplicationMessage = null
+            }
+            Surface(
+                color = DarkGraphite,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Info, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(text = deduplicationMessage!!, color = PureWhite, fontSize = 13.sp)
+                }
+            }
+        }
 
         DesktopTrackTable(
             tracks = convertedTracks,

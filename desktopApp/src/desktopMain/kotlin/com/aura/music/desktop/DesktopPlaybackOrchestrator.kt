@@ -447,6 +447,65 @@ class DesktopPlaybackOrchestrator(
         }
     }
 
+    suspend fun deduplicatePlaylist(playlistId: String): Int = withContext(Dispatchers.IO) {
+        val tracks = database.playlistDao().getPlaylistTracks(playlistId)
+        if (tracks.isEmpty()) return@withContext 0
+
+        val seenTrackIds = mutableSetOf<String>()
+        val itemsToDelete = mutableListOf<com.aura.music.data.local.PlaylistTrackRow>()
+        val itemsToKeep = mutableListOf<com.aura.music.data.local.PlaylistTrackRow>()
+
+        for (item in tracks) {
+            if (seenTrackIds.add(item.trackId)) {
+                itemsToKeep.add(item)
+            } else {
+                itemsToDelete.add(item)
+            }
+        }
+
+        if (itemsToDelete.isEmpty()) return@withContext 0
+
+        val now = System.currentTimeMillis()
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                for (item in itemsToDelete) {
+                    database.playlistDao().deletePlaylistItem(item.playlistItemId)
+                    val opId = "outbox_pli_del_${UUID.randomUUID().toString().take(12)}"
+                    database.syncOutboxDao().insert(
+                        SyncOutboxEntity(
+                            id = opId,
+                            entityType = "playlist_item",
+                            entityId = playlistId,
+                            operationType = "delete",
+                            payloadJson = item.trackId,
+                            status = "pending",
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                }
+
+                // Réordonnancement compact des positions
+                itemsToKeep.forEachIndexed { newIndex, item ->
+                    if (item.position != newIndex) {
+                        database.playlistDao().updatePlaylistItemPosition(item.playlistItemId, newIndex)
+                    }
+                }
+
+                database.playlistDao().touchPlaylist(playlistId, now)
+            }
+        }
+
+        apiToken?.let { token ->
+            scope.launch(Dispatchers.IO) {
+                flushSyncOutbox(token)
+            }
+        }
+
+        itemsToDelete.size
+    }
+
     suspend fun scanDirectory(dir: File) = withContext(loomDispatcher) {
         scanLocalFolder(dir, {}, {})
     }

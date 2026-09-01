@@ -427,6 +427,9 @@ class LocalLibraryRepository(
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) =
         playlistManager.removeTrackFromPlaylist(playlistId, playlistItemId)
 
+    suspend fun deduplicatePlaylist(playlistId: String): Int =
+        playlistManager.deduplicatePlaylist(playlistId)
+
     suspend fun movePlaylistItem(
         playlistId: String,
         playlistItemId: String,

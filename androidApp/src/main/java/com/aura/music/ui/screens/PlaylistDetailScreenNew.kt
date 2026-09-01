@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
@@ -337,6 +338,26 @@ fun PlaylistDetailScreenNew(
                                             showMenuOpen = false
                                         },
                                         leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Supprimer les doublons") },
+                                        onClick = {
+                                            showMenuOpen = false
+                                            scope.launch {
+                                                try {
+                                                    val removed = repository.deduplicatePlaylist(playlistId)
+                                                    refreshTick++
+                                                    if (removed > 0) {
+                                                        snackbarHostState.showSnackbar("$removed doublon(s) supprimé(s)")
+                                                    } else {
+                                                        snackbarHostState.showSnackbar("Aucun doublon trouvé")
+                                                    }
+                                                } catch (e: Exception) {
+                                                    snackbarHostState.showSnackbar("Erreur : ${e.message}")
+                                                }
+                                            }
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = BlazeOrange) },
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Exporter (.m3u8)") },
