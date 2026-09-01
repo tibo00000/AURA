@@ -227,24 +227,40 @@ class CloudFileRepository(
 
             Log.i(TAG, "Starting cloud upload for track $trackId (URI: $localUri)")
 
-            val fileBytes: ByteArray? = if (localUri.startsWith("file://") || localUri.startsWith("/")) {
-                val filePath = if (localUri.startsWith("file://")) localUri.substring(7) else localUri
-                val f = File(filePath)
-                if (f.exists()) f.readBytes() else null
-            } else {
-                try {
-                    val uri = Uri.parse(localUri)
-                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                        inputStream.readBytes()
+            val fileBytes: ByteArray? = (try {
+                when {
+                    localUri.startsWith("file:") -> {
+                        val path = try { java.net.URI.create(localUri).path } catch (e: Exception) { localUri.removePrefix("file://").removePrefix("file:") }
+                        val f = File(path)
+                        if (f.exists()) f.readBytes() else null
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to open input stream for $localUri", e)
-                    null
+                    localUri.startsWith("/") -> {
+                        val f = File(localUri)
+                        if (f.exists()) f.readBytes() else null
+                    }
+                    localUri.startsWith("content://") -> {
+                        val uri = Uri.parse(localUri)
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    }
+                    else -> {
+                        val f = File(localUri)
+                        if (f.exists()) f.readBytes() else {
+                            context.contentResolver.openInputStream(Uri.parse(localUri))?.use { it.readBytes() }
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to read bytes for $localUri", e)
+                null
+            }) ?: run {
+                // Fallback de secours : chercher dans le cache downloads local
+                val downloadsDir = File(context.filesDir, "downloads")
+                val localDownloadFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+                if (localDownloadFile.exists()) localDownloadFile.readBytes() else null
             }
 
             if (fileBytes == null || fileBytes.isEmpty()) {
-                emit(Result.failure(Exception("Impossible de lire les octets du fichier local")))
+                emit(Result.failure(Exception("Impossible de lire les octets du fichier local ($localUri)")))
                 return@flow
             }
 
@@ -673,20 +689,61 @@ class CloudFileRepository(
 
     suspend fun removeLocalFile(trackId: String) = withContext(Dispatchers.IO) {
         try {
-            val trackRow = database.trackDao().getTrackById(trackId) ?: return@withContext
-            val uriStr = trackRow.contentUri
-            if (!uriStr.isNullOrBlank() && (uriStr.startsWith("file://") || uriStr.startsWith("/"))) {
-                val path = if (uriStr.startsWith("file://")) uriStr.substring(7) else uriStr
-                val file = java.io.File(path)
-                if (file.exists()) {
-                    file.delete()
+            val trackRow = database.trackDao().getTrackById(trackId)
+            val uriStr = trackRow?.contentUri
+
+            // 1. Suppression physique du fichier s'il existe sur le disque
+            if (!uriStr.isNullOrBlank()) {
+                try {
+                    when {
+                        uriStr.startsWith("file:") -> {
+                            val path = try { java.net.URI.create(uriStr).path } catch (e: Exception) { uriStr.removePrefix("file://").removePrefix("file:") }
+                            val file = File(path)
+                            if (file.exists()) file.delete()
+                        }
+                        uriStr.startsWith("/") -> {
+                            val file = File(uriStr)
+                            if (file.exists()) file.delete()
+                        }
+                        uriStr.startsWith("content://") -> {
+                            try {
+                                context.contentResolver.delete(Uri.parse(uriStr), null, null)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Could not delete content URI via resolver: $uriStr", e)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error deleting file from disk: $uriStr", e)
                 }
             }
+
+            // Supprimer également du dossier downloads si présent
+            val downloadsDir = File(context.filesDir, "downloads")
+            val localDownloadFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+            if (localDownloadFile.exists()) {
+                localDownloadFile.delete()
+            }
+
+            // 2. Nettoyage de la base de données Room
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
                     database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+
+                    val rawTrack = database.trackDao().getRawTrackById(trackId)
+                    if (rawTrack != null && !rawTrack.isLiked) {
+                        val inPlaylist = try {
+                            database.playlistDao().getAllPlaylistTrackIds().contains(trackId)
+                        } catch (e: Exception) {
+                            false
+                        }
+                        if (!inPlaylist) {
+                            database.trackDao().deleteTracksByIds(listOf(trackId))
+                        }
+                    }
                 }
             }
+            Log.i(TAG, "Successfully removed local file and links for track $trackId")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to remove local file for track $trackId", e)
         }
