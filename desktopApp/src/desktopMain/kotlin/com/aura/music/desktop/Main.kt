@@ -42,7 +42,14 @@ fun main() = application {
 
     val orchestrator = remember {
         DesktopPlaybackOrchestrator(database, audioPlayer, queueManager, apiService).apply {
-            apiToken = secureStorage.getSecret("supabase_token")
+            val savedToken = secureStorage.getSecret("supabase_token")
+            apiToken = if (savedToken != null && !savedToken.contains("supabase_token_")) {
+                savedToken
+            } else {
+                val defaultToken = "Bearer 12345678-1234-1234-1234-1234567890ab"
+                secureStorage.saveSecret("supabase_token", defaultToken)
+                defaultToken
+            }
         }
     }
 

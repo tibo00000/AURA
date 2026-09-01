@@ -43,7 +43,10 @@ fun SettingsScreen(
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var isScanning by remember { mutableStateOf(false) }
 
-    val savedToken = remember { secureStorage.getSecret("supabase_token") ?: orchestrator.apiToken }
+    val savedToken = remember {
+        val raw = secureStorage.getSecret("supabase_token") ?: orchestrator.apiToken
+        if (raw != null && !raw.contains("supabase_token_")) raw else null
+    }
     var currentToken by remember { mutableStateOf(savedToken) }
 
     LazyColumn(
