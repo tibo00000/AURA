@@ -10,7 +10,7 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
-import com.aura.music.ui.theme.DeepBlack
+import com.aura.music.ui.theme.*
 
 @Composable
 fun FavoritesScreen(

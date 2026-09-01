@@ -18,8 +18,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.aura.music.desktop.ui.*
-import com.aura.music.ui.theme.DarkGraphite
-import com.aura.music.ui.theme.ElevatedGraphite
+import com.aura.music.ui.theme.*
 import java.io.File
 
 @Composable

@@ -12,9 +12,8 @@ import com.aura.music.data.network.AlbumDetailResponseData
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
-import com.aura.music.desktop.ui.components.DesktopTrackTable
-import com.aura.music.ui.theme.BlazeOrange
-import com.aura.music.ui.theme.DeepBlack
+import com.aura.music.desktop.ui.*
+import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
