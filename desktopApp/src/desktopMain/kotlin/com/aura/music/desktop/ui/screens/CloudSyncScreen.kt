@@ -247,7 +247,7 @@ fun CloudSyncScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(displayedTracks, key = { it.id }) { track ->
+                itemsIndexed(displayedTracks, key = { index, track -> "${track.id}_$index" }) { _, track ->
                     CloudSyncTrackRow(
                         track = track,
                         onDownload = { orchestrator.triggerSingleFileDownload(track) },

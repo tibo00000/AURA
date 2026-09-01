@@ -40,6 +40,7 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopTrackTable
+import com.aura.music.desktop.utils.DesktopTrackMatcher
 import com.aura.music.domain.search.SearchNormalizer
 import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -334,25 +335,21 @@ private fun OnlineSearchResultsView(
                 )
             }
 
-            items(results.tracks, key = { it.id }) { track ->
-                val isInLibrary = allTracks.any { it.id == track.id }
+            itemsIndexed(results.tracks, key = { index, track -> "${track.id}_$index" }) { _, track ->
+                val matchedLocal = DesktopTrackMatcher.findMatchingLocalTrack(allTracks, track)
+                val isInLibrary = matchedLocal != null
                 OnlineTrackRow(
                     track = track,
                     isInLibrary = isInLibrary,
                     onPlay = {
-                        if (isInLibrary) {
-                            val localTrack = allTracks.firstOrNull { it.id == track.id }
-                            if (localTrack != null) {
-                                orchestrator.playTrack(
-                                    trackId = localTrack.id,
-                                    contextType = "all",
-                                    contextId = "all",
-                                    contextTracks = allTracks.map { orchestrator.toQueuedTrack(it) },
-                                    startIndex = allTracks.indexOfFirst { it.id == localTrack.id }.coerceAtLeast(0)
-                                )
-                            } else {
-                                orchestrator.playOnlineTrack(track, results.tracks)
-                            }
+                        if (matchedLocal != null) {
+                            orchestrator.playTrack(
+                                trackId = matchedLocal.id,
+                                contextType = "all",
+                                contextId = "all",
+                                contextTracks = allTracks.map { orchestrator.toQueuedTrack(it) },
+                                startIndex = allTracks.indexOfFirst { it.id == matchedLocal.id }.coerceAtLeast(0)
+                            )
                         } else {
                             orchestrator.playOnlineTrack(track, results.tracks)
                         }

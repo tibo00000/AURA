@@ -85,7 +85,7 @@ fun DesktopTrackTable(
             modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            itemsIndexed(sortedTracks, key = { _, track -> track.id }) { index, track ->
+            itemsIndexed(sortedTracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
                 val isCurrent = track.id == activeTrackId
 
                 TrackTableRowItem(
