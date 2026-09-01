@@ -51,6 +51,14 @@ private enum class CloudFilterType {
     RECENT
 }
 
+private enum class LocalFilterType {
+    ALL,
+    LOCAL_ONLY,
+    BACKED_UP,
+    HEAVY,
+    RECENT
+}
+
 @Composable
 fun CloudSyncScreen(
     cloudFileRepository: CloudFileRepository,
@@ -71,10 +79,15 @@ fun CloudSyncScreen(
     // Tab 0: Show pending uploads list toggle
     var showPendingUploads by remember { mutableStateOf(false) }
 
-    // Tab 1: Filters & Search
+    // Tab 1: Cloud Filters & Search
     var cloudSearchQuery by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf(CloudFilterType.ALL) }
     var sortByFileSize by remember { mutableStateOf(false) }
+
+    // Tab 2: Local Phone Filters & Search
+    var localSearchQuery by remember { mutableStateOf("") }
+    var activeLocalFilter by remember { mutableStateOf(LocalFilterType.ALL) }
+    var sortLocalByTitle by remember { mutableStateOf(false) }
 
     // Dialog state
     var trackToDeleteFromCloud by remember { mutableStateOf<SyncedFileResponseData?>(null) }
@@ -83,7 +96,6 @@ fun CloudSyncScreen(
 
     // Progress operations tracking (set of trackIds currently operating)
     var activeOperations by remember { mutableStateOf(setOf<String>()) }
-    var isRepairingMetadata by remember { mutableStateOf(false) }
 
     // Load data asynchronously on IO
     LaunchedEffect(refreshTick) {
@@ -186,6 +198,36 @@ fun CloudSyncScreen(
             list.sortedByDescending { it.sizeBytes }
         } else if (activeFilter != CloudFilterType.RECENT) {
             list.sortedByDescending { it.uploadedAt ?: "" }
+        } else {
+            list
+        }
+    }
+
+    // Filtered Local Tracks for Tab 2
+    val filteredLocalTracks = remember(locallyStoredTracks, localSearchQuery, activeLocalFilter, sortLocalByTitle, safeToClearTracks) {
+        val query = localSearchQuery.trim().lowercase()
+        var list = if (query.isEmpty()) {
+            locallyStoredTracks
+        } else {
+            locallyStoredTracks.filter { track ->
+                track.title.lowercase().contains(query) ||
+                (track.artistName?.lowercase()?.contains(query) == true) ||
+                (track.albumTitle?.lowercase()?.contains(query) == true)
+            }
+        }
+
+        list = when (activeLocalFilter) {
+            LocalFilterType.ALL -> list
+            LocalFilterType.LOCAL_ONLY -> list.filter { it !in safeToClearTracks }
+            LocalFilterType.BACKED_UP -> list.filter { it in safeToClearTracks }
+            LocalFilterType.HEAVY -> list.filter { (it.durationMs ?: 0L) >= 5 * 60 * 1000L }
+            LocalFilterType.RECENT -> list.sortedByDescending { it.createdAt }.take(30)
+        }
+
+        if (sortLocalByTitle) {
+            list.sortedBy { it.title.lowercase() }
+        } else if (activeLocalFilter != LocalFilterType.RECENT) {
+            list.sortedByDescending { it.createdAt }
         } else {
             list
         }
@@ -331,61 +373,6 @@ fun CloudSyncScreen(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = TextSecondary
                                             )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Quick Metadata Repair Card
-                            item {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = DarkGraphite)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(18.dp))
-                                                Text("Réparer les métadonnées Cloud", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                            }
-                                            Text(
-                                                "Synchronise les vrais titres, artistes et pochettes du téléphone vers le serveur pour réparer les 'Titres inconnus'.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = TextSecondary
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Button(
-                                            onClick = {
-                                                scope.launch {
-                                                    isRepairingMetadata = true
-                                                    cloudFileRepository.repairAndSyncAllCloudMetadata().collect { res ->
-                                                        res.onSuccess { count ->
-                                                            snackbarHostState.showSnackbar("Succès : $count métadonnées réparées sur le Cloud !")
-                                                            refreshTick++
-                                                        }.onFailure { err ->
-                                                            snackbarHostState.showSnackbar("Erreur : ${err.message}")
-                                                        }
-                                                        isRepairingMetadata = false
-                                                    }
-                                                }
-                                            },
-                                            enabled = !isRepairingMetadata,
-                                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange, contentColor = DeepBlack),
-                                            shape = RoundedCornerShape(10.dp)
-                                        ) {
-                                            if (isRepairingMetadata) {
-                                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = DeepBlack, strokeWidth = 2.dp)
-                                            } else {
-                                                Text("Réparer", fontWeight = FontWeight.Bold)
-                                            }
                                         }
                                     }
                                 }
@@ -859,12 +846,12 @@ fun CloudSyncScreen(
                         }
                     }
 
-                    // TAB 2: GESTIONNAIRE DE STOCKAGE LOCAL
+                    // TAB 2: GESTIONNAIRE DE STOCKAGE LOCAL (TÉLÉPHONE)
                     2 -> {
                         AuraLazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             item {
                                 Card(
@@ -884,7 +871,7 @@ fun CloudSyncScreen(
                                         )
                                         Text(
                                             "• ${safeToClearTracks.size} piste(s) sont sécurisées sur le Cloud et peuvent être libérées sans risque.\n" +
-                                            (if (localOnlyTracks.isNotEmpty()) "• ${localOnlyTracks.size} piste(s) sont uniquement sur ce téléphone et seront préservées." else "• Toutes vos pistes sont déjà sauvegardées sur le Cloud."),
+                                            (if (localOnlyTracks.isNotEmpty()) "• ${localOnlyTracks.size} piste(s) sont uniquement sur ce téléphone." else "• Toutes vos pistes sont déjà sauvegardées sur le Cloud."),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = if (safeToClearTracks.isNotEmpty()) Color(0xFF00E676) else TextSecondary
                                         )
@@ -905,62 +892,233 @@ fun CloudSyncScreen(
                                 }
                             }
 
+                            // Search bar & Sort (Phone Tab)
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = localSearchQuery,
+                                        onValueChange = { localSearchQuery = it },
+                                        placeholder = { Text("Rechercher sur le téléphone...", style = MaterialTheme.typography.bodyMedium) },
+                                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary) },
+                                        trailingIcon = {
+                                            if (localSearchQuery.isNotEmpty()) {
+                                                IconButton(onClick = { localSearchQuery = "" }) {
+                                                    Icon(Icons.Rounded.Close, contentDescription = "Effacer")
+                                                }
+                                            }
+                                        },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = BlazeOrange,
+                                            unfocusedBorderColor = DarkGraphite,
+                                            focusedContainerColor = ElevatedGraphite,
+                                            unfocusedContainerColor = ElevatedGraphite
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    IconButton(
+                                        onClick = { sortLocalByTitle = !sortLocalByTitle },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(if (sortLocalByTitle) BlazeOrange else DarkGraphite, RoundedCornerShape(12.dp))
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Sort,
+                                            contentDescription = "Trier par titre",
+                                            tint = if (sortLocalByTitle) Color.White else TextPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Filter Chips Row (Phone Tab)
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = activeLocalFilter == LocalFilterType.ALL,
+                                        onClick = { activeLocalFilter = LocalFilterType.ALL },
+                                        label = { Text("Tous (${locallyStoredTracks.size})") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeLocalFilter == LocalFilterType.LOCAL_ONLY,
+                                        onClick = { activeLocalFilter = LocalFilterType.LOCAL_ONLY },
+                                        label = { Text("Non sauvegardés (${localOnlyTracks.size})") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeLocalFilter == LocalFilterType.BACKED_UP,
+                                        onClick = { activeLocalFilter = LocalFilterType.BACKED_UP },
+                                        label = { Text("Sur le Cloud (${safeToClearTracks.size})") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeLocalFilter == LocalFilterType.HEAVY,
+                                        onClick = { activeLocalFilter = LocalFilterType.HEAVY },
+                                        label = { Text("Morceaux longs (> 5 min)") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                    FilterChip(
+                                        selected = activeLocalFilter == LocalFilterType.RECENT,
+                                        onClick = { activeLocalFilter = LocalFilterType.RECENT },
+                                        label = { Text("Récents") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BlazeOrange,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+
+                            // Items count indicator
                             item {
                                 Text(
-                                    "Pistes sur le téléphone (${locallyStoredTracks.size})",
-                                    style = MaterialTheme.typography.labelLarge,
+                                    "${filteredLocalTracks.size} morceau(x) sur le téléphone",
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = TextSecondary,
-                                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                                    modifier = Modifier.padding(start = 4.dp)
                                 )
                             }
 
-                            items(
-                                items = locallyStoredTracks,
-                                key = { it.id }
-                            ) { track ->
-                                val isBackedUp = safeToClearTracks.contains(track)
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = DarkGraphite)
-                                ) {
-                                    Row(
+                            if (filteredLocalTracks.isEmpty()) {
+                                item {
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            .padding(vertical = 40.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            if (isBackedUp) Icons.Rounded.CheckCircle else Icons.Rounded.PhoneAndroid,
-                                            contentDescription = null,
-                                            tint = if (isBackedUp) Color(0xFF00E676) else BlazeOrange,
-                                            modifier = Modifier.size(20.dp)
+                                        Text(
+                                            if (localSearchQuery.isEmpty()) "Aucun morceau pour ce filtre" else "Aucun résultat trouvé sur le téléphone",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextSecondary
                                         )
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(track.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(track.artistName ?: "Artiste inconnu", style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(
-                                                if (isBackedUp) "✓ Sauvegardé sur le Cloud (Suppression sûre)" else "⚠️ Local uniquement (Non synchronisé au Cloud)",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = if (isBackedUp) Color(0xFF00E676) else BlazeOrange
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                if (isBackedUp) {
-                                                    scope.launch {
-                                                        cloudFileRepository.removeLocalFile(track.id)
-                                                        refreshTick++
-                                                        snackbarHostState.showSnackbar("Fichier supprimé de l'appareil.")
-                                                    }
-                                                } else {
-                                                    trackToDeleteLocalOnly = track
-                                                }
-                                            },
-                                            modifier = Modifier.size(32.dp)
+                                    }
+                                }
+                            } else {
+                                items(
+                                    items = filteredLocalTracks,
+                                    key = { it.id }
+                                ) { track ->
+                                    val isBackedUp = safeToClearTracks.contains(track)
+                                    val isUploading = activeOperations.contains(track.id)
+
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = ElevatedGraphite)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            Icon(Icons.Rounded.Delete, contentDescription = "Supprimer du téléphone", tint = TextSecondary)
+                                            if (!track.coverUri.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = track.coverUri,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(44.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(44.dp)
+                                                        .background(DarkGraphite, RoundedCornerShape(8.dp)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = TextSecondary)
+                                                }
+                                            }
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(track.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Text(
+                                                    listOfNotNull(track.artistName, track.albumTitle).joinToString(" • ").ifBlank { "Artiste inconnu" },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = TextSecondary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    if (isBackedUp) "✓ Sauvegardé sur le Cloud" else "⚠️ Local uniquement (Non synchronisé)",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isBackedUp) Color(0xFF00E676) else BlazeOrange
+                                                )
+                                            }
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                if (!isBackedUp) {
+                                                    if (isUploading) {
+                                                        CircularProgressIndicator(color = BlazeOrange, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                    } else {
+                                                        IconButton(
+                                                            onClick = {
+                                                                scope.launch {
+                                                                    activeOperations = activeOperations + track.id
+                                                                    cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                                                        res.onSuccess {
+                                                                            snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                                                            cloudFileRepository.refreshSyncedTrackIds()
+                                                                            refreshTick++
+                                                                        }.onFailure { err ->
+                                                                            snackbarHostState.showSnackbar("Échec : ${err.message}")
+                                                                        }
+                                                                        activeOperations = activeOperations - track.id
+                                                                    }
+                                                                }
+                                                            },
+                                                            modifier = Modifier.size(36.dp)
+                                                        ) {
+                                                            Icon(Icons.Rounded.CloudUpload, contentDescription = "Sauvegarder sur le Cloud", tint = BlazeOrange)
+                                                        }
+                                                    }
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        if (isBackedUp) {
+                                                            scope.launch {
+                                                                cloudFileRepository.removeLocalFile(track.id)
+                                                                refreshTick++
+                                                                snackbarHostState.showSnackbar("Fichier supprimé de l'appareil.")
+                                                            }
+                                                        } else {
+                                                            trackToDeleteLocalOnly = track
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(36.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.Delete, contentDescription = "Supprimer du téléphone", tint = TextSecondary)
+                                                }
+                                            }
                                         }
                                     }
                                 }
