@@ -47,6 +47,7 @@ object DesktopMediaMetadataReader {
         var trackNumber: Int? = null
         var year: Int? = null
         var coverUri: String? = null
+        var id3TagSize = 0
 
         try {
             RandomAccessFile(file, "r").use { raf ->
@@ -56,6 +57,7 @@ object DesktopMediaMetadataReader {
                 if (header[0] == 'I'.toByte() && header[1] == 'D'.toByte() && header[2] == '3'.toByte()) {
                     val majorVersion = header[3].toInt()
                     val tagSize = decodeSyncSafeSize(header, 6)
+                    id3TagSize = tagSize + 10
                     val tagBytes = ByteArray(tagSize)
                     raf.readFully(tagBytes)
 
@@ -101,6 +103,7 @@ object DesktopMediaMetadataReader {
             if (album.isNullOrBlank()) album = v1.third
         }
 
+        val durationMs = estimateMp3DurationMs(file, id3TagSize)
         val fallback = fallbackMetadata(file)
         return ExtractedAudioMetadata(
             title = title?.trim()?.ifBlank { fallback.title } ?: fallback.title,
@@ -108,9 +111,47 @@ object DesktopMediaMetadataReader {
             album = album?.trim()?.ifBlank { null },
             trackNumber = trackNumber,
             year = year,
-            durationMs = 0L,
+            durationMs = durationMs,
             localCoverUri = coverUri
         )
+    }
+
+    private fun estimateMp3DurationMs(file: File, id3TagSize: Int): Long {
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                val totalLength = file.length()
+                val audioDataSize = (totalLength - id3TagSize).coerceAtLeast(0L)
+                if (audioDataSize <= 0L) return 0L
+
+                val buffer = ByteArray(8192)
+                raf.seek(id3TagSize.toLong())
+                val bytesRead = raf.read(buffer)
+                if (bytesRead < 4) return (audioDataSize * 8000L) / (256L * 1000L)
+
+                for (i in 0 until bytesRead - 4) {
+                    val b0 = buffer[i].toInt() and 0xFF
+                    val b1 = buffer[i + 1].toInt() and 0xFF
+                    val b2 = buffer[i + 2].toInt() and 0xFF
+
+                    if (b0 == 0xFF && (b1 and 0xE0) == 0xE0) {
+                        val mpegVersion = (b1 shr 3) and 0x03
+                        val layer = (b1 shr 1) and 0x03
+                        val bitrateIndex = (b2 shr 4) and 0x0F
+
+                        if (mpegVersion == 3 && layer == 1 && bitrateIndex in 1..14) {
+                            val bitrates = intArrayOf(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+                            val bitrateKbps = bitrates[bitrateIndex]
+                            if (bitrateKbps > 0) {
+                                return (audioDataSize * 8000L) / (bitrateKbps * 1000L)
+                            }
+                        }
+                    }
+                }
+                return (audioDataSize * 8000L) / (256L * 1000L)
+            }
+        } catch (e: Exception) {
+            return 0L
+        }
     }
 
     private fun decodeSyncSafeSize(bytes: ByteArray, offset: Int): Int {
@@ -143,26 +184,27 @@ object DesktopMediaMetadataReader {
     private fun extractAndSaveApic(sourceFile: File, frameData: ByteArray): String? {
         try {
             if (frameData.size < 10) return null
-            var pos = 1 // skip encoding byte
 
-            // Mime type (null-terminated string)
-            val mimeStart = pos
-            while (pos < frameData.size && frameData[pos] != 0.toByte()) {
-                pos++
+            // Recherche binaire robuste du header JPEG (0xFF, 0xD8, 0xFF) ou PNG (0x89, 0x50, 0x4E, 0x47)
+            var imageStart = -1
+            for (i in 0 until frameData.size - 3) {
+                val b0 = frameData[i].toInt() and 0xFF
+                val b1 = frameData[i + 1].toInt() and 0xFF
+                val b2 = frameData[i + 2].toInt() and 0xFF
+                val b3 = frameData[i + 3].toInt() and 0xFF
+
+                if (b0 == 0xFF && b1 == 0xD8 && b2 == 0xFF) {
+                    imageStart = i
+                    break
+                }
+                if (b0 == 0x89 && b1 == 0x50 && b2 == 0x4E && b3 == 0x47) {
+                    imageStart = i
+                    break
+                }
             }
-            val mimeType = String(frameData, mimeStart, pos - mimeStart, StandardCharsets.ISO_8859_1)
-            pos++ // skip null byte
 
-            pos++ // skip picture type byte
-
-            // Description (null-terminated string)
-            while (pos < frameData.size && frameData[pos] != 0.toByte()) {
-                pos++
-            }
-            pos++ // skip null byte
-
-            if (pos < frameData.size) {
-                val imageBytes = frameData.copyOfRange(pos, frameData.size)
+            if (imageStart != -1 && imageStart < frameData.size) {
+                val imageBytes = frameData.copyOfRange(imageStart, frameData.size)
                 if (imageBytes.isNotEmpty()) {
                     val hash = hashString("${sourceFile.absolutePath}_cover")
                     val coverFile = File(coversDir, "$hash.jpg")

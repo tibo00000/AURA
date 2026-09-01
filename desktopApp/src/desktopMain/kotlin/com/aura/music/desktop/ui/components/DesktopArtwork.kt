@@ -51,19 +51,18 @@ fun DesktopArtworkCover(
             .background(DarkGraphite),
         contentAlignment = Alignment.Center
     ) {
+        Icon(
+            imageVector = fallbackIcon,
+            contentDescription = null,
+            tint = PureWhite.copy(alpha = 0.25f),
+            modifier = Modifier.size(size * 0.45f)
+        )
         if (resolvedModel != null) {
             AsyncImage(
                 model = resolvedModel,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Icon(
-                imageVector = fallbackIcon,
-                contentDescription = null,
-                tint = PureWhite.copy(alpha = 0.3f),
-                modifier = Modifier.size(size * 0.5f)
             )
         }
     }

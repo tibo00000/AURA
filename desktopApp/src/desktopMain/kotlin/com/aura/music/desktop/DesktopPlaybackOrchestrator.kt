@@ -94,6 +94,18 @@ class DesktopPlaybackOrchestrator(
         downloadManager?.startLoop()
         cloudSyncManager?.startLoop()
 
+        // Hydratation en arrière-plan des stubs de pistes distantes
+        scope.launch(Dispatchers.IO) {
+            try {
+                DesktopTrackHydrator.hydrateTrackStubs(database)
+                withContext(Dispatchers.Main) {
+                    onDataChanged?.invoke()
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+
         val token = apiToken
         if (!token.isNullOrBlank()) {
             scope.launch(Dispatchers.IO) {
@@ -665,39 +677,30 @@ class DesktopPlaybackOrchestrator(
         scope.launch(loomDispatcher) {
             try {
                 val now = System.currentTimeMillis()
-                val audioExtensions = setOf("mp3", "wav", "m4a", "flac")
+                val audioExtensions = setOf("mp3", "wav", "m4a", "flac", "aac")
                 val files = folder.walkTopDown().filter {
                     it.isFile && it.extension.lowercase() in audioExtensions
                 }.toList()
 
-                val scannedTracks = mutableListOf<ScannedTrackInfo>()
+                var addedCount = 0
                 for ((index, file) in files.withIndex()) {
                     onProgress("Indexation: ${index + 1}/${files.size} - ${file.name}")
-                    val (title, artist, album) = parseBasicTags(file)
-                    scannedTracks.add(ScannedTrackInfo(file, title, artist, album, null))
-                }
+                    val meta = DesktopMediaMetadataReader.readMetadata(file)
 
-                var addedCount = 0
-                database.useWriterConnection { transactor ->
-                    transactor.immediateTransaction {
-                        for (trackInfo in scannedTracks) {
-                            val file = trackInfo.file
-                            val title = trackInfo.title
-                            val artist = trackInfo.artist
-                            val album = trackInfo.album
+                    val trackId = "track_${file.absolutePath.hashCode()}"
+                    val artistId = "artist_${meta.artist.hashCode()}"
+                    val albumId = meta.album?.let { "album_${(meta.artist + "_" + it).hashCode()}" }
 
-                            val trackId = "track_${file.absolutePath.hashCode()}"
-                            val artistId = "artist_${artist.hashCode()}"
-                            val albumId = album?.let { "album_${(artist + "_" + it).hashCode()}" }
-
+                    database.useWriterConnection { transactor ->
+                        transactor.immediateTransaction {
                             // 1. Artist
                             database.artistDao().upsertArtists(
                                 listOf(
                                     ArtistEntity(
                                         id = artistId,
-                                        name = artist,
-                                        normalizedName = artist.lowercase(),
-                                        pictureUri = null,
+                                        name = meta.artist,
+                                        normalizedName = meta.artist.lowercase(),
+                                        pictureUri = meta.localCoverUri,
                                         createdAt = now,
                                         updatedAt = now
                                     )
@@ -705,15 +708,15 @@ class DesktopPlaybackOrchestrator(
                             )
 
                             // 2. Album
-                            if (albumId != null && album != null) {
+                            if (albumId != null && meta.album != null) {
                                 database.albumDao().upsertAlbums(
                                     listOf(
                                         AlbumEntity(
                                             id = albumId,
                                             primaryArtistId = artistId,
-                                            title = album,
-                                            normalizedTitle = album.lowercase(),
-                                            coverUri = null,
+                                            title = meta.album!!,
+                                            normalizedTitle = meta.album!!.lowercase(),
+                                            coverUri = meta.localCoverUri,
                                             createdAt = now,
                                             updatedAt = now
                                         )
@@ -728,12 +731,12 @@ class DesktopPlaybackOrchestrator(
                                         id = trackId,
                                         primaryArtistId = artistId,
                                         albumId = albumId,
-                                        title = title,
-                                        normalizedTitle = title.lowercase(),
-                                        displayArtistName = artist,
-                                        displayAlbumTitle = album,
-                                        durationMs = 0L,
-                                        coverUri = null,
+                                        title = meta.title,
+                                        normalizedTitle = meta.title.lowercase(),
+                                        displayArtistName = meta.artist,
+                                        displayAlbumTitle = meta.album,
+                                        durationMs = meta.durationMs,
+                                        coverUri = meta.localCoverUri,
                                         canonicalAudioSourceType = "local",
                                         isLiked = false,
                                         isDownloadedByAura = false,
@@ -759,9 +762,9 @@ class DesktopPlaybackOrchestrator(
                                     )
                                 )
                             )
-                            addedCount++
                         }
                     }
+                    addedCount++
                 }
                 onComplete(addedCount)
             } catch (e: Exception) {

@@ -73,6 +73,7 @@ class DesktopCloudSyncManager(
             System.out.println("Starting background Cloud Metadata Sync...")
             flushSyncOutbox(token)
             syncCloudMetadata(token)
+            DesktopTrackHydrator.hydrateTrackStubs(database)
             withContext(Dispatchers.Main) {
                 onFinished?.invoke()
             }
