@@ -456,7 +456,7 @@ interface TrackDao {
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE tracks.album_id = :albumId
-        ORDER BY tracks.disc_number ASC, tracks.track_number ASC, tracks.title ASC
+        ORDER BY lower(tracks.title) ASC
         """
     )
     suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
