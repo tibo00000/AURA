@@ -25,6 +25,7 @@ import com.aura.music.data.network.AlbumSummary
 import com.aura.music.data.network.ArtistDetailResponseData
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
@@ -46,11 +47,11 @@ fun ArtistDetailScreen(
     var isLoading by remember { mutableStateOf(false) }
 
     val localArtistTracks = remember(artistId, allLocalTracks) {
-        allLocalTracks.filter { it.artistId == artistId || it.displayArtist.equals(artistId.removePrefix("artist:"), ignoreCase = true) }
+        allLocalTracks.filter { it.artistId == artistId || it.artistName.equals(artistId.removePrefix("artist:"), ignoreCase = true) }
     }
 
     val artistName = remember(artistData, localArtistTracks, artistId) {
-        artistData?.name ?: localArtistTracks.firstOrNull()?.displayArtist ?: artistId.removePrefix("artist:")
+        artistData?.name ?: localArtistTracks.firstOrNull()?.artistName ?: artistId.removePrefix("artist:")
     }
 
     LaunchedEffect(artistId) {
@@ -104,7 +105,7 @@ fun ArtistDetailScreen(
                         contextTracks = localArtistTracks.map { orchestrator.toQueuedTrack(it) },
                         startIndex = 0
                     )
-                    if (!orchestrator.queueManager.state.value.isShuffle) {
+                    if (!orchestrator.queueManager.state.value.shuffleEnabled) {
                         orchestrator.toggleShuffle()
                     }
                 }
@@ -154,15 +155,17 @@ fun ArtistDetailScreen(
                         artistData?.topTracks?.map { tt ->
                             TrackListRow(
                                 id = tt.id,
-                                title = tt.title,
-                                displayArtist = tt.displayArtistName,
-                                displayAlbum = tt.displayAlbumTitle,
-                                durationMs = tt.durationMs.toLong(),
-                                coverUri = tt.coverUri,
                                 artistId = tt.artistId ?: artistId,
                                 albumId = tt.albumId,
+                                title = tt.title,
+                                artistName = tt.displayArtistName,
+                                albumTitle = tt.displayAlbumTitle,
+                                contentUri = null,
+                                durationMs = tt.durationMs.toLong(),
+                                coverUri = tt.coverUri,
                                 isLiked = tt.isLiked,
-                                isCloudOnly = true
+                                createdAt = 0L,
+                                updatedAt = 0L
                             )
                         } ?: emptyList()
                     }

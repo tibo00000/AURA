@@ -10,6 +10,7 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.AlbumDetailResponseData
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.ui.theme.BlazeOrange
@@ -31,15 +32,15 @@ fun AlbumDetailScreen(
     var isLoading by remember { mutableStateOf(false) }
 
     val localAlbumTracks = remember(albumId, allLocalTracks) {
-        allLocalTracks.filter { it.albumId == albumId || (it.displayAlbum != null && albumId.contains(it.displayAlbum!!, ignoreCase = true)) }
+        allLocalTracks.filter { it.albumId == albumId || (it.albumTitle != null && albumId.contains(it.albumTitle!!, ignoreCase = true)) }
     }
 
     val albumTitle = remember(albumData, localAlbumTracks, albumId) {
-        albumData?.title ?: localAlbumTracks.firstOrNull()?.displayAlbum ?: "Album"
+        albumData?.title ?: localAlbumTracks.firstOrNull()?.albumTitle ?: "Album"
     }
 
     val artistName = remember(albumData, localAlbumTracks) {
-        albumData?.primaryArtistName ?: localAlbumTracks.firstOrNull()?.displayArtist ?: "Artiste inconnu"
+        albumData?.primaryArtistName ?: localAlbumTracks.firstOrNull()?.artistName ?: "Artiste inconnu"
     }
 
     val coverUri = remember(albumData, localAlbumTracks) {
@@ -70,15 +71,17 @@ fun AlbumDetailScreen(
             albumData?.tracks?.map { tt ->
                 TrackListRow(
                     id = tt.id,
-                    title = tt.title,
-                    displayArtist = tt.displayArtistName,
-                    displayAlbum = tt.displayAlbumTitle ?: albumTitle,
-                    durationMs = tt.durationMs.toLong(),
-                    coverUri = tt.coverUri ?: coverUri,
                     artistId = tt.artistId ?: "artist:${tt.displayArtistName}",
                     albumId = albumId,
+                    title = tt.title,
+                    artistName = tt.displayArtistName,
+                    albumTitle = tt.displayAlbumTitle ?: albumTitle,
+                    contentUri = null,
+                    durationMs = tt.durationMs.toLong(),
+                    coverUri = tt.coverUri ?: coverUri,
                     isLiked = tt.isLiked,
-                    isCloudOnly = true
+                    createdAt = 0L,
+                    updatedAt = 0L
                 )
             } ?: emptyList()
         }
@@ -119,7 +122,7 @@ fun AlbumDetailScreen(
                         contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
                         startIndex = 0
                     )
-                    if (!orchestrator.queueManager.state.value.isShuffle) {
+                    if (!orchestrator.queueManager.state.value.shuffleEnabled) {
                         orchestrator.toggleShuffle()
                     }
                 }

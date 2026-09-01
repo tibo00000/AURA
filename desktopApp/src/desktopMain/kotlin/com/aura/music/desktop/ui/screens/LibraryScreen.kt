@@ -30,6 +30,7 @@ import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.ui.theme.*

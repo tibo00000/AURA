@@ -12,18 +12,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.aura.music.data.local.DownloadJobWithTrack
+import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.ui.theme.*
 
 @Composable
 fun DownloadsScreen(
-    downloadJobs: List<DownloadJobWithTrack>,
+    downloadJobs: List<DownloadJobRowModel>,
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState,
     modifier: Modifier = Modifier
@@ -94,11 +96,11 @@ fun DownloadsScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(downloadJobs, key = { it.job.id }) { jobWithTrack ->
+                items(downloadJobs, key = { it.jobId }) { jobItem ->
                     DownloadJobRowItem(
-                        jobWithTrack = jobWithTrack,
-                        onRetry = { orchestrator.retryDownloadJob(jobWithTrack.job.id) },
-                        onCancel = { orchestrator.cancelDownloadJob(jobWithTrack.job.id) }
+                        jobItem = jobItem,
+                        onRetry = { orchestrator.retryDownloadJob(jobItem.jobId) },
+                        onCancel = { orchestrator.cancelDownloadJob(jobItem.jobId) }
                     )
                 }
             }
@@ -108,13 +110,10 @@ fun DownloadsScreen(
 
 @Composable
 private fun DownloadJobRowItem(
-    jobWithTrack: DownloadJobWithTrack,
+    jobItem: DownloadJobRowModel,
     onRetry: () -> Unit,
     onCancel: () -> Unit
 ) {
-    val job = jobWithTrack.job
-    val track = jobWithTrack.track
-
     Card(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
         colors = CardDefaults.cardColors(containerColor = OffBlack)
@@ -124,10 +123,10 @@ private fun DownloadJobRowItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Statut Icon
-            val (icon, tint) = when (job.status.lowercase()) {
+            val (icon, tint) = when (jobItem.status.lowercase()) {
                 "running" -> Icons.Rounded.Download to BlazeOrange
                 "queued" -> Icons.Rounded.HourglassEmpty to PureWhite.copy(alpha = 0.6f)
-                "completed" -> Icons.Rounded.CheckCircle to Color(0xFF4CAF50)
+                "succeeded", "completed" -> Icons.Rounded.CheckCircle to Color(0xFF4CAF50)
                 "failed" -> Icons.Rounded.Error to MaterialTheme.colorScheme.error
                 else -> Icons.Rounded.CloudDownload to BlazeOrange
             }
@@ -147,7 +146,7 @@ private fun DownloadJobRowItem(
             // Titre & Artiste & Progression
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = track?.title ?: job.trackId,
+                    text = jobItem.title,
                     color = PureWhite,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -155,27 +154,27 @@ private fun DownloadJobRowItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = track?.displayArtist ?: "AURA Download",
+                    text = jobItem.artistName,
                     color = PureWhite.copy(alpha = 0.5f),
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                if (job.status.equals("running", ignoreCase = true)) {
+                if (jobItem.status.equals("running", ignoreCase = true)) {
                     Spacer(modifier = Modifier.height(6.dp))
                     LinearProgressIndicator(
-                        progress = { (job.progressPercent ?: 0) / 100f },
+                        progress = { (jobItem.progressPercent ?: 0f) / 100f },
                         color = BlazeOrange,
                         trackColor = DarkGraphite,
                         modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
                     )
                 }
 
-                if (!job.errorMessage.isNullOrBlank()) {
+                if (!jobItem.errorMessage.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = job.errorMessage!!,
+                        text = jobItem.errorMessage!!,
                         color = MaterialTheme.colorScheme.error,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -188,12 +187,12 @@ private fun DownloadJobRowItem(
 
             // Statut texte
             Text(
-                text = when (job.status.lowercase()) {
-                    "running" -> "${job.progressPercent ?: 0}%"
+                text = when (jobItem.status.lowercase()) {
+                    "running" -> "${(jobItem.progressPercent ?: 0f).toInt()}%"
                     "queued" -> "En attente"
-                    "completed" -> "Terminé"
+                    "succeeded", "completed" -> "Terminé"
                     "failed" -> "Échoué"
-                    else -> job.status
+                    else -> jobItem.status
                 },
                 color = tint,
                 fontSize = 13.sp,
@@ -202,13 +201,13 @@ private fun DownloadJobRowItem(
             )
 
             // Actions
-            if (job.status.equals("failed", ignoreCase = true)) {
+            if (jobItem.status.equals("failed", ignoreCase = true)) {
                 IconButton(onClick = onRetry) {
                     Icon(imageVector = Icons.Rounded.Refresh, contentDescription = "Réessayer", tint = BlazeOrange)
                 }
             }
 
-            if (job.status.equals("running", ignoreCase = true) || job.status.equals("queued", ignoreCase = true)) {
+            if (jobItem.status.equals("running", ignoreCase = true) || jobItem.status.equals("queued", ignoreCase = true)) {
                 IconButton(onClick = onCancel) {
                     Icon(imageVector = Icons.Rounded.Close, contentDescription = "Annuler", tint = PureWhite.copy(alpha = 0.5f))
                 }

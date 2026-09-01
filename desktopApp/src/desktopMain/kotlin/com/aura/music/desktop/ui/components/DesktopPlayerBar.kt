@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.domain.player.PlaybackState
 import com.aura.music.domain.player.RepeatMode
 import com.aura.music.ui.screens.SleekSlider
@@ -82,13 +83,13 @@ fun DesktopPlayerBar(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = currentTrack?.displayArtist ?: "AURA Player",
+                            text = currentTrack?.artistName ?: "AURA Player",
                             color = PureWhite.copy(alpha = 0.6f),
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.clickable {
-                                currentTrack?.artistId?.let { appState.openArtist(it) }
+                                currentTrack?.artistName?.let { appState.openArtist("artist:$it") }
                             }
                         )
                     }
@@ -99,9 +100,9 @@ fun DesktopPlayerBar(
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = if (currentTrack.isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = if (currentTrack.isLiked) "Retirer des favoris" else "Ajouter aux favoris",
-                                tint = if (currentTrack.isLiked) BlazeOrange else PureWhite.copy(alpha = 0.5f),
+                                imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
+                                tint = if (uiState.isCurrentTrackLiked) BlazeOrange else PureWhite.copy(alpha = 0.5f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -127,7 +128,7 @@ fun DesktopPlayerBar(
                             Icon(
                                 imageVector = Icons.Rounded.Shuffle,
                                 contentDescription = "Lecture aléatoire",
-                                tint = if (queueState.isShuffle) BlazeOrange else PureWhite.copy(alpha = 0.5f),
+                                tint = if (queueState.shuffleEnabled) BlazeOrange else PureWhite.copy(alpha = 0.5f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -227,11 +228,8 @@ fun DesktopPlayerBar(
                                 orchestrator.seekTo(targetMs)
                             },
                             modifier = Modifier.weight(1f),
-                            trackColor = DarkGraphite,
-                            progressColor = BlazeOrange,
-                            thumbColor = PureWhite,
-                            trackHeight = 3.dp,
-                            thumbRadius = 5.dp
+                            activeColor = BlazeOrange,
+                            inactiveColor = DarkGraphite
                         )
 
                         Text(
@@ -303,11 +301,8 @@ fun DesktopPlayerBar(
                             orchestrator.setVolume(it)
                         },
                         modifier = Modifier.width(90.dp),
-                        trackColor = DarkGraphite,
-                        progressColor = PureWhite.copy(alpha = 0.8f),
-                        thumbColor = PureWhite,
-                        trackHeight = 3.dp,
-                        thumbRadius = 4.dp
+                        activeColor = PureWhite.copy(alpha = 0.8f),
+                        inactiveColor = DarkGraphite
                     )
                 }
             }

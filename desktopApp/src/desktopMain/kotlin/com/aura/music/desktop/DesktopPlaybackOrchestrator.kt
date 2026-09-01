@@ -188,23 +188,21 @@ class DesktopPlaybackOrchestrator(
 
     fun toQueuedTrack(row: TrackListRow): QueuedTrack {
         return QueuedTrack(
-            internalId = UUID.randomUUID().toString(),
             trackId = row.id,
             title = row.title,
-            displayArtist = row.displayArtist,
-            displayAlbum = row.displayAlbum,
-            durationMs = row.durationMs ?: 0L,
+            artistName = row.artistName,
+            albumTitle = row.albumTitle,
+            contentUri = row.contentUri,
+            durationMs = row.durationMs,
             coverUri = row.coverUri,
-            contentUri = row.contentUri ?: "",
-            artistId = row.artistId,
-            albumId = row.albumId,
-            isLiked = row.isLiked
+            source = TrackSource.CONTEXT,
+            internalId = UUID.randomUUID().toString()
         )
     }
 
     fun playTrackDirectly(track: QueuedTrack) {
         val uri = track.contentUri
-        if (uri.isNotBlank()) {
+        if (!uri.isNullOrBlank()) {
             audioPlayer.play(uri)
             syncUiState(PlaybackState.Playing)
             saveSnapshot()
@@ -232,20 +230,21 @@ class DesktopPlaybackOrchestrator(
     }
 
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
-        val count = database.playlistDao().getPlaylistTrackCount(playlistId)
+        val nextPos = database.playlistDao().getNextPlaylistPosition(playlistId)
         val now = System.currentTimeMillis()
-        database.playlistDao().insertPlaylistTrack(
-            PlaylistTrackCrossRef(
+        database.playlistDao().insertPlaylistItem(
+            PlaylistItemEntity(
+                id = UUID.randomUUID().toString(),
                 playlistId = playlistId,
                 trackId = trackId,
-                position = count,
+                position = nextPos,
                 addedAt = now
             )
         )
     }
 
     suspend fun scanDirectory(dir: File) = withContext(loomDispatcher) {
-        scanLocalFolder(dir.absolutePath)
+        scanLocalFolder(dir, {}, {})
     }
 
     fun triggerTrackDownload(track: com.aura.music.data.network.TrackSummary) {
@@ -306,7 +305,7 @@ class DesktopPlaybackOrchestrator(
 
     fun clearCompletedDownloadJobs() {
         scope.launch(Dispatchers.IO) {
-            database.downloadJobDao().clearCompletedAndFailedJobs()
+            database.downloadJobDao().clearCompletedJobs()
         }
     }
 
@@ -323,13 +322,7 @@ class DesktopPlaybackOrchestrator(
 
     fun cancelDownloadJob(jobId: String) {
         scope.launch(Dispatchers.IO) {
-            val token = apiToken ?: return@launch
-            try {
-                apiService.deleteDownload(token, jobId)
-                database.downloadJobDao().deleteJob(jobId)
-            } catch (e: Exception) {
-                System.err.println("Failed to cancel job: ${e.message}")
-            }
+            database.downloadJobDao().deleteJob(jobId)
         }
     }
 

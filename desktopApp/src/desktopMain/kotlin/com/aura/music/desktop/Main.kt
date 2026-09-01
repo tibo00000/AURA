@@ -19,6 +19,7 @@ import com.aura.music.data.network.KtorAuraApiService
 import com.aura.music.data.player.QueueManager
 import com.aura.music.desktop.security.DesktopSecureStorage
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.*
 import com.aura.music.desktop.ui.screens.*
 import com.aura.music.domain.player.DesktopAudioPlayer
@@ -164,7 +165,7 @@ fun main() = application {
                 } else false
             }
         ) {
-            AuraTheme(darkTheme = true) {
+            AuraTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = DeepBlack
@@ -176,7 +177,7 @@ fun main() = application {
                             DesktopSidebar(
                                 appState = appState,
                                 playlists = playlists,
-                                activeDownloadsCount = downloadJobs.count { it.job.status == "running" || it.job.status == "queued" }
+                                activeDownloadsCount = downloadJobs.count { it.status == "running" || it.status == "queued" }
                             )
 
                             // Volet Central : Écrans

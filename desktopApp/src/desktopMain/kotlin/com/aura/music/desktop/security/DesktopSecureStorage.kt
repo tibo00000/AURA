@@ -73,8 +73,7 @@ class WindowsDpapiSecureStorage : DesktopSecureStorage {
             val encryptedBytes = storageFile.readBytes()
             if (encryptedBytes.isEmpty()) return mutableMapOf()
             val decryptedBytes = com.sun.jna.platform.win32.Crypt32Util.cryptUnprotectData(encryptedBytes)
-            val jsonOrProps = String(decryptedBytes, StandardCharsets.UTF_8)
-            val props = Properties().apply { load(jsonOrProps.byteInputStream()) }
+            val props = Properties().apply { load(java.io.ByteArrayInputStream(decryptedBytes)) }
             props.entries.associate { it.key.toString() to it.value.toString() }.toMutableMap()
         } catch (e: Exception) {
             System.err.println("Erreur de déchiffrement DPAPI: ${e.message}")
@@ -178,7 +177,7 @@ class JksSecureStorage : DesktopSecureStorage {
             cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), GCMParameterSpec(128, iv))
             val plainBytes = cipher.doFinal(cipherText)
 
-            val props = Properties().apply { load(plainBytes.byteInputStream()) }
+            val props = Properties().apply { load(java.io.ByteArrayInputStream(plainBytes)) }
             props.entries.associate { it.key.toString() to it.value.toString() }.toMutableMap()
         } catch (e: Exception) {
             System.err.println("Erreur de déchiffrement JKS: ${e.message}")

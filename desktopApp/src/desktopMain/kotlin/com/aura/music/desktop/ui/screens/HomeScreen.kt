@@ -30,6 +30,7 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.HistoryItemResponse
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.ui.theme.*
 import java.time.LocalTime
@@ -157,7 +158,7 @@ fun HomeScreen(
                                         startIndex = allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
                                     )
                                 },
-                                onOpenArtist = { appState.openArtist(track.artistId) }
+                                onOpenArtist = { appState.openArtist(track.artistId ?: "artist:${track.artistName}") }
                             )
                         }
                     }

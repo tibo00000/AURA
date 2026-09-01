@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.domain.player.QueuedTrack
 import com.aura.music.ui.theme.*
 
@@ -35,6 +36,7 @@ fun DesktopQueuePanel(
     val queueState by orchestrator.queueManager.state.collectAsState()
     val uiState by orchestrator.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
+    val upcomingContextTracks = orchestrator.queueManager.getUpcomingContextTracks()
 
     Column(
         modifier = modifier
@@ -56,7 +58,7 @@ fun DesktopQueuePanel(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
-                val totalCount = (if (currentTrack != null) 1 else 0) + queueState.priorityQueue.size + (queueState.contextTracks.size - queueState.currentIndex - 1).coerceAtLeast(0)
+                val totalCount = (if (currentTrack != null) 1 else 0) + queueState.priorityQueue.size + upcomingContextTracks.size
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "($totalCount)",
@@ -131,7 +133,7 @@ fun DesktopQueuePanel(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = currentTrack.displayArtist,
+                                    text = currentTrack.artistName,
                                     color = PureWhite.copy(alpha = 0.6f),
                                     fontSize = 12.sp,
                                     maxLines = 1,
@@ -165,16 +167,12 @@ fun DesktopQueuePanel(
                     QueueTrackItem(
                         track = track,
                         onPlayNow = { orchestrator.playTrackDirectly(track) },
-                        onRemove = { orchestrator.queueManager.removeTrack(track.internalId) }
+                        onRemove = { orchestrator.queueManager.removeFromQueue(index) }
                     )
                 }
             }
 
             // 3. SUITE DE LECTURE (CONTEXTE)
-            val upcomingContextTracks = if (queueState.currentIndex + 1 < queueState.contextTracks.size) {
-                queueState.contextTracks.subList(queueState.currentIndex + 1, queueState.contextTracks.size)
-            } else emptyList()
-
             if (upcomingContextTracks.isNotEmpty()) {
                 item {
                     Text(
@@ -186,17 +184,24 @@ fun DesktopQueuePanel(
                     )
                 }
 
-                itemsIndexed(upcomingContextTracks, key = { _, t -> "ctx_${t.internalId}" }) { index, track ->
+                itemsIndexed(upcomingContextTracks, key = { _, t -> "ctx_${t.internalId}" }) { _, track ->
                     QueueTrackItem(
                         track = track,
                         onPlayNow = {
-                            orchestrator.playTrack(
-                                trackId = track.trackId,
-                                contextType = queueState.contextType ?: "all",
-                                contextId = queueState.contextId ?: "all",
-                                contextTracks = queueState.contextTracks,
-                                startIndex = queueState.currentIndex + 1 + index
-                            )
+                            val ctx = queueState.context
+                            if (ctx != null) {
+                                val idx = ctx.tracks.indexOfFirst { it.internalId == track.internalId }.coerceAtLeast(0)
+                                orchestrator.playTrack(
+                                    trackId = track.trackId,
+                                    contextType = ctx.type,
+                                    contextId = ctx.id,
+                                    contextTracks = ctx.tracks,
+                                    startIndex = idx
+                                )
+                            }
+                        },
+                        onRemove = {
+                            orchestrator.queueManager.removeUpcomingContextTrack(track.internalId)
                         }
                     )
                 }
@@ -239,7 +244,7 @@ private fun QueueTrackItem(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = track.displayArtist,
+                text = track.artistName,
                 color = PureWhite.copy(alpha = 0.5f),
                 fontSize = 11.sp,
                 maxLines = 1,

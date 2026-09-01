@@ -2,6 +2,7 @@ package com.aura.music.desktop.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.desktop.ui.*
 import com.aura.music.ui.theme.*
 
 enum class TrackSortField {
@@ -55,7 +57,7 @@ fun DesktopTrackTable(
             TrackSortField.ARTIST -> if (sortAscending) tracks.sortedBy { it.displayArtist.lowercase() } else tracks.sortedByDescending { it.displayArtist.lowercase() }
             TrackSortField.ALBUM -> if (sortAscending) tracks.sortedBy { it.displayAlbum?.lowercase() ?: "" } else tracks.sortedByDescending { it.displayAlbum?.lowercase() ?: "" }
             TrackSortField.DURATION -> if (sortAscending) tracks.sortedBy { it.durationMs ?: 0L } else tracks.sortedByDescending { it.durationMs ?: 0L }
-            TrackSortField.DATE_ADDED -> if (sortAscending) tracks.sortedBy { it.createdAt ?: 0L } else tracks.sortedByDescending { it.createdAt ?: 0L }
+            TrackSortField.DATE_ADDED -> if (sortAscending) tracks.sortedBy { it.createdAt } else tracks.sortedByDescending { it.createdAt }
         }
     }
 
@@ -93,7 +95,7 @@ fun DesktopTrackTable(
                     isPlaying = isPlaying && isCurrent,
                     onPlay = { onTrackClick(track, index) },
                     onToggleLike = { onToggleLike(track.id) },
-                    onOpenArtist = { onOpenArtist?.invoke(track.artistId) },
+                    onOpenArtist = { onOpenArtist?.invoke(track.artistId ?: "artist:${track.artistName}") },
                     onOpenAlbum = { track.albumId?.let { onOpenAlbum?.invoke(it) } },
                     onContextMenu = { onContextMenu?.invoke(track) },
                     showAlbumColumn = showAlbumColumn,
@@ -395,7 +397,7 @@ private fun TrackTableRowItem(
             )
 
             IconButton(
-                onClick = onContextMenu,
+                onClick = onContextMenu ?: {},
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(

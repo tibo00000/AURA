@@ -8,6 +8,7 @@ import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.ui.theme.DeepBlack
@@ -33,15 +34,17 @@ fun PlaylistDetailScreen(
         playlistTracks.map { pt ->
             TrackListRow(
                 id = pt.trackId,
-                title = pt.title,
-                displayArtist = pt.displayArtist,
-                displayAlbum = pt.displayAlbum,
-                durationMs = pt.durationMs,
-                coverUri = pt.coverUri,
                 artistId = pt.artistId,
                 albumId = pt.albumId,
+                title = pt.title,
+                artistName = pt.artistName,
+                albumTitle = pt.albumTitle,
+                contentUri = pt.contentUri,
+                durationMs = pt.durationMs,
+                coverUri = pt.coverUri,
                 isLiked = pt.isLiked,
-                isCloudOnly = pt.isCloudOnly
+                createdAt = pt.addedAt,
+                updatedAt = pt.addedAt
             )
         }
     }
@@ -87,7 +90,7 @@ fun PlaylistDetailScreen(
                         contextTracks = convertedTracks.map { orchestrator.toQueuedTrack(it) },
                         startIndex = 0
                     )
-                    if (!orchestrator.queueManager.state.value.isShuffle) {
+                    if (!orchestrator.queueManager.state.value.shuffleEnabled) {
                         orchestrator.toggleShuffle()
                     }
                 }
@@ -112,10 +115,7 @@ fun PlaylistDetailScreen(
             },
             onToggleLike = onToggleLike,
             onOpenArtist = { appState.openArtist(it) },
-            onOpenAlbum = { appState.openAlbum(it) },
-            onContextMenu = { track ->
-                // Context menu will be triggered with custom remove option
-            }
+            onOpenAlbum = { appState.openAlbum(it) }
         )
     }
 }

@@ -37,6 +37,7 @@ import com.aura.music.data.network.SearchResponseData
 import com.aura.music.data.network.TrackSummary
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.domain.search.SearchNormalizer
@@ -87,8 +88,8 @@ fun SearchScreen(
             val q = SearchNormalizer.normalize(appState.searchQuery)
             allTracks.filter {
                 SearchNormalizer.normalize(it.title).contains(q) ||
-                SearchNormalizer.normalize(it.displayArtist).contains(q) ||
-                (it.displayAlbum != null && SearchNormalizer.normalize(it.displayAlbum!!).contains(q))
+                SearchNormalizer.normalize(it.artistName).contains(q) ||
+                (it.albumTitle != null && SearchNormalizer.normalize(it.albumTitle!!).contains(q))
             }
         }
     }
@@ -99,7 +100,7 @@ fun SearchScreen(
             val q = SearchNormalizer.normalize(appState.searchQuery)
             allAlbums.filter {
                 SearchNormalizer.normalize(it.title).contains(q) ||
-                SearchNormalizer.normalize(it.artistName).contains(q)
+                SearchNormalizer.normalize(it.artistName ?: "").contains(q)
             }
         }
     }
