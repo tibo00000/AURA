@@ -403,19 +403,26 @@ class DesktopCloudSyncManager(
             val now = System.currentTimeMillis()
             val fileUri = targetFile.toURI().toString()
 
+            val meta = com.aura.music.desktop.media.DesktopMediaMetadataReader.readMetadata(targetFile)
+            val resolvedTitle = if (title.startsWith("Piste ", ignoreCase = true) || title.equals("Titre inconnu", ignoreCase = true) || title.isBlank()) meta.title else title
+            val resolvedArtist = if (artistName.equals("Artiste inconnu", ignoreCase = true) || artistName.isBlank()) meta.artist else artistName
+            val resolvedAlbum = if (albumTitle.isNullOrBlank() || albumTitle.equals("Album inconnu", ignoreCase = true)) meta.album else albumTitle
+            val resolvedDuration = if (durationMs <= 0L && meta.durationMs > 0L) meta.durationMs else durationMs
+            val resolvedCover = coverUri ?: meta.localCoverUri
+
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
                     // 1. Artiste
                     var primaryArtistId: String? = null
-                    if (artistName.isNotBlank()) {
-                        primaryArtistId = "artist:${artistName.lowercase().trim().replace(" ", "_")}"
+                    if (resolvedArtist.isNotBlank()) {
+                        primaryArtistId = "artist:${resolvedArtist.lowercase().trim().replace(" ", "_")}"
                         database.artistDao().insertArtistsIgnore(
                             listOf(
                                 ArtistEntity(
                                     id = primaryArtistId,
-                                    name = artistName,
-                                    normalizedName = artistName.lowercase(),
-                                    pictureUri = null,
+                                    name = resolvedArtist,
+                                    normalizedName = resolvedArtist.lowercase(),
+                                    pictureUri = resolvedCover,
                                     summary = null,
                                     createdAt = now,
                                     updatedAt = now
@@ -426,16 +433,16 @@ class DesktopCloudSyncManager(
 
                     // 2. Album
                     var albumId: String? = null
-                    if (!albumTitle.isNullOrBlank()) {
-                        albumId = "album:${albumTitle.lowercase().trim().replace(" ", "_")}"
+                    if (!resolvedAlbum.isNullOrBlank()) {
+                        albumId = "album:${resolvedAlbum.lowercase().trim().replace(" ", "_")}"
                         database.albumDao().insertAlbumsIgnore(
                             listOf(
                                 AlbumEntity(
                                     id = albumId,
                                     primaryArtistId = primaryArtistId,
-                                    title = albumTitle,
-                                    normalizedTitle = albumTitle.lowercase(),
-                                    coverUri = coverUri,
+                                    title = resolvedAlbum,
+                                    normalizedTitle = resolvedAlbum.lowercase(),
+                                    coverUri = resolvedCover,
                                     releaseDate = null,
                                     trackCount = null,
                                     createdAt = now,
@@ -451,12 +458,12 @@ class DesktopCloudSyncManager(
                         id = trackId,
                         primaryArtistId = primaryArtistId,
                         albumId = albumId,
-                        title = title,
-                        normalizedTitle = title.lowercase(),
-                        displayArtistName = artistName,
-                        displayAlbumTitle = albumTitle,
-                        durationMs = durationMs,
-                        coverUri = coverUri ?: existingTrack?.coverUri,
+                        title = resolvedTitle,
+                        normalizedTitle = resolvedTitle.lowercase(),
+                        displayArtistName = resolvedArtist,
+                        displayAlbumTitle = resolvedAlbum,
+                        durationMs = resolvedDuration,
+                        coverUri = resolvedCover ?: existingTrack?.coverUri,
                         canonicalAudioSourceType = "downloaded",
                         isLiked = existingTrack?.isLiked ?: false,
                         isDownloadedByAura = true,
