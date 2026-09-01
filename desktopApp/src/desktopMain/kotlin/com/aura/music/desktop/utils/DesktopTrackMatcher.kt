@@ -72,4 +72,8 @@ object DesktopTrackMatcher {
     fun findMatchingLocalTrack(allTracks: List<TrackListRow>, online: TrackSummary): TrackListRow? {
         return allTracks.firstOrNull { isTrackMatch(it, online) }
     }
+
+    fun hasLocalMatch(online: TrackSummary, allTracks: List<TrackListRow>): Boolean {
+        return findMatchingLocalTrack(allTracks, online) != null
+    }
 }

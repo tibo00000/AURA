@@ -9,6 +9,7 @@ interface AudioPlayer {
     fun getCurrentPosition(): Long
     fun isPlaying(): Boolean
     fun setVolume(volume: Float)
+    fun getVolume(): Float
 
     var onCompletionListener: (() -> Unit)?
     var onErrorListener: ((String) -> Unit)?

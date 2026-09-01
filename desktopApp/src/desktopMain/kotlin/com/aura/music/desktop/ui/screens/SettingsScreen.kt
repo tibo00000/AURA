@@ -23,7 +23,8 @@ import com.aura.music.desktop.security.DesktopAuthSessionManager
 import com.aura.music.desktop.security.DesktopAuthState
 import com.aura.music.desktop.security.DesktopSecureStorage
 import com.aura.music.desktop.state.DesktopAppState
-import com.aura.music.desktop.ui.theme.*
+import com.aura.music.desktop.ui.*
+import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File

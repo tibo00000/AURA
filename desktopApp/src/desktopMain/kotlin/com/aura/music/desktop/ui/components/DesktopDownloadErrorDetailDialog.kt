@@ -17,7 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aura.music.data.local.DownloadJobRowModel
-import com.aura.music.desktop.ui.theme.*
+import com.aura.music.desktop.ui.*
+import com.aura.music.ui.theme.*
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 

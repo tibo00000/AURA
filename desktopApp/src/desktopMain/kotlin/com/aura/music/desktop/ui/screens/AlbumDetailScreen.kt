@@ -71,7 +71,7 @@ fun AlbumDetailScreen(
                         artistName = artistName,
                         trackTitle = sampleTrack
                     )
-                    val resolved = resp.data
+                    val resolved = resp.data?.album
                     if (resolved != null) {
                         resolvedCoverUri = resolved.coverUri
                         if (!resolved.coverUri.isNullOrBlank()) {

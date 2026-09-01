@@ -436,7 +436,52 @@ interface TrackDao {
         ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
         """,
     )
-    suspend fun getAllTracks(): List<TrackListRow>
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.album_id = :albumId
+        ORDER BY tracks.disc_number ASC, tracks.track_number ASC, tracks.title ASC
+        """
+    )
+    suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.primary_artist_id = :artistId
+        ORDER BY tracks.created_at DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getTracksForArtist(artistId: String, limit: Int = 50): List<TrackListRow>
 
     @Query(
         """

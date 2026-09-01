@@ -1,21 +1,11 @@
 package com.aura.music.desktop.security
 
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 /**
  * État de l'authentification pour le client Desktop.
@@ -41,13 +31,6 @@ class DesktopAuthSessionManager(
         private const val KEY_USER_ID = "aura_user_id"
         private const val KEY_USER_EMAIL = "aura_user_email"
         private const val DEFAULT_OWNER_ID = "12345678-1234-1234-1234-1234567890ab"
-    }
-
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val httpClient = HttpClient {
-        install(ContentNegotiation) {
-            json(json)
-        }
     }
 
     private val _authState = MutableStateFlow<DesktopAuthState>(DesktopAuthState.Unauthenticated)

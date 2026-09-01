@@ -77,7 +77,7 @@ fun ArtistDetailScreen(
                 try {
                     val sampleTrack = localArtistTracks.firstOrNull()?.title
                     val resp = orchestrator.apiService.resolveArtist(name = artistName, trackTitle = sampleTrack)
-                    val resolved = resp.data
+                    val resolved = resp.data?.artist
                     if (resolved != null) {
                         resolvedCoverUri = resolved.pictureUri
                         if (!resolved.pictureUri.isNullOrBlank()) {
@@ -234,7 +234,7 @@ private fun DesktopArtistAlbumCard(
         DesktopArtworkCover(
             coverUri = album.coverUri,
             size = 130.dp,
-            cornerRadius = 6.dp
+            shapeRadius = 6.dp
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -245,9 +245,10 @@ private fun DesktopArtistAlbumCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        if (album.releaseDate != null) {
+        val release = album.releaseDate
+        if (release != null) {
             Text(
-                text = album.releaseDate.take(4),
+                text = release.take(4),
                 color = PureWhite.copy(alpha = 0.5f),
                 fontSize = 11.sp
             )

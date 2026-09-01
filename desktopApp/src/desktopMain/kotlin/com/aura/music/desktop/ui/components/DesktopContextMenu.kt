@@ -11,9 +11,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.aura.music.data.local.TrackListRow
-import com.aura.music.desktop.ui.isCloudOnly
-import com.aura.music.desktop.ui.theme.*
+import com.aura.music.desktop.ui.*
+import com.aura.music.ui.theme.*
 
 @Composable
 fun DesktopTrackContextMenu(

@@ -5,9 +5,11 @@ import androidx.compose.ui.graphics.Color
 val DeepBlack = Color(0xFF050505)
 val OffBlack = Color(0xFF101010)
 val DarkGraphite = Color(0xFF1A1A1A)
+val CardDark = Color(0xFF1A1A1A)
 val ElevatedGraphite = Color(0xFF232323)
 val HairlineDark = Color(0xFF2F2F2F)
 
+val PureWhite = Color(0xFFFFFFFF)
 val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFFC2C2C2)
 val TextMuted = Color(0xFF8F8F8F)

@@ -33,6 +33,7 @@ fun DesktopSidebar(
     appState: DesktopAppState,
     playlists: List<PlaylistListRow>,
     activeDownloadsCount: Int = 0,
+    onPlaylistSelected: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -198,7 +199,13 @@ fun DesktopSidebar(
                                 }
                             )
                             .hoverable(interactionSource)
-                            .clickable { appState.openPlaylist(pl.id) }
+                            .clickable {
+                                if (onPlaylistSelected != null) {
+                                    onPlaylistSelected(pl.id)
+                                } else {
+                                    appState.openPlaylist(pl.id)
+                                }
+                            }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

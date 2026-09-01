@@ -434,7 +434,7 @@ private fun DesktopOnlineAlbumItem(album: AlbumSummary, onClick: () -> Unit) {
         DesktopArtworkCover(coverUri = album.coverUri, size = 120.dp, shapeRadius = 8.dp)
         Spacer(modifier = Modifier.height(8.dp))
         Text(text = album.title, color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(text = album.displayArtistName, color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text = album.primaryArtistName, color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

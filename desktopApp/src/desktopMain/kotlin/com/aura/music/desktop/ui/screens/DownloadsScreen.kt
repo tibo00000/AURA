@@ -22,7 +22,8 @@ import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.DesktopDownloadErrorDetailDialog
-import com.aura.music.desktop.ui.theme.*
+import com.aura.music.desktop.ui.*
+import com.aura.music.ui.theme.*
 
 @Composable
 fun DownloadsScreen(

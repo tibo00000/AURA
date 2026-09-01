@@ -63,5 +63,9 @@ class WasmAudioPlayer : AudioPlayer {
     override fun setVolume(volume: Float) {
         audio.volume = volume.toDouble().coerceIn(0.0, 1.0)
     }
+
+    override fun getVolume(): Float {
+        return audio.volume.toFloat()
+    }
 }
 private fun Double.isInfinite(): Boolean = this == Double.POSITIVE_INFINITY || this == Double.NEGATIVE_INFINITY

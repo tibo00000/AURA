@@ -33,10 +33,15 @@ class DesktopAppState {
     // Recherche
     var searchQuery by mutableStateOf("")
     var selectedSearchTab by mutableStateOf(0) // 0 = Bibliothèque, 1 = En ligne
+    var searchTab: Int
+        get() = selectedSearchTab
+        set(value) { selectedSearchTab = value }
 
     // Dialogues
     var showCreatePlaylistDialog by mutableStateOf(false)
     var showImportPlaylistDialog by mutableStateOf(false)
+    var showAddToPlaylistDialog by mutableStateOf(false)
+    var trackIdToAddToPlaylist by mutableStateOf<String?>(null)
     var trackForPlaylistPicker by mutableStateOf<TrackListRow?>(null)
     var playlistToRename by mutableStateOf<Pair<String, String>?>(null) // id, currentName
     var playlistToDelete by mutableStateOf<Pair<String, String>?>(null) // id, name

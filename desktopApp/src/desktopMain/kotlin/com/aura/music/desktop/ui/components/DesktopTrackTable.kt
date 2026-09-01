@@ -485,7 +485,7 @@ private fun TrackTableRowItem(
             )
 
             IconButton(
-                onClick = { onContextMenu?.invoke(track) },
+                onClick = onContextMenu,
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(
