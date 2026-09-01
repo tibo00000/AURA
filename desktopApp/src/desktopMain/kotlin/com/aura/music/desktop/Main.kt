@@ -22,12 +22,29 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.*
 import com.aura.music.desktop.ui.screens.*
+import coil3.ImageLoader
+import coil3.compose.setSingletonImageLoaderFactory
+import coil3.network.ktor3.KtorNetworkFetcherFactory
+import coil3.memory.MemoryCache
 import com.aura.music.domain.player.DesktopAudioPlayer
 import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 fun main() = application {
+    setSingletonImageLoaderFactory { context ->
+        ImageLoader.Builder(context)
+            .components {
+                add(KtorNetworkFetcherFactory())
+            }
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, 0.25)
+                    .build()
+            }
+            .build()
+    }
+
     var isVisible by remember { mutableStateOf(true) }
     val windowState = rememberWindowState(
         position = WindowPosition(Alignment.Center),

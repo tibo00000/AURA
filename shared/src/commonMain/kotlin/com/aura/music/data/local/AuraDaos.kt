@@ -525,8 +525,20 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPlaylist(entity: PlaylistEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylist(entity: PlaylistEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylists(entities: List<PlaylistEntity>)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPlaylistItem(entity: PlaylistItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylistItem(entity: PlaylistItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylistItems(entities: List<PlaylistItemEntity>)
 
     @Query("UPDATE playlists SET name = :name, updated_at = :updatedAt WHERE id = :playlistId")
     suspend fun renamePlaylist(playlistId: String, name: String, updatedAt: Long): Int

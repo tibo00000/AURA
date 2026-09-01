@@ -30,11 +30,19 @@ fun DesktopArtworkCover(
     shapeRadius: Dp = 6.dp,
     fallbackIcon: ImageVector = Icons.Rounded.MusicNote
 ) {
-    val resolvedModel = when {
-        coverUri.isNullOrBlank() -> null
-        coverUri.startsWith("http://") || coverUri.startsWith("https://") -> coverUri
-        coverUri.startsWith("file:") -> coverUri
-        else -> File(coverUri).toURI().toString()
+    val resolvedModel = androidx.compose.runtime.remember(coverUri) {
+        when {
+            coverUri.isNullOrBlank() -> null
+            coverUri.startsWith("http://") || coverUri.startsWith("https://") -> coverUri
+            coverUri.startsWith("file:") -> coverUri
+            coverUri.startsWith("content://") -> null
+            else -> try {
+                val f = File(coverUri)
+                if (f.exists()) f.toURI().toString() else null
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
     Box(

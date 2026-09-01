@@ -1466,16 +1466,30 @@ class DesktopPlaybackOrchestrator(
                 val playlistsResp = apiService.getPlaylists(token)
                 val playlists = playlistsResp.data ?: emptyList()
                 for (pl in playlists) {
-                    database.playlistDao().insertPlaylist(
+                    val plCreatedAt = try { java.time.Instant.parse(pl.createdAt).toEpochMilli() } catch (e: Exception) { now }
+                    val plUpdatedAt = try { java.time.Instant.parse(pl.updatedAt).toEpochMilli() } catch (e: Exception) { now }
+                    database.playlistDao().upsertPlaylist(
                         PlaylistEntity(
                             id = pl.id,
                             name = pl.name,
                             coverUri = pl.coverUri,
-                            isPinned = false,
-                            createdAt = now,
-                            updatedAt = now
+                            isPinned = pl.isPinned,
+                            createdAt = plCreatedAt,
+                            updatedAt = plUpdatedAt
                         )
                     )
+                    for (item in pl.items) {
+                        val itemAddedAt = try { java.time.Instant.parse(item.addedAt).toEpochMilli() } catch (e: Exception) { now }
+                        database.playlistDao().upsertPlaylistItem(
+                            PlaylistItemEntity(
+                                id = item.id,
+                                playlistId = pl.id,
+                                trackId = item.trackId,
+                                position = item.position,
+                                addedAt = itemAddedAt
+                            )
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 System.err.println("Failed to sync playlists: ${e.message}")
