@@ -14,6 +14,7 @@ services:
       - "8000:8000"
     volumes:
       - aura-downloads:/app/downloads
+      - ../server/scripts:/app/scripts:ro
     depends_on:
       - pot-provider
     healthcheck:
