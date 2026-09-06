@@ -96,6 +96,26 @@ async def upload_sync_file(
         "updated_at": uploaded_at,
     }
     metadata_file.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+
+    # Mirror dans le cache global pour dédoublonnage instantané avec les autres utilisateurs
+    try:
+        from app.services.download_service import _get_global_cache_dir, _get_track_key
+        cache_dir = _get_global_cache_dir()
+        track_key = _get_track_key(track_id)
+        cache_audio = cache_dir / f"{track_key}.audio"
+        cache_json = cache_dir / f"{track_key}.json"
+        if not cache_audio.exists():
+            import os
+            import shutil
+            try:
+                os.link(target_file, cache_audio)
+            except Exception:
+                shutil.copyfile(target_file, cache_audio)
+            cache_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+            logger.info("Mirrored uploaded track %s to _global_cache", track_id)
+    except Exception as e:
+        logger.debug("Could not link uploaded track to global cache: %s", e)
+
     return ResponseEnvelope(data=metadata)
 
 

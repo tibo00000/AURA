@@ -56,8 +56,12 @@ def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
     """
     Vérifie si une piste existe déjà dans le cache global (_global_cache).
     Retourne (chemin_audio, métadonnées) si présente et valide (> 0 octets), sinon None.
+    Si la piste est présente dans le répertoire d'un utilisateur existant (téléchargée avant la mise
+    en place du cache global ou par upload direct), elle est automatiquement indexée par hardlink
+    dans _global_cache (backfill transparent).
     """
     import json
+    import shutil
     track_key = _get_track_key(track_id)
     cache_dir = _get_global_cache_dir()
     cached_audio = cache_dir / f"{track_key}.audio"
@@ -71,6 +75,41 @@ def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
             except Exception as e:
                 logger.warning("Could not read cached metadata for track %s: %s", track_id, e)
         return cached_audio, metadata
+
+    # Backfill transparent à la volée pour les pistes déjà téléchargées dans le passé
+    try:
+        sync_base = _get_sync_base()
+        if sync_base.exists():
+            for user_folder in sync_base.iterdir():
+                if user_folder.is_dir() and user_folder.name != "_global_cache":
+                    candidate_audio = user_folder / f"{track_key}.audio"
+                    candidate_json = user_folder / f"{track_key}.json"
+                    if candidate_audio.exists() and candidate_audio.stat().st_size > 0:
+                        try:
+                            if cached_audio.exists():
+                                cached_audio.unlink()
+                            os.link(candidate_audio, cached_audio)
+                        except Exception:
+                            shutil.copyfile(candidate_audio, cached_audio)
+
+                        if candidate_json.exists():
+                            try:
+                                shutil.copyfile(candidate_json, cached_json)
+                            except Exception:
+                                pass
+
+                        metadata = {}
+                        if cached_json.exists():
+                            try:
+                                metadata = json.loads(cached_json.read_text(encoding="utf-8"))
+                            except Exception:
+                                pass
+
+                        logger.info("Automatically backfilled existing track %s into global cache from %s", track_id, user_folder.name)
+                        return cached_audio, metadata
+    except Exception as e:
+        logger.warning("Error while scanning existing user folders for track %s: %s", track_id, e)
+
     return None
 
 

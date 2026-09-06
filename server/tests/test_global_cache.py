@@ -197,6 +197,46 @@ class TestGlobalTrackCache(unittest.TestCase):
 
         asyncio.run(run_eviction_test())
 
+    def test_existing_track_backfill_from_user_folder(self):
+        """
+        Vérifie qu'un morceau déjà présent dans le dossier d'un utilisateur historique
+        (téléchargé avant l'existence du _global_cache) est automatiquement indexé
+        dans le cache global dès qu'il est recherché.
+        """
+        track_id = "trk_deezer_historical_song"
+        track_key = _get_track_key(track_id)
+        owner_user_id = "12345678-1234-1234-1234-1234567890ab"
+        safe_owner = hashlib.sha256(owner_user_id.encode("utf-8")).hexdigest()
+
+        # Simuler un fichier téléchargé dans le passé uniquement dans le dossier de l'owner
+        owner_dir = self.test_dir / safe_owner
+        owner_dir.mkdir(parents=True, exist_ok=True)
+        historical_audio = owner_dir / f"{track_key}.audio"
+        historical_json = owner_dir / f"{track_key}.json"
+
+        content = b"HISTORICAL_AUDIO_FILE_ON_VPS"
+        historical_audio.write_bytes(content)
+        historical_json.write_text(json.dumps({
+            "track_id": track_id,
+            "title": "Historical Hit",
+            "artist_name": "Legend",
+        }), encoding="utf-8")
+
+        # Vérifier que le cache global ne l'a pas au départ
+        cache_dir = _get_global_cache_dir()
+        self.assertFalse((cache_dir / f"{track_key}.audio").exists())
+
+        # Appel de _find_globally_cached_track : doit le trouver et le backfiller
+        cached = _find_globally_cached_track(track_id)
+        self.assertIsNotNone(cached)
+        cached_path, metadata = cached
+
+        # Vérifier qu'il est maintenant dans le cache global
+        self.assertTrue(cached_path.exists())
+        self.assertEqual(cached_path.read_bytes(), content)
+        self.assertEqual(metadata.get("title"), "Historical Hit")
+        self.assertEqual(metadata.get("artist_name"), "Legend")
+
 
 if __name__ == "__main__":
     unittest.main()
