@@ -549,6 +549,13 @@ class LocalLibraryRepository(
                             Log.w("LocalLibraryRepository", "Auto download favorite failed: ${e.message}")
                         }
                     }
+
+                    // Auto-upload vers le Cloud s'il s'agit d'une piste locale
+                    try {
+                        cloudFileRepositoryProvider?.invoke()?.autoUploadFavoriteTrack(trackId)
+                    } catch (e: Exception) {
+                        Log.w("LocalLibraryRepository", "Auto upload favorite local track failed: ${e.message}")
+                    }
                 }
             } catch (e: Exception) {
                 Log.w("LocalLibraryRepository", "Background like sync error: ${e.message}")

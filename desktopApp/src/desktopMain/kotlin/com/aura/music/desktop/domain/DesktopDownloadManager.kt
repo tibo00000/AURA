@@ -27,20 +27,24 @@ class DesktopDownloadManager(
 
     private val isSyncing = AtomicBoolean(false)
     private var downloadSyncJob: Job? = null
+    private val failedJobFetchIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun startLoop(intervalMs: Long = 3000L) {
         downloadSyncJob?.cancel()
         downloadSyncJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 val token = apiToken
+                var hasActiveJobs = false
                 if (!token.isNullOrBlank()) {
                     try {
-                        syncActiveJobs(token)
+                        hasActiveJobs = syncActiveJobs(token)
                     } catch (e: Exception) {
                         System.err.println("Error syncing download jobs: ${e.message}")
                     }
                 }
-                delay(intervalMs)
+                // Si des téléchargements sont en cours, boucle courte (3s).
+                // Sinon, boucle espacée (30s) pour éviter de requêter et rafraîchir inutilement.
+                delay(if (hasActiveJobs) intervalMs else 30000L)
             }
         }
     }
@@ -94,11 +98,11 @@ class DesktopDownloadManager(
         database.downloadJobDao().clearCompletedJobs()
     }
 
-    suspend fun syncActiveJobs(token: String) = withContext(Dispatchers.IO) {
-        if (!isSyncing.compareAndSet(false, true)) return@withContext
+    suspend fun syncActiveJobs(token: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isSyncing.compareAndSet(false, true)) return@withContext false
         try {
             val response = apiService.listDownloads(token = token)
-            val items = response.data?.items ?: return@withContext
+            val items = response.data?.items ?: return@withContext false
             val now = System.currentTimeMillis()
 
             val jobsToUpsert = mutableListOf<DownloadJobEntity>()
@@ -129,30 +133,41 @@ class DesktopDownloadManager(
                     )
                 }
 
-                jobsToUpsert.add(
-                    DownloadJobEntity(
-                        id = item.id,
-                        trackId = item.trackId,
-                        providerName = item.providerName,
-                        status = item.status,
-                        progressPercent = item.progressPercent,
-                        errorCode = item.errorCode,
-                        errorMessage = item.errorMessage,
-                        attemptCount = item.attemptCount,
-                        createdAt = now,
-                        updatedAt = now
+                val existing = database.downloadJobDao().getJobById(item.id)
+                val isUnchanged = existing != null &&
+                    existing.status == item.status &&
+                    existing.progressPercent == item.progressPercent &&
+                    existing.errorCode == item.errorCode &&
+                    existing.errorMessage == item.errorMessage
+
+                if (!isUnchanged) {
+                    jobsToUpsert.add(
+                        DownloadJobEntity(
+                            id = item.id,
+                            trackId = item.trackId,
+                            providerName = item.providerName,
+                            status = item.status,
+                            progressPercent = item.progressPercent,
+                            errorCode = item.errorCode,
+                            errorMessage = item.errorMessage,
+                            attemptCount = item.attemptCount,
+                            createdAt = existing?.createdAt ?: now,
+                            updatedAt = now
+                        )
                     )
-                )
+                }
             }
 
-            // Transaction atomique pour l'insertion des jobs et tracks associés
-            database.useWriterConnection { transactor ->
-                transactor.immediateTransaction {
-                    if (tracksToInsert.isNotEmpty()) {
-                        database.trackDao().upsertTracks(tracksToInsert)
-                    }
-                    if (jobsToUpsert.isNotEmpty()) {
-                        database.downloadJobDao().upsert(jobsToUpsert)
+            // Transaction atomique uniquement si des changements réels sont détectés
+            if (tracksToInsert.isNotEmpty() || jobsToUpsert.isNotEmpty()) {
+                database.useWriterConnection { transactor ->
+                    transactor.immediateTransaction {
+                        if (tracksToInsert.isNotEmpty()) {
+                            database.trackDao().upsertTracks(tracksToInsert)
+                        }
+                        if (jobsToUpsert.isNotEmpty()) {
+                            database.downloadJobDao().upsert(jobsToUpsert)
+                        }
                     }
                 }
             }
@@ -162,18 +177,21 @@ class DesktopDownloadManager(
                 if (item.status == "succeeded" || item.status == "completed") {
                     val appDir = File(System.getProperty("user.home"), ".aura")
                     val downloadsDir = File(appDir, "downloads")
-                    val targetFile = File(downloadsDir, "${item.trackId.replace(':', ';')}.mp3")
+                    val cleanId = item.trackId.replace(':', ';')
+                    val targetFile = downloadsDir.listFiles()?.firstOrNull { it.name.startsWith("$cleanId.") && it.length() > 0L }
 
                     val rawTrack = database.trackDao().getRawTrackById(item.trackId)
                     val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
 
-                    if (!targetFile.exists() || targetFile.length() == 0L || !isDbLinked) {
+                    if ((targetFile == null || !isDbLinked) && !failedJobFetchIds.contains(item.id)) {
                         if (rawTrack != null) {
                             fetchDownloadedFile(item.id, item.trackId, token)
                         }
                     }
                 }
             }
+
+            items.any { it.status == "queued" || it.status == "running" || it.status == "pending" || it.status == "downloading" }
         } finally {
             isSyncing.set(false)
         }
@@ -183,6 +201,11 @@ class DesktopDownloadManager(
         try {
             System.out.println("Fetching physical MP3 file for succeeded job $jobId...")
             val response = apiService.downloadFile(token, jobId)
+            if (response.status.value == 404) {
+                System.err.println("Physical file for job $jobId not found on server (HTTP 404). Silencing retries.")
+                failedJobFetchIds.add(jobId)
+                return@withContext
+            }
             if (response.status.value !in 200..299) {
                 System.err.println("Failed to download physical file for job $jobId: HTTP ${response.status.value}")
                 return@withContext
@@ -194,14 +217,15 @@ class DesktopDownloadManager(
                 downloadsDir.mkdirs()
             }
 
-            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            if (targetFile.exists()) {
-                targetFile.delete()
+            val cleanId = trackId.replace(':', ';')
+            val tempFile = File(downloadsDir, "$cleanId.tmp")
+            if (tempFile.exists()) {
+                tempFile.delete()
             }
 
             val channel = response.bodyAsChannel()
             channel.toInputStream().use { inputStream ->
-                java.io.FileOutputStream(targetFile).use { outputStream ->
+                java.io.FileOutputStream(tempFile).use { outputStream ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
@@ -209,6 +233,14 @@ class DesktopDownloadManager(
                     }
                 }
             }
+
+            val contentType = response.headers["Content-Type"]
+            val ext = com.aura.music.desktop.media.DesktopMediaMetadataReader.detectAudioExtension(tempFile, contentType)
+            val targetFile = File(downloadsDir, "$cleanId.$ext")
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            tempFile.renameTo(targetFile)
 
             val now = System.currentTimeMillis()
             val fileUri = targetFile.toURI().toString()

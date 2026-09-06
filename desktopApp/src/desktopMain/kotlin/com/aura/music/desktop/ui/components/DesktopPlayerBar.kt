@@ -148,20 +148,29 @@ fun DesktopPlayerBar(
 
                         // Play/Pause
                         val isPlaying = uiState.playbackState == PlaybackState.Playing
+                        val isBuffering = uiState.playbackState == PlaybackState.Buffering || uiState.playbackState == PlaybackState.Preparing
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
                                 .background(BlazeOrange)
-                                .clickable { orchestrator.togglePlayPause() },
+                                .clickable(enabled = !isBuffering) { orchestrator.togglePlayPause() },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Lecture",
-                                tint = PureWhite,
-                                modifier = Modifier.size(26.dp)
-                            )
+                            if (isBuffering) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = PureWhite,
+                                    strokeWidth = 2.5.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Lecture",
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
                         }
 
                         // Next

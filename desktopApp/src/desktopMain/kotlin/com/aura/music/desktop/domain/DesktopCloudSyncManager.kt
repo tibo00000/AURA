@@ -263,10 +263,21 @@ class DesktopCloudSyncManager(
             }
         }
 
-        // 2. Synchronisation des Likes
+        // 2. Synchronisation des Likes (avec réconciliation bidirectionnelle stricte)
         try {
             val likesResp = apiService.getLikes(token)
             val likes = likesResp.data ?: emptyList()
+            val cloudTrackIds = likes.map { it.trackId }.toSet()
+
+            // Suppression locale des likes qui ne sont plus présents sur le Cloud
+            val localLikes = database.trackDao().getLikedTracks()
+            for (local in localLikes) {
+                if (local.id !in cloudTrackIds) {
+                    database.trackLikeDao().deleteLike(local.id)
+                    database.trackLikeDao().setTrackIsLiked(local.id, false, now)
+                }
+            }
+
             for (like in likes) {
                 val existingTrack = database.trackDao().getRawTrackById(like.trackId)
                 if (existingTrack == null) {
@@ -305,10 +316,20 @@ class DesktopCloudSyncManager(
             System.err.println("Failed to sync remote likes: ${e.message}")
         }
 
-        // 3. Synchronisation des Playlists
+        // 3. Synchronisation des Playlists (avec réconciliation)
         try {
             val playlistsResp = apiService.getPlaylists(token)
             val playlists = playlistsResp.data ?: emptyList()
+            val cloudPlaylistIds = playlists.map { it.id }.toSet()
+
+            // Suppression locale des playlists supprimées du Cloud
+            val localPlaylists = database.playlistDao().getPlaylists()
+            for (localPl in localPlaylists) {
+                if (localPl.id !in cloudPlaylistIds) {
+                    database.playlistDao().deletePlaylist(localPl.id)
+                }
+            }
+
             for (pl in playlists) {
                 val plCreatedAt = try { java.time.Instant.parse(pl.createdAt).toEpochMilli() } catch (e: Exception) { now }
                 val plUpdatedAt = try { java.time.Instant.parse(pl.updatedAt).toEpochMilli() } catch (e: Exception) { now }
@@ -361,6 +382,90 @@ class DesktopCloudSyncManager(
         }
     }
 
+    suspend fun cacheCloudStream(
+        token: String,
+        trackId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String?,
+        durationMs: Long,
+        coverUri: String?
+    ): File? = withContext(Dispatchers.IO) {
+        try {
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val streamCacheDir = File(appDir, "cache/stream")
+            if (!streamCacheDir.exists()) {
+                streamCacheDir.mkdirs()
+            }
+
+            val cleanId = trackId.replace(':', ';')
+            var targetFile = streamCacheDir.listFiles()?.firstOrNull { it.name.startsWith("$cleanId.") && it.length() > 0L }
+
+            if (targetFile == null || targetFile.length() == 0L) {
+                System.out.println("Streaming cache miss: caching stream audio for $trackId...")
+                val response = apiService.downloadSyncFile(token, trackId)
+                if (response.status.value !in 200..299) {
+                    System.err.println("Failed to stream audio for $trackId: HTTP ${response.status.value}")
+                    return@withContext null
+                }
+
+                val tempFile = File(streamCacheDir, "$cleanId.tmp")
+                if (tempFile.exists()) tempFile.delete()
+
+                val channel = response.bodyAsChannel()
+                channel.toInputStream().use { inputStream ->
+                    java.io.FileOutputStream(tempFile).use { outputStream ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                        }
+                    }
+                }
+
+                val contentType = response.headers["Content-Type"]
+                val ext = com.aura.music.desktop.media.DesktopMediaMetadataReader.detectAudioExtension(tempFile, contentType)
+                val finalFile = File(streamCacheDir, "$cleanId.$ext")
+                if (finalFile.exists()) finalFile.delete()
+                tempFile.renameTo(finalFile)
+                targetFile = finalFile
+            } else {
+                // Auto-réparation si l'extension existante ne correspond pas aux magic bytes (ex: .mp3 pour un M4A)
+                val detectedExt = com.aura.music.desktop.media.DesktopMediaMetadataReader.detectAudioExtension(targetFile, null)
+                if (!targetFile.name.endsWith(".$detectedExt", ignoreCase = true)) {
+                    val correctedFile = File(streamCacheDir, "$cleanId.$detectedExt")
+                    if (correctedFile.exists()) correctedFile.delete()
+                    if (targetFile.renameTo(correctedFile)) {
+                        targetFile = correctedFile
+                    }
+                }
+            }
+
+            // Met à jour la durée dans SQLite sans modifier canonicalAudioSourceType (reste "cloud")
+            if (targetFile.exists() && targetFile.length() > 0L) {
+                targetFile.setLastModified(System.currentTimeMillis())
+                pruneStreamCacheIfNeeded()
+
+                val meta = com.aura.music.desktop.media.DesktopMediaMetadataReader.readMetadata(targetFile)
+                val resolvedDuration = if (durationMs <= 0L && meta.durationMs > 0L) meta.durationMs else durationMs
+                val existingTrack = database.trackDao().getRawTrackById(trackId)
+                if (existingTrack != null && (existingTrack.durationMs == null || existingTrack.durationMs == 0L) && resolvedDuration > 0L) {
+                    val updated = existingTrack.copy(
+                        durationMs = resolvedDuration,
+                        coverUri = coverUri ?: existingTrack.coverUri ?: meta.localCoverUri,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    database.trackDao().upsertTrack(updated)
+                }
+            }
+
+            targetFile
+        } catch (e: Exception) {
+            System.err.println("Failed to cache cloud stream for $trackId: ${e.message}")
+            null
+        }
+    }
+
     suspend fun downloadCloudTrack(
         token: String,
         trackId: String,
@@ -384,14 +489,15 @@ class DesktopCloudSyncManager(
                 downloadsDir.mkdirs()
             }
 
-            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            if (targetFile.exists()) {
-                targetFile.delete()
+            val cleanId = trackId.replace(':', ';')
+            val tempFile = File(downloadsDir, "$cleanId.tmp")
+            if (tempFile.exists()) {
+                tempFile.delete()
             }
 
             val channel = response.bodyAsChannel()
             channel.toInputStream().use { inputStream ->
-                java.io.FileOutputStream(targetFile).use { outputStream ->
+                java.io.FileOutputStream(tempFile).use { outputStream ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
@@ -399,6 +505,14 @@ class DesktopCloudSyncManager(
                     }
                 }
             }
+
+            val contentType = response.headers["Content-Type"]
+            val ext = com.aura.music.desktop.media.DesktopMediaMetadataReader.detectAudioExtension(tempFile, contentType)
+            val targetFile = File(downloadsDir, "$cleanId.$ext")
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            tempFile.renameTo(targetFile)
 
             val now = System.currentTimeMillis()
             val fileUri = targetFile.toURI().toString()
@@ -562,5 +676,56 @@ class DesktopCloudSyncManager(
         } else {
             System.err.println("Failed to delete track $trackId from cloud.")
         }
+    }
+
+    /**
+     * Purge LRU automatique du cache de streaming : si le dossier dépasse maxSizeBytes (défaut: 500 Mo),
+     * supprime les fichiers les plus anciens (least recently used) pour ramener l'usage à 80% du quota.
+     */
+    fun pruneStreamCacheIfNeeded(maxSizeBytes: Long = 500L * 1024 * 1024) {
+        try {
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val streamCacheDir = File(appDir, "cache/stream")
+            if (!streamCacheDir.exists()) return
+
+            val files = streamCacheDir.listFiles() ?: return
+            val totalSize = files.sumOf { it.length() }
+            if (totalSize > maxSizeBytes) {
+                val sorted = files.sortedBy { it.lastModified() }
+                var currentSize = totalSize
+                for (file in sorted) {
+                    val length = file.length()
+                    if (file.delete()) {
+                        currentSize -= length
+                        if (currentSize <= maxSizeBytes * 0.8) {
+                            break
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    /**
+     * Vide manuellement l'intégralité du cache de streaming temporaire.
+     */
+    fun clearStreamCache(): Long {
+        var freedBytes = 0L
+        try {
+            val appDir = File(System.getProperty("user.home"), ".aura")
+            val streamCacheDir = File(appDir, "cache/stream")
+            if (streamCacheDir.exists()) {
+                val files = streamCacheDir.listFiles() ?: emptyArray()
+                for (f in files) {
+                    val len = f.length()
+                    if (f.delete()) freedBytes += len
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return freedBytes
     }
 }

@@ -293,6 +293,7 @@ fun main() = application {
                                         allTracks = allTracks,
                                         likedTracks = likedTracks,
                                         playlists = playlists,
+                                        allAlbums = localAlbums,
                                         history = history,
                                         orchestrator = orchestrator,
                                         appState = appState

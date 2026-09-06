@@ -99,9 +99,10 @@ class DesktopPlaybackOrchestrator(
         // Hydratation en arrière-plan des stubs de pistes distantes
         scope.launch(Dispatchers.IO) {
             try {
-                DesktopTrackHydrator.hydrateTrackStubs(database)
-                withContext(Dispatchers.Main) {
-                    onDataChanged?.invoke()
+                DesktopTrackHydrator.hydrateTrackStubs(database) {
+                    scope.launch(Dispatchers.Main) {
+                        onDataChanged?.invoke()
+                    }
                 }
             } catch (e: Exception) {
                 // Ignore
@@ -130,6 +131,50 @@ class DesktopPlaybackOrchestrator(
     // CONTRÔLES DE LECTURE
     // =======================================================================
 
+    private fun playTrackItem(track: QueuedTrack) {
+        val uri = track.contentUri
+        if (!uri.isNullOrBlank()) {
+            audioPlayer.play(uri)
+            scheduleDebouncedSnapshotSave()
+            syncUiState(PlaybackState.Playing)
+        } else {
+            // Piste sur le cloud : streaming à la demande via cache temporaire
+            scope.launch(Dispatchers.IO) {
+                val token = apiToken ?: return@launch
+                withContext(Dispatchers.Main) {
+                    syncUiState(PlaybackState.Buffering)
+                }
+                try {
+                    val cachedFile = cloudSyncManager?.cacheCloudStream(
+                        token = token,
+                        trackId = track.trackId,
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumTitle = track.albumTitle,
+                        durationMs = track.durationMs ?: 0L,
+                        coverUri = track.coverUri
+                    )
+                    if (cachedFile != null && cachedFile.exists()) {
+                        withContext(Dispatchers.Main) {
+                            audioPlayer.play(cachedFile.toURI().toString())
+                            scheduleDebouncedSnapshotSave()
+                            syncUiState(PlaybackState.Playing)
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            syncUiState(PlaybackState.Idle)
+                        }
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Failed on-demand cloud stream for ${track.trackId}: ${e.message}")
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(playbackState = PlaybackState.Error, errorMessage = e.message) }
+                    }
+                }
+            }
+        }
+    }
+
     fun playTrack(
         trackId: String,
         contextType: String,
@@ -144,49 +189,11 @@ class DesktopPlaybackOrchestrator(
             startIndex = startIndex
         )
         val track = queueManager.state.value.currentTrack ?: return
-
-        if (track.contentUri == null) {
-            // Piste sur le cloud : streaming à la demande
-            scope.launch(Dispatchers.IO) {
-                val token = apiToken ?: return@launch
-                try {
-                    cloudSyncManager?.downloadCloudTrack(
-                        token = token,
-                        trackId = track.trackId,
-                        title = track.title,
-                        artistName = track.artistName,
-                        albumTitle = track.albumTitle,
-                        durationMs = track.durationMs ?: 0L,
-                        coverUri = track.coverUri
-                    )
-                    val localUri = database.trackDao().getTrackContentUri(track.trackId)
-                    if (localUri != null) {
-                        withContext(Dispatchers.Main) {
-                            audioPlayer.play(localUri)
-                            scheduleDebouncedSnapshotSave()
-                            syncUiState(PlaybackState.Playing)
-                        }
-                    }
-                } catch (e: Exception) {
-                    System.err.println("Failed on-demand cloud stream for ${track.trackId}: ${e.message}")
-                }
-            }
-            return
-        }
-
-        val uri = track.contentUri ?: return
-        audioPlayer.play(uri)
-        scheduleDebouncedSnapshotSave()
-        syncUiState(PlaybackState.Playing)
+        playTrackItem(track)
     }
 
     fun playTrackDirectly(track: QueuedTrack) {
-        val uri = track.contentUri
-        if (!uri.isNullOrBlank()) {
-            audioPlayer.play(uri)
-            syncUiState(PlaybackState.Playing)
-            scheduleDebouncedSnapshotSave()
-        }
+        playTrackItem(track)
     }
 
     fun playOnlineTrack(
@@ -215,30 +222,8 @@ class DesktopPlaybackOrchestrator(
             startIndex = startIndex
         )
 
-        scope.launch(Dispatchers.IO) {
-            val token = apiToken ?: return@launch
-            try {
-                cloudSyncManager?.downloadCloudTrack(
-                    token = token,
-                    trackId = track.id,
-                    title = track.title,
-                    artistName = track.displayArtistName,
-                    albumTitle = track.displayAlbumTitle,
-                    durationMs = track.durationMs.toLong(),
-                    coverUri = track.coverUri
-                )
-                val localUri = database.trackDao().getTrackContentUri(track.id)
-                if (localUri != null) {
-                    withContext(Dispatchers.Main) {
-                        audioPlayer.play(localUri)
-                        scheduleDebouncedSnapshotSave()
-                        syncUiState(PlaybackState.Playing)
-                    }
-                }
-            } catch (e: Exception) {
-                System.err.println("Failed to stream online search track ${track.id}: ${e.message}")
-            }
-        }
+        val currentTrack = queueManager.state.value.currentTrack ?: return
+        playTrackItem(currentTrack)
     }
 
     fun togglePlayPause() {
@@ -249,41 +234,9 @@ class DesktopPlaybackOrchestrator(
             scheduleDebouncedSnapshotSave()
         } else {
             val currentPos = _uiState.value.positionMs
-            if (currentTrack.contentUri != null) {
-                audioPlayer.play(currentTrack.contentUri!!)
-                if (currentPos > 0) {
-                    audioPlayer.seekTo(currentPos)
-                }
-                syncUiState(PlaybackState.Playing)
-                scheduleDebouncedSnapshotSave()
-            } else {
-                scope.launch(Dispatchers.IO) {
-                    val token = apiToken ?: return@launch
-                    try {
-                        cloudSyncManager?.downloadCloudTrack(
-                            token = token,
-                            trackId = currentTrack.trackId,
-                            title = currentTrack.title,
-                            artistName = currentTrack.artistName,
-                            albumTitle = currentTrack.albumTitle,
-                            durationMs = currentTrack.durationMs ?: 0L,
-                            coverUri = currentTrack.coverUri
-                        )
-                        val localUri = database.trackDao().getTrackContentUri(currentTrack.trackId)
-                        if (localUri != null) {
-                            withContext(Dispatchers.Main) {
-                                audioPlayer.play(localUri)
-                                if (currentPos > 0) {
-                                    audioPlayer.seekTo(currentPos)
-                                }
-                                scheduleDebouncedSnapshotSave()
-                                syncUiState(PlaybackState.Playing)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        System.err.println("Failed on-demand cloud stream for ${currentTrack.trackId}: ${e.message}")
-                    }
-                }
+            playTrackItem(currentTrack)
+            if (currentPos > 0) {
+                audioPlayer.seekTo(currentPos)
             }
         }
     }
@@ -308,9 +261,8 @@ class DesktopPlaybackOrchestrator(
 
     fun next() {
         val nextTrack = queueManager.next()
-        if (nextTrack != null && nextTrack.contentUri != null) {
-            audioPlayer.play(nextTrack.contentUri!!)
-            syncUiState(PlaybackState.Playing)
+        if (nextTrack != null) {
+            playTrackItem(nextTrack)
         } else {
             audioPlayer.stop()
             syncUiState(PlaybackState.Idle)
@@ -321,11 +273,11 @@ class DesktopPlaybackOrchestrator(
     fun previous() {
         val currentPos = audioPlayer.getCurrentPosition()
         val prevTrack = queueManager.previous(currentPos)
-        if (prevTrack != null && prevTrack.contentUri != null) {
+        if (prevTrack != null) {
             if (currentPos > 3000L) {
                 audioPlayer.seekTo(0)
             } else {
-                audioPlayer.play(prevTrack.contentUri!!)
+                playTrackItem(prevTrack)
             }
             syncUiState(PlaybackState.Playing)
         } else {
@@ -454,6 +406,20 @@ class DesktopPlaybackOrchestrator(
             }
 
             cloudSyncManager?.triggerFlush()
+
+            // Auto-upload vers le Cloud si c'est un morceau physique local
+            val rawTrack = database.trackDao().getRawTrackById(trackId)
+            val isLocal = trackId.startsWith("track:local:") || trackId.startsWith("local:") || (rawTrack?.canonicalAudioSourceType == "local")
+            if (!currentlyLiked && isLocal) {
+                val token = apiToken
+                if (token != null) {
+                    try {
+                        cloudSyncManager?.uploadCloudTrack(token, trackId)
+                    } catch (e: Exception) {
+                        System.err.println("Auto-upload of favorite local track failed: ${e.message}")
+                    }
+                }
+            }
         }
     }
 
@@ -919,6 +885,9 @@ class DesktopPlaybackOrchestrator(
 
     suspend fun deleteCloudTrack(token: String, trackId: String) =
         cloudSyncManager?.deleteCloudTrack(token, trackId)
+
+    fun clearStreamCache(): Long =
+        cloudSyncManager?.clearStreamCache() ?: 0L
 }
 
 private data class ScannedTrackInfo(

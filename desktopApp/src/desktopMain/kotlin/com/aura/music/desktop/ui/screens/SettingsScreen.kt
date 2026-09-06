@@ -1,6 +1,7 @@
 package com.aura.music.desktop.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -270,7 +271,63 @@ fun SettingsScreen(
             }
         }
 
-        // 2. Indexation de la Bibliothèque Locale
+        // 2. Gestionnaire Cloud & Fichiers Distants
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { appState.navigateTo("cloud_sync") },
+                colors = CardDefaults.cardColors(containerColor = OffBlack)
+            ) {
+                Row(
+                    modifier = Modifier.padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(BlazeOrange.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudSync,
+                                contentDescription = null,
+                                tint = BlazeOrange,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "Gestionnaire Cloud",
+                                color = PureWhite,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Gérer les fichiers distants, l'espace VPS et les sauvegardes",
+                                color = PureWhite.copy(alpha = 0.5f),
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = PureWhite.copy(alpha = 0.4f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // 3. Indexation de la Bibliothèque Locale
         item {
             Card(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),

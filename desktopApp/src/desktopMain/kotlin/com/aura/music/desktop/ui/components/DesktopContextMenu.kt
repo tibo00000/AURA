@@ -86,7 +86,7 @@ fun DesktopTrackContextMenu(
             )
         }
 
-        if (onEditMetadata != null && !track.contentUri.isNullOrBlank()) {
+        if (onEditMetadata != null) {
             ContextMenuItem(
                 icon = Icons.Rounded.Edit,
                 label = "Modifier les métadonnées",

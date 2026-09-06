@@ -28,7 +28,9 @@ import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.ui.formatDuration
 import com.aura.music.desktop.ui.*
+import com.aura.music.domain.player.PlaybackState
 import com.aura.music.ui.theme.*
 
 enum class TrackSortField {
@@ -49,6 +51,8 @@ fun DesktopTrackTable(
     showDateAddedColumn: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val uiState by orchestrator.uiState.collectAsState()
+    val isBuffering = uiState.playbackState == PlaybackState.Buffering || uiState.playbackState == PlaybackState.Preparing
     var trackForContextMenu by remember { mutableStateOf<TrackListRow?>(null) }
     var trackForMetadataEdit by remember { mutableStateOf<TrackListRow?>(null) }
 
@@ -57,6 +61,7 @@ fun DesktopTrackTable(
             tracks = tracks,
             activeTrackId = currentPlayingTrackId,
             isPlaying = isPlaying,
+            isBuffering = isBuffering,
             onTrackClick = { trk, _ -> onTrackClick(trk) },
             onToggleLike = onToggleLike,
             onOpenArtist = { artId ->
@@ -134,6 +139,7 @@ fun DesktopTrackTable(
     tracks: List<TrackListRow>,
     activeTrackId: String?,
     isPlaying: Boolean,
+    isBuffering: Boolean = false,
     onTrackClick: (TrackListRow, Int) -> Unit,
     onToggleLike: (String) -> Unit,
     onOpenArtist: ((String) -> Unit)? = null,
@@ -187,6 +193,7 @@ fun DesktopTrackTable(
                     track = track,
                     isCurrent = isCurrent,
                     isPlaying = isPlaying && isCurrent,
+                    isBuffering = isBuffering && isCurrent,
                     onPlay = { onTrackClick(track, index) },
                     onToggleLike = { onToggleLike(track.id) },
                     onOpenArtist = { onOpenArtist?.invoke(track.artistId ?: "artist:${track.artistName}") },
@@ -321,6 +328,7 @@ private fun TrackTableRowItem(
     track: TrackListRow,
     isCurrent: Boolean,
     isPlaying: Boolean,
+    isBuffering: Boolean = false,
     onPlay: () -> Unit,
     onToggleLike: () -> Unit,
     onOpenArtist: () -> Unit,
@@ -357,6 +365,13 @@ private fun TrackTableRowItem(
             contentAlignment = Alignment.Center
         ) {
             when {
+                isCurrent && isBuffering -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = BlazeOrange,
+                        strokeWidth = 2.dp
+                    )
+                }
                 isPlaying -> {
                     Icon(
                         imageVector = Icons.Rounded.GraphicEq,
@@ -499,12 +514,6 @@ private fun TrackTableRowItem(
     }
 }
 
-private fun formatDuration(ms: Long): String {
-    val totalSeconds = (ms / 1000).coerceAtLeast(0)
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "$minutes:${seconds.toString().padStart(2, '0')}"
-}
 
 private fun formatTimestamp(timestamp: Long?): String {
     if (timestamp == null || timestamp == 0L) return "-"

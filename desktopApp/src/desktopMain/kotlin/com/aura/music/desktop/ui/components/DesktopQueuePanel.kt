@@ -1,7 +1,9 @@
 package com.aura.music.desktop.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -17,10 +19,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.*
@@ -37,6 +45,12 @@ fun DesktopQueuePanel(
     val uiState by orchestrator.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
     val upcomingContextTracks = orchestrator.queueManager.getUpcomingContextTracks()
+
+    var draggingKey by remember { mutableStateOf<String?>(null) }
+    var dragAccumulatedY by remember { mutableFloatStateOf(0f) }
+    var draggedIndex by remember { mutableIntStateOf(-1) }
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { 50.dp.toPx() }
 
     Column(
         modifier = modifier
@@ -164,9 +178,41 @@ fun DesktopQueuePanel(
                 }
 
                 itemsIndexed(queueState.priorityQueue, key = { _, t -> "prio_${t.internalId}" }) { index, track ->
+                    val itemKey = "prio_${track.internalId}"
+                    val isDragging = draggingKey == itemKey
                     QueueTrackItem(
                         track = track,
+                        itemKey = itemKey,
+                        isDragging = isDragging,
+                        dragOffsetY = if (isDragging) dragAccumulatedY else 0f,
+                        onDragStart = {
+                            draggingKey = itemKey
+                            draggedIndex = index
+                            dragAccumulatedY = 0f
+                        },
+                        onDragDelta = { deltaY ->
+                            dragAccumulatedY += deltaY
+                            val threshold = itemHeightPx * 0.5f
+                            if (dragAccumulatedY > threshold && draggedIndex < queueState.priorityQueue.size - 1) {
+                                val targetIndex = draggedIndex + 1
+                                orchestrator.queueManager.reorderQueue(draggedIndex, targetIndex)
+                                draggedIndex = targetIndex
+                                dragAccumulatedY -= itemHeightPx
+                            } else if (dragAccumulatedY < -threshold && draggedIndex > 0) {
+                                val targetIndex = draggedIndex - 1
+                                orchestrator.queueManager.reorderQueue(draggedIndex, targetIndex)
+                                draggedIndex = targetIndex
+                                dragAccumulatedY += itemHeightPx
+                            }
+                        },
+                        onDragEnd = {
+                            draggingKey = null
+                            draggedIndex = -1
+                            dragAccumulatedY = 0f
+                        },
                         onPlayNow = { orchestrator.playTrackDirectly(track) },
+                        onMoveUp = if (index > 0) { { orchestrator.queueManager.reorderQueue(index, index - 1) } } else null,
+                        onMoveDown = if (index < queueState.priorityQueue.size - 1) { { orchestrator.queueManager.reorderQueue(index, index + 1) } } else null,
                         onRemove = { orchestrator.queueManager.removeFromQueue(index) }
                     )
                 }
@@ -184,9 +230,41 @@ fun DesktopQueuePanel(
                     )
                 }
 
-                itemsIndexed(upcomingContextTracks, key = { _, t -> "ctx_${t.internalId}" }) { _, track ->
+                itemsIndexed(upcomingContextTracks, key = { _, t -> "ctx_${t.internalId}" }) { index, track ->
+                    val itemKey = "ctx_${track.internalId}"
+                    val isDragging = draggingKey == itemKey
                     QueueTrackItem(
                         track = track,
+                        itemKey = itemKey,
+                        isDragging = isDragging,
+                        dragOffsetY = if (isDragging) dragAccumulatedY else 0f,
+                        onDragStart = {
+                            draggingKey = itemKey
+                            draggedIndex = index
+                            dragAccumulatedY = 0f
+                        },
+                        onDragDelta = { deltaY ->
+                            dragAccumulatedY += deltaY
+                            val threshold = itemHeightPx * 0.5f
+                            if (dragAccumulatedY > threshold && draggedIndex < upcomingContextTracks.size - 1) {
+                                val currentT = upcomingContextTracks[draggedIndex]
+                                val targetT = upcomingContextTracks[draggedIndex + 1]
+                                orchestrator.queueManager.reorderUpcomingContextTrack(currentT.internalId, targetT.internalId)
+                                draggedIndex = draggedIndex + 1
+                                dragAccumulatedY -= itemHeightPx
+                            } else if (dragAccumulatedY < -threshold && draggedIndex > 0) {
+                                val currentT = upcomingContextTracks[draggedIndex]
+                                val targetT = upcomingContextTracks[draggedIndex - 1]
+                                orchestrator.queueManager.reorderUpcomingContextTrack(currentT.internalId, targetT.internalId)
+                                draggedIndex = draggedIndex - 1
+                                dragAccumulatedY += itemHeightPx
+                            }
+                        },
+                        onDragEnd = {
+                            draggingKey = null
+                            draggedIndex = -1
+                            dragAccumulatedY = 0f
+                        },
                         onPlayNow = {
                             val ctx = queueState.context
                             if (ctx != null) {
@@ -213,7 +291,15 @@ fun DesktopQueuePanel(
 @Composable
 private fun QueueTrackItem(
     track: QueuedTrack,
+    itemKey: String,
+    isDragging: Boolean = false,
+    dragOffsetY: Float = 0f,
+    onDragStart: () -> Unit = {},
+    onDragDelta: (Float) -> Unit = {},
+    onDragEnd: () -> Unit = {},
     onPlayNow: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -222,13 +308,55 @@ private fun QueueTrackItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .zIndex(if (isDragging) 10f else 0f)
+            .graphicsLayer {
+                translationY = dragOffsetY
+                shadowElevation = if (isDragging) 8f else 0f
+            }
             .clip(RoundedCornerShape(6.dp))
-            .background(if (isHovered) DarkGraphite.copy(alpha = 0.7f) else Color.Transparent)
+            .background(
+                when {
+                    isDragging -> DarkGraphite
+                    isHovered -> DarkGraphite.copy(alpha = 0.7f)
+                    else -> Color.Transparent
+                }
+            )
+            .then(
+                if (isDragging) Modifier.border(1.dp, BlazeOrange.copy(alpha = 0.8f), RoundedCornerShape(6.dp))
+                else Modifier
+            )
             .hoverable(interactionSource)
             .clickable(onClick = onPlayNow)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Traits de drag (Drag Handle) interactif
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .pointerInput(itemKey) {
+                    detectDragGestures(
+                        onDragStart = { onDragStart() },
+                        onDragEnd = { onDragEnd() },
+                        onDragCancel = { onDragEnd() },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            onDragDelta(dragAmount.y)
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.DragHandle,
+                contentDescription = "Glisser pour réordonner",
+                tint = if (isDragging) BlazeOrange else if (isHovered) PureWhite.copy(alpha = 0.8f) else PureWhite.copy(alpha = 0.25f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+
         DesktopArtworkCover(
             coverUri = track.coverUri,
             size = 36.dp,
@@ -251,17 +379,49 @@ private fun QueueTrackItem(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (onRemove != null && isHovered) {
-            IconButton(
-                onClick = onRemove,
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = "Retirer",
-                    tint = PureWhite.copy(alpha = 0.6f),
-                    modifier = Modifier.size(14.dp)
-                )
+
+        // Actions au survol (monter/descendre si prioritaire, supprimer)
+        if (isHovered && !isDragging) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onMoveUp != null) {
+                    IconButton(
+                        onClick = onMoveUp,
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowUp,
+                            contentDescription = "Monter",
+                            tint = PureWhite.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                if (onMoveDown != null) {
+                    IconButton(
+                        onClick = onMoveDown,
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "Descendre",
+                            tint = PureWhite.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                if (onRemove != null) {
+                    IconButton(
+                        onClick = onRemove,
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Retirer",
+                            tint = PureWhite.copy(alpha = 0.6f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
             }
         }
     }

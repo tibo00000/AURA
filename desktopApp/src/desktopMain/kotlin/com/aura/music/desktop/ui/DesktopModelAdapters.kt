@@ -33,3 +33,12 @@ val QueuedTrack.isCloudOnly: Boolean get() = contentUri.isNullOrBlank()
 // Extensions pour les états de lecture
 val QueueState.isShuffle: Boolean get() = shuffleEnabled
 val PlayerUiState.isShuffle: Boolean get() = shuffleEnabled
+
+fun formatDuration(ms: Long): String {
+    if (ms <= 0L) return "--:--"
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+

@@ -107,7 +107,8 @@ fun DesktopEditMetadataDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Édition physique disponible pour les fichiers MP3 (format ${file?.extension?.uppercase() ?: "Inconnu"} en lecture seule).",
+                                text = if (file == null) "Morceau Cloud : les métadonnées seront enregistrées dans votre bibliothèque AURA."
+                                else "Format ${file.extension.uppercase()} : les métadonnées seront enregistrées dans votre bibliothèque AURA (tags ID3 physiques réservés aux fichiers MP3).",
                                 color = PureWhite.copy(alpha = 0.8f),
                                 fontSize = 12.sp
                             )
@@ -264,18 +265,17 @@ fun DesktopEditMetadataDialog(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    if (isMp3) {
-                        Button(
-                            onClick = {
-                                if (file == null) return@Button
-                                isSaving = true
-                                errorMessage = null
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    try {
-                                        val coverBytes = selectedCoverFile?.readBytes()
-                                        val mimeType = if (selectedCoverFile?.extension?.lowercase() == "png") "image/png" else "image/jpeg"
+                    Button(
+                        onClick = {
+                            isSaving = true
+                            errorMessage = null
+                            coroutineScope.launch(Dispatchers.IO) {
+                                try {
+                                    val coverBytes = selectedCoverFile?.readBytes()
+                                    val mimeType = if (selectedCoverFile?.extension?.lowercase() == "png") "image/png" else "image/jpeg"
 
-                                        val success = DesktopAudioTagWriter.writeMp3Tags(
+                                    if (file != null && isMp3) {
+                                        DesktopAudioTagWriter.writeMp3Tags(
                                             file = file,
                                             update = DesktopAudioTagWriter.TagUpdate(
                                                 title = title.trim().ifBlank { file.nameWithoutExtension },
@@ -287,45 +287,41 @@ fun DesktopEditMetadataDialog(
                                                 coverMimeType = mimeType
                                             )
                                         )
-
-                                        if (success) {
-                                            val now = System.currentTimeMillis()
-                                            val rawTrack = database.trackDao().getRawTrackById(track.id)
-                                            if (rawTrack != null) {
-                                                database.trackDao().upsertTracks(
-                                                    listOf(
-                                                        rawTrack.copy(
-                                                            title = title.trim(),
-                                                            normalizedTitle = title.trim().lowercase(),
-                                                            displayArtistName = artist.trim(),
-                                                            displayAlbumTitle = album.trim().ifBlank { null },
-                                                            updatedAt = now
-                                                        )
-                                                    )
-                                                )
-                                            }
-                                            withContext(Dispatchers.Main) {
-                                                onSaved()
-                                                onDismiss()
-                                            }
-                                        } else {
-                                            errorMessage = "Échec de l'écriture des tags."
-                                        }
-                                    } catch (e: Exception) {
-                                        errorMessage = "Erreur : ${e.message}"
-                                    } finally {
-                                        isSaving = false
                                     }
+
+                                    val now = System.currentTimeMillis()
+                                    val rawTrack = database.trackDao().getRawTrackById(track.id)
+                                    if (rawTrack != null) {
+                                        database.trackDao().upsertTracks(
+                                            listOf(
+                                                rawTrack.copy(
+                                                    title = title.trim().ifBlank { rawTrack.title },
+                                                    normalizedTitle = title.trim().ifBlank { rawTrack.title }.lowercase(),
+                                                    displayArtistName = artist.trim().ifBlank { rawTrack.displayArtistName },
+                                                    displayAlbumTitle = album.trim().ifBlank { null },
+                                                    updatedAt = now
+                                                )
+                                            )
+                                        )
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        onSaved()
+                                        onDismiss()
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = "Erreur : ${e.message}"
+                                } finally {
+                                    isSaving = false
                                 }
-                            },
-                            enabled = !isSaving,
-                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
-                        ) {
-                            if (isSaving) {
-                                CircularProgressIndicator(color = PureWhite, modifier = Modifier.size(16.dp))
-                            } else {
-                                Text("Enregistrer")
                             }
+                        },
+                        enabled = !isSaving,
+                        colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange)
+                    ) {
+                        if (isSaving) {
+                            CircularProgressIndicator(color = PureWhite, modifier = Modifier.size(16.dp))
+                        } else {
+                            Text("Enregistrer")
                         }
                     }
                 }

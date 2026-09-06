@@ -494,9 +494,9 @@ data class PlaylistItemCreate(
 @Serializable
 data class SyncedFileResponseData(
     @SerialName("track_id") val trackId: String,
-    @SerialName("synced") val synced: Boolean,
-    @SerialName("size_bytes") val sizeBytes: Long,
-    @SerialName("mime_type") val mimeType: String,
+    @SerialName("synced") val synced: Boolean = true,
+    @SerialName("size_bytes") val sizeBytes: Long = 0L,
+    @SerialName("mime_type") val mimeType: String? = "audio/mpeg",
     @SerialName("title") val title: String? = null,
     @SerialName("artist_name") val artistName: String? = null,
     @SerialName("album_title") val albumTitle: String? = null,
@@ -510,7 +510,7 @@ data class SyncedFileResponseData(
 
 @Serializable
 data class SyncedFileListResponseData(
-    @SerialName("items") val items: List<SyncedFileResponseData>
+    @SerialName("items") val items: List<SyncedFileResponseData> = emptyList()
 )
 
 @Serializable

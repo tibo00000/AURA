@@ -28,7 +28,9 @@ object DesktopMediaMetadataReader {
     private val coversDir = File(System.getProperty("user.home"), ".aura/covers").apply { mkdirs() }
 
     fun readMetadata(file: File): ExtractedAudioMetadata {
-        return when (file.extension.lowercase()) {
+        val detected = detectAudioExtension(file, null)
+        val ext = if (detected != "mp3" && file.extension.equals("mp3", ignoreCase = true)) detected else file.extension.lowercase()
+        return when (ext) {
             "mp3" -> readMp3Metadata(file)
             "flac" -> readFlacMetadata(file)
             "m4a", "aac", "mp4" -> readMp4Metadata(file)
@@ -252,8 +254,107 @@ object DesktopMediaMetadataReader {
     // =======================================================================
 
     private fun readMp4Metadata(file: File): ExtractedAudioMetadata {
+        var durationMs = 0L
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                val length = raf.length().coerceAtMost(512 * 1024L)
+                val buffer = ByteArray(length.toInt())
+                raf.readFully(buffer)
+                val mvhdStr = byteArrayOf('m'.code.toByte(), 'v'.code.toByte(), 'h'.code.toByte(), 'd'.code.toByte())
+                val idx = indexOf(buffer, mvhdStr)
+                if (idx != -1 && idx + 28 <= buffer.size) {
+                    val version = buffer[idx + 4].toInt()
+                    if (version == 0 && idx + 24 <= buffer.size) {
+                        val timescale = readUInt32BE(buffer, idx + 16)
+                        val duration = readUInt32BE(buffer, idx + 20)
+                        if (timescale > 0L) {
+                            durationMs = (duration * 1000L) / timescale
+                        }
+                    } else if (version == 1 && idx + 36 <= buffer.size) {
+                        val timescale = readUInt32BE(buffer, idx + 24)
+                        val duration = readUInt64BE(buffer, idx + 28)
+                        if (timescale > 0L) {
+                            durationMs = (duration * 1000L) / timescale
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+
         val fallback = fallbackMetadata(file)
-        return fallback
+        return fallback.copy(durationMs = durationMs)
+    }
+
+    fun detectAudioExtension(file: File, contentType: String? = null): String {
+        if (contentType != null) {
+            val lower = contentType.lowercase()
+            if (lower.contains("mp4") || lower.contains("m4a") || lower.contains("aac")) return "m4a"
+            if (lower.contains("flac")) return "flac"
+            if (lower.contains("wav")) return "wav"
+            if (lower.contains("ogg")) return "ogg"
+            if (lower.contains("mpeg") || lower.contains("mp3")) return "mp3"
+        }
+        if (file.exists() && file.length() >= 8) {
+            try {
+                file.inputStream().use { stream ->
+                    val header = ByteArray(12)
+                    val read = stream.read(header)
+                    if (read >= 8) {
+                        if (header[4] == 'f'.code.toByte() && header[5] == 't'.code.toByte() && header[6] == 'y'.code.toByte() && header[7] == 'p'.code.toByte()) {
+                            return "m4a"
+                        }
+                        if (header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() && header[2] == '3'.code.toByte()) {
+                            return "mp3"
+                        }
+                        if (header[0] == 'f'.code.toByte() && header[1] == 'L'.code.toByte() && header[2] == 'a'.code.toByte() && header[3] == 'C'.code.toByte()) {
+                            return "flac"
+                        }
+                        if (header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte() && header[2] == 'F'.code.toByte() && header[3] == 'F'.code.toByte()) {
+                            return "wav"
+                        }
+                        if (header[0] == 'O'.code.toByte() && header[1] == 'g'.code.toByte() && header[2] == 'g'.code.toByte() && header[3] == 'S'.code.toByte()) {
+                            return "ogg"
+                        }
+                        val b0 = header[0].toInt() and 0xFF
+                        val b1 = header[1].toInt() and 0xFF
+                        if (b0 == 0xFF && (b1 and 0xE0) == 0xE0) {
+                            return "mp3"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        return "mp3"
+    }
+
+    private fun indexOf(source: ByteArray, target: ByteArray): Int {
+        if (target.isEmpty()) return 0
+        outer@ for (i in 0..source.size - target.size) {
+            for (j in target.indices) {
+                if (source[i + j] != target[j]) continue@outer
+            }
+            return i
+        }
+        return -1
+    }
+
+    private fun readUInt32BE(buf: ByteArray, offset: Int): Long {
+        return ((buf[offset].toLong() and 0xFF) shl 24) or
+            ((buf[offset + 1].toLong() and 0xFF) shl 16) or
+            ((buf[offset + 2].toLong() and 0xFF) shl 8) or
+            (buf[offset + 3].toLong() and 0xFF)
+    }
+
+    private fun readUInt64BE(buf: ByteArray, offset: Int): Long {
+        var res = 0L
+        for (i in 0 until 8) {
+            res = (res shl 8) or (buf[offset + i].toLong() and 0xFF)
+        }
+        return res
     }
 
     private fun fallbackMetadata(file: File): ExtractedAudioMetadata {

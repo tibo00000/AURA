@@ -164,6 +164,64 @@ class CloudFileRepository(
                 } else {
                     var updated = false
                     var trackToUpdate = existingTrack
+
+                    val isPlaceholder = existingTrack.title.startsWith("Piste Cloud ") ||
+                            existingTrack.title.isBlank() ||
+                            existingTrack.title == "Titre inconnu" ||
+                            existingTrack.displayArtistName.isBlank() ||
+                            existingTrack.displayArtistName.equals("Artiste Inconnu", ignoreCase = true)
+
+                    if (isPlaceholder && !item.title.isNullOrBlank()) {
+                        val realTitle = item.title!!
+                        val realArtist = item.artistName ?: existingTrack.displayArtistName
+                        val realAlbum = item.albumTitle ?: existingTrack.displayAlbumTitle
+                        val realArtistId = item.artistId ?: existingTrack.primaryArtistId
+                        val realAlbumId = item.albumId ?: existingTrack.albumId
+
+                        if (realArtistId != null) {
+                            val placeholderArtist = com.aura.music.data.local.ArtistEntity(
+                                id = realArtistId,
+                                name = realArtist,
+                                normalizedName = realArtist.lowercase().trim(),
+                                pictureUri = item.coverUri ?: existingTrack.coverUri,
+                                artworkOrigin = null,
+                                artworkLastResolvedAt = null,
+                                summary = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                            database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
+                        }
+
+                        if (realAlbumId != null && realAlbum != null) {
+                            val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
+                                id = realAlbumId,
+                                primaryArtistId = realArtistId,
+                                title = realAlbum,
+                                normalizedTitle = realAlbum.lowercase().trim(),
+                                coverUri = item.coverUri ?: existingTrack.coverUri,
+                                artworkOrigin = null,
+                                artworkLastResolvedAt = null,
+                                releaseDate = null,
+                                trackCount = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                            database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
+                        }
+
+                        trackToUpdate = trackToUpdate.copy(
+                            title = realTitle,
+                            normalizedTitle = realTitle.lowercase().trim(),
+                            displayArtistName = realArtist,
+                            displayAlbumTitle = realAlbum,
+                            primaryArtistId = realArtistId,
+                            albumId = realAlbumId,
+                            durationMs = if (item.durationMs != null && item.durationMs > 0L) item.durationMs else trackToUpdate.durationMs
+                        )
+                        updated = true
+                    }
+
                     if (existingTrack.coverUri.isNullOrBlank() && !item.coverUri.isNullOrBlank()) {
                         trackToUpdate = trackToUpdate.copy(coverUri = item.coverUri)
                         updated = true
@@ -214,8 +272,35 @@ class CloudFileRepository(
     }
 
     /**
-     * Uploads a locally scanned track to the cloud.
+     * Téléverse automatiquement vers le Cloud un morceau local lorsqu'il est ajouté aux favoris,
+     * assurant ainsi sa disponibilité immédiate en streaming et téléchargement sur tous les appareils.
      */
+    suspend fun autoUploadFavoriteTrack(trackId: String) = withContext(Dispatchers.IO) {
+        try {
+            val trackRow = database.trackDao().getTrackById(trackId)
+            val rawTrack = database.trackDao().getRawTrackById(trackId)
+            val isLocal = trackId.startsWith("track:local:") || trackId.startsWith("local:") || (rawTrack?.canonicalAudioSourceType == "local")
+            if (!isLocal || trackRow?.contentUri.isNullOrBlank()) {
+                return@withContext
+            }
+
+            if (_syncedTrackIds.value.contains(trackId)) {
+                return@withContext
+            }
+
+            Log.i(TAG, "Auto-uploading liked local track $trackId to cloud...")
+            uploadTrack(trackId).collect { res ->
+                res.onSuccess {
+                    Log.i(TAG, "Successfully auto-uploaded favorite track $trackId to cloud")
+                }.onFailure { err ->
+                    Log.w(TAG, "Failed auto-uploading favorite track $trackId: ${err.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Auto-upload favorite track $trackId exception", e)
+        }
+    }
+
     fun uploadTrack(trackId: String): Flow<Result<SyncedFileResponseData>> = flow {
         try {
             val trackRow = database.trackDao().getTrackById(trackId)

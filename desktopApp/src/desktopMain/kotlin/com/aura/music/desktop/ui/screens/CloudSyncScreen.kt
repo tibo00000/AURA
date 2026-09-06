@@ -66,12 +66,25 @@ fun CloudSyncScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Cloud AURA",
-                    color = PureWhite,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (appState.canNavigateBack) {
+                        IconButton(
+                            onClick = { appState.navigateBack() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(imageVector = Icons.Rounded.ArrowBack, contentDescription = "Retour", tint = PureWhite)
+                        }
+                    }
+                    Text(
+                        text = "Cloud AURA",
+                        color = PureWhite,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 IconButton(
                     onClick = {
                         orchestrator.apiToken?.let { token ->

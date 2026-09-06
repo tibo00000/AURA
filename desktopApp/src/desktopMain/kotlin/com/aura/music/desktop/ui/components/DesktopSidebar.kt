@@ -100,19 +100,6 @@ fun DesktopSidebar(
                 onClick = { appState.navigateToRoot("favorites") }
             )
             SidebarNavItem(
-                icon = Icons.Rounded.Download,
-                label = "Téléchargements",
-                badgeCount = activeDownloadsCount,
-                isSelected = appState.currentScreen == "downloads",
-                onClick = { appState.navigateToRoot("downloads") }
-            )
-            SidebarNavItem(
-                icon = Icons.Rounded.CloudSync,
-                label = "Gestion Cloud",
-                isSelected = appState.currentScreen == "cloud_sync",
-                onClick = { appState.navigateToRoot("cloud_sync") }
-            )
-            SidebarNavItem(
                 icon = Icons.Rounded.Settings,
                 label = "Paramètres",
                 isSelected = appState.currentScreen == "settings",
@@ -139,29 +126,16 @@ fun DesktopSidebar(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(
-                    onClick = { appState.showImportPlaylistDialog = true },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.FileDownload,
-                        contentDescription = "Importer une playlist",
-                        tint = PureWhite.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                IconButton(
-                    onClick = { appState.showCreatePlaylistDialog = true },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = "Créer une playlist",
-                        tint = PureWhite.copy(alpha = 0.7f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            IconButton(
+                onClick = { appState.showCreatePlaylistDialog = true },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = "Créer une playlist",
+                    tint = PureWhite.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 

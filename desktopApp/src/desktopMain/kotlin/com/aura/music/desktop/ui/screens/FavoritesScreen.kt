@@ -67,6 +67,7 @@ fun FavoritesScreen(
             tracks = likedTracks,
             activeTrackId = uiState.currentTrack?.trackId,
             isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
+            isBuffering = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Buffering || uiState.playbackState == com.aura.music.domain.player.PlaybackState.Preparing,
             onTrackClick = { track, index ->
                 orchestrator.playTrack(
                     trackId = track.id,
