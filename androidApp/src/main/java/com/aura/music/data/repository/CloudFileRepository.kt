@@ -210,6 +210,7 @@ class CloudFileRepository(
                             database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
                         }
 
+                        val itemDuration = item.durationMs
                         trackToUpdate = trackToUpdate.copy(
                             title = realTitle,
                             normalizedTitle = realTitle.lowercase().trim(),
@@ -217,7 +218,7 @@ class CloudFileRepository(
                             displayAlbumTitle = realAlbum,
                             primaryArtistId = realArtistId,
                             albumId = realAlbumId,
-                            durationMs = if (item.durationMs != null && item.durationMs > 0L) item.durationMs else trackToUpdate.durationMs
+                            durationMs = if (itemDuration != null && itemDuration > 0L) itemDuration else trackToUpdate.durationMs
                         )
                         updated = true
                     }

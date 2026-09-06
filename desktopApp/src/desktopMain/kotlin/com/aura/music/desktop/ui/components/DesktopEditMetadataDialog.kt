@@ -80,7 +80,7 @@ fun DesktopEditMetadataDialog(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Modifier les métadonnées",
+                        text = "Modifier les informations",
                         color = PureWhite,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold

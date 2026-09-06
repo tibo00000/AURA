@@ -89,7 +89,7 @@ fun DesktopTrackContextMenu(
         if (onEditMetadata != null) {
             ContextMenuItem(
                 icon = Icons.Rounded.Edit,
-                label = "Modifier les métadonnées",
+                label = "Modifier les informations",
                 onClick = {
                     onEditMetadata()
                     onDismissRequest()

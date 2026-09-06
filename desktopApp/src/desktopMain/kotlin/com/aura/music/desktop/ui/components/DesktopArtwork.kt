@@ -33,7 +33,13 @@ fun DesktopArtworkCover(
         when {
             coverUri.isNullOrBlank() -> null
             coverUri.startsWith("http://") || coverUri.startsWith("https://") -> coverUri
-            coverUri.startsWith("file:") -> coverUri
+            coverUri.startsWith("file:") -> try {
+                val cleanPath = coverUri.removePrefix("file://").removePrefix("file:")
+                val f = File(cleanPath)
+                if (f.exists()) f.toURI().toString() else null
+            } catch (e: Exception) {
+                null
+            }
             coverUri.startsWith("content://") -> null
             else -> try {
                 val f = File(coverUri)

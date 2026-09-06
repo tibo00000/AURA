@@ -7,6 +7,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.aura.music.ui.components.ShimmerTrackRow
+import com.aura.music.ui.components.rememberShimmerBrush
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.AlbumDetailResponseData
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
@@ -162,8 +164,14 @@ fun AlbumDetailScreen(
                 .padding(horizontal = 32.dp, vertical = 16.dp)
         ) {
             if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = BlazeOrange)
+                val shimmerBrush = rememberShimmerBrush()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    repeat(6) {
+                        ShimmerTrackRow(brush = shimmerBrush)
+                    }
                 }
             } else {
                 DesktopTrackTable(

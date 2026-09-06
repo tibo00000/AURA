@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import com.aura.music.ui.components.ShimmerTrackRow
+import com.aura.music.ui.components.rememberShimmerBrush
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -199,8 +201,14 @@ fun ArtistDetailScreen(
                         onToggleLike = onToggleLike
                     )
                 } else if (isLoading) {
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = BlazeOrange)
+                    val shimmerBrush = rememberShimmerBrush()
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        repeat(5) {
+                            ShimmerTrackRow(brush = shimmerBrush)
+                        }
                     }
                 } else {
                     Text(
