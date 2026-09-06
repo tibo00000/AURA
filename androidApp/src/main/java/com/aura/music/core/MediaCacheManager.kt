@@ -51,5 +51,21 @@ object MediaCacheManager {
 
         return DefaultMediaSourceFactory(appContext)
             .setDataSourceFactory(cacheDataSourceFactory)
+            .setLoadErrorHandlingPolicy(object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+                override fun getRetryDelayMsFor(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+                    var currentCause: Throwable? = loadErrorInfo.exception
+                    while (currentCause != null) {
+                        if (currentCause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                            if (currentCause.responseCode in listOf(400, 401, 403, 404)) {
+                                return androidx.media3.common.C.TIME_UNSET
+                            }
+                        }
+                        currentCause = currentCause.cause
+                    }
+                    return super.getRetryDelayMsFor(loadErrorInfo)
+                }
+
+                override fun getMinimumLoadableRetryCount(dataType: Int): Int = 1
+            })
     }
 }

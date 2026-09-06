@@ -159,6 +159,71 @@ def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
     except Exception as e:
         logger.warning("Error while scanning existing user folders for track %s: %s", track_id, e)
 
+    # 3. Backfill depuis DOWNLOADS_DIR (/app/downloads) pour les fichiers audio existants
+    try:
+        if DOWNLOADS_DIR.exists():
+            # 3a. Vérification directe par nom de fichier ({alias}.ext)
+            for alias in aliases:
+                for ext in (".mp3", ".m4a", ".opus", ".webm", ".audio"):
+                    direct_file = DOWNLOADS_DIR / f"{alias}{ext}"
+                    if direct_file.exists() and direct_file.stat().st_size > 0:
+                        target_audio = cache_dir / f"{primary_key}.audio"
+                        target_json = cache_dir / f"{primary_key}.json"
+                        try:
+                            if target_audio.exists():
+                                target_audio.unlink()
+                            os.link(direct_file, target_audio)
+                        except Exception:
+                            shutil.copyfile(direct_file, target_audio)
+                        metadata = {
+                            "track_id": track_id,
+                            "synced": True,
+                            "size_bytes": direct_file.stat().st_size,
+                            "mime_type": "audio/mpeg",
+                        }
+                        target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+                        logger.info("Backfilled track %s into global cache directly from DOWNLOADS_DIR (%s)", track_id, direct_file.name)
+                        return target_audio, metadata
+
+            # 3b. Recherche via la table Supabase download_jobs pour lier job_id.mp3 -> primary_key.audio
+            try:
+                from app.core.supabase_client import get_supabase_client
+                supabase = get_supabase_client()
+                for alias in aliases:
+                    res = supabase.table("download_jobs").select("*").eq("track_id", alias).eq("status", "succeeded").limit(1).execute()
+                    if res.data:
+                        job_row = res.data[0]
+                        job_id = job_row.get("id")
+                        if job_id:
+                            for ext in (".mp3", ".m4a", ".opus", ".webm"):
+                                cand_file = DOWNLOADS_DIR / f"{job_id}{ext}"
+                                if cand_file.exists() and cand_file.stat().st_size > 0:
+                                    target_audio = cache_dir / f"{primary_key}.audio"
+                                    target_json = cache_dir / f"{primary_key}.json"
+                                    try:
+                                        if target_audio.exists():
+                                            target_audio.unlink()
+                                        os.link(cand_file, target_audio)
+                                    except Exception:
+                                        shutil.copyfile(cand_file, target_audio)
+
+                                    metadata = {
+                                        "track_id": track_id,
+                                        "synced": True,
+                                        "size_bytes": cand_file.stat().st_size,
+                                        "mime_type": "audio/mpeg",
+                                        "title": job_row.get("title"),
+                                        "artist_name": job_row.get("artist_name"),
+                                        "album_title": job_row.get("album_title"),
+                                    }
+                                    target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+                                    logger.info("Backfilled track %s (alias %s, job %s) into global cache from DOWNLOADS_DIR", track_id, alias, job_id)
+                                    return target_audio, metadata
+            except Exception as e:
+                logger.debug("Could not query Supabase download_jobs for backfill: %s", e)
+    except Exception as e:
+        logger.warning("Error while scanning DOWNLOADS_DIR for track %s: %s", track_id, e)
+
     return None
 
 

@@ -340,6 +340,33 @@ class TestGlobalTrackCache(unittest.TestCase):
 
         asyncio.run(run_endpoint_test())
 
+    def test_backfill_from_downloads_dir(self):
+        """Vérifie le backfill automatique direct depuis DOWNLOADS_DIR vers le global cache."""
+        import app.services.download_service as ds
+        from unittest.mock import patch
+
+        temp_downloads = self.test_dir / "downloads_mock"
+        temp_downloads.mkdir(parents=True, exist_ok=True)
+
+        track_id = "trk_deezer_777123"
+        mock_file = temp_downloads / f"{track_id}.mp3"
+        content = b"AUDIO_DATA_FROM_LEGACY_DOWNLOADS_DIR"
+        mock_file.write_bytes(content)
+
+        with patch.object(ds, "DOWNLOADS_DIR", temp_downloads):
+            # Le fichier doit être détecté, lié dans _global_cache, et renvoyé instantanément
+            cached = _find_globally_cached_track(track_id)
+            self.assertIsNotNone(cached)
+            cached_audio, meta = cached
+            self.assertTrue(cached_audio.exists())
+            self.assertEqual(cached_audio.read_bytes(), content)
+            self.assertEqual(meta.get("track_id"), track_id)
+
+            # Une deuxième requête doit frapper directement le _global_cache (hit 0s)
+            cached_second = _find_globally_cached_track(track_id)
+            self.assertIsNotNone(cached_second)
+            self.assertEqual(cached_second[0].read_bytes(), content)
+
 
 if __name__ == "__main__":
     unittest.main()

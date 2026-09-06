@@ -66,6 +66,9 @@ class PlaybackOrchestrator(
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
+    // Sticky error state to prevent controller.pause() from wiping the error out
+    private var lastPlayerErrorMessage: String? = null
+
     // Sleep Timer state
     private var sleepTimerJob: Job? = null
     private var sleepTimerTargetEpochMs: Long? = null
@@ -89,6 +92,7 @@ class PlaybackOrchestrator(
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            lastPlayerErrorMessage = null
             val transitionedTrackId = mediaItem?.mediaId
             val reasonStr = transitionReasonToString(reason)
             android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: transitionedTrackId=$transitionedTrackId, reason=$reasonStr")
@@ -192,7 +196,6 @@ class PlaybackOrchestrator(
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             android.util.Log.e("PlaybackOrchestrator", "onPlayerError: error=${error.localizedMessage}", error)
-            controller?.pause()
             val friendlyMsg = when {
                 error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
                 error.localizedMessage?.contains("404") == true -> "Morceau introuvable sur le Cloud AURA."
@@ -200,12 +203,14 @@ class PlaybackOrchestrator(
                 error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Erreur de connexion au serveur AURA."
                 else -> "Impossible de lire le morceau : ${error.localizedMessage ?: "erreur réseau"}"
             }
+            lastPlayerErrorMessage = friendlyMsg
             _uiState.update { current ->
                 current.copy(
                     playbackState = PlaybackState.Error,
                     errorMessage = friendlyMsg,
                 )
             }
+            controller?.pause()
         }
     }
 
@@ -256,6 +261,17 @@ class PlaybackOrchestrator(
      * Traite un evenement utilisateur.
      */
     fun onEvent(event: PlayerEvent) {
+        when (event) {
+            is PlayerEvent.PlayTrack,
+            is PlayerEvent.Pause,
+            is PlayerEvent.TogglePlayPause,
+            is PlayerEvent.Next,
+            is PlayerEvent.Previous,
+            is PlayerEvent.SeekTo -> {
+                lastPlayerErrorMessage = null
+            }
+            else -> Unit
+        }
         when (event) {
             is PlayerEvent.PlayTrack -> handlePlay(event)
             is PlayerEvent.Pause -> handlePause()
@@ -462,6 +478,7 @@ class PlaybackOrchestrator(
     }
 
     private fun playTrackOnController(track: QueuedTrack) {
+        lastPlayerErrorMessage = null
         val ctrl = controller ?: run {
             android.util.Log.e("PlaybackOrchestrator", "playTrackOnController: controller is null!")
             return
@@ -477,6 +494,7 @@ class PlaybackOrchestrator(
         val queueState = queueManager.state.value
 
         val playbackState = when {
+            lastPlayerErrorMessage != null -> PlaybackState.Error
             ctrl == null -> PlaybackState.Idle
             ctrl.playerError != null -> PlaybackState.Error
             ctrl.playbackState == Player.STATE_BUFFERING -> PlaybackState.Buffering
@@ -486,6 +504,8 @@ class PlaybackOrchestrator(
             ctrl.playbackState == Player.STATE_READY -> PlaybackState.Paused
             else -> PlaybackState.Preparing
         }
+
+        val effectiveErrorMessage = lastPlayerErrorMessage ?: ctrl?.playerError?.localizedMessage
 
         _uiState.update { current ->
             current.copy(
@@ -499,7 +519,7 @@ class PlaybackOrchestrator(
                 mainQueueTracks = queueManager.getUpcomingContextTracks(),
                 contextType = queueState.context?.type,
                 contextId = queueState.context?.id,
-                errorMessage = ctrl?.playerError?.localizedMessage,
+                errorMessage = effectiveErrorMessage,
                 // isCurrentTrackLiked est preserve et mis a jour via updateLikedState()
                 // pour eviter un reset a false a chaque sync de progression
             )

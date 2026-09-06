@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -501,6 +502,37 @@ fun PlayerScreen(
                         playerViewModel = playerViewModel,
                         trackId = track.trackId
                     )
+
+                    if (uiState.playbackState == PlaybackState.Error || !uiState.errorMessage.isNullOrBlank()) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = SemanticError.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, SemanticError.copy(alpha = 0.6f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = SemanticError,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Text(
+                                    text = uiState.errorMessage ?: "Erreur de lecture du morceau",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = SemanticError,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
 
                     // Transport Controls
                     Row(
