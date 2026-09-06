@@ -278,17 +278,34 @@ async def serve_downloaded_file(
             )
             
         expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
-        if not expected_file.exists():
-            # Fallback checks
+        if not expected_file.exists() or expected_file.stat().st_size == 0:
+            # 1. Fallback checks at root of DOWNLOADS_DIR
             matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
-            non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
+            non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp") and m.stat().st_size > 0]
             if non_thumb:
                 expected_file = non_thumb[0]
             else:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Audio file not found on disk",
-                )
+                # 2. Fallback check in quarantine _legacy_trash
+                trash_matches = list((DOWNLOADS_DIR / "_legacy_trash").glob(f"*/{job_id}.*"))
+                valid_trash = [m for m in trash_matches if m.suffix not in (".jpg", ".png", ".webp") and m.stat().st_size > 0]
+                if valid_trash:
+                    expected_file = valid_trash[0]
+                elif job.track_id:
+                    # 3. Fallback to _global_cache via job.track_id
+                    from app.services.download_service import _find_globally_cached_track
+                    cached = _find_globally_cached_track(job.track_id)
+                    if cached and cached[0].exists() and cached[0].stat().st_size > 0:
+                        expected_file = cached[0]
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Audio file not found on disk or in global cache",
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Audio file not found on disk",
+                    )
                 
         return FileResponse(
             path=str(expected_file),
