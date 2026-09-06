@@ -6,6 +6,7 @@ All endpoints require authentication and use standard envelope responses.
 """
 
 import logging
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import AuthenticatedUser, get_current_user
@@ -40,9 +41,11 @@ async def bootstrap(
     Returns a snapshot of essential user-scoped data.
     """
     try:
-        res = sync_service.bootstrap(
-            user_id=current_user.id,
-            device_id=request.device_id,
+        res = await anyio.to_thread.run_sync(
+            lambda: sync_service.bootstrap(
+                user_id=current_user.id,
+                device_id=request.device_id,
+            )
         )
         return ResponseEnvelope(data=BootstrapResponse(
             sync_token=res["sync_token"],
@@ -70,11 +73,13 @@ async def push_batch(
     try:
         # Convert Pydantic models to dict for the service layer
         operations_dict = [op.model_dump() for op in request.operations]
-        res = sync_service.push_batch(
-            user_id=current_user.id,
-            device_id=request.device_id,
-            batch_id=request.batch_id,
-            operations=operations_dict,
+        res = await anyio.to_thread.run_sync(
+            lambda: sync_service.push_batch(
+                user_id=current_user.id,
+                device_id=request.device_id,
+                batch_id=request.batch_id,
+                operations=operations_dict,
+            )
         )
         return ResponseEnvelope(data=PushBatchResponse(
             batch_id=res["batch_id"],
@@ -116,11 +121,13 @@ async def pull_batch(
                 detail=error_payload,
             )
 
-        res = sync_service.pull_batch(
-            user_id=current_user.id,
-            since_token=request.since_token,
-            limit=request.limit,
-            entity_types=request.entity_types,
+        res = await anyio.to_thread.run_sync(
+            lambda: sync_service.pull_batch(
+                user_id=current_user.id,
+                since_token=request.since_token,
+                limit=request.limit,
+                entity_types=request.entity_types,
+            )
         )
         return ResponseEnvelope(data=PullBatchResponse(
             changes=res["changes"],

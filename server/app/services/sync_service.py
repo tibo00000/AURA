@@ -218,7 +218,21 @@ class SyncService:
             logger.warning("Failed to verify/insert user profile %s during push: %s. Continuing anyway.", user_id, pe)
 
         results = []
-        
+        ops_to_record = []
+
+        # Bulk idempotency pre-fetch to avoid N round-trips to Supabase
+        all_op_ids = [op.get("operation_id") for op in operations if op.get("operation_id")]
+        already_processed_ids = set()
+        if all_op_ids:
+            try:
+                for i in range(0, len(all_op_ids), 100):
+                    chunk_ids = all_op_ids[i:i + 100]
+                    dup_batch = supabase.table("processed_operations").select("operation_id").in_("operation_id", chunk_ids).execute()
+                    if dup_batch.data:
+                        already_processed_ids.update(r["operation_id"] for r in dup_batch.data)
+            except Exception as e:
+                logger.warning("Batch idempotency check error: %s", e)
+
         for op in operations:
             op_id = op.get("operation_id")
             entity_type = op.get("entity_type")
@@ -231,22 +245,17 @@ class SyncService:
                 logger.warning("Malformed operation omitted: %r", op)
                 continue
 
-            # 1. Idempotency Check
-            try:
-                dup_res = supabase.table("processed_operations").select("*").eq("operation_id", op_id).execute()
-                if dup_res.data:
-                    results.append({
-                        "operation_id": op_id,
-                        "entity_type": entity_type,
-                        "entity_id": entity_id,
-                        "status": "ignored_duplicate",
-                        "server_updated_at": datetime.now(timezone.utc).isoformat(),
-                        "resolved_entity": None,
-                        "conflict": None,
-                    })
-                    continue
-            except Exception as e:
-                logger.error("Idempotency check failed for operation %s: %s", op_id, e)
+            # 1. Idempotency Check (Fast in-memory set)
+            if op_id in already_processed_ids:
+                results.append({
+                    "operation_id": op_id,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "status": "ignored_duplicate",
+                    "server_updated_at": datetime.now(timezone.utc).isoformat(),
+                    "resolved_entity": None,
+                    "conflict": None,
+                })
                 continue
 
             # 2. Run sequential routing & resolving rules
@@ -292,12 +301,12 @@ class SyncService:
                         "retryable": False,
                     }
 
-                # 3. Mark operation as completed in idempotency table if applied/merged successfully
+                # 3. Stage operation for bulk idempotency recording
                 if status in ("applied", "merged", "ignored_duplicate"):
-                    supabase.table("processed_operations").insert({
+                    ops_to_record.append({
                         "operation_id": op_id,
                         "user_id": user_id,
-                    }).execute()
+                    })
 
             except Exception as e:
                 logger.error("Error processing operation %s (%s): %s", op_id, entity_type, e, exc_info=True)
@@ -318,6 +327,14 @@ class SyncService:
                 "resolved_entity": resolved_entity,
                 "conflict": conflict,
             })
+
+        # Bulk record all successful operations in idempotency table
+        if ops_to_record:
+            try:
+                for i in range(0, len(ops_to_record), 100):
+                    supabase.table("processed_operations").insert(ops_to_record[i:i + 100]).execute()
+            except Exception as e:
+                logger.error("Failed to bulk record processed_operations: %s", e)
 
         # Record completed batch for future idempotency checks
         if batch_id:
@@ -696,10 +713,6 @@ class SyncService:
 
     def _handle_history_item_sync(self, user_id: str, item_id: str, payload: dict) -> Tuple[str, dict]:
         """Process additive history item sync."""
-        db_res = supabase.table("history_items").select("*").eq("id", item_id).execute()
-        if db_res.data:
-            return "ignored_duplicate", db_res.data[0]
-
         insert_data = {
             "id": item_id,
             "user_id": user_id,
@@ -711,7 +724,7 @@ class SyncService:
             "source_context_type": payload.get("source_context_type"),
             "source_context_id": payload.get("source_context_id"),
         }
-        supabase.table("history_items").insert(insert_data).execute()
+        supabase.table("history_items").upsert(insert_data).execute()
         return "applied", insert_data
 
     def _handle_listening_session_sync(self, user_id: str, session_id: str, payload: dict) -> Tuple[str, dict]:

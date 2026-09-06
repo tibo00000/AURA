@@ -349,72 +349,79 @@ class SyncRepository(
         val activeSnapshot = database.playbackSnapshotDao().getActiveSnapshot()
 
         if (pendingOps.isNotEmpty() || activeSnapshot != null) {
-            Log.i(TAG, "Pushing ${pendingOps.size} local mutations (+ active snapshot) to backend...")
-            val syncOps = pendingOps.map { op ->
-                SyncOperationDto(
-                    operationId = op.id,
-                    entityType = op.entityType,
-                    entityId = op.entityId,
-                    operationType = op.operationType,
-                    deviceId = deviceId,
-                    occurredAt = formatMillisToIsoDate(op.createdAt),
-                    payload = json.decodeFromString<JsonObject>(op.payloadJson)
-                )
-            }.toMutableList()
+            val chunks = if (pendingOps.isEmpty()) listOf(emptyList()) else pendingOps.chunked(30)
+            Log.i(TAG, "Pushing ${pendingOps.size} local mutations (+ active snapshot) in ${chunks.size} chunks to backend...")
 
-            // Dynamically append the latest active playback snapshot to the batch
-            if (activeSnapshot != null) {
-                syncOps.add(
+            for ((chunkIndex, chunk) in chunks.withIndex()) {
+                val isLastChunk = chunkIndex == chunks.size - 1
+                val syncOps = chunk.map { op ->
                     SyncOperationDto(
-                        operationId = "op_snap_${System.currentTimeMillis()}",
-                        entityType = "playback_snapshot",
-                        entityId = "default",
-                        operationType = "update",
+                        operationId = op.id,
+                        entityType = op.entityType,
+                        entityId = op.entityId,
+                        operationType = op.operationType,
                         deviceId = deviceId,
-                        occurredAt = formatMillisToIsoDate(activeSnapshot.updatedAt),
-                        payload = mapOf(
-                            "current_track_id" to activeSnapshot.currentTrackId,
-                            "playback_context_type" to activeSnapshot.playbackContextType,
-                            "playback_context_id" to activeSnapshot.playbackContextId,
-                            "playback_context_index" to activeSnapshot.playbackContextIndex,
-                            "position_ms" to activeSnapshot.positionMs,
-                            "shuffle_enabled" to activeSnapshot.shuffleEnabled,
-                            "repeat_mode" to activeSnapshot.repeatMode
-                        ).toJsonObject()
+                        occurredAt = formatMillisToIsoDate(op.createdAt),
+                        payload = json.decodeFromString<JsonObject>(op.payloadJson)
                     )
+                }.toMutableList()
+
+                // Dynamically append the latest active playback snapshot only to the last chunk
+                if (isLastChunk && activeSnapshot != null) {
+                    syncOps.add(
+                        SyncOperationDto(
+                            operationId = "op_snap_${System.currentTimeMillis()}",
+                            entityType = "playback_snapshot",
+                            entityId = "default",
+                            operationType = "update",
+                            deviceId = deviceId,
+                            occurredAt = formatMillisToIsoDate(activeSnapshot.updatedAt),
+                            payload = mapOf(
+                                "current_track_id" to activeSnapshot.currentTrackId,
+                                "playback_context_type" to activeSnapshot.playbackContextType,
+                                "playback_context_id" to activeSnapshot.playbackContextId,
+                                "playback_context_index" to activeSnapshot.playbackContextIndex,
+                                "position_ms" to activeSnapshot.positionMs,
+                                "shuffle_enabled" to activeSnapshot.shuffleEnabled,
+                                "repeat_mode" to activeSnapshot.repeatMode
+                            ).toJsonObject()
+                        )
+                    )
+                }
+
+                if (syncOps.isEmpty()) continue
+
+                val request = PushBatchRequestDto(
+                    deviceId = deviceId,
+                    batchId = "batch_${UUID.randomUUID()}",
+                    sentAt = formatMillisToIsoDate(System.currentTimeMillis()),
+                    operations = syncOps
                 )
-            }
-            
-            val request = PushBatchRequestDto(
-                deviceId = deviceId,
-                batchId = "batch_${UUID.randomUUID()}",
-                sentAt = formatMillisToIsoDate(System.currentTimeMillis()),
-                operations = syncOps
-            )
 
-            val response = apiService.pushBatch(getAuthToken(), request)
-            val error = response.error
-            val data = response.data
-            if (error != null) {
-                Log.e(TAG, "Push batch failed: ${error.message}")
-                return false
-            }
-            if (data == null) {
-                Log.e(TAG, "Push batch failed: response data is null")
-                return false
-            }
+                val response = apiService.pushBatch(getAuthToken(), request)
+                val error = response.error
+                val data = response.data
+                if (error != null) {
+                    Log.e(TAG, "Push batch failed on chunk $chunkIndex/${chunks.size}: ${error.message}")
+                    return false
+                }
+                if (data == null) {
+                    Log.e(TAG, "Push batch failed on chunk $chunkIndex/${chunks.size}: response data is null")
+                    return false
+                }
 
-            activeToken = data.nextPullToken.value
-            
-            // Delete successfully processed operations
-            for (res in data.results) {
-                if (res.status in listOf("applied", "merged", "ignored_duplicate")) {
-                    database.syncOutboxDao().deleteOperation(res.operationId)
-                    Log.d(TAG, "Sync operation ${res.operationId} successfully synchronized & deleted from local outbox.")
-                } else if (res.status == "conflict") {
-                    Log.w(TAG, "Sync operation ${res.operationId} got conflict: ${res.conflict}")
-                    // On conflict, let's delete it so the server pull phase overrides it with authority
-                    database.syncOutboxDao().deleteOperation(res.operationId)
+                activeToken = data.nextPullToken.value
+
+                // Delete successfully processed operations immediately from local outbox
+                for (res in data.results) {
+                    if (res.status in listOf("applied", "merged", "ignored_duplicate")) {
+                        database.syncOutboxDao().deleteOperation(res.operationId)
+                        Log.d(TAG, "Sync operation ${res.operationId} successfully synchronized & deleted from local outbox.")
+                    } else if (res.status == "conflict") {
+                        Log.w(TAG, "Sync operation ${res.operationId} got conflict: ${res.conflict}")
+                        // On conflict, let's delete it so the server pull phase overrides it with authority
+                        database.syncOutboxDao().deleteOperation(res.operationId)
+                    }
                 }
             }
         }
