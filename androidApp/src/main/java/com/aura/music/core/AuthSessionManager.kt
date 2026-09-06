@@ -74,15 +74,36 @@ class AuthSessionManager(
         }
     }
 
+    private fun extractUserIdFromJwt(token: String): String? {
+        return try {
+            val parts = token.split(".")
+            if (parts.size == 3) {
+                val payloadB64 = parts[1]
+                val padded = payloadB64 + "=".repeat((-payloadB64.length % 4 + 4) % 4)
+                val decodedBytes = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+                val jsonStr = String(decodedBytes, Charsets.UTF_8)
+                val json = org.json.JSONObject(jsonStr)
+                json.optString("sub").takeIf { it.isNotBlank() }
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun login(email: String, password: String): Result<Unit> {
         return try {
             val result = authService.signInWithPassword(email, password)
             result.map { session ->
+                val resolvedUserId = session.user?.id
+                    ?: extractUserIdFromJwt(session.accessToken)
+                    ?: throw IllegalStateException("Impossible de récupérer l'identifiant utilisateur.")
+                val resolvedEmail = session.user?.email ?: email.trim().lowercase()
+
                 saveSession(
                     token = session.accessToken,
                     refreshToken = session.refreshToken,
-                    userId = session.user.id,
-                    email = session.user.email ?: email.trim().lowercase()
+                    userId = resolvedUserId,
+                    email = resolvedEmail
                 )
             }
         } catch (e: Exception) {
@@ -98,11 +119,17 @@ class AuthSessionManager(
         return try {
             val result = authService.refreshToken(currentRefreshToken)
             result.map { session ->
+                val resolvedUserId = session.user?.id
+                    ?: extractUserIdFromJwt(session.accessToken)
+                    ?: _userId.value
+                    ?: throw IllegalStateException("Identifiant utilisateur introuvable après rafraîchissement.")
+                val resolvedEmail = session.user?.email ?: _userEmail.value
+
                 saveSession(
                     token = session.accessToken,
                     refreshToken = session.refreshToken ?: currentRefreshToken,
-                    userId = session.user.id,
-                    email = session.user.email ?: _userEmail.value
+                    userId = resolvedUserId,
+                    email = resolvedEmail
                 )
             }
         } catch (e: Exception) {

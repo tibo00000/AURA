@@ -581,24 +581,24 @@ fun SearchScreen(
                                         scope.launch {
                                             snackbarHostState.showSnackbar("Connexion requise pour sauvegarder sur le Cloud.")
                                         }
-                                        return@TrackList
-                                    }
-                                    val matchedLocal = localTracks.firstOrNull { local ->
-                                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
-                                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
-                                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
-                                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
-                                         !local.contentUri.isNullOrBlank()
-                                    }
-                                    val trackIdToUpload = matchedLocal?.id ?: track.id
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Envoi vers le Cloud lancé : ${track.title}")
-                                        cloudFileRepository.uploadTrack(trackIdToUpload).collect { res ->
-                                            res.onSuccess {
-                                                snackbarHostState.showSnackbar("Sauvegardé sur le Cloud : ${track.title}")
-                                                cloudFileRepository.refreshSyncedTrackIds()
-                                            }.onFailure { err ->
-                                                snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                    } else {
+                                        val matchedLocal = localTracks.firstOrNull { local ->
+                                            (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                             (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                              local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                              (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                             !local.contentUri.isNullOrBlank()
+                                        }
+                                        val trackIdToUpload = matchedLocal?.id ?: track.id
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Envoi vers le Cloud lancé : ${track.title}")
+                                            cloudFileRepository.uploadTrack(trackIdToUpload).collect { res ->
+                                                res.onSuccess {
+                                                    snackbarHostState.showSnackbar("Sauvegardé sur le Cloud : ${track.title}")
+                                                    cloudFileRepository.refreshSyncedTrackIds()
+                                                }.onFailure { err ->
+                                                    snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                                }
                                             }
                                         }
                                     }
