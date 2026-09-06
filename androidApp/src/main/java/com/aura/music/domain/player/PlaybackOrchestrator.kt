@@ -193,14 +193,22 @@ class PlaybackOrchestrator(
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             android.util.Log.e("PlaybackOrchestrator", "onPlayerError: error=${error.localizedMessage}", error)
             controller?.pause()
+            val friendlyMsg = when {
+                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                error.localizedMessage?.contains("404") == true -> "Morceau introuvable sur le Cloud AURA."
+                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Erreur de connexion au serveur AURA."
+                else -> "Impossible de lire le morceau : ${error.localizedMessage ?: "erreur réseau"}"
+            }
             _uiState.update { current ->
                 current.copy(
                     playbackState = PlaybackState.Error,
-                    errorMessage = error.localizedMessage ?: "Playback error",
+                    errorMessage = friendlyMsg,
                 )
             }
         }
     }
+
 
     /**
      * Connecte le MediaController au PlaybackService.
@@ -787,7 +795,14 @@ class PlaybackOrchestrator(
             track.contentUri
         } else if (track.trackId.isNotBlank()) {
             // Stream direct depuis le Cloud personnel AURA
-            "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
+            val rawToken = com.aura.music.core.AuthSessionManager.getInstance(context).authToken.value
+            val base = "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
+            if (!rawToken.isNullOrBlank()) {
+                val clean = if (rawToken.startsWith("Bearer ", ignoreCase = true)) rawToken.substring(7).trim() else rawToken.trim()
+                "$base?token=$clean"
+            } else {
+                base
+            }
         } else {
             return null
         }

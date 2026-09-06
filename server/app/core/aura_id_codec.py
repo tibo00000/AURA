@@ -77,3 +77,78 @@ def parse_aura_id(aura_id: str, expected_kind: str | None = None) -> ProviderRef
         provider_name=provider_name,
         provider_id=provider_id,
     )
+
+
+def get_track_id_aliases(track_id: str) -> list[str]:
+    """
+    Retourne la liste ordonnée des alias équivalents pour un identifiant de piste.
+    Permet de réconcilier les identifiants opaques AURA (trk_...), les identifiants avec préfixe (deezer:..., ytm:...)
+    et les identifiants numériques bruts (ex: 3123456).
+    """
+    raw = track_id.strip()
+    if not raw:
+        return []
+
+    candidates: list[str] = [raw]
+
+    # 1. Identifiant opaque AURA (trk_...)
+    if raw.startswith("trk_"):
+        try:
+            ref = parse_aura_id(raw, expected_kind="track")
+            p_name = ref.provider_name.lower()
+            p_id = ref.provider_id
+            candidates.append(f"{p_name}:{p_id}")
+            candidates.append(p_id)
+            if p_name == "deezer":
+                candidates.append(f"deezer:{p_id}")
+            elif p_name in ("youtube", "ytmusic", "ytm"):
+                candidates.append(f"ytm:{p_id}")
+                candidates.append(f"youtube:{p_id}")
+        except Exception:
+            pass
+
+    # 2. Préfixe deezer:
+    elif raw.startswith("deezer:"):
+        num_id = raw.split(":", 1)[1].strip()
+        candidates.append(num_id)
+        try:
+            candidates.append(build_aura_id("track", "deezer", num_id))
+        except Exception:
+            pass
+
+    # 3. ID numérique pur (Deezer standard)
+    elif raw.isdigit():
+        candidates.append(f"deezer:{raw}")
+        try:
+            candidates.append(build_aura_id("track", "deezer", raw))
+        except Exception:
+            pass
+
+    # 4. Préfixe ytm: ou youtube:
+    elif raw.startswith("ytm:") or raw.startswith("youtube:"):
+        yt_id = raw.split(":", 1)[1].strip()
+        candidates.append(f"ytm:{yt_id}")
+        candidates.append(f"youtube:{yt_id}")
+        try:
+            candidates.append(build_aura_id("track", "youtube", yt_id))
+        except Exception:
+            pass
+
+    # 5. Préfixe spotify:
+    elif raw.startswith("spotify:"):
+        sp_id = raw.split(":", 1)[1].strip()
+        try:
+            candidates.append(build_aura_id("track", "spotify", sp_id))
+        except Exception:
+            pass
+
+    # Déduplication avec préservation de l'ordre
+    seen: set[str] = set()
+    result: list[str] = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            result.append(c)
+
+    return result
+

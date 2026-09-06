@@ -31,6 +31,8 @@ for mod in ("yt_dlp", "ytmusicapi", "rapidfuzz", "rapidfuzz.fuzz"):
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 
+
+
 from app.services.download_service import (
     _get_sync_base,
     _get_global_cache_dir,
@@ -237,6 +239,109 @@ class TestGlobalTrackCache(unittest.TestCase):
         self.assertEqual(metadata.get("title"), "Historical Hit")
         self.assertEqual(metadata.get("artist_name"), "Legend")
 
+    def test_cross_alias_cache_hit(self):
+        """
+        Vérifie qu'un morceau enregistré sous 'deezer:123456' est immédiatement
+        trouvé en Cache Hit lorsqu'un autre composant le cherche sous forme AURA 'trk_...'
+        ou sous forme numérique '123456'.
+        """
+        from app.core.aura_id_codec import build_aura_id, get_track_id_aliases
+        raw_numeric = "98765432"
+        deezer_id = f"deezer:{raw_numeric}"
+        aura_id = build_aura_id("track", "deezer", raw_numeric)
+
+        # 1. Vérifier que les alias se réconcilient tous mutuellement
+        aliases_from_deezer = get_track_id_aliases(deezer_id)
+        aliases_from_aura = get_track_id_aliases(aura_id)
+        aliases_from_num = get_track_id_aliases(raw_numeric)
+
+        self.assertIn(raw_numeric, aliases_from_aura)
+        self.assertIn(deezer_id, aliases_from_aura)
+        self.assertIn(aura_id, aliases_from_deezer)
+        self.assertIn(aura_id, aliases_from_num)
+
+        # 2. Enregistrer un fichier avec l'ID deezer:...
+        fake_audio = self.test_dir / "temp_alias.mp3"
+        content = b"AUDIO_DATA_FOR_ALIAS_TEST"
+        fake_audio.write_bytes(content)
+
+        user_a = "user_alpha"
+        success = _auto_register_in_sync_files(
+            user_id=user_a,
+            track_id=deezer_id,
+            audio_file=fake_audio,
+            title="Cross Alias Hit",
+            artist_name="Alias Artist",
+        )
+        self.assertTrue(success)
+
+        # 3. Rechercher avec l'ID opaque AURA (trk_...) : DOIT être un Cache Hit instantané !
+        cached = _find_globally_cached_track(aura_id)
+        self.assertIsNotNone(cached)
+        cached_path, metadata = cached
+        self.assertTrue(cached_path.exists())
+        self.assertEqual(cached_path.read_bytes(), content)
+        self.assertEqual(metadata.get("title"), "Cross Alias Hit")
+
+        # 4. Rechercher avec l'ID numérique brut : DOIT également être un Cache Hit instantané !
+        cached_num = _find_globally_cached_track(raw_numeric)
+        self.assertIsNotNone(cached_num)
+        cached_num_path, num_meta = cached_num
+        self.assertEqual(cached_num_path.read_bytes(), content)
+
+    def test_auth_token_query_parameter(self):
+        """Vérifie que get_current_user accepte un jeton transmis via ?token= (streaming)."""
+        async def run_auth_test():
+            from app.core.auth import get_current_user, TRANSITIONAL_OWNER_UUID
+            
+            # 1. Via Header
+            user_header = await get_current_user(authorization=f"Bearer {TRANSITIONAL_OWNER_UUID}")
+            self.assertEqual(user_header.id, TRANSITIONAL_OWNER_UUID)
+
+            # 2. Via Query param
+            user_query = await get_current_user(token=TRANSITIONAL_OWNER_UUID)
+            self.assertEqual(user_query.id, TRANSITIONAL_OWNER_UUID)
+
+            # 3. Via Query param avec préfixe Bearer
+            user_query_bearer = await get_current_user(token=f"Bearer {TRANSITIONAL_OWNER_UUID}")
+            self.assertEqual(user_query_bearer.id, TRANSITIONAL_OWNER_UUID)
+
+        asyncio.run(run_auth_test())
+
+    def test_sync_file_download_endpoint_cross_alias(self):
+        """Vérifie que l'endpoint download_sync_file sert le fichier même si stocké sous un autre alias."""
+        async def run_endpoint_test():
+            from app.api.routes.sync_files import download_sync_file
+            from app.core.auth import AuthenticatedUser
+            from app.core.aura_id_codec import build_aura_id
+
+            raw_num = "55443322"
+            deezer_id = f"deezer:{raw_num}"
+            aura_id = build_aura_id("track", "deezer", raw_num)
+
+            # Enregistrer sous deezer:... pour user_a
+            fake_audio = self.test_dir / "temp_ep.mp3"
+            fake_audio.write_bytes(b"ENDPOINT_STREAM_CONTENT")
+            _auto_register_in_sync_files(
+                user_id="user_owner",
+                track_id=deezer_id,
+                audio_file=fake_audio,
+                title="Stream Endpoint Song",
+            )
+
+            # User B (ami) demande la lecture en passant l'AURA ID (trk_...)
+            user_friend = AuthenticatedUser(id="friend_uuid_123", token="mock")
+            response = await download_sync_file(track_id=aura_id, current_user=user_friend)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers.get("accept-ranges"), "bytes")
+            self.assertTrue(Path(response.path).exists())
+            self.assertEqual(Path(response.path).read_bytes(), b"ENDPOINT_STREAM_CONTENT")
+
+        asyncio.run(run_endpoint_test())
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

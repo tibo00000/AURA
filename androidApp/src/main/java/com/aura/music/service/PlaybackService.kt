@@ -507,7 +507,15 @@ fun TrackListRow.toMediaItem(
     val mediaUri = if (!contentUri.isNullOrBlank()) {
         Uri.parse(contentUri)
     } else if (id.isNotBlank()) {
-        Uri.parse("${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$id")
+        val rawToken = com.aura.music.core.AuthSessionManager.getInstance(context).authToken.value
+        val base = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$id"
+        val fullUrl = if (!rawToken.isNullOrBlank()) {
+            val clean = if (rawToken.startsWith("Bearer ", ignoreCase = true)) rawToken.substring(7).trim() else rawToken.trim()
+            "$base?token=$clean"
+        } else {
+            base
+        }
+        Uri.parse(fullUrl)
     } else null
     val metadata = MediaMetadata.Builder()
         .setTitle(title)

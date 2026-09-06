@@ -124,6 +124,17 @@ fun AuraApp() {
         playerViewModel.uiState.map { it.playbackState }.distinctUntilChanged()
     }.collectAsState(initial = PlaybackState.Idle)
 
+    val playerErrorMessage by remember(playerViewModel) {
+        playerViewModel.uiState.map { it.errorMessage }.distinctUntilChanged()
+    }.collectAsState(initial = null)
+
+    val appContext = LocalContext.current
+    LaunchedEffect(playbackState, playerErrorMessage) {
+        if (playbackState == PlaybackState.Error && !playerErrorMessage.isNullOrBlank()) {
+            android.widget.Toast.makeText(appContext, playerErrorMessage, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     val topDestinations = remember {
         listOf(
             TopLevelDestination(AuraRoute.Home, "Accueil", Icons.Rounded.Home),

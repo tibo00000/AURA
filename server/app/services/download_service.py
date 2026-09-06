@@ -54,7 +54,8 @@ def _get_track_key(track_id: str) -> str:
 
 def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
     """
-    Vérifie si une piste existe déjà dans le cache global (_global_cache).
+    Vérifie si une piste existe déjà dans le cache global (_global_cache),
+    en testant tous les alias d'identifiants (trk_..., deezer:..., numeric).
     Retourne (chemin_audio, métadonnées) si présente et valide (> 0 octets), sinon None.
     Si la piste est présente dans le répertoire d'un utilisateur existant (téléchargée avant la mise
     en place du cache global ou par upload direct), elle est automatiquement indexée par hardlink
@@ -62,55 +63,104 @@ def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
     """
     import json
     import shutil
-    track_key = _get_track_key(track_id)
+    from app.core.aura_id_codec import get_track_id_aliases
+
+    aliases = get_track_id_aliases(track_id)
     cache_dir = _get_global_cache_dir()
-    cached_audio = cache_dir / f"{track_key}.audio"
-    cached_json = cache_dir / f"{track_key}.json"
+    primary_key = _get_track_key(track_id)
 
-    if cached_audio.exists() and cached_audio.stat().st_size > 0:
-        metadata = {}
-        if cached_json.exists():
-            try:
-                metadata = json.loads(cached_json.read_text(encoding="utf-8"))
-            except Exception as e:
-                logger.warning("Could not read cached metadata for track %s: %s", track_id, e)
-        return cached_audio, metadata
+    # 1. Vérification dans _global_cache pour chaque alias
+    for alias in aliases:
+        alias_key = _get_track_key(alias)
+        cached_audio = cache_dir / f"{alias_key}.audio"
+        cached_json = cache_dir / f"{alias_key}.json"
+        if cached_audio.exists() and cached_audio.stat().st_size > 0:
+            metadata = {}
+            if cached_json.exists():
+                try:
+                    metadata = json.loads(cached_json.read_text(encoding="utf-8"))
+                except Exception as e:
+                    logger.warning("Could not read cached metadata for track %s: %s", alias, e)
 
-    # Backfill transparent à la volée pour les pistes déjà téléchargées dans le passé
+            # Auto-alignement : si l'alias trouvé n'est pas la clé primaire demandée,
+            # indexer également sous la clé primaire par hardlink pour les accès ultérieurs directs.
+            if alias_key != primary_key:
+                primary_audio = cache_dir / f"{primary_key}.audio"
+                primary_json = cache_dir / f"{primary_key}.json"
+                if not primary_audio.exists():
+                    try:
+                        os.link(cached_audio, primary_audio)
+                    except Exception:
+                        try:
+                            shutil.copyfile(cached_audio, primary_audio)
+                        except Exception:
+                            pass
+                if cached_json.exists() and not primary_json.exists():
+                    try:
+                        shutil.copyfile(cached_json, primary_json)
+                    except Exception:
+                        pass
+
+            return cached_audio, metadata
+
+    # 2. Backfill transparent à la volée pour les pistes déjà téléchargées dans le passé chez un utilisateur
     try:
         sync_base = _get_sync_base()
         if sync_base.exists():
             for user_folder in sync_base.iterdir():
                 if user_folder.is_dir() and user_folder.name != "_global_cache":
-                    candidate_audio = user_folder / f"{track_key}.audio"
-                    candidate_json = user_folder / f"{track_key}.json"
-                    if candidate_audio.exists() and candidate_audio.stat().st_size > 0:
-                        try:
-                            if cached_audio.exists():
-                                cached_audio.unlink()
-                            os.link(candidate_audio, cached_audio)
-                        except Exception:
-                            shutil.copyfile(candidate_audio, cached_audio)
-
-                        if candidate_json.exists():
+                    for alias in aliases:
+                        alias_key = _get_track_key(alias)
+                        candidate_audio = user_folder / f"{alias_key}.audio"
+                        candidate_json = user_folder / f"{alias_key}.json"
+                        if candidate_audio.exists() and candidate_audio.stat().st_size > 0:
+                            target_audio = cache_dir / f"{alias_key}.audio"
+                            target_json = cache_dir / f"{alias_key}.json"
                             try:
-                                shutil.copyfile(candidate_json, cached_json)
+                                if target_audio.exists():
+                                    target_audio.unlink()
+                                os.link(candidate_audio, target_audio)
                             except Exception:
-                                pass
+                                shutil.copyfile(candidate_audio, target_audio)
 
-                        metadata = {}
-                        if cached_json.exists():
-                            try:
-                                metadata = json.loads(cached_json.read_text(encoding="utf-8"))
-                            except Exception:
-                                pass
+                            if candidate_json.exists():
+                                try:
+                                    shutil.copyfile(candidate_json, target_json)
+                                except Exception:
+                                    pass
 
-                        logger.info("Automatically backfilled existing track %s into global cache from %s", track_id, user_folder.name)
-                        return cached_audio, metadata
+                            metadata = {}
+                            if target_json.exists():
+                                try:
+                                    metadata = json.loads(target_json.read_text(encoding="utf-8"))
+                                except Exception:
+                                    pass
+
+                            # Aligner également sous la clé primaire si différente
+                            if alias_key != primary_key:
+                                primary_audio = cache_dir / f"{primary_key}.audio"
+                                primary_json = cache_dir / f"{primary_key}.json"
+                                if not primary_audio.exists():
+                                    try:
+                                        os.link(target_audio, primary_audio)
+                                    except Exception:
+                                        try:
+                                            shutil.copyfile(target_audio, primary_audio)
+                                        except Exception:
+                                            pass
+                                if target_json.exists() and not primary_json.exists():
+                                    try:
+                                        shutil.copyfile(target_json, primary_json)
+                                    except Exception:
+                                        pass
+
+                            logger.info("Automatically backfilled existing track %s (alias %s) into global cache from %s", track_id, alias, user_folder.name)
+                            return target_audio, metadata
     except Exception as e:
         logger.warning("Error while scanning existing user folders for track %s: %s", track_id, e)
 
     return None
+
 
 
 def _link_cached_track_to_user(

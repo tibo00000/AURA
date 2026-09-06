@@ -30,12 +30,17 @@ object MediaCacheManager {
 
     fun createMediaSourceFactory(context: Context): DefaultMediaSourceFactory {
         val appContext = context.applicationContext
-        val authHeader = AuthSessionManager.getInstance(appContext).getBearerHeader()
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setDefaultRequestProperties(mapOf("Authorization" to authHeader))
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(20000)
+        val httpDataSourceFactory = androidx.media3.datasource.DataSource.Factory {
+            val authHeader = AuthSessionManager.getInstance(appContext).getBearerHeader()
+            val baseFactory = DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(20000)
+            if (authHeader.isNotBlank()) {
+                baseFactory.setDefaultRequestProperties(mapOf("Authorization" to authHeader))
+            }
+            baseFactory.createDataSource()
+        }
 
         val upstreamFactory = DefaultDataSource.Factory(appContext, httpDataSourceFactory)
 

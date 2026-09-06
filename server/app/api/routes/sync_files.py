@@ -142,16 +142,46 @@ async def download_sync_file(
     track_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    target_file, metadata_file = _paths(current_user.id, track_id)
-    metadata = _read_metadata(metadata_file)
-    if metadata is None or not target_file.exists():
+    from app.core.aura_id_codec import get_track_id_aliases
+    from app.services.download_service import _find_globally_cached_track, _link_cached_track_to_user
+
+    aliases = get_track_id_aliases(track_id)
+    target_file: Path | None = None
+    metadata: dict[str, Any] | None = None
+
+    # 1. Vérification dans le répertoire personnel de l'utilisateur (track_id ou alias)
+    for alias in aliases:
+        cand_file, cand_meta = _paths(current_user.id, alias)
+        if cand_file.exists() and cand_file.stat().st_size > 0:
+            target_file = cand_file
+            metadata = _read_metadata(cand_meta) or {}
+            break
+
+    # 2. Si absent du dossier personnel, vérification du Cache Global (_global_cache et backfill)
+    if target_file is None:
+        cached = _find_globally_cached_track(track_id)
+        if cached:
+            cached_audio, cached_meta = cached
+            # Liaison hardlink immédiate vers l'espace personnel de l'utilisateur
+            _link_cached_track_to_user(
+                user_id=current_user.id,
+                track_id=track_id,
+                cached_audio=cached_audio,
+                metadata=cached_meta,
+            )
+            target_file, metadata_file = _paths(current_user.id, track_id)
+            metadata = cached_meta
+
+    if target_file is None or not target_file.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Synced audio file not found")
 
     return FileResponse(
         path=str(target_file),
-        media_type=metadata.get("mime_type") or "audio/mpeg",
+        media_type=(metadata.get("mime_type") if metadata else None) or "audio/mpeg",
         filename=f"{track_id}.audio",
+        headers={"Accept-Ranges": "bytes"},
     )
+
 
 
 @router.put(

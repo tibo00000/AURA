@@ -356,15 +356,7 @@ fun HybridArtistScreen(
                                 onPlayTrackInList(trackToPlay, allOnlineMapped, "artist_online")
                             } else {
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Ajout au Cloud en cours pour : ${track.title}")
-                                    downloadRepository.triggerDownload(
-                                        trackId = track.id,
-                                        title = track.title,
-                                        artistName = track.displayArtistName,
-                                        albumTitle = track.displayAlbumTitle,
-                                        coverUri = track.coverUri,
-                                        userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
-                                    ).collect { }
+                                    snackbarHostState.showSnackbar("Ce morceau n'est pas encore disponible sur votre Cloud. Cliquez sur le nuage pour l'ajouter.")
                                 }
                             }
                         },
@@ -767,15 +759,7 @@ fun HybridAlbumScreen(
                                 onPlayTrackInList(trackToPlay, allOnlineAlbumMapped, "album_online")
                             } else {
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Ajout au Cloud en cours pour : ${track.title}")
-                                    downloadRepository.triggerDownload(
-                                        trackId = track.id,
-                                        title = track.title,
-                                        artistName = track.displayArtistName,
-                                        albumTitle = track.displayAlbumTitle,
-                                        coverUri = track.coverUri,
-                                        userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
-                                    ).collect { }
+                                    snackbarHostState.showSnackbar("Ce morceau n'est pas encore disponible sur votre Cloud. Cliquez sur le nuage pour l'ajouter.")
                                 }
                             }
                         },

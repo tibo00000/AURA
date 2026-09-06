@@ -9,7 +9,7 @@ import json
 import base64
 import logging
 from typing import Optional
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -28,23 +28,18 @@ class AuthenticatedUser(BaseModel):
 
 def _decode_jwt_payload(token: str) -> dict:
     """Decodes JWT payload safely."""
+    # 1. Verification with JWT secret if configured
     settings = get_settings()
-    # 1. If JWT secret is configured, perform cryptographic verification
-    if settings.supabase_jwt_secret:
+    secret = settings.supabase_jwt_secret
+    if secret:
         try:
             import jwt
-            return jwt.decode(
-                token,
-                settings.supabase_jwt_secret,
-                algorithms=["HS256"],
-                audience="authenticated",
-                options={"verify_exp": True},
-            )
+            return jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated")
         except Exception as e:
-            logger.warning("Cryptographic JWT verification failed: %s", e)
+            logger.warning("Supabase JWT verification failed with secret: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired authentication token",
+                detail="Invalid or expired token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -67,36 +62,47 @@ def _decode_jwt_payload(token: str) -> dict:
         )
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> AuthenticatedUser:
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None),
+) -> AuthenticatedUser:
     """
-    Dependency to validate authorization header and get current authenticated user.
+    Dependency to validate authorization header or query token and get current authenticated user.
+    Supports Authorization: Bearer <token> or ?token=<token> (for streaming media players).
     """
-    if not authorization:
+    raw_token: Optional[str] = None
+
+    if isinstance(authorization, str) and authorization.strip():
+        parts = authorization.strip().split(" ")
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authorization format. Use 'Bearer <token>'",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        raw_token = parts[1].strip()
+    elif isinstance(token, str) and token.strip():
+        raw_token = token.strip()
+        if raw_token.lower().startswith("bearer "):
+            raw_token = raw_token[7:].strip()
+
+
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header",
+            detail="Missing Authorization header or token query parameter",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    parts = authorization.split(" ")
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization format. Use 'Bearer <token>'",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = parts[1].strip()
 
     # TRANSITIONAL COMPATIBILITY:
     # Single-owner temporary bypass for zero-downtime client rollout.
     # TODO: Remove after client rollout is confirmed.
-    if token.lower() == TRANSITIONAL_OWNER_UUID:
+    if raw_token.lower() == TRANSITIONAL_OWNER_UUID:
         logger.debug("Authenticated owner via transitional UUID token: %s", TRANSITIONAL_OWNER_UUID)
-        return AuthenticatedUser(id=TRANSITIONAL_OWNER_UUID, token=token)
+        return AuthenticatedUser(id=TRANSITIONAL_OWNER_UUID, token=raw_token)
 
     # Decode and validate Supabase JWT
-    payload = _decode_jwt_payload(token)
+    payload = _decode_jwt_payload(raw_token)
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(
@@ -106,4 +112,4 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Authe
         )
 
     logger.debug("Authenticated user_id: %s from Supabase JWT", user_id)
-    return AuthenticatedUser(id=user_id.lower(), token=token)
+    return AuthenticatedUser(id=user_id.lower(), token=raw_token)
