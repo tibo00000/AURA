@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.aura.music.data.network.SupabaseAuthService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,7 +14,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * Gestionnaire de session et d'authentification sécurisé pour AURA.
  * Stocke les jetons Supabase Auth dans EncryptedSharedPreferences (Keystore AES256-GCM).
  */
-class AuthSessionManager(context: Context) {
+class AuthSessionManager(
+    context: Context,
+    private val authService: SupabaseAuthService = SupabaseAuthService.createDefault()
+) {
     private val appContext = context.applicationContext
 
     private val prefs: SharedPreferences by lazy {
@@ -44,6 +48,9 @@ class AuthSessionManager(context: Context) {
     private val _userEmail = MutableStateFlow<String?>(null)
     val userEmail: StateFlow<String?> = _userEmail.asStateFlow()
 
+    private val _isLoggedIn = MutableStateFlow(false)
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
     init {
         loadSession()
     }
@@ -53,29 +60,65 @@ class AuthSessionManager(context: Context) {
         val savedUserId = prefs.getString(KEY_USER_ID, null)
         val savedEmail = prefs.getString(KEY_USER_EMAIL, null)
 
-        if (!savedToken.isNullOrBlank()) {
+        if (!savedToken.isNullOrBlank() && !savedUserId.isNullOrBlank()) {
             _authToken.value = savedToken
             _userId.value = savedUserId
             _userEmail.value = savedEmail
+            _isLoggedIn.value = true
         } else {
-            // TRANSITIONAL SEEDING:
-            // Initialise avec l'UUID existant pour garantir la continuité totale des données.
-            val initialOwnerUuid = "12345678-1234-1234-1234-1234567890ab"
-            _authToken.value = initialOwnerUuid
-            _userId.value = initialOwnerUuid
-            _userEmail.value = "owner@aura.local"
-            saveSession(
-                token = initialOwnerUuid,
-                refreshToken = null,
-                userId = initialOwnerUuid,
-                email = "owner@aura.local"
-            )
+            // New installations start unauthenticated
+            _authToken.value = null
+            _userId.value = null
+            _userEmail.value = null
+            _isLoggedIn.value = false
         }
+    }
+
+    suspend fun login(email: String, password: String): Result<Unit> {
+        return try {
+            val result = authService.signInWithPassword(email, password)
+            result.map { session ->
+                saveSession(
+                    token = session.accessToken,
+                    refreshToken = session.refreshToken,
+                    userId = session.user.id,
+                    email = session.user.email ?: email.trim().lowercase()
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun refreshSession(): Result<Unit> {
+        val currentRefreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)
+        if (currentRefreshToken.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Aucun jeton de rafraîchissement disponible."))
+        }
+        return try {
+            val result = authService.refreshToken(currentRefreshToken)
+            result.map { session ->
+                saveSession(
+                    token = session.accessToken,
+                    refreshToken = session.refreshToken ?: currentRefreshToken,
+                    userId = session.user.id,
+                    email = session.user.email ?: _userEmail.value
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun logout() {
+        clearSession()
     }
 
     fun getBearerHeader(): String {
         val token = _authToken.value?.trim().orEmpty()
-        return if (token.startsWith("Bearer ", ignoreCase = true)) {
+        return if (token.isEmpty()) {
+            ""
+        } else if (token.startsWith("Bearer ", ignoreCase = true)) {
             token
         } else {
             "Bearer $token"
@@ -83,7 +126,7 @@ class AuthSessionManager(context: Context) {
     }
 
     fun getUserId(): String {
-        return _userId.value ?: "12345678-1234-1234-1234-1234567890ab"
+        return _userId.value.orEmpty()
     }
 
     fun saveSession(
@@ -108,6 +151,7 @@ class AuthSessionManager(context: Context) {
         _authToken.value = cleanToken
         _userId.value = userId
         _userEmail.value = email
+        _isLoggedIn.value = cleanToken.isNotBlank() && userId.isNotBlank()
     }
 
     fun clearSession() {
@@ -115,6 +159,7 @@ class AuthSessionManager(context: Context) {
         _authToken.value = null
         _userId.value = null
         _userEmail.value = null
+        _isLoggedIn.value = false
     }
 
     companion object {
@@ -129,7 +174,7 @@ class AuthSessionManager(context: Context) {
 
         fun getInstance(context: Context): AuthSessionManager {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: AuthSessionManager(context).also { INSTANCE = it }
+                INSTANCE ?: AuthSessionManager(context.applicationContext).also { INSTANCE = it }
             }
         }
     }

@@ -49,6 +49,11 @@ class CloudFileRepository(
     }
 
     suspend fun refreshSyncedTrackIds() {
+        val authManager = com.aura.music.core.AuthSessionManager.getInstance(context)
+        if (!authManager.isLoggedIn.value) {
+            _syncedTrackIds.value = emptySet()
+            return
+        }
         try {
             val response = apiService.listSyncFiles(getAuthToken())
             val data = response.data

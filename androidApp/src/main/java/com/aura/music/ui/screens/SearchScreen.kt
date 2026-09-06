@@ -541,24 +541,33 @@ fun SearchScreen(
                                             onOpenDownloads()
                                         }
                                         else -> {
-                                            scope.launch {
-                                                downloadRepository.triggerDownload(
-                                                    trackId = track.id,
-                                                    title = track.title,
-                                                    artistName = track.displayArtistName,
-                                                    albumTitle = track.displayAlbumTitle,
-                                                    coverUri = track.coverUri,
-                                                    userToken = application.container.authSessionManager.getBearerHeader()
-                                                ).collect { result ->
-                                                    if (result.isSuccess) {
-                                                        scope.launch {
-                                                            val snackbarResult = snackbarHostState.showSnackbar(
-                                                                message = "Téléchargement lancé : ${track.title}",
-                                                                actionLabel = "Voir",
-                                                                duration = androidx.compose.material3.SnackbarDuration.Short
-                                                            )
-                                                            if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                                                                onOpenDownloads()
+                                            if (!application.container.authSessionManager.isLoggedIn.value) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        message = "Connexion requise pour télécharger depuis le Cloud.",
+                                                        duration = androidx.compose.material3.SnackbarDuration.Short
+                                                    )
+                                                }
+                                            } else {
+                                                scope.launch {
+                                                    downloadRepository.triggerDownload(
+                                                        trackId = track.id,
+                                                        title = track.title,
+                                                        artistName = track.displayArtistName,
+                                                        albumTitle = track.displayAlbumTitle,
+                                                        coverUri = track.coverUri,
+                                                        userToken = application.container.authSessionManager.getBearerHeader()
+                                                    ).collect { result ->
+                                                        if (result.isSuccess) {
+                                                            scope.launch {
+                                                                val snackbarResult = snackbarHostState.showSnackbar(
+                                                                    message = "Téléchargement lancé : ${track.title}",
+                                                                    actionLabel = "Voir",
+                                                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                                                )
+                                                                if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                                                    onOpenDownloads()
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -568,12 +577,18 @@ fun SearchScreen(
                                     }
                                 },
                                 onUploadToCloud = { track ->
+                                    if (!application.container.authSessionManager.isLoggedIn.value) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Connexion requise pour sauvegarder sur le Cloud.")
+                                        }
+                                        return@TrackList
+                                    }
                                     val matchedLocal = localTracks.firstOrNull { local ->
                                         (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
                                          (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
                                           local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
                                           (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
-                                        !local.contentUri.isNullOrBlank()
+                                         !local.contentUri.isNullOrBlank()
                                     }
                                     val trackIdToUpload = matchedLocal?.id ?: track.id
                                     scope.launch {

@@ -117,6 +117,7 @@ fun SettingsScreen(
 
     val authManager = remember { com.aura.music.core.AuthSessionManager.getInstance(ctx) }
     val currentUserEmail by authManager.userEmail.collectAsState()
+    val isLoggedIn by authManager.isLoggedIn.collectAsState()
 
     val settingsState = produceState<UserSettingsEntity?>(initialValue = null, repository, refreshTick) {
         repository.ensureDefaults()
@@ -175,14 +176,26 @@ fun SettingsScreen(
                                 color = androidx.compose.ui.graphics.Color.White,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Text(
-                                text = currentUserEmail ?: "Non connecté",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isLoggedIn) SemanticSuccess else androidx.compose.ui.graphics.Color.Gray)
+                                )
+                                Text(
+                                    text = if (isLoggedIn) (currentUserEmail ?: "Connecté") else "Non connecté (mode local)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isLoggedIn) SemanticSuccess else TextSecondary
+                                )
+                            }
                         }
                         Text(
-                            text = "Gérer",
+                            text = if (isLoggedIn) "Gérer" else "Se connecter",
                             color = BlazeOrange,
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold
@@ -196,9 +209,13 @@ fun SettingsScreen(
                         subtitle = "Sauvegardez vos titres et playlists sur votre serveur privé.",
                         checked = settings.syncEnabled,
                         onCheckedChange = { enabled ->
-                            scope.launch {
-                                repository.setSyncEnabled(enabled)
-                                refreshTick++
+                            if (enabled && !isLoggedIn) {
+                                showAuthDialog = true
+                            } else {
+                                scope.launch {
+                                    repository.setSyncEnabled(enabled)
+                                    refreshTick++
+                                }
                             }
                         },
                     )

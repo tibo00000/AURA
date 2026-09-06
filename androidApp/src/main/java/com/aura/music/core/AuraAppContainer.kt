@@ -87,7 +87,7 @@ class AuraAppContainer(context: Context) {
     val downloadsViewModelFactory by lazy {
         DownloadsViewModel.Factory(
             downloadRepository = downloadRepository,
-            userToken = authSessionManager.getBearerHeader()
+            tokenProvider = { authSessionManager.getBearerHeader() }
         )
     }
 

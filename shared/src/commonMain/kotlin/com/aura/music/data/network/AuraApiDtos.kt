@@ -535,3 +535,42 @@ data class SyncedFileMetadataUpdateRequest(
 data class SyncedFileBatchMetadataResponse(
     @SerialName("updated_count") val updatedCount: Int
 )
+
+// ============================================================================
+// Supabase Auth (GoTrue REST API) Models
+// ============================================================================
+
+@Serializable
+data class SupabaseAuthRequest(
+    @SerialName("email") val email: String,
+    @SerialName("password") val password: String
+)
+
+@Serializable
+data class SupabaseRefreshRequest(
+    @SerialName("refresh_token") val refreshToken: String
+)
+
+@Serializable
+data class SupabaseUserDto(
+    @SerialName("id") val id: String,
+    @SerialName("email") val email: String? = null
+)
+
+@Serializable
+data class SupabaseSessionDto(
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("token_type") val tokenType: String? = "bearer",
+    @SerialName("expires_in") val expiresIn: Long? = null,
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    @SerialName("user") val user: SupabaseUserDto? = null
+)
+
+@Serializable
+data class SupabaseAuthErrorDto(
+    @SerialName("error") val error: String? = null,
+    @SerialName("error_description") val errorDescription: String? = null,
+    @SerialName("msg") val msg: String? = null,
+    @SerialName("message") val message: String? = null
+)
+

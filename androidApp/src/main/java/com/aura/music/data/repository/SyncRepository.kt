@@ -190,6 +190,11 @@ class SyncRepository(
             return@withContext false
         }
 
+        if (authSessionManager != null && !authSessionManager.isLoggedIn.value) {
+            Log.d(TAG, "Sync skipped: user is not logged in.")
+            return@withContext false
+        }
+
         if (!force && !isNetworkAllowed(settings.statsSyncNetworkPolicy)) {
             Log.d(TAG, "Sync skipped due to network policy constraints (Wifi only required).")
             return@withContext false

@@ -34,8 +34,15 @@ data class DownloadsUiState(
  */
 class DownloadsViewModel(
     private val downloadRepository: DownloadRepository,
-    private val userToken: String
+    private val tokenProvider: () -> String
 ) : ViewModel() {
+
+    constructor(
+        downloadRepository: DownloadRepository,
+        userToken: String
+    ) : this(downloadRepository, { userToken })
+
+    private val userToken: String get() = tokenProvider()
 
     private val _selectedTab = MutableStateFlow("En cours")
     val selectedTab = _selectedTab.asStateFlow()
@@ -185,10 +192,16 @@ class DownloadsViewModel(
 
     class Factory(
         private val downloadRepository: DownloadRepository,
-        private val userToken: String
+        private val tokenProvider: () -> String
     ) : ViewModelProvider.Factory {
+
+        constructor(
+            downloadRepository: DownloadRepository,
+            userToken: String
+        ) : this(downloadRepository, { userToken })
+
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DownloadsViewModel(downloadRepository, userToken) as T
+            DownloadsViewModel(downloadRepository, tokenProvider) as T
     }
 }

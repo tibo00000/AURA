@@ -33,6 +33,103 @@ from rapidfuzz import fuzz
 ytmusic = YTMusic()
 
 
+def _get_sync_base() -> Path:
+    """Retourne le chemin de base absolu pour les fichiers synchronisés."""
+    sync_base = Path(get_settings().sync_files_dir)
+    return sync_base if sync_base.is_absolute() else Path.cwd() / sync_base
+
+
+def _get_global_cache_dir() -> Path:
+    """Retourne le répertoire de cache global dédoublonné."""
+    cache_dir = _get_sync_base() / "_global_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _get_track_key(track_id: str) -> str:
+    """Calcule la clé canonique de stockage à partir du track_id fort."""
+    import hashlib
+    return hashlib.sha256(track_id.encode("utf-8")).hexdigest()
+
+
+def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
+    """
+    Vérifie si une piste existe déjà dans le cache global (_global_cache).
+    Retourne (chemin_audio, métadonnées) si présente et valide (> 0 octets), sinon None.
+    """
+    import json
+    track_key = _get_track_key(track_id)
+    cache_dir = _get_global_cache_dir()
+    cached_audio = cache_dir / f"{track_key}.audio"
+    cached_json = cache_dir / f"{track_key}.json"
+
+    if cached_audio.exists() and cached_audio.stat().st_size > 0:
+        metadata = {}
+        if cached_json.exists():
+            try:
+                metadata = json.loads(cached_json.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning("Could not read cached metadata for track %s: %s", track_id, e)
+        return cached_audio, metadata
+    return None
+
+
+def _link_cached_track_to_user(
+    user_id: str,
+    track_id: str,
+    cached_audio: Path,
+    metadata: dict,
+    override_metadata: Optional[dict] = None,
+) -> bool:
+    """
+    Crée un hardlink atomique depuis le cache global vers le répertoire personnel d'un utilisateur.
+    Écrit le fichier metadata.json correspondant pour le décompte du quota logique.
+    """
+    import hashlib
+    import json
+    import shutil
+    from datetime import datetime, timezone
+
+    try:
+        sync_base = _get_sync_base()
+        safe_user_id = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+        user_dir = sync_base / safe_user_id
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        track_key = _get_track_key(track_id)
+        target_audio = user_dir / f"{track_key}.audio"
+        target_json = user_dir / f"{track_key}.json"
+
+        # Hardlink Linux (même inode, 0 Mo d'espace disque supplémentaire)
+        try:
+            if target_audio.exists():
+                target_audio.unlink()
+            os.link(cached_audio, target_audio)
+        except Exception:
+            shutil.copyfile(cached_audio, target_audio)
+
+        now = datetime.now(timezone.utc).isoformat()
+        user_meta = dict(metadata)
+        if override_metadata:
+            for k in ("title", "artist_name", "album_title", "cover_uri", "duration_ms", "artist_id", "album_id"):
+                if override_metadata.get(k):
+                    user_meta[k] = override_metadata[k]
+
+        user_meta["track_id"] = track_id
+        user_meta["synced"] = True
+        user_meta["size_bytes"] = target_audio.stat().st_size if target_audio.exists() else 0
+        user_meta["mime_type"] = "audio/mpeg"
+        user_meta["uploaded_at"] = now
+        user_meta["updated_at"] = now
+
+        target_json.write_text(json.dumps(user_meta, ensure_ascii=False), encoding="utf-8")
+        logger.info("Successfully linked globally cached track %s to user %s", track_id, user_id)
+        return True
+    except Exception as e:
+        logger.exception("Failed to link cached track %s to user %s: %s", track_id, user_id, e)
+        return False
+
+
 def _auto_register_in_sync_files(
     user_id: str,
     track_id: str,
@@ -45,38 +142,34 @@ def _auto_register_in_sync_files(
     album_id: Optional[str] = None,
     cover_uri: Optional[str] = None,
 ) -> bool:
-    """Auto-registers a successfully downloaded track into the user's personal Cloud sync storage."""
+    """
+    Enregistre un titre téléchargé dans le cache global (_global_cache)
+    puis crée un hardlink vers le répertoire personnel de l'utilisateur.
+    """
     try:
         import hashlib
         import json
         import shutil
         from datetime import datetime, timezone
-        from app.config import get_settings
 
-        sync_base = Path(get_settings().sync_files_dir)
-        if not sync_base.is_absolute():
-            sync_base = Path.cwd() / sync_base
-        safe_user_id = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
-        user_dir = sync_base / safe_user_id
-        user_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir = _get_global_cache_dir()
+        track_key = _get_track_key(track_id)
+        cache_audio = cache_dir / f"{track_key}.audio"
+        cache_json = cache_dir / f"{track_key}.json"
 
-        track_key = hashlib.sha256(track_id.encode("utf-8")).hexdigest()
-        target_audio = user_dir / f"{track_key}.audio"
-        target_json = user_dir / f"{track_key}.json"
-
-        # Hardlink if on same filesystem, otherwise copy
+        # 1. Enregistrement dans le Cache Global
         try:
-            if target_audio.exists():
-                target_audio.unlink()
-            os.link(audio_file, target_audio)
+            if cache_audio.exists():
+                cache_audio.unlink()
+            os.link(audio_file, cache_audio)
         except Exception:
-            shutil.copyfile(audio_file, target_audio)
+            shutil.copyfile(audio_file, cache_audio)
 
         uploaded_at = datetime.now(timezone.utc).isoformat()
         metadata = {
             "track_id": track_id,
             "synced": True,
-            "size_bytes": target_audio.stat().st_size,
+            "size_bytes": cache_audio.stat().st_size if cache_audio.exists() else 0,
             "mime_type": "audio/mpeg",
             "title": title,
             "artist_name": artist_name,
@@ -88,8 +181,17 @@ def _auto_register_in_sync_files(
             "uploaded_at": uploaded_at,
             "updated_at": uploaded_at,
         }
-        target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-        logger.info("Auto-registered downloaded track %s in sync_files for user %s", track_id, user_id)
+        cache_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+
+        # 2. Hardlink vers l'espace personnel de l'utilisateur
+        _link_cached_track_to_user(
+            user_id=user_id,
+            track_id=track_id,
+            cached_audio=cache_audio,
+            metadata=metadata,
+        )
+
+        logger.info("Auto-registered downloaded track %s in global cache and sync_files for user %s", track_id, user_id)
         return True
     except Exception as e:
         logger.exception("Failed to auto-register downloaded file to sync_files for track %s: %s", track_id, e)
@@ -170,7 +272,103 @@ class DownloadService:
         self.settings = get_settings()
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
         self._download_semaphore = asyncio.Semaphore(2)
+        # Verrouillage de concurrence par piste pour déploiement mono-processus Uvicorn.
+        # NOTE : Si le backend est mis à l'échelle sur plusieurs workers (Gunicorn --workers N),
+        # migrer vers un verrou inter-processus (ex: fcntl.flock ou pg_advisory_lock).
+        self._track_locks: Dict[str, asyncio.Lock] = {}
+        self._track_locks_guard = asyncio.Lock()
         self._recover_stale_jobs_on_startup()
+        self._backfill_global_cache()
+
+    async def _get_track_lock(self, track_id: str) -> asyncio.Lock:
+        """Obtient ou crée un verrou asyncio pour le track_id donné (thread-safe mono-processus)."""
+        async with self._track_locks_guard:
+            if track_id not in self._track_locks:
+                self._track_locks[track_id] = asyncio.Lock()
+            return self._track_locks[track_id]
+
+    async def _prune_unused_locks(self) -> None:
+        """Purge d'hygiène mémoire : supprime les verrous inactifs non détenus du registre."""
+        async with self._track_locks_guard:
+            unlocked_keys = [k for k, lock in self._track_locks.items() if not lock.locked()]
+            for k in unlocked_keys:
+                del self._track_locks[k]
+
+    def _backfill_global_cache(self) -> int:
+        """
+        Recense au démarrage les fichiers audio existants dans sync_files/*/*.audio
+        pour peupler automatiquement _global_cache avec tous les titres existants du propriétaire.
+        """
+        backfilled = 0
+        try:
+            sync_base = _get_sync_base()
+            cache_dir = _get_global_cache_dir()
+            for user_dir in sync_base.iterdir():
+                if not user_dir.is_dir() or user_dir.name.startswith("_"):
+                    continue
+                for audio_file in user_dir.glob("*.audio"):
+                    track_key = audio_file.stem
+                    cache_audio = cache_dir / f"{track_key}.audio"
+                    cache_json = cache_dir / f"{track_key}.json"
+                    if not cache_audio.exists():
+                        try:
+                            os.link(audio_file, cache_audio)
+                        except Exception:
+                            try:
+                                import shutil
+                                shutil.copyfile(audio_file, cache_audio)
+                            except Exception:
+                                pass
+                        src_json = audio_file.with_suffix(".json")
+                        if src_json.exists() and not cache_json.exists():
+                            try:
+                                import shutil
+                                shutil.copyfile(src_json, cache_json)
+                            except Exception:
+                                pass
+                        backfilled += 1
+            if backfilled > 0:
+                logger.info("Backfill: %d titres existants indexés dans _global_cache.", backfilled)
+        except Exception as e:
+            logger.warning("Erreur lors du backfill de _global_cache: %s", e)
+        return backfilled
+
+    async def cleanup_orphaned_cache(self, max_age_days: int = 30) -> int:
+        """
+        Éviction sécurisée des orphelins : supprime les fichiers de _global_cache qui ont st_nlink == 1
+        (aucun utilisateur ne les référence plus dans son Cloud privé) et inactifs depuis plus de max_age_days.
+        CRITIQUE : Acquiert le verrou _track_locks pour chaque fichier candidat avant d'évaluer st_nlink == 1
+        et de supprimer, éliminant ainsi toute fenêtre de course avec un cache hit concurrent.
+        """
+        import time
+        now = time.time()
+        max_age_seconds = max_age_days * 86400
+        pruned_count = 0
+        cache_dir = _get_global_cache_dir()
+
+        for audio_file in list(cache_dir.glob("*.audio")):
+            try:
+                stat = audio_file.stat()
+                # Premier filtre rapide sans verrou
+                if stat.st_nlink == 1 and (now - stat.st_mtime > max_age_seconds):
+                    track_key = audio_file.stem
+                    lock = await self._get_track_lock(track_key)
+                    # Acquérir le verrou de piste pour protéger l'évaluation et la suppression
+                    async with lock:
+                        if audio_file.exists():
+                            fresh_stat = audio_file.stat()
+                            if fresh_stat.st_nlink == 1 and (now - fresh_stat.st_mtime > max_age_seconds):
+                                audio_file.unlink()
+                                json_file = audio_file.with_suffix(".json")
+                                if json_file.exists():
+                                    json_file.unlink()
+                                pruned_count += 1
+                                logger.info("Pruned orphaned cache file: %s", audio_file.name)
+            except Exception as e:
+                logger.warning("Erreur lors de l'inspection/éviction du fichier %s: %s", audio_file, e)
+
+        await self._prune_unused_locks()
+        return pruned_count
 
     def _recover_stale_jobs_on_startup(self) -> None:
         """Mark stale running jobs as failed on server startup so they don't block polling forever."""
@@ -413,6 +611,40 @@ class DownloadService:
             logger.error("Failed to query existing jobs in Supabase: %s", e)
             # Fail silently and proceed to create a new job to prevent blocking downloads
 
+        # 2. Vérification du Cache Global (_global_cache) pour Hit Instantané et Dédoublonné
+        cached = _find_globally_cached_track(track_id)
+        if cached:
+            cached_audio, metadata = cached
+            logger.info("GLOBAL CACHE HIT pour track %s ! Association instantanée à user %s (0s)", track_id, user_id)
+            _link_cached_track_to_user(
+                user_id=user_id,
+                track_id=track_id,
+                cached_audio=cached_audio,
+                metadata=metadata,
+                override_metadata=source_hint,
+            )
+
+            job_id = generate_id("job")
+            now = datetime.now(timezone.utc)
+            job = DownloadJob(
+                id=job_id,
+                user_id=user_id,
+                track_id=track_id,
+                provider_name=provider_name,
+                status="succeeded",
+                progress_percent=100.0,
+                attempt_count=1,
+                created_at=now,
+                updated_at=now,
+            )
+            try:
+                supabase.table("download_jobs").insert(job.to_dict()).execute()
+            except Exception as e:
+                logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
+                raise BadRequest(f"Failed to create job in database: {str(e)}")
+            return job
+
+        # 3. Cache MISS : Création du job queued standard et lancement du worker
         job_id = generate_id("job")
         now = datetime.now(timezone.utc)
 
@@ -596,8 +828,29 @@ class DownloadService:
             job = DownloadJob.from_dict(response.data[0])
         except Exception as e:
             logger.error("Failed to fetch job %s from Supabase for worker: %s", job_id, e)
-            return
+        # Acquire track concurrency lock (Double-Checked Locking)
+        # Prevents parallel yt-dlp runs for the same track_id across concurrent requests in mono-process
+        track_lock = await self._get_track_lock(job.track_id)
+        async with track_lock:
+            # Double-Checked Locking : vérification si la piste a été téléchargée par un job concurrent
+            cached = _find_globally_cached_track(job.track_id)
+            if cached:
+                cached_audio, metadata = cached
+                logger.info("Worker job %s: track %s trouvé dans le cache global sous verrou ! Association 0s", job_id, job.track_id)
+                _link_cached_track_to_user(
+                    user_id=job.user_id,
+                    track_id=job.track_id,
+                    cached_audio=cached_audio,
+                    metadata=metadata,
+                    override_metadata=source_hint,
+                )
+                self._update_job_status(job_id, status="succeeded", progress_percent=100.0)
+                return
 
+            await self._execute_download_workflow(job, source_hint)
+
+    async def _execute_download_workflow(self, job: DownloadJob, source_hint: Optional[dict] = None) -> None:
+        job_id = job.id
         # 1. Resolve track metadata to get the YouTube search query
         query = None
         artist = None
