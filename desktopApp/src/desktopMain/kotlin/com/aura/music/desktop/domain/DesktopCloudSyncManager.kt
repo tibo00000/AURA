@@ -190,8 +190,9 @@ class DesktopCloudSyncManager(
         val tracksToInsert = mutableListOf<TrackEntity>()
         val mediaLinksToInsert = mutableListOf<TrackMediaLinkEntity>()
 
-        val existingTracks = database.trackDao().getAllTracks().associateBy { it.id }
-        val existingLikedIds = database.trackDao().getLikedTracks().map { it.id }.toSet()
+        val cloudTrackIds = cloudFiles.map { it.trackId }
+        val existingTracks = database.trackDao().getTracksByIds(cloudTrackIds).associateBy { it.id }
+        val existingLikedIds = database.trackDao().getLikedTrackIds(cloudTrackIds).toSet()
 
         for (cloudFile in cloudFiles) {
             val artistName = cloudFile.artistName ?: "Artiste inconnu"

@@ -407,6 +407,31 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.id IN (:ids)
+        """,
+    )
+    suspend fun getTracksByIds(ids: List<String>): List<TrackListRow>
+
+    @Query("SELECT id FROM tracks WHERE id IN (:ids) AND is_liked = 1")
+    suspend fun getLikedTrackIds(ids: List<String>): List<String>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
         WHERE (lower(tracks.title) LIKE '%' || lower(:query) || '%'
            OR lower(tracks.display_artist_name) LIKE '%' || lower(:query) || '%'
            OR lower(COALESCE(tracks.display_album_title, '')) LIKE '%' || lower(:query) || '%')
