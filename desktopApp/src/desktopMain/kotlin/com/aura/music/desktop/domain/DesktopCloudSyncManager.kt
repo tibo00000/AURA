@@ -33,6 +33,9 @@ class DesktopCloudSyncManager(
     private val _isSyncingState = MutableStateFlow(false)
     val isSyncingState: StateFlow<Boolean> = _isSyncingState.asStateFlow()
 
+    private val _hasInitialSyncCompleted = MutableStateFlow(false)
+    val hasInitialSyncCompleted: StateFlow<Boolean> = _hasInitialSyncCompleted.asStateFlow()
+
     private val _lastSyncError = MutableStateFlow<String?>(null)
     val lastSyncError: StateFlow<String?> = _lastSyncError.asStateFlow()
 
@@ -82,6 +85,7 @@ class DesktopCloudSyncManager(
             _lastSyncError.value = e.message
             System.err.println("Cloud sync failed: ${e.message}")
         } finally {
+            _hasInitialSyncCompleted.value = true
             isSyncing.set(false)
             _isSyncingState.value = false
         }

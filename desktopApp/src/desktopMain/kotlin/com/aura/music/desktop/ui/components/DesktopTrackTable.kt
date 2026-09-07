@@ -31,6 +31,8 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.formatDuration
 import com.aura.music.desktop.ui.*
 import com.aura.music.domain.player.PlaybackState
+import com.aura.music.ui.components.rememberShimmerBrush
+import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
 
 enum class TrackSortField {
@@ -49,6 +51,7 @@ fun DesktopTrackTable(
     onToggleLike: (String) -> Unit,
     showAlbumColumn: Boolean = true,
     showDateAddedColumn: Boolean = false,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val uiState by orchestrator.uiState.collectAsState()
@@ -76,7 +79,8 @@ fun DesktopTrackTable(
                 trackForContextMenu = trk
             },
             showAlbumColumn = showAlbumColumn,
-            showDateAddedColumn = showDateAddedColumn
+            showDateAddedColumn = showDateAddedColumn,
+            isLoading = isLoading
         )
 
         // Menu contextuel
@@ -147,6 +151,7 @@ fun DesktopTrackTable(
     onContextMenu: ((TrackListRow) -> Unit)? = null,
     showAlbumColumn: Boolean = true,
     showDateAddedColumn: Boolean = false,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var sortField by remember { mutableStateOf(TrackSortField.DEFAULT) }
@@ -181,28 +186,155 @@ fun DesktopTrackTable(
 
         HorizontalDivider(color = HairlineDark, thickness = 1.dp)
 
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            itemsIndexed(sortedTracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
-                val isCurrent = track.id == activeTrackId
+        if (sortedTracks.isEmpty() && isLoading) {
+            val shimmerBrush = rememberShimmerBrush()
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(14) {
+                    DesktopTrackTableShimmerRow(
+                        brush = shimmerBrush,
+                        showAlbumColumn = showAlbumColumn,
+                        showDateAddedColumn = showDateAddedColumn
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                itemsIndexed(sortedTracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
+                    val isCurrent = track.id == activeTrackId
 
-                TrackTableRowItem(
-                    index = index + 1,
-                    track = track,
-                    isCurrent = isCurrent,
-                    isPlaying = isPlaying && isCurrent,
-                    isBuffering = isBuffering && isCurrent,
-                    onPlay = { onTrackClick(track, index) },
-                    onToggleLike = { onToggleLike(track.id) },
-                    onOpenArtist = { onOpenArtist?.invoke(track.artistId ?: "artist:${track.artistName}") },
-                    onOpenAlbum = { track.albumId?.let { onOpenAlbum?.invoke(it) } },
-                    onContextMenu = { onContextMenu?.invoke(track) },
-                    showAlbumColumn = showAlbumColumn,
-                    showDateAddedColumn = showDateAddedColumn
+                    TrackTableRowItem(
+                        index = index + 1,
+                        track = track,
+                        isCurrent = isCurrent,
+                        isPlaying = isPlaying && isCurrent,
+                        isBuffering = isBuffering && isCurrent,
+                        onPlay = { onTrackClick(track, index) },
+                        onToggleLike = { onToggleLike(track.id) },
+                        onOpenArtist = { onOpenArtist?.invoke(track.artistId ?: "artist:${track.artistName}") },
+                        onOpenAlbum = { track.albumId?.let { onOpenAlbum?.invoke(it) } },
+                        onContextMenu = { onContextMenu?.invoke(track) },
+                        showAlbumColumn = showAlbumColumn,
+                        showDateAddedColumn = showDateAddedColumn
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopTrackTableShimmerRow(
+    brush: androidx.compose.ui.graphics.Brush,
+    showAlbumColumn: Boolean,
+    showDateAddedColumn: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // # placeholder
+        Box(modifier = Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(16.dp, 12.dp)
+                    .shimmer(brush, RoundedCornerShape(3.dp))
+            )
+        }
+
+        // Titre + Vignette Artwork
+        Row(
+            modifier = Modifier.weight(2.5f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .shimmer(brush, RoundedCornerShape(6.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.65f)
+                        .height(13.dp)
+                        .shimmer(brush, RoundedCornerShape(4.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.35f)
+                        .height(10.dp)
+                        .shimmer(brush, RoundedCornerShape(4.dp))
                 )
             }
+        }
+
+        // Artiste
+        Box(modifier = Modifier.weight(1.8f)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .height(12.dp)
+                    .shimmer(brush, RoundedCornerShape(4.dp))
+            )
+        }
+
+        // Album
+        if (showAlbumColumn) {
+            Box(modifier = Modifier.weight(1.8f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.55f)
+                        .height(12.dp)
+                        .shimmer(brush, RoundedCornerShape(4.dp))
+                )
+            }
+        }
+
+        // Date d'ajout
+        if (showDateAddedColumn) {
+            Box(modifier = Modifier.weight(1.2f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.5f)
+                        .height(12.dp)
+                        .shimmer(brush, RoundedCornerShape(4.dp))
+                )
+            }
+        }
+
+        // Durée et Actions (alignés à droite sur 100.dp)
+        Row(
+            modifier = Modifier.width(100.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .shimmer(brush, RoundedCornerShape(8.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp, 12.dp)
+                    .shimmer(brush, RoundedCornerShape(3.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .shimmer(brush, RoundedCornerShape(8.dp))
+            )
         }
     }
 }

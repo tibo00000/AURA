@@ -30,6 +30,8 @@ import com.aura.music.data.network.HistoryItemResponse
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
+import com.aura.music.ui.components.rememberShimmerBrush
+import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
 import java.time.LocalTime
 
@@ -48,6 +50,7 @@ fun HomeScreen(
     history: List<HistoryItemResponse> = emptyList(),
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val greeting = remember {
@@ -138,7 +141,63 @@ fun HomeScreen(
                     }
                 }
             }
+        } else if (isLoading) {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "REPRENDRE L'ÉCOUTE",
+                        color = PureWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    val shimmerBrush = rememberShimmerBrush()
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(6) {
+                            ShimmerResumeCard(brush = shimmerBrush)
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun ShimmerResumeCard(brush: Brush) {
+    Column(
+        modifier = Modifier
+            .width(160.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(OffBlack)
+            .padding(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(136.dp)
+                .shimmer(brush, RoundedCornerShape(8.dp))
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.75f)
+                .height(14.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.45f)
+                .height(11.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
     }
 }
 

@@ -18,6 +18,7 @@ fun FavoritesScreen(
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState,
     onToggleLike: (String) -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val uiState by orchestrator.uiState.collectAsState()
@@ -31,8 +32,8 @@ fun FavoritesScreen(
         DesktopHeroHeader(
             tag = "FAVORIS",
             title = "Titres Likés",
-            subtitle = "${likedTracks.size} titres enregistrés",
-            extraMetadata = formatTotalDuration(totalDurationMs),
+            subtitle = if (likedTracks.isEmpty() && isLoading) "Chargement de vos favoris..." else "${likedTracks.size} titres enregistrés",
+            extraMetadata = if (likedTracks.isEmpty() && isLoading) "" else formatTotalDuration(totalDurationMs),
             coverUri = likedTracks.firstOrNull()?.coverUri,
             mosaicCovers = likedTracks.mapNotNull { it.coverUri }.take(4),
             isLiked = true,
@@ -80,7 +81,8 @@ fun FavoritesScreen(
             onToggleLike = onToggleLike,
             onOpenArtist = { appState.openArtist(it) },
             onOpenAlbum = { appState.openAlbum(it) },
-            showDateAddedColumn = true
+            showDateAddedColumn = true,
+            isLoading = isLoading
         )
     }
 }

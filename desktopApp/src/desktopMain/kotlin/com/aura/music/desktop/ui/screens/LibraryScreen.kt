@@ -33,6 +33,8 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopTrackTable
+import com.aura.music.ui.components.rememberShimmerBrush
+import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
 
 @Composable
@@ -44,14 +46,15 @@ fun LibraryScreen(
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState,
     onToggleLike: (String) -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf(
-        "Titres (${allTracks.size})",
-        "Albums (${allAlbums.size})",
-        "Artistes (${allArtists.size})",
-        "Playlists (${playlists.size})"
+        if (allTracks.isEmpty() && isLoading) "Titres" else "Titres (${allTracks.size})",
+        if (allAlbums.isEmpty() && isLoading) "Albums" else "Albums (${allAlbums.size})",
+        if (allArtists.isEmpty() && isLoading) "Artistes" else "Artistes (${allArtists.size})",
+        if (playlists.isEmpty() && isLoading) "Playlists" else "Playlists (${playlists.size})"
     )
 
     Column(
@@ -119,51 +122,94 @@ fun LibraryScreen(
                     },
                     onToggleLike = onToggleLike,
                     onOpenArtist = { appState.openArtist(it) },
-                    onOpenAlbum = { appState.openAlbum(it) }
+                    onOpenAlbum = { appState.openAlbum(it) },
+                    isLoading = isLoading
                 )
             }
             1 -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(160.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(allAlbums, key = { it.id }) { album ->
-                        AlbumGridCard(
-                            album = album,
-                            onClick = { appState.openAlbum(album.id) }
-                        )
+                if (allAlbums.isEmpty() && isLoading) {
+                    val shimmerBrush = rememberShimmerBrush()
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(160.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(12) {
+                            ShimmerAlbumCard(brush = shimmerBrush)
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(160.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(allAlbums, key = { it.id }) { album ->
+                            AlbumGridCard(
+                                album = album,
+                                onClick = { appState.openAlbum(album.id) }
+                            )
+                        }
                     }
                 }
             }
             2 -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(140.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(allArtists, key = { it.id }) { artist ->
-                        ArtistGridCard(
-                            artist = artist,
-                            onClick = { appState.openArtist(artist.id) }
-                        )
+                if (allArtists.isEmpty() && isLoading) {
+                    val shimmerBrush = rememberShimmerBrush()
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(140.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(12) {
+                            ShimmerArtistCard(brush = shimmerBrush)
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(140.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(allArtists, key = { it.id }) { artist ->
+                            ArtistGridCard(
+                                artist = artist,
+                                onClick = { appState.openArtist(artist.id) }
+                            )
+                        }
                     }
                 }
             }
             3 -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(180.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(playlists, key = { it.id }) { pl ->
-                        PlaylistGridCard(
-                            playlist = pl,
-                            onClick = { appState.openPlaylist(pl.id) }
-                        )
+                if (playlists.isEmpty() && isLoading) {
+                    val shimmerBrush = rememberShimmerBrush()
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(180.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(8) {
+                            ShimmerPlaylistCard(brush = shimmerBrush)
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(180.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(playlists, key = { it.id }) { pl ->
+                            PlaylistGridCard(
+                                playlist = pl,
+                                onClick = { appState.openPlaylist(pl.id) }
+                            )
+                        }
                     }
                 }
             }
@@ -283,6 +329,95 @@ private fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
             text = "${playlist.trackCount} titres",
             color = PureWhite.copy(alpha = 0.5f),
             fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(OffBlack)
+            .padding(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .shimmer(brush, RoundedCornerShape(8.dp))
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(14.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.45f)
+                .height(12.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+    }
+}
+
+@Composable
+private fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(OffBlack)
+            .padding(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(110.dp)
+                .shimmer(brush, CircleShape)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.6f)
+                .height(14.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+    }
+}
+
+@Composable
+private fun ShimmerPlaylistCard(brush: androidx.compose.ui.graphics.Brush) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(OffBlack)
+            .padding(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .shimmer(brush, RoundedCornerShape(8.dp))
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(14.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.4f)
+                .height(12.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
         )
     }
 }

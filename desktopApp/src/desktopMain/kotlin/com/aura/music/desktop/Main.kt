@@ -30,6 +30,7 @@ import com.aura.music.desktop.ui.*
 import com.aura.music.ui.theme.*
 import com.aura.music.domain.player.DesktopAudioPlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 fun main() = application {
@@ -99,6 +100,17 @@ fun main() = application {
     val downloadJobs by remember(database) {
         database.downloadJobDao().getAllJobsWithTrackFlow()
     }.collectAsState(initial = emptyList())
+
+    var isRoomInitialized by remember { mutableStateOf(false) }
+    LaunchedEffect(database) {
+        try {
+            database.trackDao().getAllTracksFlow().first()
+        } catch (_: Exception) {}
+        isRoomInitialized = true
+    }
+
+    val hasInitialSyncCompleted by cloudSyncManager.hasInitialSyncCompleted.collectAsState()
+    val isInitialLoading = !isRoomInitialized || (!hasInitialSyncCompleted && allTracks.isEmpty())
 
     var history by remember { mutableStateOf<List<HistoryItemResponse>>(emptyList()) }
 
@@ -296,7 +308,8 @@ fun main() = application {
                                         allAlbums = localAlbums,
                                         history = history,
                                         orchestrator = orchestrator,
-                                        appState = appState
+                                        appState = appState,
+                                        isLoading = isInitialLoading
                                     )
                                     "search" -> SearchScreen(
                                         allTracks = allTracks,
@@ -313,13 +326,15 @@ fun main() = application {
                                         playlists = playlists,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = { orchestrator.toggleLike(it) }
+                                        onToggleLike = { orchestrator.toggleLike(it) },
+                                        isLoading = isInitialLoading
                                     )
                                     "favorites" -> FavoritesScreen(
                                         likedTracks = likedTracks,
                                         orchestrator = orchestrator,
                                         appState = appState,
-                                        onToggleLike = { orchestrator.toggleLike(it) }
+                                        onToggleLike = { orchestrator.toggleLike(it) },
+                                        isLoading = isInitialLoading
                                     )
                                     "playlist_detail" -> {
                                         val plId = appState.selectedPlaylistId ?: ""
