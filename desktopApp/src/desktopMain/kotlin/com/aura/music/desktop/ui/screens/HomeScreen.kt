@@ -64,16 +64,14 @@ fun HomeScreen(
     }
 
     // Reconstruction des conteneurs récemment lancés (Favoris, Playlists, Albums) comme sur mobile
-    val resumeItems by remember {
-        derivedStateOf {
-            val items = mutableListOf<DesktopResumeItem>()
-            if (likedTracks.isNotEmpty()) {
-                items.add(DesktopResumeItem.Favorites)
-            }
-            playlists.forEach { items.add(DesktopResumeItem.Playlist(it)) }
-            allAlbums.take(8).forEach { items.add(DesktopResumeItem.Album(it)) }
-            items
+    val resumeItems = remember(likedTracks, playlists, allAlbums) {
+        val items = mutableListOf<DesktopResumeItem>()
+        if (likedTracks.isNotEmpty()) {
+            items.add(DesktopResumeItem.Favorites)
         }
+        playlists.forEach { items.add(DesktopResumeItem.Playlist(it)) }
+        allAlbums.take(8).forEach { items.add(DesktopResumeItem.Album(it)) }
+        items
     }
 
     LazyColumn(
