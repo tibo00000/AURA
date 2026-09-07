@@ -1,7 +1,11 @@
 package com.aura.music.desktop.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -11,19 +15,25 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aura.music.core.utils.SearchNormalizer
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
@@ -37,6 +47,14 @@ import com.aura.music.ui.components.rememberShimmerBrush
 import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
 
+enum class LibrarySortOrder(val label: String) {
+    RECENT("Ajout récent"),
+    TITLE_AZ("Titre (A à Z)"),
+    TITLE_ZA("Titre (Z à A)"),
+    ARTIST("Artiste"),
+    DURATION("Durée")
+}
+
 @Composable
 fun LibraryScreen(
     allTracks: List<TrackListRow>,
@@ -49,13 +67,64 @@ fun LibraryScreen(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf(
-        if (allTracks.isEmpty() && isLoading) "Titres" else "Titres (${allTracks.size})",
-        if (allAlbums.isEmpty() && isLoading) "Albums" else "Albums (${allAlbums.size})",
-        if (allArtists.isEmpty() && isLoading) "Artistes" else "Artistes (${allArtists.size})",
-        if (playlists.isEmpty() && isLoading) "Playlists" else "Playlists (${playlists.size})"
-    )
+    var selectedTab by remember { mutableStateOf(0) } // 0: Titres, 1: Albums, 2: Artistes
+    var localSearchQuery by remember { mutableStateOf("") }
+    var isSearchExpanded by remember { mutableStateOf(false) }
+    var sortOrder by remember { mutableStateOf(LibrarySortOrder.RECENT) }
+
+    // Filtrage et tri dynamiques selon l'onglet actif
+    val filteredTracks = remember(allTracks, localSearchQuery, sortOrder) {
+        val q = SearchNormalizer.normalize(localSearchQuery).trim()
+        val base = if (q.isBlank()) {
+            allTracks
+        } else {
+            allTracks.filter {
+                SearchNormalizer.normalize(it.title).contains(q) ||
+                SearchNormalizer.normalize(it.artistName).contains(q) ||
+                (it.albumTitle != null && SearchNormalizer.normalize(it.albumTitle!!).contains(q))
+            }
+        }
+        when (sortOrder) {
+            LibrarySortOrder.RECENT -> base
+            LibrarySortOrder.TITLE_AZ -> base.sortedBy { SearchNormalizer.normalize(it.title) }
+            LibrarySortOrder.TITLE_ZA -> base.sortedByDescending { SearchNormalizer.normalize(it.title) }
+            LibrarySortOrder.ARTIST -> base.sortedBy { SearchNormalizer.normalize(it.artistName) }
+            LibrarySortOrder.DURATION -> base.sortedByDescending { it.durationMs ?: 0L }
+        }
+    }
+
+    val filteredAlbums = remember(allAlbums, localSearchQuery, sortOrder) {
+        val q = SearchNormalizer.normalize(localSearchQuery).trim()
+        val base = if (q.isBlank()) {
+            allAlbums
+        } else {
+            allAlbums.filter {
+                SearchNormalizer.normalize(it.title).contains(q) ||
+                (it.artistName != null && SearchNormalizer.normalize(it.artistName!!).contains(q))
+            }
+        }
+        when (sortOrder) {
+            LibrarySortOrder.TITLE_AZ -> base.sortedBy { SearchNormalizer.normalize(it.title) }
+            LibrarySortOrder.TITLE_ZA -> base.sortedByDescending { SearchNormalizer.normalize(it.title) }
+            LibrarySortOrder.ARTIST -> base.sortedBy { SearchNormalizer.normalize(it.artistName ?: "") }
+            else -> base
+        }
+    }
+
+    val filteredArtists = remember(allArtists, localSearchQuery, sortOrder) {
+        val q = SearchNormalizer.normalize(localSearchQuery).trim()
+        val base = if (q.isBlank()) {
+            allArtists
+        } else {
+            allArtists.filter {
+                SearchNormalizer.normalize(it.name).contains(q)
+            }
+        }
+        when (sortOrder) {
+            LibrarySortOrder.TITLE_ZA -> base.sortedByDescending { SearchNormalizer.normalize(it.name) }
+            else -> base.sortedBy { SearchNormalizer.normalize(it.name) }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -63,70 +132,160 @@ fun LibraryScreen(
             .background(DeepBlack)
             .padding(horizontal = 32.dp, vertical = 24.dp)
     ) {
-        // En-tête Bibliothèque
-        Text(
-            text = "Bibliothèque",
-            color = PureWhite,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = PureWhite,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                    color = BlazeOrange
-                )
-            },
-            divider = { HorizontalDivider(color = HairlineDark) }
+        // En-tête Bibliothèque Option 4 : Titre + Contrôle segmenté macOS + Barre d'outils droite
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Text(
-                            text = title,
-                            color = if (selectedTab == index) BlazeOrange else PureWhite.copy(alpha = 0.7f),
-                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 14.sp
+            // Gauche : Titre et Sélecteur Segmenté compact
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Text(
+                    text = "Bibliothèque",
+                    color = PureWhite,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Sélecteur segmenté compact style macOS
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = DarkGraphite.copy(alpha = 0.65f),
+                    border = BorderStroke(1.dp, HairlineDark)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        val segments = listOf(
+                            "Titres" to allTracks.size,
+                            "Albums" to allAlbums.size,
+                            "Artistes" to allArtists.size
                         )
+                        segments.forEachIndexed { index, (label, count) ->
+                            val isSelected = selectedTab == index
+                            val interactionSource = remember { MutableInteractionSource() }
+                            val isHovered by interactionSource.collectIsHoveredAsState()
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(7.dp))
+                                    .background(
+                                        when {
+                                            isSelected -> BlazeOrange.copy(alpha = 0.2f)
+                                            isHovered -> PureWhite.copy(alpha = 0.06f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .border(
+                                        width = if (isSelected) 1.dp else 0.dp,
+                                        color = if (isSelected) BlazeOrange.copy(alpha = 0.6f) else Color.Transparent,
+                                        shape = RoundedCornerShape(7.dp)
+                                    )
+                                    .hoverable(interactionSource)
+                                    .handClickable(interactionSource = interactionSource) {
+                                        selectedTab = index
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) PureWhite else PureWhite.copy(alpha = if (isHovered) 0.95f else 0.65f),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                    )
+                                    if (count > 0 && !isLoading) {
+                                        Text(
+                                            text = count.toString(),
+                                            color = if (isSelected) BlazeOrange else PureWhite.copy(alpha = 0.35f),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
+            }
+
+            // Droite : Barre de recherche dépliable + Menu de tri
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Barre de recherche dépliable (expandable search bar)
+                LibraryExpandableSearchBar(
+                    query = localSearchQuery,
+                    onQueryChange = { localSearchQuery = it },
+                    isExpanded = isSearchExpanded,
+                    onExpandedChange = { isSearchExpanded = it },
+                    placeholder = when (selectedTab) {
+                        0 -> "Filtrer les titres..."
+                        1 -> "Filtrer les albums..."
+                        2 -> "Filtrer les artistes..."
+                        else -> "Filtrer..."
+                    }
+                )
+
+                // Menu déroulant de tri
+                LibrarySortMenu(
+                    selectedTab = selectedTab,
+                    currentSort = sortOrder,
+                    onSortSelected = { sortOrder = it }
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // Contenu dynamique selon l'onglet
         when (selectedTab) {
             0 -> {
-                val uiState by orchestrator.uiState.collectAsState()
-                DesktopTrackTable(
-                    tracks = allTracks,
-                    activeTrackId = uiState.currentTrack?.trackId,
-                    isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
-                    isBuffering = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Buffering || uiState.playbackState == com.aura.music.domain.player.PlaybackState.Preparing,
-                    onTrackClick = { track, index ->
-                        orchestrator.playTrack(
-                            trackId = track.id,
-                            contextType = "all",
-                            contextId = "all",
-                            contextTracks = allTracks.map { orchestrator.toQueuedTrack(it) },
-                            startIndex = index
+                // --- ONGLET TITRES ---
+                if (filteredTracks.isEmpty() && !isLoading) {
+                    if (localSearchQuery.isNotBlank()) {
+                        EmptyLibrarySearchResult(
+                            query = localSearchQuery,
+                            onClear = { localSearchQuery = "" }
                         )
-                    },
-                    onToggleLike = onToggleLike,
-                    onOpenArtist = { appState.openArtist(it) },
-                    onOpenAlbum = { appState.openAlbum(it) },
-                    isLoading = isLoading
-                )
+                    } else {
+                        EmptyLibraryPlaceholder(message = "Aucun titre dans votre bibliothèque")
+                    }
+                } else {
+                    val uiState by orchestrator.uiState.collectAsState()
+                    DesktopTrackTable(
+                        tracks = filteredTracks,
+                        activeTrackId = uiState.currentTrack?.trackId,
+                        isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
+                        isBuffering = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Buffering || uiState.playbackState == com.aura.music.domain.player.PlaybackState.Preparing,
+                        onTrackClick = { track, index ->
+                            orchestrator.playTrack(
+                                trackId = track.id,
+                                contextType = "all",
+                                contextId = "all",
+                                contextTracks = filteredTracks.map { orchestrator.toQueuedTrack(it) },
+                                startIndex = index
+                            )
+                        },
+                        onToggleLike = onToggleLike,
+                        onOpenArtist = { appState.openArtist(it) },
+                        onOpenAlbum = { appState.openAlbum(it) },
+                        isLoading = isLoading
+                    )
+                }
             }
             1 -> {
+                // --- ONGLET ALBUMS ---
                 if (allAlbums.isEmpty() && isLoading) {
                     val shimmerBrush = rememberShimmerBrush()
                     LazyVerticalGrid(
@@ -139,6 +298,15 @@ fun LibraryScreen(
                             ShimmerAlbumCard(brush = shimmerBrush)
                         }
                     }
+                } else if (filteredAlbums.isEmpty()) {
+                    if (localSearchQuery.isNotBlank()) {
+                        EmptyLibrarySearchResult(
+                            query = localSearchQuery,
+                            onClear = { localSearchQuery = "" }
+                        )
+                    } else {
+                        EmptyLibraryPlaceholder(message = "Aucun album dans votre bibliothèque")
+                    }
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(160.dp),
@@ -146,7 +314,7 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(allAlbums, key = { it.id }) { album ->
+                        items(filteredAlbums, key = { it.id }) { album ->
                             AlbumGridCard(
                                 album = album,
                                 onClick = { appState.openAlbum(album.id) }
@@ -156,6 +324,7 @@ fun LibraryScreen(
                 }
             }
             2 -> {
+                // --- ONGLET ARTISTES ---
                 if (allArtists.isEmpty() && isLoading) {
                     val shimmerBrush = rememberShimmerBrush()
                     LazyVerticalGrid(
@@ -168,6 +337,15 @@ fun LibraryScreen(
                             ShimmerArtistCard(brush = shimmerBrush)
                         }
                     }
+                } else if (filteredArtists.isEmpty()) {
+                    if (localSearchQuery.isNotBlank()) {
+                        EmptyLibrarySearchResult(
+                            query = localSearchQuery,
+                            onClear = { localSearchQuery = "" }
+                        )
+                    } else {
+                        EmptyLibraryPlaceholder(message = "Aucun artiste dans votre bibliothèque")
+                    }
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(140.dp),
@@ -175,39 +353,10 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(allArtists, key = { it.id }) { artist ->
+                        items(filteredArtists, key = { it.id }) { artist ->
                             ArtistGridCard(
                                 artist = artist,
                                 onClick = { appState.openArtist(artist.id) }
-                            )
-                        }
-                    }
-                }
-            }
-            3 -> {
-                if (playlists.isEmpty() && isLoading) {
-                    val shimmerBrush = rememberShimmerBrush()
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(180.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(8) {
-                            ShimmerPlaylistCard(brush = shimmerBrush)
-                        }
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(180.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(playlists, key = { it.id }) { pl ->
-                            PlaylistGridCard(
-                                playlist = pl,
-                                onClick = { appState.openPlaylist(pl.id) }
                             )
                         }
                     }
@@ -218,7 +367,294 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
+private fun LibraryExpandableSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    isExpanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    placeholder: String
+) {
+    val focusRequester = remember { FocusRequester() }
+    val isEffectivelyExpanded = isExpanded || query.isNotBlank()
+
+    val searchBarWidth by animateDpAsState(
+        targetValue = if (isEffectivelyExpanded) 240.dp else 36.dp,
+        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing)
+    )
+
+    LaunchedEffect(isExpanded) {
+        if (isExpanded) {
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .width(searchBarWidth)
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(DarkGraphite.copy(alpha = 0.7f))
+            .border(
+                width = 1.dp,
+                color = if (isEffectivelyExpanded) BlazeOrange.copy(alpha = 0.5f) else HairlineDark,
+                shape = RoundedCornerShape(18.dp)
+            )
+            .handClickable {
+                if (!isEffectivelyExpanded) {
+                    onExpandedChange(true)
+                }
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = "Rechercher",
+                tint = if (isEffectivelyExpanded) BlazeOrange else PureWhite.copy(alpha = 0.65f),
+                modifier = Modifier.size(16.dp)
+            )
+
+            if (isEffectivelyExpanded) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Box(modifier = Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            color = PureWhite.copy(alpha = 0.35f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    BasicTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = PureWhite,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        cursorBrush = SolidColor(BlazeOrange),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.type == KeyEventType.KeyUp && keyEvent.key == Key.Escape) {
+                                    onQueryChange("")
+                                    onExpandedChange(false)
+                                    true
+                                } else false
+                            }
+                    )
+                }
+
+                if (query.isNotEmpty()) {
+                    IconButton(
+                        onClick = {
+                            onQueryChange("")
+                            onExpandedChange(false)
+                        },
+                        modifier = Modifier.size(20.dp).handCursor()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Effacer",
+                            tint = PureWhite.copy(alpha = 0.5f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick = { onExpandedChange(false) },
+                        modifier = Modifier.size(20.dp).handCursor()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Fermer",
+                            tint = PureWhite.copy(alpha = 0.4f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibrarySortMenu(
+    selectedTab: Int,
+    currentSort: LibrarySortOrder,
+    onSortSelected: (LibrarySortOrder) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val availableSorts = when (selectedTab) {
+        0 -> listOf(
+            LibrarySortOrder.RECENT,
+            LibrarySortOrder.TITLE_AZ,
+            LibrarySortOrder.TITLE_ZA,
+            LibrarySortOrder.ARTIST,
+            LibrarySortOrder.DURATION
+        )
+        1 -> listOf(
+            LibrarySortOrder.RECENT,
+            LibrarySortOrder.TITLE_AZ,
+            LibrarySortOrder.TITLE_ZA,
+            LibrarySortOrder.ARTIST
+        )
+        2 -> listOf(
+            LibrarySortOrder.TITLE_AZ,
+            LibrarySortOrder.TITLE_ZA
+        )
+        else -> listOf(LibrarySortOrder.RECENT)
+    }
+
+    Box {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = DarkGraphite.copy(alpha = 0.7f),
+            border = BorderStroke(1.dp, HairlineDark),
+            modifier = Modifier.height(36.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .handClickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Sort,
+                    contentDescription = null,
+                    tint = PureWhite.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = currentSort.label,
+                    color = PureWhite.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Icon(
+                    imageVector = Icons.Rounded.ArrowDropDown,
+                    contentDescription = null,
+                    tint = PureWhite.copy(alpha = 0.5f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(OffBlack).border(1.dp, HairlineDark, RoundedCornerShape(8.dp))
+        ) {
+            availableSorts.forEach { sort ->
+                val isSelected = currentSort == sort
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = sort.label,
+                            color = if (isSelected) BlazeOrange else PureWhite,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    },
+                    trailingIcon = {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = BlazeOrange,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    },
+                    onClick = {
+                        onSortSelected(sort)
+                        expanded = false
+                    },
+                    modifier = Modifier.handCursor()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibrarySearchResult(
+    query: String,
+    onClear: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Rounded.SearchOff,
+                contentDescription = null,
+                tint = PureWhite.copy(alpha = 0.25f),
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "Aucun résultat pour \"$query\"",
+                color = PureWhite.copy(alpha = 0.75f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Effacer le filtre",
+                color = BlazeOrange,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .handClickable(onClick = onClear)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibraryPlaceholder(
+    message: String
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Rounded.LibraryMusic,
+                contentDescription = null,
+                tint = PureWhite.copy(alpha = 0.25f),
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = message,
+                color = PureWhite.copy(alpha = 0.7f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+internal fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -256,7 +692,7 @@ private fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
+internal fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -288,7 +724,7 @@ private fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
+internal fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -334,7 +770,7 @@ private fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
+internal fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -366,7 +802,7 @@ private fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
 }
 
 @Composable
-private fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
+internal fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -391,7 +827,7 @@ private fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
 }
 
 @Composable
-private fun ShimmerPlaylistCard(brush: androidx.compose.ui.graphics.Brush) {
+internal fun ShimmerPlaylistCard(brush: androidx.compose.ui.graphics.Brush) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
