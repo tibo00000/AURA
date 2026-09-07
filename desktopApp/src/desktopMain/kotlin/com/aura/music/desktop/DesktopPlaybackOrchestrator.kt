@@ -612,25 +612,65 @@ class DesktopPlaybackOrchestrator(
     private fun syncUiState(state: PlaybackState) {
         val queueState = queueManager.state.value
         val track = queueState.currentTrack
-        scope.launch {
-            val isLiked = if (track != null) {
-                database.trackDao().getTrackById(track.trackId)?.isLiked ?: false
-            } else false
+        val previousTrackId = _uiState.value.currentTrack?.trackId
 
-            _uiState.update { current ->
-                current.copy(
-                    playbackState = state,
-                    currentTrack = track,
-                    positionMs = audioPlayer.getCurrentPosition(),
-                    durationMs = audioPlayer.getDuration(),
-                    shuffleEnabled = queueState.shuffleEnabled,
-                    repeatMode = queueState.repeatMode,
-                    priorityQueue = queueState.priorityQueue,
-                    mainQueueTracks = queueManager.getUpcomingContextTracks(),
-                    contextType = queueState.context?.type,
-                    contextId = queueState.context?.id,
-                    isCurrentTrackLiked = isLiked
-                )
+        when {
+            track == null -> {
+                // Arrêt complet : réinitialiser isLiked, pas de requête DB
+                _uiState.update { current ->
+                    current.copy(
+                        playbackState = state,
+                        currentTrack = null,
+                        positionMs = 0L,
+                        durationMs = 0L,
+                        shuffleEnabled = queueState.shuffleEnabled,
+                        repeatMode = queueState.repeatMode,
+                        priorityQueue = queueState.priorityQueue,
+                        mainQueueTracks = emptyList(),
+                        contextType = null,
+                        contextId = null,
+                        isCurrentTrackLiked = false
+                    )
+                }
+            }
+            track.trackId != previousTrackId -> {
+                // Changement de piste : 1 requête DB ciblée, une seule fois
+                scope.launch(Dispatchers.IO) {
+                    val isLiked = database.trackDao().getTrackById(track.trackId)?.isLiked ?: false
+                    _uiState.update { current ->
+                        current.copy(
+                            playbackState = state,
+                            currentTrack = track,
+                            positionMs = audioPlayer.getCurrentPosition(),
+                            durationMs = audioPlayer.getDuration(),
+                            shuffleEnabled = queueState.shuffleEnabled,
+                            repeatMode = queueState.repeatMode,
+                            priorityQueue = queueState.priorityQueue,
+                            mainQueueTracks = queueManager.getUpcomingContextTracks(),
+                            contextType = queueState.context?.type,
+                            contextId = queueState.context?.id,
+                            isCurrentTrackLiked = isLiked
+                        )
+                    }
+                }
+            }
+            else -> {
+                // Même piste (pause, buffer, shuffle, repeat, progressJob) : 0 requête DB
+                _uiState.update { current ->
+                    current.copy(
+                        playbackState = state,
+                        currentTrack = track,
+                        positionMs = audioPlayer.getCurrentPosition(),
+                        durationMs = audioPlayer.getDuration(),
+                        shuffleEnabled = queueState.shuffleEnabled,
+                        repeatMode = queueState.repeatMode,
+                        priorityQueue = queueState.priorityQueue,
+                        mainQueueTracks = queueManager.getUpcomingContextTracks(),
+                        contextType = queueState.context?.type,
+                        contextId = queueState.context?.id
+                        // isCurrentTrackLiked non modifié — valeur courante conservée
+                    )
+                }
             }
         }
     }
