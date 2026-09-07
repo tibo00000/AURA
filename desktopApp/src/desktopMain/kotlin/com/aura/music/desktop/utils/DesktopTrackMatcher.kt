@@ -4,10 +4,16 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.TrackSummary
 import com.aura.music.domain.search.SearchNormalizer
 import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
+import java.util.LinkedHashMap
 
 object DesktopTrackMatcher {
-    private val idCache = ConcurrentHashMap<String, String>()
+    private val idCache: MutableMap<String, String> = Collections.synchronizedMap(
+        object : LinkedHashMap<String, String>(256, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) =
+                size > 2000
+        }
+    )
 
     fun extractDeezerId(id: String?): String? {
         if (id.isNullOrBlank()) return null
