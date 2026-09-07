@@ -27,7 +27,7 @@ class DesktopDownloadManager(
 
     private val isSyncing = AtomicBoolean(false)
     private var downloadSyncJob: Job? = null
-    private val failedJobFetchIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val activeJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun startLoop(intervalMs: Long = 3000L) {
         downloadSyncJob?.cancel()
@@ -57,7 +57,7 @@ class DesktopDownloadManager(
     suspend fun createDownload(track: TrackSummary) = withContext(Dispatchers.IO) {
         val token = apiToken ?: return@withContext
         try {
-            apiService.createDownload(
+            val response = apiService.createDownload(
                 token = token,
                 request = DownloadRequestDto(
                     trackId = track.id,
@@ -71,6 +71,7 @@ class DesktopDownloadManager(
                     )
                 )
             )
+            response.data?.jobId?.let { activeJobIds.add(it) }
             // Déclenche une synchronisation immédiate des jobs
             syncActiveJobs(token)
         } catch (e: Exception) {
@@ -82,6 +83,7 @@ class DesktopDownloadManager(
     suspend fun retryJob(jobId: String) = withContext(Dispatchers.IO) {
         val token = apiToken ?: return@withContext
         try {
+            activeJobIds.add(jobId)
             apiService.retryDownload(token, jobId)
             syncActiveJobs(token)
         } catch (e: Exception) {
@@ -172,21 +174,24 @@ class DesktopDownloadManager(
                 }
             }
 
-            // Vérification et téléchargement physique des MP3 terminés
+            // 1. Enregistrer les jobs actifs en cours d'exécution
             for (item in items) {
-                if (item.status == "succeeded" || item.status == "completed") {
-                    val appDir = File(System.getProperty("user.home"), ".aura")
-                    val downloadsDir = File(appDir, "downloads")
-                    val cleanId = item.trackId.replace(':', ';')
-                    val targetFile = downloadsDir.listFiles()?.firstOrNull { it.name.startsWith("$cleanId.") && it.length() > 0L }
+                if (item.status == "queued" || item.status == "running" || item.status == "downloading" || item.status == "pending") {
+                    activeJobIds.add(item.id)
+                }
+            }
 
-                    val rawTrack = database.trackDao().getRawTrackById(item.trackId)
-                    val isDbLinked = rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded" && rawTrack.isDownloadedByAura
-
-                    if ((targetFile == null || !isDbLinked) && !failedJobFetchIds.contains(item.id)) {
+            // 2. Téléchargement physique uniquement pour les jobs activement surveillés qui viennent de se terminer
+            for (item in items) {
+                if (activeJobIds.contains(item.id)) {
+                    if (item.status == "succeeded" || item.status == "completed") {
+                        val rawTrack = database.trackDao().getRawTrackById(item.trackId)
                         if (rawTrack != null) {
                             fetchDownloadedFile(item.id, item.trackId, token)
                         }
+                        activeJobIds.remove(item.id)
+                    } else if (item.status == "failed" || item.status == "cancelled") {
+                        activeJobIds.remove(item.id)
                     }
                 }
             }

@@ -50,7 +50,7 @@ object DesktopTrackHydrator {
              track.durationMs == 0L ||
              track.coverUri.isNullOrBlank()) &&
             !inFlightResolutions.contains(track.id)
-        }.sortedByDescending { it.isLiked }
+        }.sortedByDescending { it.isLiked }.take(10)
 
         if (stubsToHydrate.isEmpty()) return@withContext
 

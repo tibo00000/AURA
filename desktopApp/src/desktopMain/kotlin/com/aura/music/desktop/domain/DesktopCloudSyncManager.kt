@@ -174,12 +174,23 @@ class DesktopCloudSyncManager(
         val tracksToInsert = mutableListOf<TrackEntity>()
         val mediaLinksToInsert = mutableListOf<TrackMediaLinkEntity>()
 
+        val existingTracks = database.trackDao().getAllTracks().associateBy { it.id }
+        val existingLikedIds = database.trackDao().getLikedTracks().map { it.id }.toSet()
+
         for (cloudFile in cloudFiles) {
             val artistName = cloudFile.artistName ?: "Artiste inconnu"
             val artistId = cloudFile.artistId ?: "artist:${artistName.lowercase().trim().replace(" ", "_")}"
             val title = cloudFile.title ?: "Titre inconnu"
             val albumTitle = cloudFile.albumTitle
             val albumId = cloudFile.albumId ?: if (albumTitle != null) "album:${artistName.lowercase().trim().replace(" ", "_")}:${albumTitle.lowercase().trim().replace(" ", "_")}" else null
+
+            val existing = existingTracks[cloudFile.trackId]
+            val isLiked = existing?.isLiked ?: existingLikedIds.contains(cloudFile.trackId)
+            val durationMs = if (cloudFile.durationMs != null && cloudFile.durationMs > 0L) cloudFile.durationMs else existing?.durationMs
+            val coverUri = if (!cloudFile.coverUri.isNullOrBlank()) cloudFile.coverUri else existing?.coverUri
+            val resolvedTitle = if (title != "Titre inconnu" && !title.startsWith("Piste ")) title else (existing?.title ?: title)
+            val resolvedArtist = if (artistName != "Artiste inconnu") artistName else (existing?.artistName ?: artistName)
+            val resolvedAlbum = albumTitle ?: existing?.albumTitle
 
             artistsToInsert.add(
                 ArtistEntity(
@@ -192,14 +203,14 @@ class DesktopCloudSyncManager(
                 )
             )
 
-            if (albumId != null && albumTitle != null) {
+            if (albumId != null && resolvedAlbum != null) {
                 albumsToInsert.add(
                     AlbumEntity(
                         id = albumId,
                         primaryArtistId = artistId,
-                        title = albumTitle,
-                        normalizedTitle = SearchNormalizer.normalize(albumTitle),
-                        coverUri = cloudFile.coverUri,
+                        title = resolvedAlbum,
+                        normalizedTitle = SearchNormalizer.normalize(resolvedAlbum),
+                        coverUri = coverUri,
                         createdAt = now,
                         updatedAt = now
                     )
@@ -210,24 +221,35 @@ class DesktopCloudSyncManager(
             val isDownloaded = targetFile.exists() && targetFile.length() > 0L
             val fileUri = if (isDownloaded) targetFile.toURI().toString() else null
 
-            tracksToInsert.add(
-                TrackEntity(
-                    id = cloudFile.trackId,
-                    primaryArtistId = artistId,
-                    albumId = albumId,
-                    title = title,
-                    normalizedTitle = SearchNormalizer.normalize(title),
-                    displayArtistName = artistName,
-                    displayAlbumTitle = albumTitle,
-                    durationMs = cloudFile.durationMs,
-                    coverUri = cloudFile.coverUri,
-                    canonicalAudioSourceType = if (isDownloaded) "downloaded" else "cloud",
-                    isLiked = false,
-                    isDownloadedByAura = isDownloaded,
-                    createdAt = now,
-                    updatedAt = now
-                )
+            val newTrack = TrackEntity(
+                id = cloudFile.trackId,
+                primaryArtistId = artistId,
+                albumId = albumId,
+                title = resolvedTitle,
+                normalizedTitle = SearchNormalizer.normalize(resolvedTitle),
+                displayArtistName = resolvedArtist,
+                displayAlbumTitle = resolvedAlbum,
+                durationMs = durationMs,
+                coverUri = coverUri,
+                canonicalAudioSourceType = if (isDownloaded) "downloaded" else "cloud",
+                isLiked = isLiked,
+                isDownloadedByAura = isDownloaded,
+                createdAt = existing?.createdAt ?: now,
+                updatedAt = now
             )
+
+            // Insertion uniquement si le morceau est nouveau ou a réellement changé
+            if (existing == null ||
+                existing.title != newTrack.title ||
+                existing.artistName != newTrack.displayArtistName ||
+                existing.albumTitle != newTrack.displayAlbumTitle ||
+                (existing.durationMs ?: 0L) != (newTrack.durationMs ?: 0L) ||
+                existing.coverUri != newTrack.coverUri ||
+                existing.isLiked != newTrack.isLiked ||
+                (isDownloaded && !existing.isDownloaded)
+            ) {
+                tracksToInsert.add(newTrack)
+            }
 
             if (fileUri != null) {
                 mediaLinksToInsert.add(
@@ -263,118 +285,126 @@ class DesktopCloudSyncManager(
             }
         }
 
-        // 2. Synchronisation des Likes (avec réconciliation bidirectionnelle stricte)
+        // 2. Synchronisation des Likes (avec réconciliation atomique)
         try {
             val likesResp = apiService.getLikes(token)
             val likes = likesResp.data ?: emptyList()
             val cloudTrackIds = likes.map { it.trackId }.toSet()
 
-            // Suppression locale des likes qui ne sont plus présents sur le Cloud
-            val localLikes = database.trackDao().getLikedTracks()
-            for (local in localLikes) {
-                if (local.id !in cloudTrackIds) {
-                    database.trackLikeDao().deleteLike(local.id)
-                    database.trackLikeDao().setTrackIsLiked(local.id, false, now)
-                }
-            }
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    // Suppression locale des likes qui ne sont plus présents sur le Cloud
+                    val localLikes = database.trackDao().getLikedTracks()
+                    for (local in localLikes) {
+                        if (local.id !in cloudTrackIds) {
+                            database.trackLikeDao().deleteLike(local.id)
+                            database.trackLikeDao().setTrackIsLiked(local.id, false, now)
+                        }
+                    }
 
-            for (like in likes) {
-                val existingTrack = database.trackDao().getRawTrackById(like.trackId)
-                if (existingTrack == null) {
-                    database.trackDao().upsertTrack(
-                        TrackEntity(
-                            id = like.trackId,
-                            primaryArtistId = null,
-                            albumId = null,
-                            title = "Piste ${like.trackId.takeLast(6)}",
-                            normalizedTitle = SearchNormalizer.normalize("Piste ${like.trackId.takeLast(6)}"),
-                            displayArtistName = "Artiste inconnu",
-                            displayAlbumTitle = null,
-                            durationMs = 0L,
-                            coverUri = null,
-                            canonicalAudioSourceType = "cloud",
-                            isLiked = true,
-                            isDownloadedByAura = false,
-                            createdAt = now,
-                            updatedAt = now
+                    for (like in likes) {
+                        val existingTrack = database.trackDao().getRawTrackById(like.trackId)
+                        if (existingTrack == null) {
+                            database.trackDao().upsertTrack(
+                                TrackEntity(
+                                    id = like.trackId,
+                                    primaryArtistId = null,
+                                    albumId = null,
+                                    title = "Piste ${like.trackId.takeLast(6)}",
+                                    normalizedTitle = SearchNormalizer.normalize("Piste ${like.trackId.takeLast(6)}"),
+                                    displayArtistName = "Artiste inconnu",
+                                    displayAlbumTitle = null,
+                                    durationMs = 0L,
+                                    coverUri = null,
+                                    canonicalAudioSourceType = "cloud",
+                                    isLiked = true,
+                                    isDownloadedByAura = false,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        } else if (!existingTrack.isLiked) {
+                            database.trackLikeDao().setTrackIsLiked(like.trackId, true, now)
+                        }
+                        val likedAtEpoch = try { java.time.Instant.parse(like.likedAt).toEpochMilli() } catch (e: Exception) { now }
+                        database.trackLikeDao().insertLike(
+                            TrackLikeEntity(
+                                trackId = like.trackId,
+                                likedAt = likedAtEpoch,
+                                sourceContextType = like.sourceContextType,
+                                sourceContextId = like.sourceContextId
+                            )
                         )
-                    )
-                } else {
-                    database.trackLikeDao().setTrackIsLiked(like.trackId, true, now)
+                    }
                 }
-                val likedAtEpoch = try { java.time.Instant.parse(like.likedAt).toEpochMilli() } catch (e: Exception) { now }
-                database.trackLikeDao().insertLike(
-                    TrackLikeEntity(
-                        trackId = like.trackId,
-                        likedAt = likedAtEpoch,
-                        sourceContextType = like.sourceContextType,
-                        sourceContextId = like.sourceContextId
-                    )
-                )
             }
         } catch (e: Exception) {
             System.err.println("Failed to sync remote likes: ${e.message}")
         }
 
-        // 3. Synchronisation des Playlists (avec réconciliation)
+        // 3. Synchronisation des Playlists (avec réconciliation atomique)
         try {
             val playlistsResp = apiService.getPlaylists(token)
             val playlists = playlistsResp.data ?: emptyList()
             val cloudPlaylistIds = playlists.map { it.id }.toSet()
 
-            // Suppression locale des playlists supprimées du Cloud
-            val localPlaylists = database.playlistDao().getPlaylists()
-            for (localPl in localPlaylists) {
-                if (localPl.id !in cloudPlaylistIds) {
-                    database.playlistDao().deletePlaylist(localPl.id)
-                }
-            }
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    // Suppression locale des playlists supprimées du Cloud
+                    val localPlaylists = database.playlistDao().getPlaylists()
+                    for (localPl in localPlaylists) {
+                        if (localPl.id !in cloudPlaylistIds) {
+                            database.playlistDao().deletePlaylist(localPl.id)
+                        }
+                    }
 
-            for (pl in playlists) {
-                val plCreatedAt = try { java.time.Instant.parse(pl.createdAt).toEpochMilli() } catch (e: Exception) { now }
-                val plUpdatedAt = try { java.time.Instant.parse(pl.updatedAt).toEpochMilli() } catch (e: Exception) { now }
-                database.playlistDao().upsertPlaylist(
-                    PlaylistEntity(
-                        id = pl.id,
-                        name = pl.name,
-                        coverUri = pl.coverUri,
-                        isPinned = pl.isPinned,
-                        createdAt = plCreatedAt,
-                        updatedAt = plUpdatedAt
-                    )
-                )
-                for (item in pl.items) {
-                    val existingTrack = database.trackDao().getRawTrackById(item.trackId)
-                    if (existingTrack == null) {
-                        database.trackDao().upsertTrack(
-                            TrackEntity(
-                                id = item.trackId,
-                                primaryArtistId = null,
-                                albumId = null,
-                                title = "Piste ${item.trackId.takeLast(6)}",
-                                normalizedTitle = SearchNormalizer.normalize("Piste ${item.trackId.takeLast(6)}"),
-                                displayArtistName = "Artiste inconnu",
-                                displayAlbumTitle = null,
-                                durationMs = 0L,
-                                coverUri = null,
-                                canonicalAudioSourceType = "cloud",
-                                isLiked = false,
-                                isDownloadedByAura = false,
-                                createdAt = now,
-                                updatedAt = now
+                    for (pl in playlists) {
+                        val plCreatedAt = try { java.time.Instant.parse(pl.createdAt).toEpochMilli() } catch (e: Exception) { now }
+                        val plUpdatedAt = try { java.time.Instant.parse(pl.updatedAt).toEpochMilli() } catch (e: Exception) { now }
+                        database.playlistDao().upsertPlaylist(
+                            PlaylistEntity(
+                                id = pl.id,
+                                name = pl.name,
+                                coverUri = pl.coverUri,
+                                isPinned = pl.isPinned,
+                                createdAt = plCreatedAt,
+                                updatedAt = plUpdatedAt
                             )
                         )
+                        for (item in pl.items) {
+                            val existingTrack = database.trackDao().getRawTrackById(item.trackId)
+                            if (existingTrack == null) {
+                                database.trackDao().upsertTrack(
+                                    TrackEntity(
+                                        id = item.trackId,
+                                        primaryArtistId = null,
+                                        albumId = null,
+                                        title = "Piste ${item.trackId.takeLast(6)}",
+                                        normalizedTitle = SearchNormalizer.normalize("Piste ${item.trackId.takeLast(6)}"),
+                                        displayArtistName = "Artiste inconnu",
+                                        displayAlbumTitle = null,
+                                        durationMs = 0L,
+                                        coverUri = null,
+                                        canonicalAudioSourceType = "cloud",
+                                        isLiked = false,
+                                        isDownloadedByAura = false,
+                                        createdAt = now,
+                                        updatedAt = now
+                                    )
+                                )
+                            }
+                            val itemAddedAt = try { java.time.Instant.parse(item.addedAt).toEpochMilli() } catch (e: Exception) { now }
+                            database.playlistDao().upsertPlaylistItem(
+                                PlaylistItemEntity(
+                                    id = item.id,
+                                    playlistId = pl.id,
+                                    trackId = item.trackId,
+                                    position = item.position,
+                                    addedAt = itemAddedAt
+                                )
+                            )
+                        }
                     }
-                    val itemAddedAt = try { java.time.Instant.parse(item.addedAt).toEpochMilli() } catch (e: Exception) { now }
-                    database.playlistDao().upsertPlaylistItem(
-                        PlaylistItemEntity(
-                            id = item.id,
-                            playlistId = pl.id,
-                            trackId = item.trackId,
-                            position = item.position,
-                            addedAt = itemAddedAt
-                        )
-                    )
                 }
             }
         } catch (e: Exception) {

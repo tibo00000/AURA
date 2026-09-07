@@ -96,22 +96,11 @@ class DesktopPlaybackOrchestrator(
         downloadManager?.startLoop()
         cloudSyncManager?.startLoop()
 
-        // Hydratation en arrière-plan des stubs de pistes distantes
-        scope.launch(Dispatchers.IO) {
-            try {
-                DesktopTrackHydrator.hydrateTrackStubs(database) {
-                    scope.launch(Dispatchers.Main) {
-                        onDataChanged?.invoke()
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-
         val token = apiToken
         if (!token.isNullOrBlank()) {
             scope.launch(Dispatchers.IO) {
+                // Légère temporisation pour permettre à l'UI de s'afficher instantanément depuis la base locale Room
+                delay(1500)
                 cloudSyncManager?.performCloudSync(token) {
                     onDataChanged?.invoke()
                 }
