@@ -411,7 +411,7 @@ fun SearchScreen(
 
     // Animation de positionnement central de la barre de recherche au repos
     val topSpacerHeight by animateDpAsState(
-        targetValue = if (isSearchSubmitted) 0.dp else 120.dp,
+        targetValue = if (isSearchSubmitted) 0.dp else 170.dp,
         animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
     )
 
@@ -424,78 +424,91 @@ fun SearchScreen(
         Spacer(modifier = Modifier.height(topSpacerHeight))
 
         // 1. Barre de recherche avec écoute de la touche Entrée et bouton d'effacement
-        OutlinedTextField(
-            value = appState.searchQuery,
-            onValueChange = {
-                appState.searchQuery = it
-                if (it.isBlank()) {
-                    isSearchSubmitted = false
-                    onlineResults = null
-                }
-            },
-            placeholder = {
-                Text(
-                    "Rechercher un titre, un artiste, un album...",
-                    color = PureWhite.copy(alpha = 0.4f),
-                    fontSize = 14.sp
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Rounded.Search,
-                    contentDescription = null,
-                    tint = BlazeOrange,
-                    modifier = Modifier.size(24.dp)
-                )
-            },
-            trailingIcon = {
-                if (appState.searchQuery.isNotBlank()) {
-                    IconButton(
-                        onClick = {
-                            appState.searchQuery = ""
-                            isSearchSubmitted = false
-                            onlineResults = null
-                        },
-                        modifier = Modifier.handCursor()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Effacer",
-                            tint = PureWhite.copy(alpha = 0.6f),
-                            modifier = Modifier.size(20.dp)
-                        )
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = if (isSearchSubmitted) Alignment.CenterStart else Alignment.Center
+        ) {
+            OutlinedTextField(
+                value = appState.searchQuery,
+                onValueChange = {
+                    appState.searchQuery = it
+                    if (it.isBlank()) {
+                        isSearchSubmitted = false
+                        onlineResults = null
                     }
-                }
-            },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = OffBlack,
-                unfocusedContainerColor = OffBlack,
-                focusedBorderColor = BlazeOrange,
-                unfocusedBorderColor = HairlineDark,
-                focusedTextColor = PureWhite,
-                unfocusedTextColor = PureWhite,
-                cursorColor = BlazeOrange
-            ),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .onFocusChanged { appState.isInputFocused = it.isFocused }
-                .onKeyEvent { keyEvent ->
-                    if (keyEvent.type == KeyEventType.KeyUp && (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
-                        if (appState.searchQuery.isNotBlank()) {
-                            submitSearch(appState.searchQuery)
+                },
+                placeholder = {
+                    Text(
+                        "Rechercher un titre, un artiste, un album...",
+                        color = PureWhite.copy(alpha = 0.4f),
+                        fontSize = 14.sp
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (appState.searchQuery.isNotBlank()) {
+                        IconButton(
+                            onClick = {
+                                appState.searchQuery = ""
+                                isSearchSubmitted = false
+                                onlineResults = null
+                            },
+                            modifier = Modifier.handCursor()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Effacer",
+                                tint = PureWhite.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                        true
-                    } else false
-                }
-        )
+                    }
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = OffBlack,
+                    unfocusedContainerColor = OffBlack,
+                    focusedBorderColor = BlazeOrange,
+                    unfocusedBorderColor = HairlineDark,
+                    focusedTextColor = PureWhite,
+                    unfocusedTextColor = PureWhite,
+                    cursorColor = BlazeOrange
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .widthIn(max = if (isSearchSubmitted) 680.dp else 640.dp)
+                    .fillMaxWidth()
+                    .onFocusChanged { appState.isInputFocused = it.isFocused }
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.type == KeyEventType.KeyUp && (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
+                            if (appState.searchQuery.isNotBlank()) {
+                                submitSearch(appState.searchQuery)
+                            }
+                            true
+                        } else false
+                    }
+            )
+        }
 
         // 2. Écran au repos ou suggestions pendant la saisie
         if (!isSearchSubmitted) {
             Spacer(modifier = Modifier.height(24.dp))
 
-            if (appState.searchQuery.isNotBlank()) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Column(
+                    modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                ) {
+                    if (appState.searchQuery.isNotBlank()) {
                 // Suggestions lors de la saisie
                 val currentSuggestions = suggestions
                 if (currentSuggestions != null && !currentSuggestions.isEmpty) {
@@ -696,7 +709,8 @@ fun SearchScreen(
                     }
                 }
             }
-        } else {
+        }
+    } else {
             // 3. Écran avec recherche active : Onglets & Catégories
             Spacer(modifier = Modifier.height(16.dp))
 
