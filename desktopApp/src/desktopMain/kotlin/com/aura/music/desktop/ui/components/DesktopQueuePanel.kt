@@ -44,7 +44,9 @@ fun DesktopQueuePanel(
     val queueState by orchestrator.queueManager.state.collectAsState()
     val uiState by orchestrator.uiState.collectAsState()
     val currentTrack = uiState.currentTrack
-    val upcomingContextTracks = orchestrator.queueManager.getUpcomingContextTracks()
+    val upcomingContextTracks = remember(queueState) {
+        orchestrator.queueManager.getUpcomingContextTracks()
+    }
 
     var draggingKey by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedY by remember { mutableFloatStateOf(0f) }
