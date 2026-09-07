@@ -191,7 +191,7 @@ fun main() = application {
             },
             state = windowState,
             title = "AURA",
-            undecorated = false,
+            undecorated = true,
             onKeyEvent = { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     val isCtrl = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
@@ -277,6 +277,8 @@ fun main() = application {
                 }
             }
         ) {
+            InstallUndecoratedResizer(windowState)
+
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     primary = BlazeOrange,
@@ -290,9 +292,19 @@ fun main() = application {
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = DeepBlack
+                    color = DeepBlack,
+                    border = if (windowState.placement == androidx.compose.ui.window.WindowPlacement.Floating) androidx.compose.foundation.BorderStroke(1.dp, HairlineDark) else null
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
+                        // 0. Barre de titre intégrée sans bordure AURA
+                        DesktopTitleBar(
+                            windowState = windowState,
+                            onClose = {
+                                isVisible = false
+                                orchestrator.isWindowVisible = false
+                            }
+                        )
+
                         // 1. Zone Supérieure (3 volets widescreen)
                         Row(
                             modifier = Modifier
