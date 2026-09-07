@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
@@ -21,6 +24,7 @@ fun FavoritesScreen(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     val uiState by orchestrator.uiState.collectAsState()
     val totalDurationMs = remember(likedTracks) { likedTracks.sumOf { it.durationMs ?: 0L } }
 
@@ -39,26 +43,36 @@ fun FavoritesScreen(
             isLiked = true,
             onPlayAll = {
                 if (likedTracks.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = likedTracks.first().id,
-                        contextType = "favorites",
-                        contextId = "favorites",
-                        contextTracks = likedTracks.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            likedTracks.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = likedTracks.first().id,
+                            contextType = "favorites",
+                            contextId = "favorites",
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                    }
                 }
             },
             onShuffleAll = {
                 if (likedTracks.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = likedTracks.first().id,
-                        contextType = "favorites",
-                        contextId = "favorites",
-                        contextTracks = likedTracks.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
-                    if (!orchestrator.queueManager.state.value.isShuffle) {
-                        orchestrator.toggleShuffle()
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            likedTracks.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = likedTracks.first().id,
+                            contextType = "favorites",
+                            contextId = "favorites",
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                        if (!orchestrator.queueManager.state.value.isShuffle) {
+                            orchestrator.toggleShuffle()
+                        }
                     }
                 }
             }
@@ -73,13 +87,18 @@ fun FavoritesScreen(
             appState = appState,
             onTrackClick = { clickedTrack ->
                 val index = likedTracks.indexOf(clickedTrack).coerceAtLeast(0)
-                orchestrator.playTrack(
-                    trackId = clickedTrack.id,
-                    contextType = "favorites",
-                    contextId = "favorites",
-                    contextTracks = likedTracks.map { orchestrator.toQueuedTrack(it) },
-                    startIndex = index
-                )
+                coroutineScope.launch {
+                    val ctx = withContext(Dispatchers.Default) {
+                        likedTracks.map { orchestrator.toQueuedTrack(it) }
+                    }
+                    orchestrator.playTrack(
+                        trackId = clickedTrack.id,
+                        contextType = "favorites",
+                        contextId = "favorites",
+                        contextTracks = ctx,
+                        startIndex = index
+                    )
+                }
             },
             onToggleLike = onToggleLike,
             showDateAddedColumn = true,

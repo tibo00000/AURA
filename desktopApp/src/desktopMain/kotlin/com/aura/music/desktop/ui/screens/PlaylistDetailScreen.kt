@@ -85,26 +85,36 @@ fun PlaylistDetailScreen(
             onBack = { appState.navigateBack() },
             onPlayAll = {
                 if (convertedTracks.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = convertedTracks.first().id,
-                        contextType = "playlist",
-                        contextId = playlistId,
-                        contextTracks = convertedTracks.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            convertedTracks.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = convertedTracks.first().id,
+                            contextType = "playlist",
+                            contextId = playlistId,
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                    }
                 }
             },
             onShuffleAll = {
                 if (convertedTracks.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = convertedTracks.first().id,
-                        contextType = "playlist",
-                        contextId = playlistId,
-                        contextTracks = convertedTracks.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
-                    if (!orchestrator.queueManager.state.value.shuffleEnabled) {
-                        orchestrator.toggleShuffle()
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            convertedTracks.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = convertedTracks.first().id,
+                            contextType = "playlist",
+                            contextId = playlistId,
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                        if (!orchestrator.queueManager.state.value.shuffleEnabled) {
+                            orchestrator.toggleShuffle()
+                        }
                     }
                 }
             },
@@ -212,13 +222,19 @@ fun PlaylistDetailScreen(
             database = orchestrator.database,
             appState = appState,
             onTrackClick = { clickedTrack ->
-                orchestrator.playTrack(
-                    trackId = clickedTrack.id,
-                    contextType = "playlist",
-                    contextId = playlistId,
-                    contextTracks = convertedTracks.map { orchestrator.toQueuedTrack(it) },
-                    startIndex = convertedTracks.indexOf(clickedTrack).coerceAtLeast(0)
-                )
+                val index = convertedTracks.indexOf(clickedTrack).coerceAtLeast(0)
+                coroutineScope.launch {
+                    val ctx = withContext(Dispatchers.Default) {
+                        convertedTracks.map { orchestrator.toQueuedTrack(it) }
+                    }
+                    orchestrator.playTrack(
+                        trackId = clickedTrack.id,
+                        contextType = "playlist",
+                        contextId = playlistId,
+                        contextTracks = ctx,
+                        startIndex = index
+                    )
+                }
             },
             onToggleLike = onToggleLike,
             keyProvider = { index, track ->

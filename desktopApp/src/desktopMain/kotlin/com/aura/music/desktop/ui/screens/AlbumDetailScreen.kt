@@ -18,6 +18,7 @@ import com.aura.music.desktop.ui.*
 import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AlbumDetailScreen(
@@ -135,25 +136,35 @@ fun AlbumDetailScreen(
             onBack = { appState.navigateBack() },
             onPlayAll = {
                 if (tracksToShow.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = tracksToShow.first().id,
-                        contextType = "album",
-                        contextId = albumId,
-                        contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            tracksToShow.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = tracksToShow.first().id,
+                            contextType = "album",
+                            contextId = albumId,
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                    }
                 }
             },
             onShuffleAll = {
                 if (tracksToShow.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = tracksToShow.first().id,
-                        contextType = "album",
-                        contextId = albumId,
-                        contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
-                    orchestrator.toggleShuffle()
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            tracksToShow.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = tracksToShow.first().id,
+                            contextType = "album",
+                            contextId = albumId,
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                        orchestrator.toggleShuffle()
+                    }
                 }
             }
         )
@@ -182,13 +193,19 @@ fun AlbumDetailScreen(
                     database = orchestrator.database,
                     appState = appState,
                     onTrackClick = { clickedTrack ->
-                        orchestrator.playTrack(
-                            trackId = clickedTrack.id,
-                            contextType = "album",
-                            contextId = albumId,
-                            contextTracks = tracksToShow.map { orchestrator.toQueuedTrack(it) },
-                            startIndex = tracksToShow.indexOf(clickedTrack).coerceAtLeast(0)
-                        )
+                        val index = tracksToShow.indexOf(clickedTrack).coerceAtLeast(0)
+                        coroutineScope.launch {
+                            val ctx = withContext(Dispatchers.Default) {
+                                tracksToShow.map { orchestrator.toQueuedTrack(it) }
+                            }
+                            orchestrator.playTrack(
+                                trackId = clickedTrack.id,
+                                contextType = "album",
+                                contextId = albumId,
+                                contextTracks = ctx,
+                                startIndex = index
+                            )
+                        }
                     },
                     onToggleLike = onToggleLike
                 )

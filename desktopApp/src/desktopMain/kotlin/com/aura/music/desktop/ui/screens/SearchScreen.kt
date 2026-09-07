@@ -69,6 +69,7 @@ import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DesktopHybridSuggestions(
     val localTracks: List<TrackListRow> = emptyList(),
@@ -897,13 +898,18 @@ fun SearchScreen(
                                                         isPlaying = uiState.isPlaying && isCurrent,
                                                         isBuffering = isBuffering && isCurrent,
                                                         onPlay = {
-                                                            orchestrator.playTrack(
-                                                                trackId = track.id,
-                                                                contextType = "search",
-                                                                contextId = appState.searchQuery,
-                                                                contextTracks = filteredLocalTracks.map { orchestrator.toQueuedTrack(it) },
-                                                                startIndex = index
-                                                            )
+                                                            coroutineScope.launch {
+                                                                val ctx = withContext(Dispatchers.Default) {
+                                                                    filteredLocalTracks.map { orchestrator.toQueuedTrack(it) }
+                                                                }
+                                                                orchestrator.playTrack(
+                                                                    trackId = track.id,
+                                                                    contextType = "search",
+                                                                    contextId = appState.searchQuery,
+                                                                    contextTracks = ctx,
+                                                                    startIndex = index
+                                                                )
+                                                            }
                                                         },
                                                         onToggleLike = { onToggleLike(track.id) },
                                                         onOpenArtist = {
@@ -988,13 +994,18 @@ fun SearchScreen(
                                 isPlaying = uiState.isPlaying,
                                 isBuffering = isBuffering,
                                 onTrackClick = { clickedTrack, index ->
-                                    orchestrator.playTrack(
-                                        trackId = clickedTrack.id,
-                                        contextType = "search",
-                                        contextId = appState.searchQuery,
-                                        contextTracks = filteredLocalTracks.map { orchestrator.toQueuedTrack(it) },
-                                        startIndex = index
-                                    )
+                                    coroutineScope.launch {
+                                        val ctx = withContext(Dispatchers.Default) {
+                                            filteredLocalTracks.map { orchestrator.toQueuedTrack(it) }
+                                        }
+                                        orchestrator.playTrack(
+                                            trackId = clickedTrack.id,
+                                            contextType = "search",
+                                            contextId = appState.searchQuery,
+                                            contextTracks = ctx,
+                                            startIndex = index
+                                        )
+                                    }
                                 },
                                 onToggleLike = onToggleLike,
                                 onOpenArtist = { artistId ->

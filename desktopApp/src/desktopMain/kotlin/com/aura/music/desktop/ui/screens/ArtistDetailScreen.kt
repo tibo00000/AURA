@@ -34,6 +34,7 @@ import com.aura.music.desktop.ui.handClickable
 import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ArtistDetailScreen(
@@ -116,25 +117,35 @@ fun ArtistDetailScreen(
             onBack = { appState.navigateBack() },
             onPlayAll = {
                 if (localArtistTracks.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = localArtistTracks.first().id,
-                        contextType = "artist",
-                        contextId = artistId,
-                        contextTracks = localArtistTracks.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            localArtistTracks.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = localArtistTracks.first().id,
+                            contextType = "artist",
+                            contextId = artistId,
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                    }
                 }
             },
             onShuffleAll = {
                 if (localArtistTracks.isNotEmpty()) {
-                    orchestrator.playTrack(
-                        trackId = localArtistTracks.first().id,
-                        contextType = "artist",
-                        contextId = artistId,
-                        contextTracks = localArtistTracks.map { orchestrator.toQueuedTrack(it) },
-                        startIndex = 0
-                    )
-                    orchestrator.toggleShuffle()
+                    coroutineScope.launch {
+                        val ctx = withContext(Dispatchers.Default) {
+                            localArtistTracks.map { orchestrator.toQueuedTrack(it) }
+                        }
+                        orchestrator.playTrack(
+                            trackId = localArtistTracks.first().id,
+                            contextType = "artist",
+                            contextId = artistId,
+                            contextTracks = ctx,
+                            startIndex = 0
+                        )
+                        orchestrator.toggleShuffle()
+                    }
                 }
             }
         )
@@ -191,13 +202,19 @@ fun ArtistDetailScreen(
                         database = orchestrator.database,
                         appState = appState,
                         onTrackClick = { clickedTrack ->
-                            orchestrator.playTrack(
-                                trackId = clickedTrack.id,
-                                contextType = "artist",
-                                contextId = artistId,
-                                contextTracks = localArtistTracks.map { orchestrator.toQueuedTrack(it) },
-                                startIndex = localArtistTracks.indexOf(clickedTrack).coerceAtLeast(0)
-                            )
+                            val index = localArtistTracks.indexOf(clickedTrack).coerceAtLeast(0)
+                            coroutineScope.launch {
+                                val ctx = withContext(Dispatchers.Default) {
+                                    localArtistTracks.map { orchestrator.toQueuedTrack(it) }
+                                }
+                                orchestrator.playTrack(
+                                    trackId = clickedTrack.id,
+                                    contextType = "artist",
+                                    contextId = artistId,
+                                    contextTracks = ctx,
+                                    startIndex = index
+                                )
+                            }
                         },
                         onToggleLike = onToggleLike
                     )

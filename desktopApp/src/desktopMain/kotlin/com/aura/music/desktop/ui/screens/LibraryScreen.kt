@@ -20,6 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +76,7 @@ fun LibraryScreen(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var selectedTab by remember { mutableStateOf(0) } // 0: Titres, 1: Albums, 2: Artistes
     var localSearchQuery by remember { mutableStateOf("") }
     var sourceFilter by remember { mutableStateOf(LibrarySourceFilter.ALL) }
@@ -387,13 +391,18 @@ fun LibraryScreen(
                         appState = appState,
                         onTrackClick = { clickedTrack ->
                             val index = filteredTracks.indexOf(clickedTrack).coerceAtLeast(0)
-                            orchestrator.playTrack(
-                                trackId = clickedTrack.id,
-                                contextType = "all",
-                                contextId = "all",
-                                contextTracks = filteredTracks.map { orchestrator.toQueuedTrack(it) },
-                                startIndex = index
-                            )
+                            coroutineScope.launch {
+                                val ctx = withContext(Dispatchers.Default) {
+                                    filteredTracks.map { orchestrator.toQueuedTrack(it) }
+                                }
+                                orchestrator.playTrack(
+                                    trackId = clickedTrack.id,
+                                    contextType = "all",
+                                    contextId = "all",
+                                    contextTracks = ctx,
+                                    startIndex = index
+                                )
+                            }
                         },
                         onToggleLike = onToggleLike,
                         showAlbumColumn = true,
