@@ -386,7 +386,7 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Rapatriement auto, gestion de l'espace VPS et transferts distants",
+                                    text = "Gestion de l'espace VPS, transferts distants et sauvegardes",
                                     color = PureWhite.copy(alpha = 0.5f),
                                     fontSize = 13.sp
                                 )

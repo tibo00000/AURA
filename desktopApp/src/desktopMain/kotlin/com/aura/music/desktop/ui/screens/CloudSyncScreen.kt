@@ -78,7 +78,10 @@ fun CloudSyncScreen(
     }
 
     val usedMb = remember(allTracks) { (allTracks.size * 8).coerceAtLeast(120) } // estimation ~8Mo par titre
-    val totalMb = 5120 // 5 Go
+    val totalMb = 20480 // 20 Go (aligné sur mobile)
+
+    var showConfirmDownloadAllDialog by remember { mutableStateOf(false) }
+    var showConfirmUploadAllDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -158,15 +161,15 @@ fun CloudSyncScreen(
         }
 
         // =====================================================================
-        // 2. BANDEAU HORIZONTAL DE SYNTHÈSE (3 Cartes équilibrées)
+        // 2. BANDEAU HORIZONTAL DE SYNTHÈSE (2 Grandes Cartes Équilibrées)
         // =====================================================================
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Carte 1 : Stockage VPS
+            // Carte 1 : Stockage VPS (Limite 20 Go alignée sur mobile)
             Card(
-                modifier = Modifier.weight(1f).height(125.dp).clip(RoundedCornerShape(12.dp)),
+                modifier = Modifier.weight(1f).height(128.dp).clip(RoundedCornerShape(12.dp)),
                 colors = CardDefaults.cardColors(containerColor = OffBlack),
                 border = BorderStroke(1.dp, HairlineDark)
             ) {
@@ -202,7 +205,7 @@ fun CloudSyncScreen(
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(text = "sur 5,0 Go alloués", color = PureWhite.copy(alpha = 0.45f), fontSize = 12.sp)
+                        Text(text = "sur 20,0 Go alloués", color = PureWhite.copy(alpha = 0.45f), fontSize = 12.sp)
                     }
 
                     LinearProgressIndicator(
@@ -220,9 +223,9 @@ fun CloudSyncScreen(
                 }
             }
 
-            // Carte 2 : Automatisation
+            // Carte 2 : Actions Massives Sécurisées
             Card(
-                modifier = Modifier.weight(1f).height(125.dp).clip(RoundedCornerShape(12.dp)),
+                modifier = Modifier.weight(1f).height(128.dp).clip(RoundedCornerShape(12.dp)),
                 colors = CardDefaults.cardColors(containerColor = OffBlack),
                 border = BorderStroke(1.dp, HairlineDark)
             ) {
@@ -230,87 +233,58 @@ fun CloudSyncScreen(
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(imageVector = Icons.Rounded.Sync, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
-                        Text("AUTOMATISATION", color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                    }
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text("Rapatriement auto", color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Télécharge les ajouts mobiles", color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(imageVector = Icons.Rounded.Bolt, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
+                            Text("ACTIONS MASSIVES", color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                         }
-                        Switch(
-                            checked = orchestrator.autoSyncEnabled,
-                            onCheckedChange = { orchestrator.autoSyncEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = PureWhite,
-                                checkedTrackColor = BlazeOrange,
-                                uncheckedTrackColor = DarkGraphite
-                            ),
-                            modifier = Modifier.scale(0.85f)
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (orchestrator.autoSyncEnabled) Color(0xFF4CAF50) else PureWhite.copy(alpha = 0.3f)))
-                        Text(
-                            text = if (orchestrator.autoSyncEnabled) "Mode actif en tâche de fond" else "Synchronisation manuelle uniquement",
-                            color = PureWhite.copy(alpha = 0.5f),
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-
-            // Carte 3 : Actions Globales
-            Card(
-                modifier = Modifier.weight(1f).height(125.dp).clip(RoundedCornerShape(12.dp)),
-                colors = CardDefaults.cardColors(containerColor = OffBlack),
-                border = BorderStroke(1.dp, HairlineDark)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(imageVector = Icons.Rounded.Bolt, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
-                        Text("ACTIONS MASSIVES", color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Surface(
+                            color = BlazeOrange.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Étape de sécurité",
+                                color = BlazeOrange,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
-                            onClick = { orchestrator.triggerCloudDownloadAll(cloudOnlyTracks) },
+                            onClick = { showConfirmDownloadAllDialog = true },
                             colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(34.dp).handCursor(),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            modifier = Modifier.weight(1f).height(36.dp).handCursor(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             enabled = cloudOnlyTracks.isNotEmpty()
                         ) {
-                            Icon(imageVector = Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Tout rapatrier", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Icon(imageVector = Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Tout rapatrier (${cloudOnlyTracks.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
 
                         OutlinedButton(
-                            onClick = { orchestrator.triggerCloudUploadAll(localOnlyTracks) },
+                            onClick = { showConfirmUploadAllDialog = true },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = PureWhite),
                             border = BorderStroke(1.dp, HairlineDark),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(34.dp).handCursor(),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            modifier = Modifier.weight(1f).height(36.dp).handCursor(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             enabled = localOnlyTracks.isNotEmpty()
                         ) {
-                            Icon(imageVector = Icons.Rounded.CloudUpload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Tout sauver", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Icon(imageVector = Icons.Rounded.CloudUpload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Tout sauver (${localOnlyTracks.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
                     }
 
@@ -546,6 +520,36 @@ fun CloudSyncScreen(
                 }
             }
         }
+
+        if (showConfirmDownloadAllDialog) {
+            CloudActionConfirmDialog(
+                title = "Rapatrier tous les titres ?",
+                message = "Vous êtes sur le point de télécharger ${cloudOnlyTracks.size} titre${if (cloudOnlyTracks.size > 1) "s" else ""} depuis votre Cloud VPS vers votre PC.",
+                detailText = "Volume estimé : ~${(cloudOnlyTracks.size * 8)} Mo. Les fichiers seront stockés localement et lisibles sans connexion internet.",
+                confirmText = "Confirmer le téléchargement",
+                confirmIcon = Icons.Rounded.Download,
+                onConfirm = {
+                    showConfirmDownloadAllDialog = false
+                    orchestrator.triggerCloudDownloadAll(cloudOnlyTracks)
+                },
+                onDismiss = { showConfirmDownloadAllDialog = false }
+            )
+        }
+
+        if (showConfirmUploadAllDialog) {
+            CloudActionConfirmDialog(
+                title = "Sauvegarder tous les titres ?",
+                message = "Vous êtes sur le point d'envoyer ${localOnlyTracks.size} titre${if (localOnlyTracks.size > 1) "s" else ""} locaux vers votre serveur Cloud VPS.",
+                detailText = "Vos fichiers audio seront envoyés sur votre serveur privé AURA et deviendront immédiatement accessibles sur votre mobile et vos autres appareils.",
+                confirmText = "Confirmer l'envoi",
+                confirmIcon = Icons.Rounded.CloudUpload,
+                onConfirm = {
+                    showConfirmUploadAllDialog = false
+                    orchestrator.triggerCloudUploadAll(localOnlyTracks)
+                },
+                onDismiss = { showConfirmUploadAllDialog = false }
+            )
+        }
     }
 }
 
@@ -716,3 +720,93 @@ private fun CloudTrackTableRow(
         }
     }
 }
+
+@Composable
+private fun CloudActionConfirmDialog(
+    title: String,
+    message: String,
+    detailText: String,
+    confirmText: String,
+    confirmIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BlazeOrange.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = confirmIcon,
+                        contentDescription = null,
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Text(
+                    text = title,
+                    color = PureWhite,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = message,
+                    color = PureWhite.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+                Surface(
+                    color = DarkGraphite,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, HairlineDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = detailText,
+                        color = PureWhite.copy(alpha = 0.65f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.handCursor()
+            ) {
+                Icon(imageVector = confirmIcon, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(confirmText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = PureWhite.copy(alpha = 0.7f)),
+                modifier = Modifier.handCursor()
+            ) {
+                Text("Annuler", fontSize = 13.sp)
+            }
+        },
+        containerColor = OffBlack,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
