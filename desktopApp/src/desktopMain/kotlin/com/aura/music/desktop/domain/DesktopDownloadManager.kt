@@ -28,6 +28,7 @@ class DesktopDownloadManager(
     private val isSyncing = AtomicBoolean(false)
     private var downloadSyncJob: Job? = null
     private val activeJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val failedJobFetchIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun startLoop(intervalMs: Long = 3000L) {
         downloadSyncJob?.cancel()

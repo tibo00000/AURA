@@ -190,7 +190,8 @@ class DesktopCloudSyncManager(
 
             val existing = existingTracks[cloudFile.trackId]
             val isLiked = existing?.isLiked ?: existingLikedIds.contains(cloudFile.trackId)
-            val durationMs = if (cloudFile.durationMs != null && cloudFile.durationMs > 0L) cloudFile.durationMs else existing?.durationMs
+            val cloudDuration = cloudFile.durationMs
+            val durationMs = if (cloudDuration != null && cloudDuration > 0L) cloudDuration else existing?.durationMs
             val coverUri = if (!cloudFile.coverUri.isNullOrBlank()) cloudFile.coverUri else existing?.coverUri
             val resolvedTitle = if (title != "Titre inconnu" && !title.startsWith("Piste ")) title else (existing?.title ?: title)
             val resolvedArtist = if (artistName != "Artiste inconnu") artistName else (existing?.artistName ?: artistName)
@@ -250,7 +251,7 @@ class DesktopCloudSyncManager(
                 (existing.durationMs ?: 0L) != (newTrack.durationMs ?: 0L) ||
                 existing.coverUri != newTrack.coverUri ||
                 existing.isLiked != newTrack.isLiked ||
-                (isDownloaded && !existing.isDownloaded)
+                (isDownloaded && existing.contentUri.isNullOrBlank())
             ) {
                 tracksToInsert.add(newTrack)
             }
