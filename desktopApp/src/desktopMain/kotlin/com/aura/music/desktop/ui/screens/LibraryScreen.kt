@@ -33,7 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.aura.music.core.utils.SearchNormalizer
+import com.aura.music.domain.search.SearchNormalizer
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow

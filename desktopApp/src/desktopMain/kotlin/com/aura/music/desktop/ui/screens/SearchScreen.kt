@@ -710,7 +710,8 @@ fun SearchScreen(
                 }
             }
         }
-    } else {
+    }
+} else {
             // 3. Écran avec recherche active : Onglets & Catégories
             Spacer(modifier = Modifier.height(16.dp))
 
