@@ -1,5 +1,8 @@
 package com.aura.music.desktop.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -406,12 +409,19 @@ fun SearchScreen(
         }
     }
 
+    // Animation de positionnement central de la barre de recherche au repos
+    val topSpacerHeight by animateDpAsState(
+        targetValue = if (isSearchSubmitted) 0.dp else 120.dp,
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+    )
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(DeepBlack)
             .padding(horizontal = 32.dp, vertical = 24.dp)
     ) {
+        Spacer(modifier = Modifier.height(topSpacerHeight))
 
         // 1. Barre de recherche avec écoute de la touche Entrée et bouton d'effacement
         OutlinedTextField(
