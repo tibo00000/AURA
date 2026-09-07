@@ -82,6 +82,7 @@ fun DesktopTrackTable(
             onContextMenu = { trk ->
                 trackForContextMenu = if (trackForContextMenu?.id == trk.id) null else trk
             },
+            isContextMenuOpen = { trk -> trackForContextMenu?.id == trk.id },
             contextMenuContent = { track ->
                 if (trackForContextMenu?.id == track.id) {
                     DesktopTrackContextMenu(
@@ -153,6 +154,7 @@ fun DesktopTrackTable(
     onOpenArtist: ((String) -> Unit)? = null,
     onOpenAlbum: ((String) -> Unit)? = null,
     onContextMenu: ((TrackListRow) -> Unit)? = null,
+    isContextMenuOpen: ((TrackListRow) -> Boolean)? = null,
     contextMenuContent: (@Composable BoxScope.(TrackListRow) -> Unit)? = null,
     showAlbumColumn: Boolean = true,
     showDateAddedColumn: Boolean = false,
@@ -228,6 +230,7 @@ fun DesktopTrackTable(
                         onOpenArtist = { onOpenArtist?.invoke(track.artistId ?: "artist:${track.artistName}") },
                         onOpenAlbum = { track.albumId?.let { onOpenAlbum?.invoke(it) } },
                         onContextMenu = { onContextMenu?.invoke(track) },
+                        isContextMenuOpen = isContextMenuOpen?.invoke(track) == true,
                         showAlbumColumn = showAlbumColumn,
                         showDateAddedColumn = showDateAddedColumn,
                         contextMenuContent = contextMenuContent?.let { content -> { content(track) } }
@@ -263,7 +266,7 @@ private fun DesktopTrackTableShimmerRow(
 
         // Titre + Vignette Artwork
         Row(
-            modifier = Modifier.weight(2.5f),
+            modifier = Modifier.weight(2.5f).padding(end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -391,7 +394,7 @@ fun TrackTableHeaderRow(
             activeField = sortField,
             sortAscending = sortAscending,
             onClick = onSortChanged,
-            modifier = Modifier.weight(2.5f)
+            modifier = Modifier.weight(2.5f).padding(end = 16.dp)
         )
 
         HeaderSortableColumn(
@@ -526,6 +529,7 @@ fun TrackTableRowItem(
     onOpenArtist: () -> Unit,
     onOpenAlbum: () -> Unit,
     onContextMenu: () -> Unit,
+    isContextMenuOpen: Boolean = false,
     showAlbumColumn: Boolean,
     showDateAddedColumn: Boolean,
     contextMenuContent: (@Composable BoxScope.() -> Unit)? = null
@@ -598,7 +602,7 @@ fun TrackTableRowItem(
         }
 
         Row(
-            modifier = Modifier.weight(2.5f),
+            modifier = Modifier.weight(2.5f).padding(end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             DesktopArtworkCover(
@@ -625,7 +629,7 @@ fun TrackTableRowItem(
                     Icon(
                         imageVector = Icons.Rounded.Cloud,
                         contentDescription = "Cloud uniquement",
-                        tint = PureWhite.copy(alpha = 0.38f),
+                        tint = BlazeOrange,
                         modifier = Modifier.size(13.dp)
                     )
                 }
@@ -746,7 +750,7 @@ fun TrackTableRowItem(
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
                         contentDescription = "Options",
-                        tint = if (isHovered || isCurrent) PureWhite.copy(alpha = 0.75f) else Color.Transparent,
+                        tint = if (isHovered || isCurrent || isContextMenuOpen) PureWhite.copy(alpha = 0.75f) else Color.Transparent,
                         modifier = Modifier.size(18.dp)
                     )
                     contextMenuContent?.invoke(this)

@@ -269,7 +269,7 @@ fun LibraryScreen(
                         ) {
                             Text(
                                 text = label,
-                                color = if (isSelected) PureWhite else PureWhite.copy(alpha = if (isHovered) 0.95f else 0.65f),
+                                color = if (isSelected) BlazeOrange else PureWhite.copy(alpha = if (isHovered) 0.95f else 0.65f),
                                 fontSize = 13.sp,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                             )
@@ -287,13 +287,12 @@ fun LibraryScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Gauche : Champ de filtrage instantané inline permanent (~230dp) avec raccourci Ctrl+F / ⌘F
+            // Gauche : Champ de filtrage instantané inline permanent (~230dp)
             LibraryInlineSearchBar(
                 query = localSearchQuery,
                 onQueryChange = { localSearchQuery = it },
                 placeholder = "Filtrer dans la bibliothèque...",
                 focusRequester = searchFocusRequester,
-                isMac = isMac,
                 modifier = Modifier.width(230.dp)
             )
 
@@ -301,10 +300,11 @@ fun LibraryScreen(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = DarkGraphite.copy(alpha = 0.55f),
-                border = BorderStroke(1.dp, HairlineDark)
+                border = BorderStroke(1.dp, HairlineDark),
+                modifier = Modifier.height(36.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(2.dp),
+                    modifier = Modifier.fillMaxHeight().padding(3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
@@ -315,29 +315,30 @@ fun LibraryScreen(
 
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(15.dp))
                                 .background(
                                     when {
-                                        isSelected -> PureWhite.copy(alpha = 0.12f)
+                                        isSelected -> BlazeOrange.copy(alpha = 0.20f)
                                         isHovered -> PureWhite.copy(alpha = 0.05f)
                                         else -> Color.Transparent
                                     }
                                 )
                                 .border(
                                     width = if (isSelected) 1.dp else 0.dp,
-                                    color = if (isSelected) PureWhite.copy(alpha = 0.25f) else Color.Transparent,
-                                    shape = RoundedCornerShape(16.dp)
+                                    color = if (isSelected) BlazeOrange.copy(alpha = 0.70f) else Color.Transparent,
+                                    shape = RoundedCornerShape(15.dp)
                                 )
                                 .hoverable(interactionSource)
                                 .handClickable(interactionSource = interactionSource) {
                                     sourceFilter = filter
                                 }
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                                .padding(horizontal = 14.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = filter.label,
-                                color = if (isSelected) PureWhite else PureWhite.copy(alpha = if (isHovered) 0.85f else 0.55f),
+                                color = if (isSelected) BlazeOrange else PureWhite.copy(alpha = if (isHovered) 0.85f else 0.55f),
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                             )
@@ -379,12 +380,15 @@ fun LibraryScreen(
                     val uiState by orchestrator.uiState.collectAsState()
                     DesktopTrackTable(
                         tracks = filteredTracks,
-                        activeTrackId = uiState.currentTrack?.trackId,
+                        currentPlayingTrackId = uiState.currentTrack?.trackId,
                         isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
-                        isBuffering = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Buffering || uiState.playbackState == com.aura.music.domain.player.PlaybackState.Preparing,
-                        onTrackClick = { track, index ->
+                        orchestrator = orchestrator,
+                        database = orchestrator.database,
+                        appState = appState,
+                        onTrackClick = { clickedTrack ->
+                            val index = filteredTracks.indexOf(clickedTrack).coerceAtLeast(0)
                             orchestrator.playTrack(
-                                trackId = track.id,
+                                trackId = clickedTrack.id,
                                 contextType = "all",
                                 contextId = "all",
                                 contextTracks = filteredTracks.map { orchestrator.toQueuedTrack(it) },
@@ -392,8 +396,8 @@ fun LibraryScreen(
                             )
                         },
                         onToggleLike = onToggleLike,
-                        onOpenArtist = { appState.openArtist(it) },
-                        onOpenAlbum = { appState.openAlbum(it) },
+                        showAlbumColumn = true,
+                        showDateAddedColumn = false,
                         isLoading = isLoading
                     )
                 }
@@ -480,8 +484,14 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(filteredArtists, key = { it.id }) { artist ->
+                            val artistCover = remember(artist, allTracks) {
+                                artist.pictureUri ?: allTracks.firstOrNull {
+                                    (it.artistId == artist.id || it.artistName.equals(artist.name, ignoreCase = true)) && !it.coverUri.isNullOrBlank()
+                                }?.coverUri
+                            }
                             ArtistGridCard(
                                 artist = artist,
+                                artistCover = artistCover,
                                 onClick = { appState.openArtist(artist.id) }
                             )
                         }
@@ -498,15 +508,12 @@ private fun LibraryInlineSearchBar(
     onQueryChange: (String) -> Unit,
     placeholder: String,
     focusRequester: FocusRequester,
-    isMac: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val shortcutLabel = if (isMac) "⌘F" else "Ctrl+F"
-
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = DarkGraphite.copy(alpha = 0.7f),
-        border = BorderStroke(1.dp, HairlineDark),
+        border = BorderStroke(1.dp, if (query.isNotEmpty()) BlazeOrange.copy(alpha = 0.5f) else HairlineDark),
         modifier = modifier.height(36.dp)
     ) {
         Row(
@@ -572,21 +579,6 @@ private fun LibraryInlineSearchBar(
                         modifier = Modifier.size(13.dp)
                     )
                 }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = PureWhite.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.12f)),
-                    modifier = Modifier.padding(start = 4.dp)
-                ) {
-                    Text(
-                        text = shortcutLabel,
-                        color = PureWhite.copy(alpha = 0.35f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
             }
         }
     }
@@ -621,24 +613,25 @@ private fun LibrarySortMenu(
         else -> listOf(LibrarySortOrder.RECENT)
     }
 
-    Box {
+    Box(contentAlignment = Alignment.Center) {
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = DarkGraphite.copy(alpha = 0.7f),
-            border = BorderStroke(1.dp, HairlineDark),
+            border = BorderStroke(1.dp, if (expanded) BlazeOrange.copy(alpha = 0.6f) else HairlineDark),
             modifier = Modifier.height(36.dp)
         ) {
             Row(
                 modifier = Modifier
+                    .fillMaxHeight()
                     .handClickable { expanded = true }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Sort,
                     contentDescription = null,
-                    tint = PureWhite.copy(alpha = 0.7f),
+                    tint = BlazeOrange,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
@@ -648,9 +641,9 @@ private fun LibrarySortMenu(
                     fontWeight = FontWeight.Medium
                 )
                 Icon(
-                    imageVector = Icons.Rounded.ArrowDropDown,
+                    imageVector = if (expanded) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown,
                     contentDescription = null,
-                    tint = PureWhite.copy(alpha = 0.5f),
+                    tint = if (expanded) BlazeOrange else PureWhite.copy(alpha = 0.45f),
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -796,7 +789,11 @@ private fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
+private fun ArtistGridCard(
+    artist: ArtistBrowseRow,
+    artistCover: String?,
+    onClick: () -> Unit
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -811,9 +808,10 @@ private fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
             .padding(16.dp)
     ) {
         DesktopArtworkCover(
-            coverUri = artist.pictureUri,
+            coverUri = artistCover,
             size = 110.dp,
-            shapeRadius = 55.dp
+            shapeRadius = 55.dp,
+            fallbackIcon = Icons.Rounded.Person
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(

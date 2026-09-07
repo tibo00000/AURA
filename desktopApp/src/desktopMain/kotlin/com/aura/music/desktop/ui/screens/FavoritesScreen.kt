@@ -66,12 +66,15 @@ fun FavoritesScreen(
 
         DesktopTrackTable(
             tracks = likedTracks,
-            activeTrackId = uiState.currentTrack?.trackId,
+            currentPlayingTrackId = uiState.currentTrack?.trackId,
             isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
-            isBuffering = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Buffering || uiState.playbackState == com.aura.music.domain.player.PlaybackState.Preparing,
-            onTrackClick = { track, index ->
+            orchestrator = orchestrator,
+            database = orchestrator.database,
+            appState = appState,
+            onTrackClick = { clickedTrack ->
+                val index = likedTracks.indexOf(clickedTrack).coerceAtLeast(0)
                 orchestrator.playTrack(
-                    trackId = track.id,
+                    trackId = clickedTrack.id,
                     contextType = "favorites",
                     contextId = "favorites",
                     contextTracks = likedTracks.map { orchestrator.toQueuedTrack(it) },
@@ -79,8 +82,6 @@ fun FavoritesScreen(
                 )
             },
             onToggleLike = onToggleLike,
-            onOpenArtist = { appState.openArtist(it) },
-            onOpenAlbum = { appState.openAlbum(it) },
             showDateAddedColumn = true,
             isLoading = isLoading
         )
