@@ -30,6 +30,7 @@ import com.aura.music.data.network.HistoryItemResponse
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
+import com.aura.music.desktop.ui.handClickable
 import com.aura.music.ui.components.rememberShimmerBrush
 import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
@@ -215,7 +216,7 @@ private fun ResumeFavoritesCard(
             .clip(RoundedCornerShape(12.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp)
     ) {
         Box(
@@ -271,7 +272,7 @@ private fun ResumePlaylistCard(
             .clip(RoundedCornerShape(12.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp)
     ) {
         Box(
@@ -283,11 +284,6 @@ private fun ResumePlaylistCard(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-
-
-
-
-
                 imageVector = Icons.Rounded.QueueMusic,
                 contentDescription = null,
                 tint = BlazeOrange,
@@ -328,7 +324,7 @@ private fun ResumeAlbumCard(
             .clip(RoundedCornerShape(12.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp)
     ) {
         DesktopArtworkCover(

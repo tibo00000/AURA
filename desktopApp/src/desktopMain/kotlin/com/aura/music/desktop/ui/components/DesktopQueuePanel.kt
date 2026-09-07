@@ -324,8 +324,7 @@ private fun QueueTrackItem(
                 else Modifier
             )
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onPlayNow)
+            .handClickable(interactionSource = interactionSource, onClick = onPlayNow)
             .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

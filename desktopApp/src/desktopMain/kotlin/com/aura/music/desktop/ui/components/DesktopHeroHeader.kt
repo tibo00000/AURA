@@ -134,7 +134,7 @@ fun DesktopHeroHeader(
                                 .size(52.dp)
                                 .clip(CircleShape)
                                 .background(BlazeOrange)
-                                .clickable(onClick = onPlayAll),
+                                .handClickable(onClick = onPlayAll),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -151,7 +151,7 @@ fun DesktopHeroHeader(
                                 .size(44.dp)
                                 .clip(CircleShape)
                                 .background(DarkGraphite)
-                                .clickable(onClick = onShuffleAll),
+                                .handClickable(onClick = onShuffleAll),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -181,7 +181,7 @@ fun DesktopHeroHeader(
                                     .size(44.dp)
                                     .clip(CircleShape)
                                     .background(DarkGraphite)
-                                    .clickable(onClick = onMoreOptions),
+                                    .handClickable(onClick = onMoreOptions),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(

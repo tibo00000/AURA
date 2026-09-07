@@ -89,8 +89,7 @@ fun DesktopPlayerBar(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
-                                .handCursor()
-                                .clickable {
+                                .handClickable {
                                     currentTrack?.artistName?.let { appState.openArtist("artist:$it") }
                                 }
                         )
@@ -151,8 +150,7 @@ fun DesktopPlayerBar(
                                 .size(42.dp)
                                 .clip(CircleShape)
                                 .background(BlazeOrange)
-                                .handCursor(!isBuffering)
-                                .clickable(enabled = !isBuffering) { orchestrator.togglePlayPause() },
+                                .handClickable(enabled = !isBuffering) { orchestrator.togglePlayPause() },
                             contentAlignment = Alignment.Center
                         ) {
                             if (isBuffering) {

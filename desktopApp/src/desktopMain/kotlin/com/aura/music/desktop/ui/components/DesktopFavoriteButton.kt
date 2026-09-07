@@ -21,7 +21,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.aura.music.desktop.ui.handCursor
+import com.aura.music.desktop.ui.handClickable
 import com.aura.music.ui.theme.BlazeOrange
 import com.aura.music.ui.theme.PureWhite
 import kotlinx.coroutines.delay
@@ -81,8 +81,7 @@ fun DesktopFavoriteButton(
             .size(size)
             .scale(scale)
             .clip(CircleShape)
-            .handCursor()
-            .clickable {
+            .handClickable {
                 optimisticLiked = !optimisticLiked
                 triggerBounce = true
                 onToggle()

@@ -30,6 +30,7 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopHeroHeader
 import com.aura.music.desktop.ui.components.DesktopTrackTable
+import com.aura.music.desktop.ui.handClickable
 import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -236,7 +237,7 @@ private fun DesktopArtistAlbumCard(
             .clip(RoundedCornerShape(8.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(10.dp)
     ) {
         DesktopArtworkCover(

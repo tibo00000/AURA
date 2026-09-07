@@ -1,6 +1,11 @@
 package com.aura.music.desktop.ui
 
+import androidx.compose.foundation.Indication
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -50,5 +55,26 @@ fun formatDuration(ms: Long): String {
  */
 fun Modifier.handCursor(enabled: Boolean = true): Modifier =
     if (enabled) this.pointerHoverIcon(PointerIcon.Hand) else this
+
+
+/**
+ * Rend un composant cliquable avec curseur Main et SANS le fond surligné / ripple par défaut de Compose.
+ * Supprime le rectangle gris de survol indésirable tout en permettant la capture d'événements.
+ */
+fun Modifier.handClickable(
+    interactionSource: MutableInteractionSource? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+): Modifier = composed {
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    this
+        .handCursor(enabled)
+        .clickable(
+            interactionSource = source,
+            indication = null as Indication?,
+            enabled = enabled,
+            onClick = onClick
+        )
+}
 
 

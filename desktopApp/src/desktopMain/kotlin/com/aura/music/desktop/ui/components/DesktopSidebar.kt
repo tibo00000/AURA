@@ -48,8 +48,7 @@ fun DesktopSidebar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
-                .handCursor()
-                .clickable { appState.navigateToRoot("home") },
+                .handClickable { appState.navigateToRoot("home") },
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -174,8 +173,7 @@ fun DesktopSidebar(
                                 }
                             )
                             .hoverable(interactionSource)
-                            .handCursor()
-                            .clickable {
+                            .handClickable(interactionSource = interactionSource) {
                                 if (onPlaylistSelected != null) {
                                     onPlaylistSelected(pl.id)
                                 } else {
@@ -238,8 +236,7 @@ private fun SidebarNavItem(
                 }
             )
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

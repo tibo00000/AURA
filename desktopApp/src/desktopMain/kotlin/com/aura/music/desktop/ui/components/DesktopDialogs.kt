@@ -196,7 +196,7 @@ fun DesktopAddToPlaylistDialog(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(DarkGraphite)
-                                    .clickable {
+                                    .handClickable {
                                         coroutineScope.launch(Dispatchers.IO) {
                                             orchestrator.addTrackToPlaylist(pl.id, track.id)
                                             onTrackAdded()

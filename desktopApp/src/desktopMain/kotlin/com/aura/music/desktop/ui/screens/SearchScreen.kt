@@ -53,10 +53,11 @@ import com.aura.music.desktop.ui.components.DesktopTrackTable
 import com.aura.music.desktop.ui.components.TrackSortField
 import com.aura.music.desktop.ui.components.TrackTableHeaderRow
 import com.aura.music.desktop.ui.components.TrackTableRowItem
-import com.aura.music.desktop.ui.formatDuration
-import com.aura.music.desktop.ui.handCursor
+import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.utils.DesktopTrackMatcher
 import com.aura.music.domain.player.PlaybackState
+import com.aura.music.domain.search.LocalSearchEngine
+import com.aura.music.domain.search.LocalSearchIndex
 import com.aura.music.domain.search.SearchNormalizer
 import com.aura.music.ui.components.ShimmerTrackRow
 import com.aura.music.ui.components.rememberShimmerBrush
@@ -167,6 +168,17 @@ fun SearchScreen(
         }
     }
 
+    // Index de recherche inversé Zero-Jank haute performance (identique à l'application mobile)
+    val searchIndex = remember(allTracks, allArtists, allAlbums) {
+        LocalSearchIndex.build(allTracks, allArtists, allAlbums)
+    }
+    val likedTrackIds = remember(allTracks) {
+        allTracks.filter { it.isLiked }.map { it.id }.toSet()
+    }
+    val downloadedTrackIds = remember(allTracks) {
+        allTracks.filter { !it.isCloudOnly }.map { it.id }.toSet()
+    }
+
     var suggestions by remember { mutableStateOf<DesktopHybridSuggestions?>(null) }
     var trackForContextMenu by remember { mutableStateOf<TrackListRow?>(null) }
     var trackForMetadataEdit by remember { mutableStateOf<TrackListRow?>(null) }
@@ -177,6 +189,14 @@ fun SearchScreen(
             appState.searchQuery = trimmed
             if (targetTab != null) {
                 appState.searchTab = targetTab
+            } else if (appState.searchTab == 0 && trimmed.length >= 2) {
+                // Exactement comme sur l'application mobile : si aucun résultat local, bascule automatique vers le catalogue en ligne
+                val locTracks = LocalSearchEngine.searchTracks(searchIndex, trimmed, limit = 1)
+                val locArtists = LocalSearchEngine.searchArtists(searchIndex, trimmed, limit = 1)
+                val locAlbums = LocalSearchEngine.searchAlbums(searchIndex, trimmed, limit = 1)
+                if (locTracks.isEmpty() && locArtists.isEmpty() && locAlbums.isEmpty()) {
+                    appState.searchTab = 1
+                }
             }
             isSearchSubmitted = true
             coroutineScope.launch(Dispatchers.IO) {
@@ -195,27 +215,32 @@ fun SearchScreen(
         }
     }
 
-    // Suggestions en temps réel lors de la frappe
-    LaunchedEffect(appState.searchQuery, isSearchSubmitted) {
+    // Suggestions en temps réel lors de la frappe basées sur le moteur mobile LocalSearchEngine
+    LaunchedEffect(appState.searchQuery, isSearchSubmitted, searchIndex, likedTrackIds, downloadedTrackIds) {
         val q = appState.searchQuery.trim()
         if (q.length < 2 || isSearchSubmitted) {
             suggestions = null
             return@LaunchedEffect
         }
 
-        // Suggestions locales instantanées
-        val normQ = SearchNormalizer.normalize(q)
-        val locTracks = allTracks.filter {
-            SearchNormalizer.normalize(it.title).contains(normQ) ||
-            SearchNormalizer.normalize(it.artistName).contains(normQ)
-        }.take(3)
-        val locArtists = allArtists.filter {
-            SearchNormalizer.normalize(it.name).contains(normQ)
-        }.take(2)
-        val locAlbums = allAlbums.filter {
-            SearchNormalizer.normalize(it.title).contains(normQ) ||
-            (it.artistName != null && SearchNormalizer.normalize(it.artistName!!).contains(normQ))
-        }.take(2)
+        // Suggestions locales instantanées via LocalSearchEngine (tolérance aux fautes de frappe & préfixes)
+        val locTracks = LocalSearchEngine.searchTracks(
+            index = searchIndex,
+            query = q,
+            limit = 3,
+            likedTrackIds = likedTrackIds,
+            downloadedTrackIds = downloadedTrackIds
+        )
+        val locArtists = LocalSearchEngine.searchArtists(
+            index = searchIndex,
+            query = q,
+            limit = 2
+        )
+        val locAlbums = LocalSearchEngine.searchAlbums(
+            index = searchIndex,
+            query = q,
+            limit = 2
+        )
 
         suggestions = DesktopHybridSuggestions(
             localTracks = locTracks,
@@ -251,35 +276,66 @@ fun SearchScreen(
         }
     }
 
-    // Filtrage local mémoïsé
-    val filteredLocalTracks = remember(appState.searchQuery, allTracks) {
-        if (appState.searchQuery.isBlank()) allTracks
-        else {
-            val q = SearchNormalizer.normalize(appState.searchQuery)
-            allTracks.filter {
-                SearchNormalizer.normalize(it.title).contains(q) ||
-                SearchNormalizer.normalize(it.artistName).contains(q) ||
-                (it.albumTitle != null && SearchNormalizer.normalize(it.albumTitle!!).contains(q))
+    // Filtrage local mémoïsé propulsé par LocalSearchEngine (scoring fin multi-tokens, tolérance aux fautes de frappe et boosts)
+    val filteredLocalTracks = remember(appState.searchQuery, searchIndex, likedTrackIds, downloadedTrackIds, allTracks) {
+        val q = appState.searchQuery.trim()
+        when {
+            q.isBlank() -> allTracks
+            q.length == 1 -> {
+                val norm = SearchNormalizer.normalize(q)
+                allTracks.filter {
+                    SearchNormalizer.normalize(it.title).startsWith(norm) ||
+                    SearchNormalizer.normalize(it.artistName).startsWith(norm)
+                }
+            }
+            else -> {
+                LocalSearchEngine.searchTracks(
+                    index = searchIndex,
+                    query = q,
+                    limit = 100,
+                    likedTrackIds = likedTrackIds,
+                    downloadedTrackIds = downloadedTrackIds
+                )
             }
         }
     }
 
-    val filteredLocalAlbums = remember(appState.searchQuery, allAlbums) {
-        if (appState.searchQuery.isBlank()) allAlbums
-        else {
-            val q = SearchNormalizer.normalize(appState.searchQuery)
-            allAlbums.filter {
-                SearchNormalizer.normalize(it.title).contains(q) ||
-                (it.artistName != null && SearchNormalizer.normalize(it.artistName!!).contains(q))
+    val filteredLocalAlbums = remember(appState.searchQuery, searchIndex, allAlbums) {
+        val q = appState.searchQuery.trim()
+        when {
+            q.isBlank() -> allAlbums
+            q.length == 1 -> {
+                val norm = SearchNormalizer.normalize(q)
+                allAlbums.filter {
+                    SearchNormalizer.normalize(it.title).startsWith(norm) ||
+                    (it.artistName != null && SearchNormalizer.normalize(it.artistName!!).startsWith(norm))
+                }
+            }
+            else -> {
+                LocalSearchEngine.searchAlbums(
+                    index = searchIndex,
+                    query = q,
+                    limit = 50
+                )
             }
         }
     }
 
-    val filteredLocalArtists = remember(appState.searchQuery, allArtists) {
-        if (appState.searchQuery.isBlank()) allArtists
-        else {
-            val q = SearchNormalizer.normalize(appState.searchQuery)
-            allArtists.filter { SearchNormalizer.normalize(it.name).contains(q) }
+    val filteredLocalArtists = remember(appState.searchQuery, searchIndex, allArtists) {
+        val q = appState.searchQuery.trim()
+        when {
+            q.isBlank() -> allArtists
+            q.length == 1 -> {
+                val norm = SearchNormalizer.normalize(q)
+                allArtists.filter { SearchNormalizer.normalize(it.name).startsWith(norm) }
+            }
+            else -> {
+                LocalSearchEngine.searchArtists(
+                    index = searchIndex,
+                    query = q,
+                    limit = 50
+                )
+            }
         }
     }
 
@@ -523,8 +579,7 @@ fun SearchScreen(
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
-                                    .handCursor()
-                                    .clickable {
+                                    .handClickable {
                                         coroutineScope.launch(Dispatchers.IO) {
                                             orchestrator.database.recentSearchDao().clearAll()
                                         }
@@ -548,8 +603,7 @@ fun SearchScreen(
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
                                         .hoverable(interactionSource)
-                                        .handCursor()
-                                        .clickable {
+                                        .handClickable(interactionSource = interactionSource) {
                                             submitSearch(query)
                                         }
                                         .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -574,8 +628,7 @@ fun SearchScreen(
                                         modifier = Modifier
                                             .size(28.dp)
                                             .clip(CircleShape)
-                                            .handCursor()
-                                            .clickable {
+                                            .handClickable {
                                                 coroutineScope.launch(Dispatchers.IO) {
                                                     orchestrator.database.recentSearchDao().deleteQuery(query)
                                                 }
@@ -691,8 +744,7 @@ fun SearchScreen(
                                 shape = shape
                             )
                             .hoverable(interactionSource)
-                            .handCursor()
-                            .clickable { selectedCategory = filter },
+                            .handClickable(interactionSource = interactionSource) { selectedCategory = filter },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -1225,8 +1277,7 @@ private fun DesktopSuggestionRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1284,8 +1335,7 @@ private fun DesktopArtistItem(artist: ArtistBrowseRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -1318,8 +1368,7 @@ private fun DesktopAlbumItem(album: AlbumBrowseRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.Start
     ) {
@@ -1356,8 +1405,7 @@ private fun DesktopOnlineArtistItem(artist: ArtistSummary, onClick: () -> Unit) 
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -1390,8 +1438,7 @@ private fun DesktopOnlineAlbumItem(album: AlbumSummary, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.Start
     ) {
@@ -1564,8 +1611,7 @@ private fun DesktopOnlineTrackRow(
                 else Color.Transparent
             )
             .hoverable(interactionSource)
-            .handCursor()
-            .clickable(onClick = onPlay)
+            .handClickable(interactionSource = interactionSource, onClick = onPlay)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1715,9 +1761,12 @@ private fun DesktopOnlineTrackRow(
                     )
                 }
             } else if (matchedLocal != null && matchedLocal.isCloudOnly) {
-                IconButton(
-                    onClick = onDownload,
-                    modifier = Modifier.size(32.dp).handCursor()
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .handClickable(onClick = onDownload),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Download,
@@ -1727,9 +1776,12 @@ private fun DesktopOnlineTrackRow(
                     )
                 }
             } else {
-                IconButton(
-                    onClick = onDownload,
-                    modifier = Modifier.size(32.dp).handCursor()
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .handClickable(onClick = onDownload),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.CloudDownload,

@@ -2,6 +2,7 @@ package com.aura.music.desktop.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Indication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.hoverable
@@ -12,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.aura.music.desktop.ui.handClickable
 import com.aura.music.desktop.ui.handCursor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -442,7 +444,7 @@ private fun HeaderSortableColumn(
     val isActive = activeField == field
 
     Row(
-        modifier = modifier.handCursor().clickable { onClick(field) },
+        modifier = modifier.handClickable { onClick(field) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = horizontalArrangement
     ) {
@@ -503,6 +505,8 @@ fun TrackTableRowItem(
             .hoverable(interactionSource)
             .handCursor()
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null as Indication?,
                 onClick = onPlay,
                 onDoubleClick = onPlay,
                 onLongClick = onContextMenu
@@ -597,8 +601,7 @@ fun TrackTableRowItem(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1.8f)
-                .handCursor()
-                .clickable { onOpenArtist() }
+                .handClickable(onClick = onOpenArtist)
         )
 
         if (showAlbumColumn) {
@@ -610,8 +613,7 @@ fun TrackTableRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1.8f)
-                    .handCursor()
-                    .clickable { onOpenAlbum() }
+                    .handClickable(onClick = onOpenAlbum)
             )
         }
 
@@ -655,8 +657,7 @@ fun TrackTableRowItem(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .handCursor()
-                    .clickable(onClick = onContextMenu),
+                    .handClickable(onClick = onContextMenu),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(

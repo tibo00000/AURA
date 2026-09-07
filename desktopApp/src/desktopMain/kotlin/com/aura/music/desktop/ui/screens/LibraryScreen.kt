@@ -228,7 +228,7 @@ private fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp)
     ) {
         DesktopArtworkCover(
@@ -267,7 +267,7 @@ private fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(16.dp)
     ) {
         DesktopArtworkCover(
@@ -298,7 +298,7 @@ private fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
-            .clickable(onClick = onClick)
+            .handClickable(interactionSource = interactionSource, onClick = onClick)
             .padding(12.dp)
     ) {
         Box(

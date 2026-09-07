@@ -136,7 +136,7 @@ private fun DownloadJobRowItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = isFailed, onClick = onErrorClick),
+            .handClickable(enabled = isFailed, onClick = onErrorClick),
         colors = CardDefaults.cardColors(containerColor = OffBlack)
     ) {
         Row(

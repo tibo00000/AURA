@@ -280,7 +280,7 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { appState.navigateTo("cloud_sync") },
+                    .handClickable { appState.navigateTo("cloud_sync") },
                 colors = CardDefaults.cardColors(containerColor = OffBlack)
             ) {
                 Row(
