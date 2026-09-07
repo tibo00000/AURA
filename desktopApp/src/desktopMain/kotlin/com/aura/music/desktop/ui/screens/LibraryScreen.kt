@@ -382,10 +382,12 @@ fun LibraryScreen(
                     }
                 } else {
                     val uiState by orchestrator.uiState.collectAsState()
+                    val activeTrackId by remember { derivedStateOf { uiState.currentTrack?.trackId } }
+                    val isPlaying by remember { derivedStateOf { uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing } }
                     DesktopTrackTable(
                         tracks = filteredTracks,
-                        currentPlayingTrackId = uiState.currentTrack?.trackId,
-                        isPlaying = uiState.playbackState == com.aura.music.domain.player.PlaybackState.Playing,
+                        currentPlayingTrackId = activeTrackId,
+                        isPlaying = isPlaying,
                         orchestrator = orchestrator,
                         database = orchestrator.database,
                         appState = appState,
