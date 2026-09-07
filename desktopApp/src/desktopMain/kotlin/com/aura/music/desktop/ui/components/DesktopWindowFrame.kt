@@ -54,32 +54,10 @@ fun WindowScope.DesktopTitleBar(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 1. Marque AURA (Gauche)
-            Row(
-                modifier = Modifier
-                    .padding(start = 16.dp, end = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(BlazeOrange)
-                )
-                Text(
-                    text = "AURA",
-                    color = PureWhite.copy(alpha = 0.65f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-            }
-
-            // 2. Zone Draggable centrale (permet de déplacer et double-clic pour agrandir/restaurer)
+            // Zone Draggable (permet de déplacer et double-clic pour agrandir/restaurer)
             Spacer(modifier = Modifier.weight(1f))
 
-            // 3. Contrôles de Fenêtre (Droite : Minimiser, Agrandir/Restaurer, Fermer)
+            // Contrôles de Fenêtre (Droite : Minimiser, Agrandir/Restaurer, Fermer)
             Row(
                 modifier = Modifier.fillMaxHeight(),
                 verticalAlignment = Alignment.CenterVertically

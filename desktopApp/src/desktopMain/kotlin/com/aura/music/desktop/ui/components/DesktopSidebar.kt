@@ -1,5 +1,6 @@
 package com.aura.music.desktop.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,12 +53,21 @@ fun DesktopSidebar(
                 .handClickable { appState.navigateToRoot("home") },
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(BlazeOrange)
-            )
+            val logoPainter = runCatching { painterResource("aura_logo_trimmed.png") }.getOrNull()
+            if (logoPainter != null) {
+                Image(
+                    painter = logoPainter,
+                    contentDescription = "AURA",
+                    modifier = Modifier.height(26.dp).widthIn(max = 42.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(BlazeOrange)
+                )
+            }
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = "AURA",

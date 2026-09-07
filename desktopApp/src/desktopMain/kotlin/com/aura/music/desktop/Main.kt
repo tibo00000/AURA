@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
@@ -156,9 +157,10 @@ fun main() = application {
     }
 
     // Intégration System Tray
-    val trayIcon = rememberVectorPainter(Icons.Rounded.MusicNote)
+    val trayFallbackIcon = rememberVectorPainter(Icons.Rounded.MusicNote)
+    val appIcon = runCatching { painterResource("aura_logo.png") }.getOrNull()
     Tray(
-        icon = trayIcon,
+        icon = appIcon ?: trayFallbackIcon,
         tooltip = "AURA Music Player",
         onAction = {
             isVisible = true
@@ -191,6 +193,7 @@ fun main() = application {
             },
             state = windowState,
             title = "AURA",
+            icon = appIcon,
             undecorated = true,
             onKeyEvent = { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
