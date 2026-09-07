@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1085,6 +1086,12 @@ fun SearchScreen(
                                             },
                                             onDownload = {
                                                 orchestrator.triggerTrackDownload(track)
+                                            },
+                                            onOpenArtist = {
+                                                appState.openArtist("artist:${track.displayArtistName}")
+                                            },
+                                            onOpenAlbum = track.displayAlbumTitle?.let { title ->
+                                                { appState.openAlbum("album:$title") }
                                             }
                                         )
                                     }
@@ -1117,6 +1124,12 @@ fun SearchScreen(
                                             },
                                             onDownload = {
                                                 orchestrator.triggerTrackDownload(track)
+                                            },
+                                            onOpenArtist = {
+                                                appState.openArtist("artist:${track.displayArtistName}")
+                                            },
+                                            onOpenAlbum = track.displayAlbumTitle?.let { title ->
+                                                { appState.openAlbum("album:$title") }
                                             }
                                         )
                                     }
@@ -1597,7 +1610,9 @@ private fun DesktopOnlineTrackRow(
     isPlaying: Boolean,
     isBuffering: Boolean = false,
     onPlay: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onOpenArtist: (() -> Unit)? = null,
+    onOpenAlbum: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -1665,9 +1680,9 @@ private fun DesktopOnlineTrackRow(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = track.title,
-                    color = if (isCurrentPlaying) BlazeOrange else PureWhite,
+                    color = if (isCurrentPlaying) BlazeOrange else if (isHovered) PureWhite else PureWhite.copy(alpha = 0.88f),
                     fontSize = 13.sp,
-                    fontWeight = if (isCurrentPlaying) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = if (isCurrentPlaying) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1710,24 +1725,68 @@ private fun DesktopOnlineTrackRow(
         }
 
         // Artiste (weight 1.8f)
-        Text(
-            text = track.displayArtistName,
-            color = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.65f),
-            fontSize = 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1.8f)
-        )
+        Box(
+            modifier = Modifier.weight(1.8f),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            val artistInteractionSource = remember { MutableInteractionSource() }
+            val isArtistHovered by artistInteractionSource.collectIsHoveredAsState()
+            Text(
+                text = track.displayArtistName,
+                color = when {
+                    isArtistHovered -> PureWhite
+                    isHovered -> PureWhite.copy(alpha = 0.70f)
+                    else -> PureWhite.copy(alpha = 0.55f)
+                },
+                textDecoration = if (isArtistHovered && onOpenArtist != null) TextDecoration.Underline else TextDecoration.None,
+                fontSize = 13.sp,
+                fontWeight = if (isArtistHovered) FontWeight.Medium else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (onOpenArtist != null) {
+                    Modifier.handClickable(
+                        interactionSource = artistInteractionSource,
+                        onClick = onOpenArtist
+                    )
+                } else Modifier
+            )
+        }
 
         // Album (weight 1.8f)
-        Text(
-            text = track.displayAlbumTitle ?: "-",
-            color = if (isHovered) PureWhite.copy(alpha = 0.9f) else PureWhite.copy(alpha = 0.5f),
-            fontSize = 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1.8f)
-        )
+        Box(
+            modifier = Modifier.weight(1.8f),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            val albumInteractionSource = remember { MutableInteractionSource() }
+            val isAlbumHovered by albumInteractionSource.collectIsHoveredAsState()
+            if (!track.displayAlbumTitle.isNullOrBlank()) {
+                Text(
+                    text = track.displayAlbumTitle!!,
+                    color = when {
+                        isAlbumHovered -> PureWhite
+                        isHovered -> PureWhite.copy(alpha = 0.65f)
+                        else -> PureWhite.copy(alpha = 0.45f)
+                    },
+                    textDecoration = if (isAlbumHovered && onOpenAlbum != null) TextDecoration.Underline else TextDecoration.None,
+                    fontSize = 13.sp,
+                    fontWeight = if (isAlbumHovered) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (onOpenAlbum != null) {
+                        Modifier.handClickable(
+                            interactionSource = albumInteractionSource,
+                            onClick = onOpenAlbum
+                        )
+                    } else Modifier
+                )
+            } else {
+                Text(
+                    text = "-",
+                    color = PureWhite.copy(alpha = 0.35f),
+                    fontSize = 13.sp
+                )
+            }
+        }
 
         // Durée et Action (136.dp)
         Row(

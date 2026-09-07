@@ -2,6 +2,8 @@ package com.aura.music.desktop.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,14 +85,17 @@ fun DesktopPlayerBar(
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(2.dp))
+                        val artistInteractionSource = remember { MutableInteractionSource() }
+                        val isArtistHovered by artistInteractionSource.collectIsHoveredAsState()
                         Text(
                             text = currentTrack?.artistName ?: "AURA Player",
-                            color = PureWhite.copy(alpha = 0.6f),
+                            color = if (isArtistHovered) PureWhite else PureWhite.copy(alpha = 0.65f),
+                            textDecoration = if (isArtistHovered && currentTrack != null) TextDecoration.Underline else TextDecoration.None,
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
-                                .handClickable {
+                                .handClickable(interactionSource = artistInteractionSource) {
                                     currentTrack?.artistName?.let { appState.openArtist("artist:$it") }
                                 }
                         )

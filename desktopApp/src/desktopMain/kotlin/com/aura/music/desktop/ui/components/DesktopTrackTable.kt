@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -495,6 +496,12 @@ fun TrackTableRowItem(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
+    val artistInteractionSource = remember { MutableInteractionSource() }
+    val isArtistHovered by artistInteractionSource.collectIsHoveredAsState()
+
+    val albumInteractionSource = remember { MutableInteractionSource() }
+    val isAlbumHovered by albumInteractionSource.collectIsHoveredAsState()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -566,9 +573,9 @@ fun TrackTableRowItem(
             Column {
                 Text(
                     text = track.title,
-                    color = if (isCurrent) BlazeOrange else PureWhite,
+                    color = if (isCurrent) BlazeOrange else if (isHovered) PureWhite else PureWhite.copy(alpha = 0.88f),
                     fontSize = 13.sp,
-                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -593,34 +600,68 @@ fun TrackTableRowItem(
             }
         }
 
-        Text(
-            text = track.displayArtist,
-            color = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.65f),
-            fontSize = 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1.8f)
-                .handClickable(onClick = onOpenArtist)
-        )
-
-        if (showAlbumColumn) {
+        Box(
+            modifier = Modifier.weight(1.8f),
+            contentAlignment = Alignment.CenterStart
+        ) {
             Text(
-                text = track.displayAlbum ?: "-",
-                color = if (isHovered) PureWhite.copy(alpha = 0.9f) else PureWhite.copy(alpha = 0.5f),
+                text = track.displayArtist,
+                color = when {
+                    isArtistHovered -> PureWhite
+                    isHovered -> PureWhite.copy(alpha = 0.70f)
+                    else -> PureWhite.copy(alpha = 0.55f)
+                },
+                textDecoration = if (isArtistHovered) TextDecoration.Underline else TextDecoration.None,
                 fontSize = 13.sp,
+                fontWeight = if (isArtistHovered) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .weight(1.8f)
-                    .handClickable(onClick = onOpenAlbum)
+                    .handClickable(
+                        interactionSource = artistInteractionSource,
+                        onClick = onOpenArtist
+                    )
             )
+        }
+
+        if (showAlbumColumn) {
+            Box(
+                modifier = Modifier.weight(1.8f),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (!track.displayAlbum.isNullOrBlank()) {
+                    Text(
+                        text = track.displayAlbum!!,
+                        color = when {
+                            isAlbumHovered -> PureWhite
+                            isHovered -> PureWhite.copy(alpha = 0.65f)
+                            else -> PureWhite.copy(alpha = 0.45f)
+                        },
+                        textDecoration = if (isAlbumHovered) TextDecoration.Underline else TextDecoration.None,
+                        fontSize = 13.sp,
+                        fontWeight = if (isAlbumHovered) FontWeight.Medium else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .handClickable(
+                                interactionSource = albumInteractionSource,
+                                onClick = onOpenAlbum
+                            )
+                    )
+                } else {
+                    Text(
+                        text = "-",
+                        color = PureWhite.copy(alpha = 0.35f),
+                        fontSize = 13.sp
+                    )
+                }
+            }
         }
 
         if (showDateAddedColumn) {
             Text(
                 text = formatTimestamp(track.createdAt),
-                color = if (isHovered) PureWhite.copy(alpha = 0.75f) else PureWhite.copy(alpha = 0.4f),
+                color = if (isHovered) PureWhite.copy(alpha = 0.70f) else PureWhite.copy(alpha = 0.40f),
                 fontSize = 12.sp,
                 modifier = Modifier.weight(1.2f)
             )
