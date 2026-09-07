@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
@@ -43,93 +44,90 @@ fun WindowScope.DesktopTitleBar(
 ) {
     val isMaximized = windowState.placement == WindowPlacement.Maximized
 
-    Row(
+    WindowDraggableArea(
         modifier = modifier
             .fillMaxWidth()
             .height(34.dp)
-            .background(DeepBlack),
-        verticalAlignment = Alignment.CenterVertically
+            .background(DeepBlack)
     ) {
-        // 1. Marque AURA (Gauche)
         Row(
-            modifier = Modifier
-                .padding(start = 16.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(BlazeOrange)
-            )
-            Text(
-                text = "AURA",
-                color = PureWhite.copy(alpha = 0.65f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-        }
-
-        // 2. Zone Draggable centrale (permet de déplacer et double-clic pour agrandir/restaurer)
-        WindowDraggableArea(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-        ) {
-            Box(modifier = Modifier.fillMaxSize())
-        }
-
-        // 3. Contrôles de Fenêtre (Droite : Minimiser, Agrandir/Restaurer, Fermer)
-        Row(
-            modifier = Modifier.fillMaxHeight(),
+            modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Minimiser
-            TitleBarButton(
-                onClick = { windowState.isMinimized = true },
-                hoverBackground = PureWhite.copy(alpha = 0.08f)
+            // 1. Marque AURA (Gauche)
+            Row(
+                modifier = Modifier
+                    .padding(start = 16.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Remove,
-                    contentDescription = "Minimiser",
-                    tint = PureWhite.copy(alpha = 0.75f),
-                    modifier = Modifier.size(16.dp)
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(BlazeOrange)
+                )
+                Text(
+                    text = "AURA",
+                    color = PureWhite.copy(alpha = 0.65f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
                 )
             }
 
-            // Agrandir / Restaurer
-            TitleBarButton(
-                onClick = {
-                    windowState.placement = if (isMaximized) {
-                        WindowPlacement.Floating
-                    } else {
-                        WindowPlacement.Maximized
-                    }
-                },
-                hoverBackground = PureWhite.copy(alpha = 0.08f)
-            ) {
-                Icon(
-                    imageVector = if (isMaximized) Icons.Rounded.WebAsset else Icons.Rounded.CropSquare,
-                    contentDescription = if (isMaximized) "Restaurer" else "Agrandir",
-                    tint = PureWhite.copy(alpha = 0.75f),
-                    modifier = Modifier.size(14.dp)
-                )
-            }
+            // 2. Zone Draggable centrale (permet de déplacer et double-clic pour agrandir/restaurer)
+            Spacer(modifier = Modifier.weight(1f))
 
-            // Fermer (Fond rouge au survol)
-            TitleBarButton(
-                onClick = onClose,
-                hoverBackground = Color(0xFFE81123),
-                activeTint = PureWhite
-            ) { isHovered ->
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = "Fermer",
-                    tint = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.75f),
-                    modifier = Modifier.size(16.dp)
-                )
+            // 3. Contrôles de Fenêtre (Droite : Minimiser, Agrandir/Restaurer, Fermer)
+            Row(
+                modifier = Modifier.fillMaxHeight(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Minimiser
+                TitleBarButton(
+                    onClick = { windowState.isMinimized = true },
+                    hoverBackground = PureWhite.copy(alpha = 0.08f)
+                ) { _ ->
+                    Icon(
+                        imageVector = Icons.Rounded.Remove,
+                        contentDescription = "Minimiser",
+                        tint = PureWhite.copy(alpha = 0.75f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                // Agrandir / Restaurer
+                TitleBarButton(
+                    onClick = {
+                        windowState.placement = if (isMaximized) {
+                            WindowPlacement.Floating
+                        } else {
+                            WindowPlacement.Maximized
+                        }
+                    },
+                    hoverBackground = PureWhite.copy(alpha = 0.08f)
+                ) { _ ->
+                    Icon(
+                        imageVector = if (isMaximized) Icons.Rounded.WebAsset else Icons.Rounded.CropSquare,
+                        contentDescription = if (isMaximized) "Restaurer" else "Agrandir",
+                        tint = PureWhite.copy(alpha = 0.75f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+
+                // Fermer (Fond rouge au survol)
+                TitleBarButton(
+                    onClick = onClose,
+                    hoverBackground = Color(0xFFE81123)
+                ) { isHovered ->
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Fermer",
+                        tint = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.75f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
