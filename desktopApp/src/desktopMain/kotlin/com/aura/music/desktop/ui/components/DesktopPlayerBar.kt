@@ -88,16 +88,18 @@ fun DesktopPlayerBar(
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable {
-                                currentTrack?.artistName?.let { appState.openArtist("artist:$it") }
-                            }
+                            modifier = Modifier
+                                .handCursor()
+                                .clickable {
+                                    currentTrack?.artistName?.let { appState.openArtist("artist:$it") }
+                                }
                         )
                     }
                     if (currentTrack != null) {
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = { onToggleLike(currentTrack.trackId) },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(36.dp).handCursor()
                         ) {
                             Icon(
                                 imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -123,7 +125,7 @@ fun DesktopPlayerBar(
                         // Shuffle
                         IconButton(
                             onClick = { orchestrator.toggleShuffle() },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(32.dp).handCursor()
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Shuffle,
@@ -136,7 +138,7 @@ fun DesktopPlayerBar(
                         // Previous
                         IconButton(
                             onClick = { orchestrator.previous() },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(36.dp).handCursor()
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.SkipPrevious,
@@ -154,6 +156,7 @@ fun DesktopPlayerBar(
                                 .size(42.dp)
                                 .clip(CircleShape)
                                 .background(BlazeOrange)
+                                .handCursor(!isBuffering)
                                 .clickable(enabled = !isBuffering) { orchestrator.togglePlayPause() },
                             contentAlignment = Alignment.Center
                         ) {
@@ -176,7 +179,7 @@ fun DesktopPlayerBar(
                         // Next
                         IconButton(
                             onClick = { orchestrator.next() },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(36.dp).handCursor()
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.SkipNext,
@@ -189,7 +192,7 @@ fun DesktopPlayerBar(
                         // Repeat
                         IconButton(
                             onClick = { orchestrator.toggleRepeat() },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(32.dp).handCursor()
                         ) {
                             val repeatIcon = if (queueState.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
                             val repeatTint = if (queueState.repeatMode != RepeatMode.Off) BlazeOrange else PureWhite.copy(alpha = 0.5f)
@@ -233,7 +236,7 @@ fun DesktopPlayerBar(
                                 val targetMs = (seekPosition * uiState.durationMs).toLong()
                                 orchestrator.seekTo(targetMs)
                             },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).handCursor(),
                             activeColor = BlazeOrange,
                             inactiveColor = DarkGraphite
                         )
@@ -256,7 +259,7 @@ fun DesktopPlayerBar(
                     // Bouton Queue Drawer
                     IconButton(
                         onClick = { appState.toggleQueue() },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(36.dp).handCursor()
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.QueueMusic,
@@ -282,7 +285,7 @@ fun DesktopPlayerBar(
                                 orchestrator.setVolume(0f)
                             }
                         },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp).handCursor()
                     ) {
                         val volIcon = when {
                             volume == 0f || isMuted -> Icons.Rounded.VolumeOff
@@ -306,7 +309,7 @@ fun DesktopPlayerBar(
                             isMuted = it == 0f
                             orchestrator.setVolume(it)
                         },
-                        modifier = Modifier.width(90.dp),
+                        modifier = Modifier.width(90.dp).handCursor(),
                         activeColor = PureWhite.copy(alpha = 0.8f),
                         inactiveColor = DarkGraphite
                     )

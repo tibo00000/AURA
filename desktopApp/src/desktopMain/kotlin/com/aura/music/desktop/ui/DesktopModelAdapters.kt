@@ -1,6 +1,9 @@
 package com.aura.music.desktop.ui
 
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.local.TrackListRow
@@ -41,4 +44,11 @@ fun formatDuration(ms: Long): String {
     val seconds = totalSeconds % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
+
+/**
+ * Applique le curseur main (Hand) au survol d'un élément cliquable / interactif sous Desktop.
+ */
+fun Modifier.handCursor(enabled: Boolean = true): Modifier =
+    if (enabled) this.pointerHoverIcon(PointerIcon.Hand) else this
+
 

@@ -10,7 +10,9 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.aura.music.desktop.ui.handCursor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -440,7 +442,7 @@ private fun HeaderSortableColumn(
     val isActive = activeField == field
 
     Row(
-        modifier = modifier.clickable { onClick(field) },
+        modifier = modifier.handCursor().clickable { onClick(field) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = horizontalArrangement
     ) {
@@ -503,6 +505,7 @@ fun TrackTableRowItem(
                 }
             )
             .hoverable(interactionSource)
+            .handCursor()
             .combinedClickable(
                 onClick = onPlay,
                 onDoubleClick = onPlay,
@@ -598,6 +601,7 @@ fun TrackTableRowItem(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1.8f)
+                .handCursor()
                 .clickable { onOpenArtist() }
         )
 
@@ -610,6 +614,7 @@ fun TrackTableRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1.8f)
+                    .handCursor()
                     .clickable { onOpenAlbum() }
             )
         }
@@ -632,6 +637,7 @@ fun TrackTableRowItem(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(CircleShape)
+                    .handCursor()
                     .clickable(onClick = onToggleLike),
                 contentAlignment = Alignment.Center
             ) {
@@ -659,6 +665,7 @@ fun TrackTableRowItem(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
+                    .handCursor()
                     .clickable(onClick = onContextMenu),
                 contentAlignment = Alignment.Center
             ) {

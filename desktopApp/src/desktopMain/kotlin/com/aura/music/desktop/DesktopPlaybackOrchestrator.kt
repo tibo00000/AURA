@@ -111,9 +111,22 @@ class DesktopPlaybackOrchestrator(
     fun disconnect() {
         progressJob?.cancel()
         snapshotDebounceJob?.cancel()
+        try {
+            runBlocking(NonCancellable + Dispatchers.IO) {
+                val result = withTimeoutOrNull(800L) {
+                    saveSnapshotDirect()
+                }
+                if (result == null) {
+                    System.err.println("WARN: Snapshot save timed out (>800ms) on disconnect.")
+                }
+            }
+        } catch (e: Exception) {
+            System.err.println("Error flushing snapshot on disconnect: ${e.message}")
+        }
         audioPlayer.stop()
         downloadManager?.stopLoop()
         cloudSyncManager?.stopLoop()
+        scope.cancel()
     }
 
     // =======================================================================
@@ -144,9 +157,9 @@ class DesktopPlaybackOrchestrator(
                         coverUri = track.coverUri
                     )
                     if (cachedFile != null && cachedFile.exists()) {
+                        audioPlayer.play(cachedFile.toURI().toString())
+                        scheduleDebouncedSnapshotSave()
                         withContext(Dispatchers.Main) {
-                            audioPlayer.play(cachedFile.toURI().toString())
-                            scheduleDebouncedSnapshotSave()
                             syncUiState(PlaybackState.Playing)
                         }
                     } else {
@@ -424,43 +437,47 @@ class DesktopPlaybackOrchestrator(
         }
     }
 
+    suspend fun saveSnapshotDirect() = withContext(Dispatchers.IO) {
+        val state = queueManager.state.value
+        val currentPos = audioPlayer.getCurrentPosition()
+        database.playbackSnapshotDao().upsert(
+            PlaybackSnapshotEntity(
+                id = "active",
+                currentTrackId = state.currentTrack?.trackId,
+                playbackContextType = state.context?.type,
+                playbackContextId = state.context?.id,
+                playbackContextIndex = state.context?.currentIndex,
+                positionMs = currentPos,
+                shuffleEnabled = state.shuffleEnabled,
+                repeatMode = state.repeatMode.name.lowercase(),
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+
+        val token = apiToken
+        if (token != null) {
+            try {
+                apiService.updatePlaybackSnapshot(
+                    token = token,
+                    snapshot = com.aura.music.data.network.PlaybackSnapshotResponse(
+                        currentTrackId = state.currentTrack?.trackId,
+                        playbackContextType = state.context?.type,
+                        playbackContextId = state.context?.id,
+                        playbackContextIndex = state.context?.currentIndex,
+                        positionMs = currentPos,
+                        shuffleEnabled = state.shuffleEnabled,
+                        repeatMode = state.repeatMode.name.lowercase()
+                    )
+                )
+            } catch (e: Exception) {
+                System.err.println("Failed to sync playback snapshot to backend: ${e.message}")
+            }
+        }
+    }
+
     fun saveSnapshot() {
         scope.launch(Dispatchers.IO) {
-            val state = queueManager.state.value
-            val currentPos = audioPlayer.getCurrentPosition()
-            database.playbackSnapshotDao().upsert(
-                PlaybackSnapshotEntity(
-                    id = "active",
-                    currentTrackId = state.currentTrack?.trackId,
-                    playbackContextType = state.context?.type,
-                    playbackContextId = state.context?.id,
-                    playbackContextIndex = state.context?.currentIndex,
-                    positionMs = currentPos,
-                    shuffleEnabled = state.shuffleEnabled,
-                    repeatMode = state.repeatMode.name.lowercase(),
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
-
-            val token = apiToken
-            if (token != null) {
-                try {
-                    apiService.updatePlaybackSnapshot(
-                        token = token,
-                        snapshot = com.aura.music.data.network.PlaybackSnapshotResponse(
-                            currentTrackId = state.currentTrack?.trackId,
-                            playbackContextType = state.context?.type,
-                            playbackContextId = state.context?.id,
-                            playbackContextIndex = state.context?.currentIndex,
-                            positionMs = currentPos,
-                            shuffleEnabled = state.shuffleEnabled,
-                            repeatMode = state.repeatMode.name.lowercase()
-                        )
-                    )
-                } catch (e: Exception) {
-                    System.err.println("Failed to sync playback snapshot to backend: ${e.message}")
-                }
-            }
+            saveSnapshotDirect()
         }
     }
 
@@ -732,47 +749,6 @@ class DesktopPlaybackOrchestrator(
         }
     }
 
-    private fun parseBasicTags(file: File): Triple<String, String, String?> {
-        var title = ""
-        var artist = ""
-        var album = ""
-
-        if (file.extension.lowercase() == "mp3" && file.length() > 128) {
-            try {
-                file.inputStream().use { input ->
-                    input.skip(file.length() - 128)
-                    val buffer = ByteArray(128)
-                    val read = input.read(buffer)
-                    if (read == 128 && buffer[0] == 'T'.toByte() && buffer[1] == 'A'.toByte() && buffer[2] == 'G'.toByte()) {
-                        title = String(buffer, 3, 30, StandardCharsets.ISO_8859_1).trim()
-                        artist = String(buffer, 33, 30, StandardCharsets.ISO_8859_1).trim()
-                        album = String(buffer, 63, 30, StandardCharsets.ISO_8859_1).trim()
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-
-        title = title.replace("\u0000", "").trim()
-        artist = artist.replace("\u0000", "").trim()
-        album = album.replace("\u0000", "").trim()
-
-        if (title.isEmpty() || artist.isEmpty()) {
-            val nameWithoutExtension = file.nameWithoutExtension
-            if (nameWithoutExtension.contains(" - ")) {
-                val parts = nameWithoutExtension.split(" - ", limit = 2)
-                artist = parts[0].trim()
-                title = parts[1].trim()
-            } else {
-                artist = "Artiste Inconnu"
-                title = nameWithoutExtension.trim()
-            }
-        }
-        val displayAlbum = if (album.isBlank()) null else album
-        return Triple(title, artist, displayAlbum)
-    }
-
     // =======================================================================
     // DÉLÉGATIONS PRATIQUES POUR LES COMPOSANTS UI
     // =======================================================================
@@ -854,7 +830,7 @@ class DesktopPlaybackOrchestrator(
     }
 
     suspend fun syncCloudData(token: String, onFinished: (() -> Unit)? = null) =
-        cloudSyncManager?.performCloudSync(token, onFinished)
+        performCloudSync(token, onFinished)
 
     suspend fun performCloudSync(token: String, onFinished: (() -> Unit)? = null) =
         cloudSyncManager?.performCloudSync(token, onFinished)
@@ -878,11 +854,3 @@ class DesktopPlaybackOrchestrator(
     fun clearStreamCache(): Long =
         cloudSyncManager?.clearStreamCache() ?: 0L
 }
-
-private data class ScannedTrackInfo(
-    val file: File,
-    val title: String,
-    val artist: String,
-    val album: String?,
-    val coverUri: String?
-)

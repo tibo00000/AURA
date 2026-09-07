@@ -36,11 +36,12 @@ fun SettingsScreen(
     orchestrator: DesktopPlaybackOrchestrator,
     appState: DesktopAppState,
     secureStorage: DesktopSecureStorage,
+    authSessionManager: DesktopAuthSessionManager? = null,
     onReloadData: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val authManager = remember { DesktopAuthSessionManager(secureStorage, coroutineScope) }
+    val authManager = authSessionManager ?: remember { DesktopAuthSessionManager(secureStorage, coroutineScope) }
     val authState by authManager.authState.collectAsState()
 
     var email by remember { mutableStateOf("") }
@@ -151,7 +152,9 @@ fun SettingsScreen(
 
                                 OutlinedButton(
                                     onClick = {
-                                        authManager.logout()
+                                        authManager.logout {
+                                            orchestrator.clearStreamCache()
+                                        }
                                         orchestrator.apiToken = null
                                         authMessage = "Déconnexion effectuée."
                                         isError = false

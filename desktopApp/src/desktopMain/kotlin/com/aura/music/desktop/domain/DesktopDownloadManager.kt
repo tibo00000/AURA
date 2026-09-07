@@ -29,6 +29,17 @@ class DesktopDownloadManager(
     private var downloadSyncJob: Job? = null
     private val activeJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val failedJobFetchIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val cancelledJobIds = java.util.Collections.synchronizedSet(
+        object : java.util.LinkedHashSet<String>() {
+            override fun add(element: String): Boolean {
+                if (size >= 100) {
+                    val first = iterator().next()
+                    remove(first)
+                }
+                return super.add(element)
+            }
+        }
+    )
 
     fun startLoop(intervalMs: Long = 3000L) {
         downloadSyncJob?.cancel()
@@ -94,6 +105,8 @@ class DesktopDownloadManager(
     }
 
     suspend fun cancelJob(jobId: String) = withContext(Dispatchers.IO) {
+        cancelledJobIds.add(jobId)
+        activeJobIds.remove(jobId)
         database.downloadJobDao().deleteJob(jobId)
     }
 
@@ -108,10 +121,19 @@ class DesktopDownloadManager(
             val items = response.data?.items ?: return@withContext false
             val now = System.currentTimeMillis()
 
+            // Purge les IDs qui ne sont plus retournés par le serveur
+            val currentRemoteJobIds = items.map { it.id }.toSet()
+            cancelledJobIds.retainAll(currentRemoteJobIds)
+
             val jobsToUpsert = mutableListOf<DownloadJobEntity>()
             val tracksToInsert = mutableListOf<TrackEntity>()
 
             for (item in items) {
+                // Ne pas réinsérer un job annulé localement
+                if (cancelledJobIds.contains(item.id)) {
+                    continue
+                }
+
                 val trackExists = database.trackDao().getRawTrackById(item.trackId) != null
                 val isFinished = item.status == "succeeded" || item.status == "completed" || item.status == "failed"
 

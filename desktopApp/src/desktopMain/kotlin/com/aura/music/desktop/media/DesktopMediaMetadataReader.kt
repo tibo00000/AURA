@@ -2,6 +2,8 @@ package com.aura.music.desktop.media
 
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -139,10 +141,30 @@ object DesktopMediaMetadataReader {
                         val mpegVersion = (b1 shr 3) and 0x03
                         val layer = (b1 shr 1) and 0x03
                         val bitrateIndex = (b2 shr 4) and 0x0F
+                        val sampleRateIndex = (b2 shr 2) and 0x03
 
-                        if (mpegVersion == 3 && layer == 1 && bitrateIndex in 1..14) {
+                        if (mpegVersion == 3 && layer == 1 && bitrateIndex in 1..14 && sampleRateIndex in 0..2) {
+                            val sampleRates = intArrayOf(44100, 48000, 32000)
+                            val sampleRate = sampleRates[sampleRateIndex]
                             val bitrates = intArrayOf(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
                             val bitrateKbps = bitrates[bitrateIndex]
+
+                            // Check Xing / Info VBR header
+                            val channelMode = (buffer[i + 3].toInt() and 0xC0) shr 6
+                            val xingOffset = i + 4 + if (channelMode == 3) 17 else 32
+                            if (xingOffset + 12 <= bytesRead) {
+                                val xingHeader = String(buffer, xingOffset, 4, StandardCharsets.ISO_8859_1)
+                                if (xingHeader == "Xing" || xingHeader == "Info") {
+                                    val flags = readUInt32BE(buffer, xingOffset + 4)
+                                    val hasFrames = (flags and 0x01L) != 0L
+                                    if (hasFrames && sampleRate > 0) {
+                                        val frameCount = readUInt32BE(buffer, xingOffset + 8)
+                                        val duration = (frameCount * 1152L * 1000L) / sampleRate
+                                        if (duration > 0L) return duration
+                                    }
+                                }
+                            }
+
                             if (bitrateKbps > 0) {
                                 return (audioDataSize * 8000L) / (bitrateKbps * 1000L)
                             }
@@ -245,36 +267,131 @@ object DesktopMediaMetadataReader {
     // =======================================================================
 
     private fun readFlacMetadata(file: File): ExtractedAudioMetadata {
-        val fallback = fallbackMetadata(file)
-        return fallback
-    }
-
-    // =======================================================================
-    // PARSER MP4 / M4A (Atoms)
-    // =======================================================================
-
-    private fun readMp4Metadata(file: File): ExtractedAudioMetadata {
+        var title: String? = null
+        var artist: String? = null
+        var album: String? = null
+        var trackNumber: Int? = null
+        var year: Int? = null
         var durationMs = 0L
+        var coverUri: String? = null
+
         try {
             RandomAccessFile(file, "r").use { raf ->
-                val length = raf.length().coerceAtMost(512 * 1024L)
-                val buffer = ByteArray(length.toInt())
-                raf.readFully(buffer)
-                val mvhdStr = byteArrayOf('m'.code.toByte(), 'v'.code.toByte(), 'h'.code.toByte(), 'd'.code.toByte())
-                val idx = indexOf(buffer, mvhdStr)
-                if (idx != -1 && idx + 28 <= buffer.size) {
-                    val version = buffer[idx + 4].toInt()
-                    if (version == 0 && idx + 24 <= buffer.size) {
-                        val timescale = readUInt32BE(buffer, idx + 16)
-                        val duration = readUInt32BE(buffer, idx + 20)
-                        if (timescale > 0L) {
-                            durationMs = (duration * 1000L) / timescale
+                val magic = ByteArray(4)
+                raf.readFully(magic)
+                if (magic[0] != 'f'.code.toByte() || magic[1] != 'L'.code.toByte() ||
+                    magic[2] != 'a'.code.toByte() || magic[3] != 'C'.code.toByte()
+                ) {
+                    return fallbackMetadata(file)
+                }
+
+                var isLastBlock = false
+                while (!isLastBlock && raf.filePointer < raf.length()) {
+                    val header = ByteArray(4)
+                    if (raf.read(header) < 4) break
+                    isLastBlock = (header[0].toInt() and 0x80) != 0
+                    val blockType = header[0].toInt() and 0x7F
+                    val blockSize = ((header[1].toInt() and 0xFF) shl 16) or
+                            ((header[2].toInt() and 0xFF) shl 8) or
+                            (header[3].toInt() and 0xFF)
+
+                    if (blockSize <= 0) break
+
+                    when (blockType) {
+                        0 -> { // STREAMINFO
+                            if (blockSize >= 18) {
+                                val streamInfo = ByteArray(blockSize)
+                                raf.readFully(streamInfo)
+                                // Sample rate (20 bits), channels (3 bits), bits per sample (5 bits), total samples (36 bits)
+                                val b10 = streamInfo[10].toLong() and 0xFF
+                                val b11 = streamInfo[11].toLong() and 0xFF
+                                val b12 = streamInfo[12].toLong() and 0xFF
+                                val sampleRate = (b10 shl 12) or (b11 shl 4) or (b12 shr 4)
+
+                                val b13 = streamInfo[13].toLong() and 0xFF
+                                val b14 = streamInfo[14].toLong() and 0xFF
+                                val b15 = streamInfo[15].toLong() and 0xFF
+                                val b16 = streamInfo[16].toLong() and 0xFF
+                                val b17 = streamInfo[17].toLong() and 0xFF
+                                val totalSamples = ((b13 and 0x0F) shl 32) or (b14 shl 24) or (b15 shl 16) or (b16 shl 8) or b17
+
+                                if (sampleRate > 0) {
+                                    durationMs = (totalSamples * 1000L) / sampleRate
+                                }
+                            } else {
+                                raf.skipBytes(blockSize)
+                            }
                         }
-                    } else if (version == 1 && idx + 36 <= buffer.size) {
-                        val timescale = readUInt32BE(buffer, idx + 24)
-                        val duration = readUInt64BE(buffer, idx + 28)
-                        if (timescale > 0L) {
-                            durationMs = (duration * 1000L) / timescale
+                        4 -> { // VORBIS_COMMENT
+                            val commentData = ByteArray(blockSize)
+                            raf.readFully(commentData)
+                            val bb = ByteBuffer.wrap(commentData).order(ByteOrder.LITTLE_ENDIAN)
+                            if (bb.remaining() >= 4) {
+                                val vendorLength = bb.int
+                                if (vendorLength in 0..bb.remaining()) {
+                                    bb.position(bb.position() + vendorLength)
+                                    if (bb.remaining() >= 4) {
+                                        val userCommentListLength = bb.int
+                                        for (c in 0 until userCommentListLength) {
+                                            if (bb.remaining() < 4) break
+                                            val commentLength = bb.int
+                                            if (commentLength < 0 || commentLength > bb.remaining()) break
+                                            val commentBytes = ByteArray(commentLength)
+                                            bb.get(commentBytes)
+                                            val comment = String(commentBytes, StandardCharsets.UTF_8)
+                                            val eqIdx = comment.indexOf('=')
+                                            if (eqIdx != -1) {
+                                                val key = comment.substring(0, eqIdx).uppercase()
+                                                val value = comment.substring(eqIdx + 1).trim()
+                                                when (key) {
+                                                    "TITLE" -> if (title.isNullOrBlank()) title = value
+                                                    "ARTIST" -> if (artist.isNullOrBlank()) artist = value
+                                                    "ALBUM" -> if (album.isNullOrBlank()) album = value
+                                                    "TRACKNUMBER" -> if (trackNumber == null) trackNumber = value.split('/').firstOrNull()?.toIntOrNull()
+                                                    "DATE", "YEAR" -> if (year == null) year = value.take(4).toIntOrNull()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        6 -> { // PICTURE
+                            if (coverUri == null && blockSize in 32..(20 * 1024 * 1024)) {
+                                val picData = ByteArray(blockSize)
+                                raf.readFully(picData)
+                                val bb = ByteBuffer.wrap(picData).order(ByteOrder.BIG_ENDIAN)
+                                if (bb.remaining() >= 8) {
+                                    bb.int // picture type
+                                    val mimeLength = bb.int
+                                    if (mimeLength in 0..bb.remaining()) {
+                                        bb.position(bb.position() + mimeLength)
+                                        if (bb.remaining() >= 4) {
+                                            val descLength = bb.int
+                                            if (descLength in 0..bb.remaining()) {
+                                                bb.position(bb.position() + descLength)
+                                                if (bb.remaining() >= 20) {
+                                                    bb.position(bb.position() + 16) // width, height, color depth, colors used
+                                                    val dataLength = bb.int
+                                                    if (dataLength in 1..bb.remaining()) {
+                                                        val imageBytes = ByteArray(dataLength)
+                                                        bb.get(imageBytes)
+                                                        val hash = hashString("${file.absolutePath}_cover")
+                                                        val coverFile = File(coversDir, "$hash.jpg")
+                                                        coverFile.writeBytes(imageBytes)
+                                                        coverUri = coverFile.toURI().toString()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                raf.skipBytes(blockSize)
+                            }
+                        }
+                        else -> {
+                            raf.skipBytes(blockSize)
                         }
                     }
                 }
@@ -284,7 +401,200 @@ object DesktopMediaMetadataReader {
         }
 
         val fallback = fallbackMetadata(file)
-        return fallback.copy(durationMs = durationMs)
+        return ExtractedAudioMetadata(
+            title = title?.trim()?.ifBlank { fallback.title } ?: fallback.title,
+            artist = artist?.trim()?.ifBlank { fallback.artist } ?: fallback.artist,
+            album = album?.trim()?.ifBlank { null },
+            trackNumber = trackNumber,
+            year = year,
+            durationMs = durationMs,
+            localCoverUri = coverUri
+        )
+    }
+
+    // =======================================================================
+    // PARSER MP4 / M4A (Atoms)
+    // =======================================================================
+
+    private fun readMp4Metadata(file: File): ExtractedAudioMetadata {
+        var title: String? = null
+        var artist: String? = null
+        var album: String? = null
+        var trackNumber: Int? = null
+        var year: Int? = null
+        var durationMs = 0L
+        var coverUri: String? = null
+
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                parseMp4Atoms(
+                    raf = raf,
+                    start = 0L,
+                    end = raf.length(),
+                    onMetadata = { t, a, al, tr, yr, d, c ->
+                        if (t != null) title = t
+                        if (a != null) artist = a
+                        if (al != null) album = al
+                        if (tr != null) trackNumber = tr
+                        if (yr != null) year = yr
+                        if (d > 0L) durationMs = d
+                        if (c != null) coverUri = c
+                    },
+                    sourceFile = file
+                )
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+
+        val fallback = fallbackMetadata(file)
+        return ExtractedAudioMetadata(
+            title = title?.trim()?.ifBlank { fallback.title } ?: fallback.title,
+            artist = artist?.trim()?.ifBlank { fallback.artist } ?: fallback.artist,
+            album = album?.trim()?.ifBlank { null },
+            trackNumber = trackNumber,
+            year = year,
+            durationMs = durationMs,
+            localCoverUri = coverUri
+        )
+    }
+
+    private fun parseMp4Atoms(
+        raf: RandomAccessFile,
+        start: Long,
+        end: Long,
+        onMetadata: (title: String?, artist: String?, album: String?, track: Int?, year: Int?, duration: Long, cover: String?) -> Unit,
+        sourceFile: File
+    ) {
+        var pos = start
+        while (pos + 8 <= end) {
+            raf.seek(pos)
+            val header = ByteArray(8)
+            if (raf.read(header) < 8) break
+            var size = readUInt32BE(header, 0)
+            val type = String(header, 4, 4, StandardCharsets.ISO_8859_1)
+
+            val headerSize: Long
+            if (size == 1L) {
+                // Extended 64-bit size
+                val ext = ByteArray(8)
+                if (raf.read(ext) < 8) break
+                size = readUInt64BE(ext, 0)
+                headerSize = 16L
+            } else if (size == 0L) {
+                size = end - pos
+                headerSize = 8L
+            } else {
+                headerSize = 8L
+            }
+
+            if (size < headerSize) break
+            val atomEnd = pos + size
+            val payloadStart = pos + headerSize
+            val payloadSize = size - headerSize
+
+            when (type) {
+                "moov", "trak", "mdia", "minf", "stbl", "udta" -> {
+                    // Container atoms: recurse
+                    parseMp4Atoms(raf, payloadStart, atomEnd, onMetadata, sourceFile)
+                }
+                "meta" -> {
+                    // meta atom has 4 bytes flags/version before child atoms
+                    val metaChildStart = payloadStart + 4
+                    if (metaChildStart < atomEnd) {
+                        parseMp4Atoms(raf, metaChildStart, atomEnd, onMetadata, sourceFile)
+                    }
+                }
+                "ilst" -> {
+                    parseIlst(raf, payloadStart, atomEnd, onMetadata, sourceFile)
+                }
+                "mvhd" -> {
+                    if (payloadSize >= 20) {
+                        raf.seek(payloadStart)
+                        val mvhdBuf = ByteArray(payloadSize.coerceAtMost(36).toInt())
+                        raf.readFully(mvhdBuf)
+                        val version = mvhdBuf[0].toInt()
+                        var durationMs = 0L
+                        if (version == 0 && mvhdBuf.size >= 24) {
+                            val timescale = readUInt32BE(mvhdBuf, 12)
+                            val duration = readUInt32BE(mvhdBuf, 16)
+                            if (timescale > 0L) durationMs = (duration * 1000L) / timescale
+                        } else if (version == 1 && mvhdBuf.size >= 36) {
+                            val timescale = readUInt32BE(mvhdBuf, 20)
+                            val duration = readUInt64BE(mvhdBuf, 24)
+                            if (timescale > 0L) durationMs = (duration * 1000L) / timescale
+                        }
+                        if (durationMs > 0L) {
+                            onMetadata(null, null, null, null, null, durationMs, null)
+                        }
+                    }
+                }
+                "mdat" -> {
+                    // Skip mdat in O(1) without reading into memory!
+                }
+            }
+
+            pos = atomEnd
+        }
+    }
+
+    private fun parseIlst(
+        raf: RandomAccessFile,
+        start: Long,
+        end: Long,
+        onMetadata: (title: String?, artist: String?, album: String?, track: Int?, year: Int?, duration: Long, cover: String?) -> Unit,
+        sourceFile: File
+    ) {
+        var pos = start
+        while (pos + 8 <= end) {
+            raf.seek(pos)
+            val header = ByteArray(8)
+            if (raf.read(header) < 8) break
+            val size = readUInt32BE(header, 0)
+            val tag = String(header, 4, 4, StandardCharsets.ISO_8859_1)
+
+            if (size < 8) break
+            val tagEnd = pos + size
+            val tagPayloadStart = pos + 8
+
+            // Each ilst child contains a "data" atom
+            raf.seek(tagPayloadStart)
+            val dataHeader = ByteArray(8)
+            if (raf.read(dataHeader) == 8) {
+                val dataSize = readUInt32BE(dataHeader, 0)
+                val dataType = String(dataHeader, 4, 4, StandardCharsets.ISO_8859_1)
+                if (dataType == "data" && dataSize >= 16) {
+                    val typeIndicator = ByteArray(4)
+                    raf.readFully(typeIndicator)
+                    val locale = ByteArray(4)
+                    raf.readFully(locale)
+                    val valueSize = (dataSize - 16).coerceAtMost(10 * 1024 * 1024).toInt()
+                    val valueBytes = ByteArray(valueSize)
+                    raf.readFully(valueBytes)
+
+                    when (tag) {
+                        "\u00a9nam" -> onMetadata(String(valueBytes, StandardCharsets.UTF_8), null, null, null, null, 0L, null)
+                        "\u00a9ART", "aART" -> onMetadata(null, String(valueBytes, StandardCharsets.UTF_8), null, null, null, 0L, null)
+                        "\u00a9alb" -> onMetadata(null, null, String(valueBytes, StandardCharsets.UTF_8), null, null, 0L, null)
+                        "\u00a9day" -> onMetadata(null, null, null, null, String(valueBytes, StandardCharsets.UTF_8).take(4).toIntOrNull(), 0L, null)
+                        "trkn" -> {
+                            if (valueBytes.size >= 4) {
+                                val trk = ((valueBytes[2].toInt() and 0xFF) shl 8) or (valueBytes[3].toInt() and 0xFF)
+                                onMetadata(null, null, null, trk, null, 0L, null)
+                            }
+                        }
+                        "covr" -> {
+                            val hash = hashString("${sourceFile.absolutePath}_cover")
+                            val coverFile = File(coversDir, "$hash.jpg")
+                            coverFile.writeBytes(valueBytes)
+                            onMetadata(null, null, null, null, null, 0L, coverFile.toURI().toString())
+                        }
+                    }
+                }
+            }
+
+            pos = tagEnd
+        }
     }
 
     fun detectAudioExtension(file: File, contentType: String? = null): String {

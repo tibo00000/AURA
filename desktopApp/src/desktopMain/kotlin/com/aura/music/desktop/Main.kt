@@ -22,6 +22,8 @@ import com.aura.music.data.player.QueueManager
 import com.aura.music.desktop.domain.DesktopCloudSyncManager
 import com.aura.music.desktop.domain.DesktopDownloadManager
 import com.aura.music.desktop.domain.DesktopPlaylistManager
+import com.aura.music.desktop.security.DesktopAuthSessionManager
+import com.aura.music.desktop.security.DesktopAuthState
 import com.aura.music.desktop.security.DesktopSecureStorage
 import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.*
@@ -51,6 +53,8 @@ fun main() = application {
     val downloadManager = remember { DesktopDownloadManager(database, apiService, coroutineScope) }
     val playlistManager = remember { DesktopPlaylistManager(database, cloudSyncManager) }
 
+    val authSessionManager = remember { DesktopAuthSessionManager(secureStorage, coroutineScope) }
+
     val orchestrator = remember {
         DesktopPlaybackOrchestrator(
             database = database,
@@ -61,14 +65,7 @@ fun main() = application {
             cloudSyncManager = cloudSyncManager,
             downloadManager = downloadManager
         ).apply {
-            val savedToken = secureStorage.getSecret("supabase_token")
-            apiToken = if (savedToken != null && !savedToken.contains("supabase_token_")) {
-                savedToken
-            } else {
-                val defaultToken = "Bearer 12345678-1234-1234-1234-1234567890ab"
-                secureStorage.saveSecret("supabase_token", defaultToken)
-                defaultToken
-            }
+            apiToken = authSessionManager.getBearerToken()
         }
     }
 
@@ -138,6 +135,24 @@ fun main() = application {
 
     LaunchedEffect(isVisible) {
         orchestrator.isWindowVisible = isVisible
+    }
+
+    val authState by authSessionManager.authState.collectAsState()
+    LaunchedEffect(authState) {
+        val currentAuth = authState
+        if (currentAuth is DesktopAuthState.Authenticated) {
+            val bearerToken = authSessionManager.getBearerToken()
+            orchestrator.apiToken = bearerToken
+            if (bearerToken != null) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    cloudSyncManager.performCloudSync(bearerToken) {
+                        refreshHistory()
+                    }
+                }
+            }
+        } else if (currentAuth is DesktopAuthState.Unauthenticated) {
+            orchestrator.apiToken = null
+        }
     }
 
     // Intégration System Tray
@@ -270,7 +285,8 @@ fun main() = application {
                     onPrimary = PureWhite,
                     onBackground = PureWhite,
                     onSurface = PureWhite
-                )
+                ),
+                typography = getAuraTypography()
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -383,6 +399,7 @@ fun main() = application {
                                         orchestrator = orchestrator,
                                         appState = appState,
                                         secureStorage = secureStorage,
+                                        authSessionManager = authSessionManager,
                                         onReloadData = { }
                                     )
                                 }

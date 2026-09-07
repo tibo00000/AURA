@@ -61,6 +61,7 @@ class DesktopPlaylistManager(
         val trimmed = newName.trim().ifBlank { "Playlist" }
         val now = System.currentTimeMillis()
         val opId = "outbox_pl_ren_${UUID.randomUUID().toString().take(12)}"
+        val payload = """{"name":"${trimmed.replace("\"", "\\\"")}"}"""
 
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
@@ -71,7 +72,7 @@ class DesktopPlaylistManager(
                         entityType = "playlist",
                         entityId = id,
                         operationType = "update",
-                        payloadJson = trimmed,
+                        payloadJson = payload,
                         status = "pending",
                         createdAt = now,
                         updatedAt = now

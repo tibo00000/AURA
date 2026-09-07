@@ -104,3 +104,11 @@ class PlaylistItemCreate(BaseModel):
     added_from_context_type: Optional[str] = None
     added_from_context_id: Optional[str] = None
 
+
+class PlaylistUpdate(BaseModel):
+    """Request model to update an existing playlist."""
+    name: Optional[str] = None
+    cover_uri: Optional[str] = None
+    is_pinned: Optional[bool] = None
+
+

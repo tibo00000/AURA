@@ -22,48 +22,83 @@ class DesktopAudioPlayer : AudioPlayer {
         }
     }
 
-    override fun play(uri: String) {
-        stop()
+    private fun runOnFxThread(action: () -> Unit) {
         try {
-            val mediaUrl = if (uri.startsWith("file:") || uri.startsWith("http:") || uri.startsWith("https:")) {
-                uri
+            if (Platform.isFxApplicationThread()) {
+                action()
             } else {
-                File(uri).toURI().toString()
-            }
-            
-            val media = Media(mediaUrl)
-            mediaPlayer = MediaPlayer(media).apply {
-                setOnEndOfMedia {
-                    isPlaying = false
-                    onCompletionListener?.invoke()
+                Platform.runLater {
+                    try {
+                        action()
+                    } catch (e: Exception) {
+                        onErrorListener?.invoke(e.message ?: "JavaFX error")
+                    }
                 }
-                setOnError {
-                    isPlaying = false
-                    onErrorListener?.invoke(getError()?.message ?: "JavaFX Media Error")
-                }
-                this@apply.play()
             }
-            isPlaying = true
         } catch (e: Exception) {
-            isPlaying = false
-            onErrorListener?.invoke(e.message ?: "Failed to play native audio")
+            onErrorListener?.invoke(e.message ?: "JavaFX Platform error")
+        }
+    }
+
+    override fun play(uri: String) {
+        val mediaUrl = if (uri.startsWith("file:") || uri.startsWith("http:") || uri.startsWith("https:")) {
+            uri
+        } else {
+            File(uri).toURI().toString()
+        }
+
+        runOnFxThread {
+            stopInternal()
+            try {
+                val media = Media(mediaUrl)
+                mediaPlayer = MediaPlayer(media).apply {
+                    setOnEndOfMedia {
+                        isPlaying = false
+                        onCompletionListener?.invoke()
+                    }
+                    setOnError {
+                        isPlaying = false
+                        onErrorListener?.invoke(getError()?.message ?: "JavaFX Media Error")
+                    }
+                    this@apply.play()
+                }
+                isPlaying = true
+            } catch (e: Exception) {
+                isPlaying = false
+                onErrorListener?.invoke(e.message ?: "Failed to play native audio")
+            }
         }
     }
 
     override fun pause() {
-        mediaPlayer?.pause()
-        isPlaying = false
+        runOnFxThread {
+            mediaPlayer?.pause()
+            isPlaying = false
+        }
+    }
+
+    private fun stopInternal() {
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.dispose()
+        } catch (e: Exception) {
+            // ignore
+        } finally {
+            mediaPlayer = null
+            isPlaying = false
+        }
     }
 
     override fun stop() {
-        mediaPlayer?.stop()
-        mediaPlayer?.dispose()
-        mediaPlayer = null
-        isPlaying = false
+        runOnFxThread {
+            stopInternal()
+        }
     }
 
     override fun seekTo(positionMs: Long) {
-        mediaPlayer?.seek(javafx.util.Duration.millis(positionMs.toDouble()))
+        runOnFxThread {
+            mediaPlayer?.seek(javafx.util.Duration.millis(positionMs.toDouble()))
+        }
     }
 
     override fun getDuration(): Long {
@@ -80,7 +115,9 @@ class DesktopAudioPlayer : AudioPlayer {
     override fun isPlaying(): Boolean = isPlaying
 
     override fun setVolume(volume: Float) {
-        mediaPlayer?.volume = volume.toDouble().coerceIn(0.0, 1.0)
+        runOnFxThread {
+            mediaPlayer?.volume = volume.toDouble().coerceIn(0.0, 1.0)
+        }
     }
 
     override fun getVolume(): Float {

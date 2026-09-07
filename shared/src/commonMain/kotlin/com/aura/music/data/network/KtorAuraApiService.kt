@@ -6,6 +6,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.delete
@@ -162,6 +163,12 @@ class KtorAuraApiService(
     }.body()
 
     override suspend fun createPlaylist(token: String, request: PlaylistCreate): AuraResponse<PlaylistResponse> = client.post("$cleanBaseUrl/me/playlists") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
+
+    override suspend fun updatePlaylist(token: String, id: String, request: PlaylistUpdate): AuraResponse<PlaylistResponse> = client.patch("$cleanBaseUrl/me/playlists/$id") {
         header("Authorization", token)
         contentType(ContentType.Application.Json)
         setBody(request)

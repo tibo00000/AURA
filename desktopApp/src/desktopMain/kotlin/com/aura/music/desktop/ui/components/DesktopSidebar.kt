@@ -48,6 +48,7 @@ fun DesktopSidebar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
+                .handCursor()
                 .clickable { appState.navigateToRoot("home") },
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -128,7 +129,7 @@ fun DesktopSidebar(
             )
             IconButton(
                 onClick = { appState.showCreatePlaylistDialog = true },
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(24.dp).handCursor()
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Add,
@@ -173,6 +174,7 @@ fun DesktopSidebar(
                                 }
                             )
                             .hoverable(interactionSource)
+                            .handCursor()
                             .clickable {
                                 if (onPlaylistSelected != null) {
                                     onPlaylistSelected(pl.id)
@@ -236,6 +238,7 @@ private fun SidebarNavItem(
                 }
             )
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically

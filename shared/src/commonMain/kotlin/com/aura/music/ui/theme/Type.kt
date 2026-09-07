@@ -13,7 +13,10 @@ import androidx.compose.runtime.Composable
 @Composable
 fun getOutfitFontFamily(): FontFamily {
     return FontFamily(
-        Font(Res.font.outfit, FontWeight.Normal)
+        Font(Res.font.outfit, FontWeight.Normal),
+        Font(Res.font.outfit, FontWeight.Medium),
+        Font(Res.font.outfit, FontWeight.SemiBold),
+        Font(Res.font.outfit, FontWeight.Bold)
     )
 }
 

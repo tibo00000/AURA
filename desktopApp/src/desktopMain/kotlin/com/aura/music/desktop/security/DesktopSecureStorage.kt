@@ -108,8 +108,11 @@ class JksSecureStorage : DesktopSecureStorage {
     }
     private val keystoreFile = File(storageDir, "vault.p12")
     private val dataFile = File(storageDir, "tokens.enc")
-    private val ksPassword = "aura_internal_keystore_pass".toCharArray()
+    private val ksPassword = (System.getProperty("user.name", "aura") + "_internal_vault_key").toCharArray()
     private val keyAlias = "aura_master_key"
+
+    @Volatile
+    private var cachedSecretKey: SecretKey? = null
 
     init {
         initKeyStoreIfNeeded()
@@ -119,6 +122,8 @@ class JksSecureStorage : DesktopSecureStorage {
         val ks = KeyStore.getInstance("PKCS12")
         if (keystoreFile.exists()) {
             keystoreFile.inputStream().use { ks.load(it, ksPassword) }
+            val entry = ks.getEntry(keyAlias, KeyStore.PasswordProtection(ksPassword)) as? KeyStore.SecretKeyEntry
+            cachedSecretKey = entry?.secretKey
         } else {
             ks.load(null, ksPassword)
             val keyGen = KeyGenerator.getInstance("AES")
@@ -131,14 +136,18 @@ class JksSecureStorage : DesktopSecureStorage {
             )
             keystoreFile.outputStream().use { ks.store(it, ksPassword) }
             protectFile(keystoreFile)
+            cachedSecretKey = secretKey
         }
     }
 
     private fun getSecretKey(): SecretKey {
+        cachedSecretKey?.let { return it }
         val ks = KeyStore.getInstance("PKCS12")
         keystoreFile.inputStream().use { ks.load(it, ksPassword) }
         val entry = ks.getEntry(keyAlias, KeyStore.PasswordProtection(ksPassword)) as KeyStore.SecretKeyEntry
-        return entry.secretKey
+        val key = entry.secretKey
+        cachedSecretKey = key
+        return key
     }
 
     @Synchronized

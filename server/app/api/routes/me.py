@@ -25,6 +25,7 @@ from app.schemas.me import (
     HistoryResponseData,
     PlaylistCreate,
     PlaylistItemCreate,
+    PlaylistUpdate,
 )
 from app.schemas.responses import ResponseEnvelope
 
@@ -477,6 +478,73 @@ async def create_playlist(
         ))
     except Exception as e:
         logger.error("Failed to create playlist %s for user %s: %s", payload.name, user_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}",
+        )
+
+
+@router.patch(
+    "/playlists/{id}",
+    response_model=ResponseEnvelope[PlaylistResponse],
+)
+async def patch_playlist(
+    id: str,
+    payload: PlaylistUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Update a playlist (name, cover, is_pinned).
+    """
+    user_id = current_user.id
+    ensure_profile(user_id)
+    try:
+        pl_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
+        if not pl_res.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Playlist with id {id} not found"
+            )
+        now = datetime.now(timezone.utc).isoformat()
+        update_data = {"updated_at": now}
+        if payload.name is not None:
+            update_data["name"] = payload.name
+        if payload.cover_uri is not None:
+            update_data["cover_uri"] = payload.cover_uri
+        if payload.is_pinned is not None:
+            update_data["is_pinned"] = payload.is_pinned
+
+        supabase.table("playlists").update(update_data).eq("user_id", user_id).eq("id", id).execute()
+
+        updated_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
+        updated_pl = updated_res.data[0]
+        items_res = supabase.table("playlist_items").select("*").eq("playlist_id", id).order("position").execute()
+        items = [
+            PlaylistItemResponse(
+                id=item["id"],
+                playlist_id=item["playlist_id"],
+                track_id=item["track_id"],
+                position=item["position"],
+                added_at=item["added_at"],
+                added_from_context_type=item.get("added_from_context_type"),
+                added_from_context_id=item.get("added_from_context_id"),
+            )
+            for item in (items_res.data or [])
+        ]
+        return ResponseEnvelope(data=PlaylistResponse(
+            id=id,
+            user_id=user_id,
+            name=updated_pl["name"],
+            cover_uri=updated_pl.get("cover_uri"),
+            is_pinned=updated_pl.get("is_pinned", False),
+            created_at=updated_pl["created_at"],
+            updated_at=updated_pl["updated_at"],
+            items=items
+        ))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to update playlist %s for user %s: %s", id, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error: {str(e)}",

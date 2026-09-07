@@ -54,6 +54,7 @@ import com.aura.music.desktop.ui.components.TrackSortField
 import com.aura.music.desktop.ui.components.TrackTableHeaderRow
 import com.aura.music.desktop.ui.components.TrackTableRowItem
 import com.aura.music.desktop.ui.formatDuration
+import com.aura.music.desktop.ui.handCursor
 import com.aura.music.desktop.utils.DesktopTrackMatcher
 import com.aura.music.domain.player.PlaybackState
 import com.aura.music.domain.search.SearchNormalizer
@@ -356,11 +357,14 @@ fun SearchScreen(
             },
             trailingIcon = {
                 if (appState.searchQuery.isNotBlank()) {
-                    IconButton(onClick = {
-                        appState.searchQuery = ""
-                        isSearchSubmitted = false
-                        onlineResults = null
-                    }) {
+                    IconButton(
+                        onClick = {
+                            appState.searchQuery = ""
+                            isSearchSubmitted = false
+                            onlineResults = null
+                        },
+                        modifier = Modifier.handCursor()
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = "Effacer",
@@ -519,6 +523,7 @@ fun SearchScreen(
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
+                                    .handCursor()
                                     .clickable {
                                         coroutineScope.launch(Dispatchers.IO) {
                                             orchestrator.database.recentSearchDao().clearAll()
@@ -544,6 +549,7 @@ fun SearchScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(if (isHovered) PureWhite.copy(alpha = 0.05f) else Color.Transparent)
                                         .hoverable(interactionSource)
+                                        .handCursor()
                                         .clickable {
                                             submitSearch(query)
                                         }
@@ -569,6 +575,7 @@ fun SearchScreen(
                                         modifier = Modifier
                                             .size(28.dp)
                                             .clip(CircleShape)
+                                            .handCursor()
                                             .clickable {
                                                 coroutineScope.launch(Dispatchers.IO) {
                                                     orchestrator.database.recentSearchDao().deleteQuery(query)
@@ -621,6 +628,7 @@ fun SearchScreen(
                 Tab(
                     selected = appState.searchTab == 0,
                     onClick = { appState.searchTab = 0 },
+                    modifier = Modifier.handCursor(),
                     text = {
                         Text(
                             text = "Ma Bibliothèque (${filteredLocalTracks.size})",
@@ -638,6 +646,7 @@ fun SearchScreen(
                             performOnlineSearch(appState.searchQuery)
                         }
                     },
+                    modifier = Modifier.handCursor(),
                     text = {
                         Text(
                             text = "Catalogue Cloud / En ligne",
@@ -683,6 +692,7 @@ fun SearchScreen(
                                 shape = shape
                             )
                             .hoverable(interactionSource)
+                            .handCursor()
                             .clickable { selectedCategory = filter },
                         contentAlignment = Alignment.Center
                     ) {
@@ -708,7 +718,8 @@ fun SearchScreen(
                         if (hasAnyLocalResult) {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(24.dp)
+                                contentPadding = PaddingValues(bottom = 40.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 // Artistes
                                 if (filteredLocalArtists.isNotEmpty()) {
@@ -726,6 +737,7 @@ fun SearchScreen(
                                                 )
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(20.dp))
                                     }
                                 }
 
@@ -745,6 +757,7 @@ fun SearchScreen(
                                                 )
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(20.dp))
                                     }
                                 }
 
@@ -949,7 +962,8 @@ fun SearchScreen(
                         SearchCategoryFilter.ALL -> {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(24.dp)
+                                contentPadding = PaddingValues(bottom = 40.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 // Artistes distants
                                 if (results.artists.isNotEmpty()) {
@@ -967,6 +981,7 @@ fun SearchScreen(
                                                 )
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(20.dp))
                                     }
                                 }
 
@@ -986,6 +1001,7 @@ fun SearchScreen(
                                                 )
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(20.dp))
                                     }
                                 }
 
@@ -1143,37 +1159,36 @@ fun SearchScreen(
         if (trackForContextMenu != null) {
             val trk = trackForContextMenu!!
             DesktopTrackContextMenu(
+                expanded = true,
+                onDismissRequest = { trackForContextMenu = null },
                 track = trk,
-                onDismiss = { trackForContextMenu = null },
-                onToggleLike = {
-                    onToggleLike(trk.id)
-                    trackForContextMenu = null
+                onPlayNext = {
+                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
                 },
                 onAddToQueue = {
                     orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
-                    trackForContextMenu = null
                 },
-                onPlayNext = {
-                    orchestrator.playNext(orchestrator.toQueuedTrack(trk))
-                    trackForContextMenu = null
+                onAddToPlaylist = {
+                    appState.trackIdToAddToPlaylist = trk.id
+                    appState.showAddToPlaylistDialog = true
                 },
                 onOpenArtist = {
                     appState.selectedArtistId = trk.artistId ?: "artist:${trk.artistName}"
                     appState.navigateTo("artist_detail")
-                    trackForContextMenu = null
                 },
                 onOpenAlbum = {
                     trk.albumId?.let {
                         appState.selectedAlbumId = it
                         appState.navigateTo("album_detail")
                     }
-                    trackForContextMenu = null
+                },
+                onToggleLike = {
+                    onToggleLike(trk.id)
                 },
                 onEditMetadata = {
                     trackForMetadataEdit = trk
-                    trackForContextMenu = null
                 },
-                onDownloadTrack = {
+                onDownloadCloud = {
                     orchestrator.triggerSingleFileDownload(trk)
                 },
                 onUploadCloud = {
@@ -1212,6 +1227,7 @@ private fun DesktopSuggestionRow(
             .clip(RoundedCornerShape(8.dp))
             .background(if (isHovered) PureWhite.copy(alpha = 0.05f) else Color.Transparent)
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1270,6 +1286,7 @@ private fun DesktopArtistItem(artist: ArtistBrowseRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1303,6 +1320,7 @@ private fun DesktopAlbumItem(album: AlbumBrowseRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.Start
@@ -1340,6 +1358,7 @@ private fun DesktopOnlineArtistItem(artist: ArtistSummary, onClick: () -> Unit) 
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1373,6 +1392,7 @@ private fun DesktopOnlineAlbumItem(album: AlbumSummary, onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHovered) DarkGraphite else OffBlack)
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.Start
@@ -1439,7 +1459,8 @@ private fun DesktopEmptyLocalSearch(
                 onClick = onSearchOnline,
                 colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.handCursor()
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Cloud,
@@ -1548,6 +1569,7 @@ private fun DesktopOnlineTrackRow(
                 }
             )
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onPlay)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1700,7 +1722,7 @@ private fun DesktopOnlineTrackRow(
             } else if (matchedLocal != null && matchedLocal.isCloudOnly) {
                 IconButton(
                     onClick = onDownload,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(32.dp).handCursor()
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Download,
@@ -1712,7 +1734,7 @@ private fun DesktopOnlineTrackRow(
             } else {
                 IconButton(
                     onClick = onDownload,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(32.dp).handCursor()
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.CloudDownload,

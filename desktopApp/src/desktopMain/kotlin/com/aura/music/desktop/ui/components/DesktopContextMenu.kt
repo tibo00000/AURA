@@ -172,6 +172,7 @@ private fun ContextMenuItem(
             )
         },
         onClick = onClick,
+        modifier = Modifier.handCursor(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
     )
 }

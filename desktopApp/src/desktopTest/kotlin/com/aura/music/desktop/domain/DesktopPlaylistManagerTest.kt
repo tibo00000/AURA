@@ -52,7 +52,7 @@ class DesktopPlaylistManagerTest {
         val pendingOps = database.syncOutboxDao().getPendingOperations()
         val updateOp = pendingOps.find { it.entityId == playlistId && it.entityType == "playlist" && it.operationType == "update" }
         assertNotNull(updateOp)
-        assertEquals("Updated Name", updateOp?.payloadJson)
+        assertTrue(updateOp?.payloadJson?.contains("Updated Name") == true)
     }
 
     @Test

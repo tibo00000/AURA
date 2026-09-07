@@ -303,7 +303,7 @@ class SyncRepository(
                     createdAt = parseIsoDateToMillis(createdStr),
                     updatedAt = parseIsoDateToMillis(updatedStr)
                 )
-                database.playlistDao().insertPlaylist(plEntity)
+                database.playlistDao().upsertPlaylist(plEntity)
 
                 // Process items
                 val itemsList = plMap["items"] as? JsonArray
@@ -326,7 +326,7 @@ class SyncRepository(
                             addedFromContextType = itemMap.string("added_from_context_type"),
                             addedFromContextId = itemMap.string("added_from_context_id")
                         )
-                        database.playlistDao().insertPlaylistItem(itemEntity)
+                        database.playlistDao().upsertPlaylistItem(itemEntity)
                     }
                 }
             }
@@ -500,7 +500,7 @@ class SyncRepository(
                             createdAt = parseIsoDateToMillis(createdStr),
                             updatedAt = parseIsoDateToMillis(updatedStr)
                         )
-                        database.playlistDao().insertPlaylist(pl)
+                        database.playlistDao().upsertPlaylist(pl)
                         Log.d(TAG, "Pulled UPSERT playlist $entityId")
                     }
                 }
@@ -525,7 +525,7 @@ class SyncRepository(
                             addedFromContextType = payload.string("added_from_context_type"),
                             addedFromContextId = payload.string("added_from_context_id")
                         )
-                        database.playlistDao().insertPlaylistItem(item)
+                        database.playlistDao().upsertPlaylistItem(item)
                         Log.d(TAG, "Pulled UPSERT playlist_item $entityId (pos $position)")
                     }
                 }

@@ -13,7 +13,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.serialization.json.Json
 
 /**
  * Gestionnaire de synchronisation Cloud pour le client Desktop.
@@ -115,8 +119,16 @@ class DesktopCloudSyncManager(
                                 token = token,
                                 request = PlaylistCreate(
                                     id = op.entityId,
-                                    name = op.payloadJson.ifBlank { "Nouvelle Playlist" }
+                                    name = parsePlaylistName(op.payloadJson).ifBlank { "Nouvelle Playlist" }
                                 )
+                            )
+                            if (resp.error == null) success = true
+                        } else if (op.operationType == "update") {
+                            val newName = parsePlaylistName(op.payloadJson)
+                            val resp = apiService.updatePlaylist(
+                                token = token,
+                                id = op.entityId,
+                                request = PlaylistUpdate(name = newName)
                             )
                             if (resp.error == null) success = true
                         } else if (op.operationType == "delete") {
@@ -261,7 +273,7 @@ class DesktopCloudSyncManager(
                     TrackMediaLinkEntity(
                         id = "media-link:${cloudFile.trackId}",
                         trackId = cloudFile.trackId,
-                        mediaStoreId = System.currentTimeMillis(),
+                        mediaStoreId = generateStableMediaStoreId(cloudFile.trackId),
                         contentUri = fileUri,
                         fileSizeBytes = targetFile.length(),
                         mimeType = "audio/mpeg",
@@ -762,5 +774,32 @@ class DesktopCloudSyncManager(
             // ignore
         }
         return freedBytes
+    }
+
+    companion object {
+        fun parsePlaylistName(payloadJson: String): String {
+            if (payloadJson.isBlank()) return "Playlist"
+            return if (payloadJson.trim().startsWith("{")) {
+                try {
+                    val json = Json { ignoreUnknownKeys = true }
+                    val parsed = json.decodeFromString<PlaylistUpdate>(payloadJson)
+                    parsed.name?.ifBlank { "Playlist" } ?: "Playlist"
+                } catch (e: Exception) {
+                    payloadJson
+                }
+            } else {
+                payloadJson
+            }
+        }
+
+        fun generateStableMediaStoreId(trackId: String): Long {
+            return runCatching {
+                val uuid = UUID.fromString(trackId)
+                (uuid.mostSignificantBits xor uuid.leastSignificantBits) and Long.MAX_VALUE
+            }.getOrElse {
+                val digest = MessageDigest.getInstance("SHA-256").digest(trackId.toByteArray(Charsets.UTF_8))
+                ByteBuffer.wrap(digest).long and Long.MAX_VALUE
+            }
+        }
     }
 }

@@ -85,14 +85,15 @@ fun DesktopQueuePanel(
                 if (queueState.priorityQueue.isNotEmpty()) {
                     TextButton(
                         onClick = { orchestrator.queueManager.clearPriorityQueue() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.handCursor()
                     ) {
                         Text("Vider", color = BlazeOrange, fontSize = 12.sp)
                     }
                 }
                 IconButton(
                     onClick = { appState.isQueueOpen = false },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp).handCursor()
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
@@ -326,6 +327,7 @@ private fun QueueTrackItem(
                 else Modifier
             )
             .hoverable(interactionSource)
+            .handCursor()
             .clickable(onClick = onPlayNow)
             .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -334,7 +336,7 @@ private fun QueueTrackItem(
         Box(
             modifier = Modifier
                 .size(24.dp)
-                .pointerHoverIcon(PointerIcon.Hand)
+                .handCursor()
                 .pointerInput(itemKey) {
                     detectDragGestures(
                         onDragStart = { onDragStart() },
@@ -386,7 +388,7 @@ private fun QueueTrackItem(
                 if (onMoveUp != null) {
                     IconButton(
                         onClick = onMoveUp,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp).handCursor()
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowUp,
@@ -399,7 +401,7 @@ private fun QueueTrackItem(
                 if (onMoveDown != null) {
                     IconButton(
                         onClick = onMoveDown,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp).handCursor()
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
@@ -412,7 +414,7 @@ private fun QueueTrackItem(
                 if (onRemove != null) {
                     IconButton(
                         onClick = onRemove,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp).handCursor()
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,

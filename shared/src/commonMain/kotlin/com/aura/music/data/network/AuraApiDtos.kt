@@ -483,6 +483,13 @@ data class PlaylistCreate(
 )
 
 @Serializable
+data class PlaylistUpdate(
+    @SerialName("name") val name: String? = null,
+    @SerialName("cover_uri") val coverUri: String? = null,
+    @SerialName("is_pinned") val isPinned: Boolean? = null
+)
+
+@Serializable
 data class PlaylistItemCreate(
     @SerialName("id") val id: String,
     @SerialName("track_id") val trackId: String,

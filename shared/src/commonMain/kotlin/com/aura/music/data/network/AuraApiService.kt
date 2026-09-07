@@ -73,6 +73,8 @@ interface AuraApiService {
 
     suspend fun createPlaylist(token: String, request: PlaylistCreate): AuraResponse<PlaylistResponse>
 
+    suspend fun updatePlaylist(token: String, id: String, request: PlaylistUpdate): AuraResponse<PlaylistResponse>
+
     suspend fun deletePlaylist(token: String, id: String): AuraResponse<PlaylistResponse>
 
     suspend fun appendTrackToPlaylist(
