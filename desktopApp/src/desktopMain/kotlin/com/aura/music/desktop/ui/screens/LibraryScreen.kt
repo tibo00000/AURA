@@ -654,7 +654,7 @@ private fun EmptyLibraryPlaceholder(
 }
 
 @Composable
-internal fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
+private fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -692,7 +692,7 @@ internal fun AlbumGridCard(album: AlbumBrowseRow, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
+private fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -724,7 +724,7 @@ internal fun ArtistGridCard(artist: ArtistBrowseRow, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
+private fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -770,7 +770,7 @@ internal fun PlaylistGridCard(playlist: PlaylistListRow, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
+private fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -802,7 +802,7 @@ internal fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
 }
 
 @Composable
-internal fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
+private fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -827,7 +827,7 @@ internal fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
 }
 
 @Composable
-internal fun ShimmerPlaylistCard(brush: androidx.compose.ui.graphics.Brush) {
+private fun ShimmerPlaylistCard(brush: androidx.compose.ui.graphics.Brush) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
