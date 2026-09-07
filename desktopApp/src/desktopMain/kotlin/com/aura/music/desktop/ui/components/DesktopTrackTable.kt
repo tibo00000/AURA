@@ -316,18 +316,18 @@ private fun DesktopTrackTableShimmerRow(
             }
         }
 
-        // Durée et Actions (alignés à droite sur 108.dp)
+        // Durée et Actions (alignés à droite sur 136.dp)
         Row(
-            modifier = Modifier.width(108.dp),
+            modifier = Modifier.width(136.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(16.dp)
-                    .shimmer(brush, RoundedCornerShape(8.dp))
+                    .size(20.dp)
+                    .shimmer(brush, RoundedCornerShape(10.dp))
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Box(
                 modifier = Modifier
                     .size(48.dp, 12.dp)
@@ -336,16 +336,16 @@ private fun DesktopTrackTableShimmerRow(
             Spacer(modifier = Modifier.width(16.dp))
             Box(
                 modifier = Modifier
-                    .size(16.dp)
-                    .shimmer(brush, RoundedCornerShape(8.dp))
+                    .size(20.dp)
+                    .shimmer(brush, RoundedCornerShape(10.dp))
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(20.dp))
         }
     }
 }
 
 @Composable
-private fun TrackTableHeaderRow(
+fun TrackTableHeaderRow(
     sortField: TrackSortField,
     sortAscending: Boolean,
     onSortChanged: (TrackSortField) -> Unit,
@@ -408,7 +408,7 @@ private fun TrackTableHeaderRow(
         }
 
         Row(
-            modifier = Modifier.width(108.dp),
+            modifier = Modifier.width(136.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -422,7 +422,7 @@ private fun TrackTableHeaderRow(
                 modifier = Modifier.width(48.dp),
                 horizontalArrangement = Arrangement.End
             )
-            Spacer(modifier = Modifier.width(28.dp))
+            Spacer(modifier = Modifier.width(56.dp))
         }
     }
 }
@@ -444,14 +444,23 @@ private fun HeaderSortableColumn(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = horizontalArrangement
     ) {
+        if (isActive && horizontalArrangement == Arrangement.End) {
+            Icon(
+                imageVector = if (sortAscending) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown,
+                contentDescription = null,
+                tint = BlazeOrange,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+        }
         Text(
             text = label,
             color = if (isActive) BlazeOrange else PureWhite.copy(alpha = 0.5f),
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
+            letterSpacing = if (horizontalArrangement == Arrangement.End) 0.sp else 1.sp
         )
-        if (isActive) {
+        if (isActive && horizontalArrangement != Arrangement.End) {
             Spacer(modifier = Modifier.width(4.dp))
             Icon(
                 imageVector = if (sortAscending) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown,
@@ -465,7 +474,7 @@ private fun HeaderSortableColumn(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TrackTableRowItem(
+fun TrackTableRowItem(
     index: Int,
     track: TrackListRow,
     isCurrent: Boolean,
@@ -489,7 +498,7 @@ private fun TrackTableRowItem(
             .background(
                 when {
                     isCurrent -> BlazeOrange.copy(alpha = 0.12f)
-                    isHovered -> DarkGraphite.copy(alpha = 0.6f)
+                    isHovered -> PureWhite.copy(alpha = 0.04f)
                     else -> Color.Transparent
                 }
             )
@@ -583,7 +592,7 @@ private fun TrackTableRowItem(
 
         Text(
             text = track.displayArtist,
-            color = PureWhite.copy(alpha = 0.7f),
+            color = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.65f),
             fontSize = 13.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -595,7 +604,7 @@ private fun TrackTableRowItem(
         if (showAlbumColumn) {
             Text(
                 text = track.displayAlbum ?: "-",
-                color = PureWhite.copy(alpha = 0.5f),
+                color = if (isHovered) PureWhite.copy(alpha = 0.9f) else PureWhite.copy(alpha = 0.5f),
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -608,25 +617,28 @@ private fun TrackTableRowItem(
         if (showDateAddedColumn) {
             Text(
                 text = formatTimestamp(track.createdAt),
-                color = PureWhite.copy(alpha = 0.4f),
+                color = if (isHovered) PureWhite.copy(alpha = 0.75f) else PureWhite.copy(alpha = 0.4f),
                 fontSize = 12.sp,
                 modifier = Modifier.weight(1.2f)
             )
         }
 
         Row(
-            modifier = Modifier.width(108.dp),
+            modifier = Modifier.width(136.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onToggleLike,
-                modifier = Modifier.size(28.dp)
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onToggleLike),
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = if (track.isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = "Favori",
-                    tint = if (track.isLiked) BlazeOrange else if (isHovered) PureWhite.copy(alpha = 0.6f) else Color.Transparent,
+                    tint = if (track.isLiked) BlazeOrange else if (isHovered) PureWhite.copy(alpha = 0.7f) else Color.Transparent,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -635,23 +647,30 @@ private fun TrackTableRowItem(
 
             Text(
                 text = formatDuration(track.durationMs ?: 0L),
-                color = PureWhite.copy(alpha = 0.5f),
+                color = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.5f),
                 fontSize = 12.sp,
                 modifier = Modifier.width(48.dp),
                 textAlign = TextAlign.End
             )
 
-            IconButton(
-                onClick = onContextMenu,
-                modifier = Modifier.size(28.dp)
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onContextMenu),
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
                     contentDescription = "Options",
-                    tint = if (isHovered) PureWhite.copy(alpha = 0.7f) else Color.Transparent,
-                    modifier = Modifier.size(16.dp)
+                    tint = if (isHovered) PureWhite else Color.Transparent,
+                    modifier = Modifier.size(18.dp)
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
         }
     }
 }
