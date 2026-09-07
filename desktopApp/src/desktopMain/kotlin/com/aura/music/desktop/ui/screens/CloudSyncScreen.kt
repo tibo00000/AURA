@@ -1,6 +1,9 @@
 package com.aura.music.desktop.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
+import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -30,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.TrackListRow
@@ -125,37 +129,39 @@ fun CloudSyncScreen(
                 }
             }
 
-            // Bouton de synchronisation immédiate
-            Button(
-                onClick = {
-                    orchestrator.apiToken?.let { token ->
-                        isSyncing = true
-                        coroutineScope.launch(Dispatchers.IO) {
-                            try {
-                                orchestrator.syncCloudData(token) {
-                                    onReloadData()
+            // Bouton de synchronisation immédiate avec info-bulle
+            AuraTooltip(text = "Synchroniser les favoris, playlists et métadonnées avec le Cloud") {
+                Button(
+                    onClick = {
+                        orchestrator.apiToken?.let { token ->
+                            isSyncing = true
+                            coroutineScope.launch(Dispatchers.IO) {
+                                try {
+                                    orchestrator.syncCloudData(token) {
+                                        onReloadData()
+                                    }
+                                } finally {
+                                    isSyncing = false
                                 }
-                            } finally {
-                                isSyncing = false
                             }
                         }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, if (isSyncing) BlazeOrange else HairlineDark),
+                    modifier = Modifier.height(36.dp).handCursor(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                    enabled = !isSyncing
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(color = BlazeOrange, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Synchronisation...", color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    } else {
+                        Icon(imageVector = Icons.Rounded.Sync, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Synchroniser", color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite),
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.dp, if (isSyncing) BlazeOrange else HairlineDark),
-                modifier = Modifier.height(36.dp).handCursor(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-                enabled = !isSyncing
-            ) {
-                if (isSyncing) {
-                    CircularProgressIndicator(color = BlazeOrange, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Synchronisation...", color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                } else {
-                    Icon(imageVector = Icons.Rounded.Sync, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Synchroniser maintenant", color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -242,17 +248,17 @@ fun CloudSyncScreen(
                             Icon(imageVector = Icons.Rounded.Bolt, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
                             Text("ACTIONS MASSIVES", color = PureWhite.copy(alpha = 0.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                         }
-                        Surface(
-                            color = BlazeOrange.copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = "Étape de sécurité",
-                                color = BlazeOrange,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
+                        AuraTooltip(text = "Toutes les actions globales demandent une confirmation avant exécution") {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .background(BlazeOrange.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Icon(imageVector = Icons.Rounded.Shield, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(12.dp))
+                                Text("Sécurisé", color = BlazeOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
 
@@ -260,36 +266,46 @@ fun CloudSyncScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Button(
-                            onClick = { showConfirmDownloadAllDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(36.dp).handCursor(),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            enabled = cloudOnlyTracks.isNotEmpty()
+                        AuraTooltip(
+                            text = "Rapatrier l'intégralité des ${cloudOnlyTracks.size} titres distants sur ce PC",
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(imageVector = Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Tout rapatrier (${cloudOnlyTracks.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Button(
+                                onClick = { showConfirmDownloadAllDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(36.dp).handCursor(),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                enabled = cloudOnlyTracks.isNotEmpty()
+                            ) {
+                                Icon(imageVector = Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Rapatrier tout (${cloudOnlyTracks.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
                         }
 
-                        OutlinedButton(
-                            onClick = { showConfirmUploadAllDialog = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = PureWhite),
-                            border = BorderStroke(1.dp, HairlineDark),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(36.dp).handCursor(),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            enabled = localOnlyTracks.isNotEmpty()
+                        AuraTooltip(
+                            text = "Sauvegarder l'intégralité des ${localOnlyTracks.size} titres locaux sur le Cloud VPS",
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(imageVector = Icons.Rounded.CloudUpload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Tout sauver (${localOnlyTracks.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            OutlinedButton(
+                                onClick = { showConfirmUploadAllDialog = true },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = PureWhite),
+                                border = BorderStroke(1.dp, HairlineDark),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(36.dp).handCursor(),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                enabled = localOnlyTracks.isNotEmpty()
+                            ) {
+                                Icon(imageVector = Icons.Rounded.CloudUpload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sauvegarder tout (${localOnlyTracks.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
                         }
                     }
 
                     Text(
-                        text = "${cloudOnlyTracks.size} morceaux à récupérer • ${localOnlyTracks.size} à envoyer",
+                        text = "${cloudOnlyTracks.size} distants • ${localOnlyTracks.size} locaux",
                         color = PureWhite.copy(alpha = 0.5f),
                         fontSize = 11.sp
                     )
@@ -458,9 +474,9 @@ fun CloudSyncScreen(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp,
-                    modifier = Modifier.weight(1.4f)
+                    modifier = Modifier.weight(1.2f)
                 )
-                Box(modifier = Modifier.width(140.dp), contentAlignment = Alignment.CenterEnd) {
+                Box(modifier = Modifier.width(80.dp), contentAlignment = Alignment.CenterEnd) {
                     Text(
                         text = "ACTION",
                         color = PureWhite.copy(alpha = 0.5f),
@@ -655,66 +671,80 @@ private fun CloudTrackTableRow(
         }
 
         // Statut
-        Box(modifier = Modifier.weight(1.4f), contentAlignment = Alignment.CenterStart) {
-            if (track.isCloudOnly) {
-                Surface(
-                    color = BlazeOrange.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, BlazeOrange.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(imageVector = Icons.Rounded.Cloud, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(11.dp))
-                        Text(text = "Sur le Cloud", color = BlazeOrange, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
+        Box(modifier = Modifier.weight(1.2f), contentAlignment = Alignment.CenterStart) {
+            val statusTooltip = if (track.isCloudOnly) {
+                "Sur le Cloud : stocké sur votre VPS (non téléchargé en local)"
             } else {
+                "Sur ce PC : stocké localement et disponible hors-ligne"
+            }
+            AuraTooltip(text = statusTooltip) {
                 Surface(
-                    color = DarkGraphite,
+                    color = if (track.isCloudOnly) BlazeOrange.copy(alpha = 0.15f) else DarkGraphite,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, HairlineDark)
+                    border = BorderStroke(1.dp, if (track.isCloudOnly) BlazeOrange.copy(alpha = 0.4f) else HairlineDark)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(imageVector = Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(11.dp))
-                        Text(text = "Sur ce PC", color = PureWhite.copy(alpha = 0.75f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Icon(
+                            imageVector = if (track.isCloudOnly) Icons.Rounded.Cloud else Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = if (track.isCloudOnly) BlazeOrange else Color(0xFF4CAF50),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Text(
+                            text = if (track.isCloudOnly) "Cloud" else "Local",
+                            color = if (track.isCloudOnly) BlazeOrange else PureWhite.copy(alpha = 0.75f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
         }
 
         // Action
-        Box(modifier = Modifier.width(140.dp), contentAlignment = Alignment.CenterEnd) {
+        Box(modifier = Modifier.width(80.dp), contentAlignment = Alignment.CenterEnd) {
             if (track.isCloudOnly) {
-                Button(
-                    onClick = onDownload,
-                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.height(28.dp).handCursor(),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                ) {
-                    Icon(imageVector = Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(13.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Rapatrier", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                AuraTooltip(text = "Rapatrier sur ce PC") {
+                    Surface(
+                        color = BlazeOrange,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .handClickable(onClick = onDownload)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Download,
+                                contentDescription = "Rapatrier",
+                                tint = PureWhite,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
                 }
             } else {
-                OutlinedButton(
-                    onClick = onUpload,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PureWhite),
-                    border = BorderStroke(1.dp, HairlineDark),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.height(28.dp).handCursor(),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                ) {
-                    Icon(imageVector = Icons.Rounded.CloudUpload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(13.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Sauvegarder", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                AuraTooltip(text = "Sauvegarder sur le Cloud VPS") {
+                    Surface(
+                        color = DarkGraphite,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, HairlineDark),
+                        modifier = Modifier
+                            .size(30.dp)
+                            .handClickable(onClick = onUpload)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudUpload,
+                                contentDescription = "Sauvegarder",
+                                tint = BlazeOrange,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -810,3 +840,37 @@ private fun CloudActionConfirmDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AuraTooltip(
+    text: String,
+    modifier: Modifier = Modifier,
+    delayMillis: Int = 400,
+    content: @Composable () -> Unit
+) {
+    TooltipArea(
+        tooltip = {
+            Surface(
+                color = OffBlack,
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, HairlineDark),
+                shadowElevation = 8.dp
+            ) {
+                Text(
+                    text = text,
+                    color = PureWhite,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                )
+            }
+        },
+        delayMillis = delayMillis,
+        tooltipPlacement = TooltipPlacement.CursorPoint(
+            offset = DpOffset(0.dp, 16.dp)
+        ),
+        modifier = modifier
+    ) {
+        content()
+    }
+}
