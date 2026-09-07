@@ -1,6 +1,8 @@
 package com.aura.music.ui.auth
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,6 +115,14 @@ fun AuthScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(16.dp))
+
+            Image(
+                painter = painterResource(id = com.aura.music.R.drawable.aura_logo_trimmed),
+                contentDescription = "AURA",
+                modifier = Modifier
+                    .height(52.dp)
+                    .padding(bottom = 12.dp)
+            )
 
             if (isLoggedIn) {
                 // ==========================================

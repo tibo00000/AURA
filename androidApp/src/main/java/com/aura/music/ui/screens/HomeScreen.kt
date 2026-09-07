@@ -1,5 +1,6 @@
 package com.aura.music.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,9 +26,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
@@ -55,6 +58,7 @@ sealed interface ResumeItem {
     data class Artist(val artist: ArtistBrowseRow) : ResumeItem
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     repository: LocalLibraryRepository,
@@ -126,7 +130,35 @@ fun HomeScreen(
         items
     }
 
-    RouteScaffold(title = "Accueil", style = MaterialTheme.typography.headlineLarge) {
+    RouteScaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = com.aura.music.R.drawable.aura_logo_trimmed),
+                            contentDescription = "AURA",
+                            modifier = Modifier.height(26.dp)
+                        )
+                        Text(
+                            text = "AURA",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            color = TextPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeepBlack,
+                    titleContentColor = TextPrimary
+                )
+            )
+        }
+    ) {
         com.aura.music.ui.components.AuraLazyColumn(
             modifier = Modifier
                 .fillMaxSize()
