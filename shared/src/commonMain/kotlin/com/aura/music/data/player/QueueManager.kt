@@ -331,6 +331,18 @@ class QueueManager {
     }
 
     /**
+     * Inspecte la prochaine piste en lecture pure sans avancer le curseur (Règle #4).
+     */
+    fun peekNext(): QueuedTrack? {
+        val s = state.value
+        val nextInPriority = s.priorityQueue.firstOrNull()
+        if (nextInPriority != null) return nextInPriority
+        val context = s.context ?: return null
+        val nextIndex = resolveNextContextIndex(s) ?: return null
+        return context.tracks.getOrNull(nextIndex)
+    }
+
+    /**
      * Retire une piste de la liste "À suivre", modifiant le contexte effectif ou le shuffle partiel.
      * La piste actuellement en cours de lecture ne peut jamais être supprimée par cet appel.
      */

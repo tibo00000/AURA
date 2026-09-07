@@ -133,12 +133,32 @@ class DesktopPlaybackOrchestrator(
     // CONTRÔLES DE LECTURE
     // =======================================================================
 
+    private fun prefetchNextCloudTrack() {
+        val token = apiToken ?: return
+        val nextTrack = queueManager.peekNext() ?: return
+        if (!nextTrack.contentUri.isNullOrBlank()) return  // déjà local, pas besoin
+        scope.launch(Dispatchers.IO) {
+            try {
+                cloudSyncManager?.cacheCloudStream(
+                    token = token,
+                    trackId = nextTrack.trackId,
+                    title = nextTrack.title,
+                    artistName = nextTrack.artistName,
+                    albumTitle = nextTrack.albumTitle,
+                    durationMs = nextTrack.durationMs ?: 0L,
+                    coverUri = nextTrack.coverUri
+                )
+            } catch (_: Exception) { /* best-effort, silencieux */ }
+        }
+    }
+
     private fun playTrackItem(track: QueuedTrack) {
         val uri = track.contentUri
         if (!uri.isNullOrBlank()) {
             audioPlayer.play(uri)
             scheduleDebouncedSnapshotSave()
             syncUiState(PlaybackState.Playing)
+            prefetchNextCloudTrack()
         } else {
             // Piste sur le cloud : streaming à la demande via cache temporaire
             scope.launch(Dispatchers.IO) {
@@ -161,6 +181,7 @@ class DesktopPlaybackOrchestrator(
                         scheduleDebouncedSnapshotSave()
                         withContext(Dispatchers.Main) {
                             syncUiState(PlaybackState.Playing)
+                            prefetchNextCloudTrack()
                         }
                     } else {
                         withContext(Dispatchers.Main) {
