@@ -784,8 +784,20 @@ interface RecentSearchDao {
     @Upsert
     suspend fun upsert(entity: RecentSearchEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun recordSearch(entity: RecentSearchEntity)
+
     @Query("SELECT query FROM recent_searches ORDER BY searched_at DESC LIMIT :limit")
     suspend fun getRecentQueries(limit: Int): List<String>
+
+    @Query("SELECT query FROM recent_searches ORDER BY searched_at DESC LIMIT :limit")
+    fun getRecentQueriesFlow(limit: Int = 10): Flow<List<String>>
+
+    @Query("DELETE FROM recent_searches WHERE query = :query")
+    suspend fun deleteQuery(query: String)
+
+    @Query("DELETE FROM recent_searches")
+    suspend fun clearAll()
 
     @Query("SELECT COUNT(*) FROM recent_searches")
     suspend fun getRecentSearchCount(): Int

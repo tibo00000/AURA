@@ -52,6 +52,7 @@ fun DesktopTrackTable(
     showAlbumColumn: Boolean = true,
     showDateAddedColumn: Boolean = false,
     isLoading: Boolean = false,
+    keyProvider: ((index: Int, track: TrackListRow) -> Any)? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by orchestrator.uiState.collectAsState()
@@ -68,19 +69,18 @@ fun DesktopTrackTable(
             onTrackClick = { trk, _ -> onTrackClick(trk) },
             onToggleLike = onToggleLike,
             onOpenArtist = { artId ->
-                appState.navigateTo("artist_detail")
-                appState.selectedArtistId = artId
+                appState.openArtist(artId)
             },
             onOpenAlbum = { albId ->
-                appState.navigateTo("album_detail")
-                appState.selectedAlbumId = albId
+                appState.openAlbum(albId)
             },
             onContextMenu = { trk ->
                 trackForContextMenu = trk
             },
             showAlbumColumn = showAlbumColumn,
             showDateAddedColumn = showDateAddedColumn,
-            isLoading = isLoading
+            isLoading = isLoading,
+            keyProvider = keyProvider
         )
 
         // Menu contextuel
@@ -152,6 +152,7 @@ fun DesktopTrackTable(
     showAlbumColumn: Boolean = true,
     showDateAddedColumn: Boolean = false,
     isLoading: Boolean = false,
+    keyProvider: ((index: Int, track: TrackListRow) -> Any)? = null,
     modifier: Modifier = Modifier
 ) {
     var sortField by remember { mutableStateOf(TrackSortField.DEFAULT) }
@@ -205,7 +206,10 @@ fun DesktopTrackTable(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                itemsIndexed(sortedTracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
+                itemsIndexed(
+                    sortedTracks,
+                    key = { index, track -> keyProvider?.invoke(index, track) ?: track.id }
+                ) { index, track ->
                     val isCurrent = track.id == activeTrackId
 
                     TrackTableRowItem(
@@ -312,9 +316,9 @@ private fun DesktopTrackTableShimmerRow(
             }
         }
 
-        // Durée et Actions (alignés à droite sur 100.dp)
+        // Durée et Actions (alignés à droite sur 108.dp)
         Row(
-            modifier = Modifier.width(100.dp),
+            modifier = Modifier.width(108.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -323,18 +327,19 @@ private fun DesktopTrackTableShimmerRow(
                     .size(16.dp)
                     .shimmer(brush, RoundedCornerShape(8.dp))
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Box(
                 modifier = Modifier
-                    .size(36.dp, 12.dp)
+                    .size(48.dp, 12.dp)
                     .shimmer(brush, RoundedCornerShape(3.dp))
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Box(
                 modifier = Modifier
                     .size(16.dp)
                     .shimmer(brush, RoundedCornerShape(8.dp))
             )
+            Spacer(modifier = Modifier.width(6.dp))
         }
     }
 }
@@ -403,18 +408,21 @@ private fun TrackTableHeaderRow(
         }
 
         Row(
-            modifier = Modifier.width(100.dp),
+            modifier = Modifier.width(108.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Spacer(modifier = Modifier.width(32.dp))
             HeaderSortableColumn(
                 label = "DURÉE",
                 field = TrackSortField.DURATION,
                 activeField = sortField,
                 sortAscending = sortAscending,
                 onClick = onSortChanged,
-                modifier = Modifier
+                modifier = Modifier.width(48.dp),
+                horizontalArrangement = Arrangement.End
             )
+            Spacer(modifier = Modifier.width(28.dp))
         }
     }
 }
@@ -426,13 +434,15 @@ private fun HeaderSortableColumn(
     activeField: TrackSortField,
     sortAscending: Boolean,
     onClick: (TrackSortField) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start
 ) {
     val isActive = activeField == field
 
     Row(
         modifier = modifier.clickable { onClick(field) },
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = horizontalArrangement
     ) {
         Text(
             text = label,
@@ -605,7 +615,7 @@ private fun TrackTableRowItem(
         }
 
         Row(
-            modifier = Modifier.width(100.dp),
+            modifier = Modifier.width(108.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -627,7 +637,7 @@ private fun TrackTableRowItem(
                 text = formatDuration(track.durationMs ?: 0L),
                 color = PureWhite.copy(alpha = 0.5f),
                 fontSize = 12.sp,
-                modifier = Modifier.width(42.dp),
+                modifier = Modifier.width(48.dp),
                 textAlign = TextAlign.End
             )
 
