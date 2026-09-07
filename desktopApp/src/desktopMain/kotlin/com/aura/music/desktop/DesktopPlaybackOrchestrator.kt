@@ -696,90 +696,99 @@ class DesktopPlaybackOrchestrator(
                     it.isFile && it.extension.lowercase() in audioExtensions
                 }.toList()
 
+                val BATCH_SIZE = 50
+                val batchArtists = mutableListOf<ArtistEntity>()
+                val batchAlbums = mutableListOf<AlbumEntity>()
+                val batchTracks = mutableListOf<TrackEntity>()
+                val batchLinks = mutableListOf<TrackMediaLinkEntity>()
                 var addedCount = 0
-                for ((index, file) in files.withIndex()) {
-                    onProgress("Indexation: ${index + 1}/${files.size} - ${file.name}")
-                    val meta = DesktopMediaMetadataReader.readMetadata(file)
 
-                    val trackId = "track_${file.absolutePath.hashCode()}"
-                    val artistId = "artist_${meta.artist.hashCode()}"
-                    val currentAlbum = meta.album
-                    val albumId = if (currentAlbum != null) "album_${(meta.artist + "_" + currentAlbum).hashCode()}" else null
-
+                suspend fun flushBatch() {
+                    if (batchTracks.isEmpty()) return
                     database.useWriterConnection { transactor ->
                         transactor.immediateTransaction {
-                            // 1. Artist
-                            database.artistDao().upsertArtists(
-                                listOf(
-                                    ArtistEntity(
-                                        id = artistId,
-                                        name = meta.artist,
-                                        normalizedName = meta.artist.lowercase(),
-                                        pictureUri = meta.localCoverUri,
-                                        createdAt = now,
-                                        updatedAt = now
-                                    )
-                                )
-                            )
-
-                            // 2. Album
-                            if (albumId != null && currentAlbum != null) {
-                                database.albumDao().upsertAlbums(
-                                    listOf(
-                                        AlbumEntity(
-                                            id = albumId,
-                                            primaryArtistId = artistId,
-                                            title = currentAlbum,
-                                            normalizedTitle = currentAlbum.lowercase(),
-                                            coverUri = meta.localCoverUri,
-                                            createdAt = now,
-                                            updatedAt = now
-                                        )
-                                    )
-                                )
-                            }
-
-                            // 3. Track
-                            database.trackDao().upsertTracks(
-                                listOf(
-                                    TrackEntity(
-                                        id = trackId,
-                                        primaryArtistId = artistId,
-                                        albumId = albumId,
-                                        title = meta.title,
-                                        normalizedTitle = meta.title.lowercase(),
-                                        displayArtistName = meta.artist,
-                                        displayAlbumTitle = meta.album,
-                                        durationMs = meta.durationMs,
-                                        coverUri = meta.localCoverUri,
-                                        canonicalAudioSourceType = "local",
-                                        isLiked = false,
-                                        isDownloadedByAura = false,
-                                        createdAt = file.lastModified(),
-                                        updatedAt = file.lastModified()
-                                    )
-                                )
-                            )
-
-                            // 4. Media Link
-                            database.trackDao().upsertTrackMediaLinks(
-                                listOf(
-                                    TrackMediaLinkEntity(
-                                        id = "media_link_${file.absolutePath.hashCode()}",
-                                        trackId = trackId,
-                                        mediaStoreId = file.absolutePath.hashCode().toLong(),
-                                        contentUri = file.toURI().toString(),
-                                        fileSizeBytes = file.length(),
-                                        mimeType = "audio/" + file.extension.lowercase(),
-                                        dateModifiedEpochMs = file.lastModified(),
-                                        availabilityStatus = "present",
-                                        lastScannedAt = now
-                                    )
-                                )
-                            )
+                            if (batchArtists.isNotEmpty()) database.artistDao().upsertArtists(batchArtists.toList())
+                            if (batchAlbums.isNotEmpty()) database.albumDao().upsertAlbums(batchAlbums.toList())
+                            database.trackDao().upsertTracks(batchTracks.toList())
+                            if (batchLinks.isNotEmpty()) database.trackDao().upsertTrackMediaLinks(batchLinks.toList())
                         }
                     }
-                    addedCount++
+                    batchArtists.clear()
+                    batchAlbums.clear()
+                    batchTracks.clear()
+                    batchLinks.clear()
+                }
+
+                for ((index, file) in files.withIndex()) {
+                    if (index % BATCH_SIZE == 0) {
+                        onProgress("Indexation: ${index + 1}/${files.size}...")
+                    }
+                    try {
+                        val meta = DesktopMediaMetadataReader.readMetadata(file)
+
+                        val trackId = "track_${file.absolutePath.hashCode()}"
+                        val artistId = "artist_${meta.artist.hashCode()}"
+                        val currentAlbum = meta.album
+                        val albumId = if (currentAlbum != null) "album_${(meta.artist + "_" + currentAlbum).hashCode()}" else null
+
+                        val artist = ArtistEntity(
+                            id = artistId,
+                            name = meta.artist,
+                            normalizedName = meta.artist.lowercase(),
+                            pictureUri = meta.localCoverUri,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                        val album = if (albumId != null && currentAlbum != null) {
+                            AlbumEntity(
+                                id = albumId,
+                                primaryArtistId = artistId,
+                                title = currentAlbum,
+                                normalizedTitle = currentAlbum.lowercase(),
+                                coverUri = meta.localCoverUri,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        } else null
+                        val track = TrackEntity(
+                            id = trackId,
+                            primaryArtistId = artistId,
+                            albumId = albumId,
+                            title = meta.title,
+                            normalizedTitle = meta.title.lowercase(),
+                            displayArtistName = meta.artist,
+                            displayAlbumTitle = meta.album,
+                            durationMs = meta.durationMs,
+                            coverUri = meta.localCoverUri,
+                            canonicalAudioSourceType = "local",
+                            isLiked = false,
+                            isDownloadedByAura = false,
+                            createdAt = file.lastModified(),
+                            updatedAt = file.lastModified()
+                        )
+                        val mediaLink = TrackMediaLinkEntity(
+                            id = "media_link_${file.absolutePath.hashCode()}",
+                            trackId = trackId,
+                            mediaStoreId = file.absolutePath.hashCode().toLong(),
+                            contentUri = file.toURI().toString(),
+                            fileSizeBytes = file.length(),
+                            mimeType = "audio/" + file.extension.lowercase(),
+                            dateModifiedEpochMs = file.lastModified(),
+                            availabilityStatus = "present",
+                            lastScannedAt = now
+                        )
+
+                        batchArtists.add(artist)
+                        if (album != null) batchAlbums.add(album)
+                        batchTracks.add(track)
+                        batchLinks.add(mediaLink)
+                        addedCount++
+                    } catch (e: Exception) {
+                        System.err.println("Scan: skipping ${file.name}: ${e.message}")
+                    }
+                    if (batchTracks.size >= BATCH_SIZE || index == files.size - 1) {
+                        flushBatch()
+                    }
                 }
                 onComplete(addedCount)
             } catch (e: Exception) {
