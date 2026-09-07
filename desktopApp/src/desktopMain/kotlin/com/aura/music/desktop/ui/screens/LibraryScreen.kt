@@ -47,6 +47,12 @@ import com.aura.music.ui.components.rememberShimmerBrush
 import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
 
+enum class LibrarySourceFilter(val label: String) {
+    ALL("Tous"),
+    OFFLINE("Hors-ligne"),
+    CLOUD("Cloud")
+}
+
 enum class LibrarySortOrder(val label: String) {
     RECENT("Ajout récent"),
     TITLE_AZ("Titre (A à Z)"),
@@ -69,16 +75,71 @@ fun LibraryScreen(
 ) {
     var selectedTab by remember { mutableStateOf(0) } // 0: Titres, 1: Albums, 2: Artistes
     var localSearchQuery by remember { mutableStateOf("") }
-    var isSearchExpanded by remember { mutableStateOf(false) }
+    var sourceFilter by remember { mutableStateOf(LibrarySourceFilter.ALL) }
     var sortOrder by remember { mutableStateOf(LibrarySortOrder.RECENT) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val isMac = remember { System.getProperty("os.name")?.lowercase()?.contains("mac") == true }
 
-    // Filtrage et tri dynamiques selon l'onglet actif
-    val filteredTracks = remember(allTracks, localSearchQuery, sortOrder) {
+    // Statistiques globales de la bibliothèque
+    val totalTracksCount = allTracks.size
+    val totalMs = remember(allTracks) { allTracks.sumOf { it.durationMs ?: 0L } }
+    val totalHours = totalMs / 3_600_000
+    val formattedTrackCount = remember(totalTracksCount) {
+        java.text.NumberFormat.getInstance(java.util.Locale.FRENCH).format(totalTracksCount)
+    }
+    val librarySubtitle = remember(formattedTrackCount, totalHours) {
+        if (totalHours > 0) {
+            "$formattedTrackCount morceaux • $totalHours h de musique"
+        } else {
+            "$formattedTrackCount morceaux"
+        }
+    }
+
+    // Filtrage par source (Tous / Hors-ligne / Cloud)
+    val offlineAlbumIds = remember(allTracks) {
+        allTracks.filter { !it.isCloudOnly }.mapNotNull { it.albumId }.toSet()
+    }
+    val cloudAlbumIds = remember(allTracks) {
+        allTracks.filter { it.isCloudOnly }.mapNotNull { it.albumId }.toSet()
+    }
+    val offlineArtistIds = remember(allTracks) {
+        allTracks.filter { !it.isCloudOnly }.mapNotNull { it.artistId }.toSet()
+    }
+    val cloudArtistIds = remember(allTracks) {
+        allTracks.filter { it.isCloudOnly }.mapNotNull { it.artistId }.toSet()
+    }
+
+    val sourceFilteredTracks = remember(allTracks, sourceFilter) {
+        when (sourceFilter) {
+            LibrarySourceFilter.ALL -> allTracks
+            LibrarySourceFilter.OFFLINE -> allTracks.filter { !it.isCloudOnly }
+            LibrarySourceFilter.CLOUD -> allTracks.filter { it.isCloudOnly }
+        }
+    }
+
+    val sourceFilteredAlbums = remember(allAlbums, sourceFilter, offlineAlbumIds, cloudAlbumIds) {
+        when (sourceFilter) {
+            LibrarySourceFilter.ALL -> allAlbums
+            LibrarySourceFilter.OFFLINE -> allAlbums.filter { it.id in offlineAlbumIds }
+            LibrarySourceFilter.CLOUD -> allAlbums.filter { it.id in cloudAlbumIds }
+        }
+    }
+
+    val sourceFilteredArtists = remember(allArtists, sourceFilter, offlineArtistIds, cloudArtistIds) {
+        when (sourceFilter) {
+            LibrarySourceFilter.ALL -> allArtists
+            LibrarySourceFilter.OFFLINE -> allArtists.filter { it.id in offlineArtistIds }
+            LibrarySourceFilter.CLOUD -> allArtists.filter { it.id in cloudArtistIds }
+        }
+    }
+
+    // Filtrage textuel et tri dynamiques selon l'onglet actif
+    val filteredTracks = remember(sourceFilteredTracks, localSearchQuery, sortOrder) {
         val q = SearchNormalizer.normalize(localSearchQuery).trim()
         val base = if (q.isBlank()) {
-            allTracks
+            sourceFilteredTracks
         } else {
-            allTracks.filter {
+            sourceFilteredTracks.filter {
                 SearchNormalizer.normalize(it.title).contains(q) ||
                 SearchNormalizer.normalize(it.artistName).contains(q) ||
                 (it.albumTitle != null && SearchNormalizer.normalize(it.albumTitle!!).contains(q))
@@ -93,12 +154,12 @@ fun LibraryScreen(
         }
     }
 
-    val filteredAlbums = remember(allAlbums, localSearchQuery, sortOrder) {
+    val filteredAlbums = remember(sourceFilteredAlbums, localSearchQuery, sortOrder) {
         val q = SearchNormalizer.normalize(localSearchQuery).trim()
         val base = if (q.isBlank()) {
-            allAlbums
+            sourceFilteredAlbums
         } else {
-            allAlbums.filter {
+            sourceFilteredAlbums.filter {
                 SearchNormalizer.normalize(it.title).contains(q) ||
                 (it.artistName != null && SearchNormalizer.normalize(it.artistName!!).contains(q))
             }
@@ -111,12 +172,12 @@ fun LibraryScreen(
         }
     }
 
-    val filteredArtists = remember(allArtists, localSearchQuery, sortOrder) {
+    val filteredArtists = remember(sourceFilteredArtists, localSearchQuery, sortOrder) {
         val q = SearchNormalizer.normalize(localSearchQuery).trim()
         val base = if (q.isBlank()) {
-            allArtists
+            sourceFilteredArtists
         } else {
-            allArtists.filter {
+            sourceFilteredArtists.filter {
                 SearchNormalizer.normalize(it.name).contains(q)
             }
         }
@@ -130,123 +191,170 @@ fun LibraryScreen(
         modifier = modifier
             .fillMaxSize()
             .background(DeepBlack)
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.F) {
+                    val isModifierPressed = if (isMac) keyEvent.isMetaPressed else keyEvent.isCtrlPressed
+                    if (isModifierPressed) {
+                        try {
+                            searchFocusRequester.requestFocus()
+                        } catch (_: Exception) {}
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
             .padding(horizontal = 32.dp, vertical = 24.dp)
     ) {
-        // En-tête Bibliothèque Option 4 : Titre + Contrôle segmenté macOS + Barre d'outils droite
+        // Ligne 1 : Titre Bibliothèque (avec sous-titre stats discret) + Onglets simples (sans compteurs)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Gauche : Titre et Sélecteur Segmenté compact
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
+            // Titre et sous-titre de volume
+            Column {
                 Text(
                     text = "Bibliothèque",
                     color = PureWhite,
-                    fontSize = 30.sp,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold
                 )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = librarySubtitle,
+                    color = PureWhite.copy(alpha = 0.45f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
 
-                // Sélecteur segmenté compact style macOS
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = DarkGraphite.copy(alpha = 0.65f),
-                    border = BorderStroke(1.dp, HairlineDark)
+            // Onglets textuels simples style pills (sans compteur)
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = DarkGraphite.copy(alpha = 0.65f),
+                border = BorderStroke(1.dp, HairlineDark)
+            ) {
+                Row(
+                    modifier = Modifier.padding(3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        val segments = listOf(
-                            "Titres" to allTracks.size,
-                            "Albums" to allAlbums.size,
-                            "Artistes" to allArtists.size
-                        )
-                        segments.forEachIndexed { index, (label, count) ->
-                            val isSelected = selectedTab == index
-                            val interactionSource = remember { MutableInteractionSource() }
-                            val isHovered by interactionSource.collectIsHoveredAsState()
+                    val tabs = listOf("Titres", "Albums", "Artistes")
+                    tabs.forEachIndexed { index, label ->
+                        val isSelected = selectedTab == index
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isHovered by interactionSource.collectIsHoveredAsState()
 
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(7.dp))
-                                    .background(
-                                        when {
-                                            isSelected -> BlazeOrange.copy(alpha = 0.2f)
-                                            isHovered -> PureWhite.copy(alpha = 0.06f)
-                                            else -> Color.Transparent
-                                        }
-                                    )
-                                    .border(
-                                        width = if (isSelected) 1.dp else 0.dp,
-                                        color = if (isSelected) BlazeOrange.copy(alpha = 0.6f) else Color.Transparent,
-                                        shape = RoundedCornerShape(7.dp)
-                                    )
-                                    .hoverable(interactionSource)
-                                    .handClickable(interactionSource = interactionSource) {
-                                        selectedTab = index
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(
+                                    when {
+                                        isSelected -> BlazeOrange.copy(alpha = 0.2f)
+                                        isHovered -> PureWhite.copy(alpha = 0.06f)
+                                        else -> Color.Transparent
                                     }
-                                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = if (isSelected) PureWhite else PureWhite.copy(alpha = if (isHovered) 0.95f else 0.65f),
-                                        fontSize = 13.sp,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-                                    )
-                                    if (count > 0 && !isLoading) {
-                                        Text(
-                                            text = count.toString(),
-                                            color = if (isSelected) BlazeOrange else PureWhite.copy(alpha = 0.35f),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
+                                )
+                                .border(
+                                    width = if (isSelected) 1.dp else 0.dp,
+                                    color = if (isSelected) BlazeOrange.copy(alpha = 0.6f) else Color.Transparent,
+                                    shape = RoundedCornerShape(7.dp)
+                                )
+                                .hoverable(interactionSource)
+                                .handClickable(interactionSource = interactionSource) {
+                                    selectedTab = index
                                 }
-                            }
+                                .padding(horizontal = 16.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) PureWhite else PureWhite.copy(alpha = if (isHovered) 0.95f else 0.65f),
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Ligne 2 : Barre d'outils dédiée (Filtrage inline permanent à gauche, Source au milieu, Tri à droite)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Gauche : Champ de filtrage instantané inline permanent (~230dp) avec raccourci Ctrl+F / ⌘F
+            LibraryInlineSearchBar(
+                query = localSearchQuery,
+                onQueryChange = { localSearchQuery = it },
+                placeholder = "Filtrer dans la bibliothèque...",
+                focusRequester = searchFocusRequester,
+                isMac = isMac,
+                modifier = Modifier.width(230.dp)
+            )
+
+            // Milieu : Filtre de téléchargement / source (Tous / Hors-ligne / Cloud)
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = DarkGraphite.copy(alpha = 0.55f),
+                border = BorderStroke(1.dp, HairlineDark)
+            ) {
+                Row(
+                    modifier = Modifier.padding(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    LibrarySourceFilter.values().forEach { filter ->
+                        val isSelected = sourceFilter == filter
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isHovered by interactionSource.collectIsHoveredAsState()
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    when {
+                                        isSelected -> PureWhite.copy(alpha = 0.12f)
+                                        isHovered -> PureWhite.copy(alpha = 0.05f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .border(
+                                    width = if (isSelected) 1.dp else 0.dp,
+                                    color = if (isSelected) PureWhite.copy(alpha = 0.25f) else Color.Transparent,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .hoverable(interactionSource)
+                                .handClickable(interactionSource = interactionSource) {
+                                    sourceFilter = filter
+                                }
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = filter.label,
+                                color = if (isSelected) PureWhite else PureWhite.copy(alpha = if (isHovered) 0.85f else 0.55f),
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                            )
                         }
                     }
                 }
             }
 
-            // Droite : Barre de recherche dépliable + Menu de tri
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Barre de recherche dépliable (expandable search bar)
-                LibraryExpandableSearchBar(
-                    query = localSearchQuery,
-                    onQueryChange = { localSearchQuery = it },
-                    isExpanded = isSearchExpanded,
-                    onExpandedChange = { isSearchExpanded = it },
-                    placeholder = when (selectedTab) {
-                        0 -> "Filtrer les titres..."
-                        1 -> "Filtrer les albums..."
-                        2 -> "Filtrer les artistes..."
-                        else -> "Filtrer..."
-                    }
-                )
-
-                // Menu déroulant de tri
-                LibrarySortMenu(
-                    selectedTab = selectedTab,
-                    currentSort = sortOrder,
-                    onSortSelected = { sortOrder = it }
-                )
-            }
+            // Droite : Menu déroulant de tri
+            LibrarySortMenu(
+                selectedTab = selectedTab,
+                currentSort = sortOrder,
+                onSortSelected = { sortOrder = it }
+            )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         // Contenu dynamique selon l'onglet
         when (selectedTab) {
@@ -259,7 +367,13 @@ fun LibraryScreen(
                             onClear = { localSearchQuery = "" }
                         )
                     } else {
-                        EmptyLibraryPlaceholder(message = "Aucun titre dans votre bibliothèque")
+                        EmptyLibraryPlaceholder(
+                            message = when (sourceFilter) {
+                                LibrarySourceFilter.OFFLINE -> "Aucun titre hors-ligne dans votre bibliothèque"
+                                LibrarySourceFilter.CLOUD -> "Aucun titre cloud dans votre bibliothèque"
+                                else -> "Aucun titre dans votre bibliothèque"
+                            }
+                        )
                     }
                 } else {
                     val uiState by orchestrator.uiState.collectAsState()
@@ -305,7 +419,13 @@ fun LibraryScreen(
                             onClear = { localSearchQuery = "" }
                         )
                     } else {
-                        EmptyLibraryPlaceholder(message = "Aucun album dans votre bibliothèque")
+                        EmptyLibraryPlaceholder(
+                            message = when (sourceFilter) {
+                                LibrarySourceFilter.OFFLINE -> "Aucun album hors-ligne dans votre bibliothèque"
+                                LibrarySourceFilter.CLOUD -> "Aucun album cloud dans votre bibliothèque"
+                                else -> "Aucun album dans votre bibliothèque"
+                            }
+                        )
                     }
                 } else {
                     LazyVerticalGrid(
@@ -344,7 +464,13 @@ fun LibraryScreen(
                             onClear = { localSearchQuery = "" }
                         )
                     } else {
-                        EmptyLibraryPlaceholder(message = "Aucun artiste dans votre bibliothèque")
+                        EmptyLibraryPlaceholder(
+                            message = when (sourceFilter) {
+                                LibrarySourceFilter.OFFLINE -> "Aucun artiste hors-ligne dans votre bibliothèque"
+                                LibrarySourceFilter.CLOUD -> "Aucun artiste cloud dans votre bibliothèque"
+                                else -> "Aucun artiste dans votre bibliothèque"
+                            }
+                        )
                     }
                 } else {
                     LazyVerticalGrid(
@@ -367,121 +493,99 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun LibraryExpandableSearchBar(
+private fun LibraryInlineSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    isExpanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    placeholder: String
+    placeholder: String,
+    focusRequester: FocusRequester,
+    isMac: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    val focusRequester = remember { FocusRequester() }
-    val isEffectivelyExpanded = isExpanded || query.isNotBlank()
+    val shortcutLabel = if (isMac) "⌘F" else "Ctrl+F"
 
-    val searchBarWidth by animateDpAsState(
-        targetValue = if (isEffectivelyExpanded) 240.dp else 36.dp,
-        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing)
-    )
-
-    LaunchedEffect(isExpanded) {
-        if (isExpanded) {
-            try {
-                focusRequester.requestFocus()
-            } catch (_: Exception) {}
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .width(searchBarWidth)
-            .height(36.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(DarkGraphite.copy(alpha = 0.7f))
-            .border(
-                width = 1.dp,
-                color = if (isEffectivelyExpanded) BlazeOrange.copy(alpha = 0.5f) else HairlineDark,
-                shape = RoundedCornerShape(18.dp)
-            )
-            .handClickable {
-                if (!isEffectivelyExpanded) {
-                    onExpandedChange(true)
-                }
-            },
-        contentAlignment = Alignment.CenterStart
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = DarkGraphite.copy(alpha = 0.7f),
+        border = BorderStroke(1.dp, HairlineDark),
+        modifier = modifier.height(36.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Rounded.Search,
-                contentDescription = "Rechercher",
-                tint = if (isEffectivelyExpanded) BlazeOrange else PureWhite.copy(alpha = 0.65f),
+                contentDescription = null,
+                tint = if (query.isNotEmpty()) BlazeOrange else PureWhite.copy(alpha = 0.45f),
                 modifier = Modifier.size(16.dp)
             )
 
-            if (isEffectivelyExpanded) {
-                Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
-                Box(modifier = Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
-                        Text(
-                            text = placeholder,
-                            color = PureWhite.copy(alpha = 0.35f),
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    BasicTextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            color = PureWhite,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        cursorBrush = SolidColor(BlazeOrange),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .onKeyEvent { keyEvent ->
-                                if (keyEvent.type == KeyEventType.KeyUp && keyEvent.key == Key.Escape) {
-                                    onQueryChange("")
-                                    onExpandedChange(false)
-                                    true
-                                } else false
-                            }
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = placeholder,
+                        color = PureWhite.copy(alpha = 0.35f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                if (query.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            onQueryChange("")
-                            onExpandedChange(false)
-                        },
-                        modifier = Modifier.size(20.dp).handCursor()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Effacer",
-                            tint = PureWhite.copy(alpha = 0.5f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                } else {
-                    IconButton(
-                        onClick = { onExpandedChange(false) },
-                        modifier = Modifier.size(20.dp).handCursor()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Fermer",
-                            tint = PureWhite.copy(alpha = 0.4f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = PureWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
+                    cursorBrush = SolidColor(BlazeOrange),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyUp && keyEvent.key == Key.Escape) {
+                                onQueryChange("")
+                                true
+                            } else false
+                        }
+                )
+            }
+
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(18.dp).handCursor()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Effacer",
+                        tint = PureWhite.copy(alpha = 0.5f),
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = PureWhite.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.12f)),
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Text(
+                        text = shortcutLabel,
+                        color = PureWhite.copy(alpha = 0.35f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
                 }
             }
         }

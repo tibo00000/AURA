@@ -322,30 +322,42 @@ private fun DesktopTrackTableShimmerRow(
             }
         }
 
-        // Durée et Actions (alignés à droite sur 136.dp)
+        // Durée et Actions (alignés à droite sur 136.dp : 36dp favori + 52dp durée + 48dp options)
         Row(
             modifier = Modifier.width(136.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .shimmer(brush, RoundedCornerShape(10.dp))
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+                modifier = Modifier.width(36.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .shimmer(brush, CircleShape)
+                )
+            }
             Box(
-                modifier = Modifier
-                    .size(48.dp, 12.dp)
-                    .shimmer(brush, RoundedCornerShape(3.dp))
-            )
-            Spacer(modifier = Modifier.width(16.dp))
+                modifier = Modifier.width(52.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp, 12.dp)
+                        .shimmer(brush, RoundedCornerShape(3.dp))
+                )
+            }
             Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .shimmer(brush, RoundedCornerShape(10.dp))
-            )
-            Spacer(modifier = Modifier.width(20.dp))
+                modifier = Modifier.width(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .shimmer(brush, CircleShape)
+                )
+            }
         }
     }
 }
@@ -418,17 +430,22 @@ fun TrackTableHeaderRow(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Spacer(modifier = Modifier.width(32.dp))
-            HeaderSortableColumn(
-                label = "DURÉE",
-                field = TrackSortField.DURATION,
-                activeField = sortField,
-                sortAscending = sortAscending,
-                onClick = onSortChanged,
-                modifier = Modifier.width(48.dp),
-                horizontalArrangement = Arrangement.End
-            )
-            Spacer(modifier = Modifier.width(56.dp))
+            Box(modifier = Modifier.width(36.dp))
+            Box(
+                modifier = Modifier.width(52.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                HeaderSortableColumn(
+                    label = "DURÉE",
+                    field = TrackSortField.DURATION,
+                    activeField = sortField,
+                    sortAscending = sortAscending,
+                    onClick = onSortChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                )
+            }
+            Box(modifier = Modifier.width(48.dp))
         }
     }
 }
@@ -444,9 +461,13 @@ private fun HeaderSortableColumn(
     horizontalArrangement: Arrangement.Horizontal = Arrangement.Start
 ) {
     val isActive = activeField == field
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
 
     Row(
-        modifier = modifier.handClickable { onClick(field) },
+        modifier = modifier
+            .hoverable(interactionSource)
+            .handClickable(interactionSource = interactionSource) { onClick(field) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = horizontalArrangement
     ) {
@@ -461,19 +482,33 @@ private fun HeaderSortableColumn(
         }
         Text(
             text = label,
-            color = if (isActive) BlazeOrange else PureWhite.copy(alpha = 0.5f),
+            color = when {
+                isActive -> BlazeOrange
+                isHovered -> PureWhite
+                else -> PureWhite.copy(alpha = 0.5f)
+            },
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = if (horizontalArrangement == Arrangement.End) 0.sp else 1.sp
         )
-        if (isActive && horizontalArrangement != Arrangement.End) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                imageVector = if (sortAscending) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown,
-                contentDescription = null,
-                tint = BlazeOrange,
-                modifier = Modifier.size(16.dp)
-            )
+        if (horizontalArrangement != Arrangement.End) {
+            if (isActive) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = if (sortAscending) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown,
+                    contentDescription = null,
+                    tint = BlazeOrange,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (isHovered) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Rounded.ArrowDropDown,
+                    contentDescription = null,
+                    tint = PureWhite.copy(alpha = 0.35f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
@@ -572,32 +607,27 @@ fun TrackTableRowItem(
                 shapeRadius = 4.dp
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = track.title,
                     color = if (isCurrent) BlazeOrange else if (isHovered) PureWhite else PureWhite.copy(alpha = 0.88f),
                     fontSize = 13.sp,
                     fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (track.isCloudOnly) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Cloud,
-                            contentDescription = "Cloud",
-                            tint = BlazeOrange,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Cloud",
-                            color = BlazeOrange,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Cloud,
+                        contentDescription = "Cloud uniquement",
+                        tint = PureWhite.copy(alpha = 0.38f),
+                        modifier = Modifier.size(13.dp)
+                    )
                 }
             }
         }
@@ -674,45 +704,54 @@ fun TrackTableRowItem(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DesktopFavoriteButton(
-                isLiked = track.isLiked,
-                onToggle = onToggleLike,
-                isHovered = isHovered,
-                hideWhenUnhovered = true,
-                size = 28.dp,
-                iconSize = 16.dp,
-                unlikedTint = PureWhite.copy(alpha = 0.7f)
-            )
-
-            Spacer(modifier = Modifier.width(4.dp))
-
-            Text(
-                text = formatDuration(track.durationMs ?: 0L),
-                color = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                modifier = Modifier.width(48.dp),
-                textAlign = TextAlign.End
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
             Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .handClickable(onClick = onContextMenu),
+                modifier = Modifier.width(36.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MoreVert,
-                    contentDescription = "Options",
-                    tint = if (isHovered) PureWhite else Color.Transparent,
-                    modifier = Modifier.size(18.dp)
+                DesktopFavoriteButton(
+                    isLiked = track.isLiked,
+                    onToggle = onToggleLike,
+                    isHovered = isHovered,
+                    hideWhenUnhovered = true,
+                    size = 28.dp,
+                    iconSize = 16.dp,
+                    unlikedTint = PureWhite.copy(alpha = 0.7f)
                 )
-                contextMenuContent?.invoke(this)
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier.width(52.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Text(
+                    text = formatDuration(track.durationMs ?: 0L),
+                    color = if (isHovered) PureWhite else PureWhite.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
+                )
+            }
+
+            Box(
+                modifier = Modifier.width(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .handClickable(onClick = onContextMenu),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Options",
+                        tint = if (isHovered || isCurrent) PureWhite.copy(alpha = 0.75f) else Color.Transparent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    contextMenuContent?.invoke(this)
+                }
+            }
         }
     }
 }
