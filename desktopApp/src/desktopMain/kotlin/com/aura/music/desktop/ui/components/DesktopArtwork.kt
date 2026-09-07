@@ -7,7 +7,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.Icon
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,23 +31,23 @@ fun DesktopArtworkCover(
     shapeRadius: Dp = 6.dp,
     fallbackIcon: ImageVector = Icons.Rounded.MusicNote
 ) {
-    val resolvedModel = androidx.compose.runtime.remember(coverUri) {
-        when {
-            coverUri.isNullOrBlank() -> null
-            coverUri.startsWith("http://") || coverUri.startsWith("https://") -> coverUri
-            coverUri.startsWith("file:") -> try {
-                val cleanPath = coverUri.removePrefix("file://").removePrefix("file:")
-                val f = File(cleanPath)
-                if (f.exists()) f.toURI().toString() else null
-            } catch (e: Exception) {
-                null
-            }
-            coverUri.startsWith("content://") -> null
-            else -> try {
-                val f = File(coverUri)
-                if (f.exists()) f.toURI().toString() else null
-            } catch (e: Exception) {
-                null
+    var resolvedModel by remember(coverUri) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(coverUri) {
+        resolvedModel = withContext(Dispatchers.IO) {
+            when {
+                coverUri.isNullOrBlank() -> null
+                coverUri.startsWith("http://") || coverUri.startsWith("https://") -> coverUri
+                coverUri.startsWith("file:") -> try {
+                    val cleanPath = coverUri.removePrefix("file://").removePrefix("file:")
+                    val f = File(cleanPath)
+                    if (f.exists()) f.toURI().toString() else null
+                } catch (e: Exception) { null }
+                coverUri.startsWith("content://") -> null
+                else -> try {
+                    val f = File(coverUri)
+                    if (f.exists()) f.toURI().toString() else null
+                } catch (e: Exception) { null }
             }
         }
     }
