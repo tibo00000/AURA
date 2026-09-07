@@ -164,21 +164,14 @@ fun DesktopHeroHeader(
 
                         // Favorite Button
                         if (onToggleLike != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(DarkGraphite)
-                                    .clickable(onClick = onToggleLike),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                    contentDescription = "Favori",
-                                    tint = if (isLiked) BlazeOrange else PureWhite,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
+                            DesktopFavoriteButton(
+                                isLiked = isLiked,
+                                onToggle = onToggleLike,
+                                modifier = Modifier.background(DarkGraphite, CircleShape),
+                                size = 44.dp,
+                                iconSize = 22.dp,
+                                unlikedTint = PureWhite
+                            )
                         }
 
                         // More Options

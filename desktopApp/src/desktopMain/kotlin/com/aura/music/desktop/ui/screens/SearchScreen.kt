@@ -547,7 +547,6 @@ fun SearchScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isHovered) PureWhite.copy(alpha = 0.05f) else Color.Transparent)
                                         .hoverable(interactionSource)
                                         .handCursor()
                                         .clickable {
@@ -1225,7 +1224,6 @@ private fun DesktopSuggestionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isHovered) PureWhite.copy(alpha = 0.05f) else Color.Transparent)
             .hoverable(interactionSource)
             .handCursor()
             .clickable(onClick = onClick)
@@ -1562,11 +1560,8 @@ private fun DesktopOnlineTrackRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(
-                when {
-                    isCurrentPlaying -> BlazeOrange.copy(alpha = 0.12f)
-                    isHovered -> PureWhite.copy(alpha = 0.04f)
-                    else -> Color.Transparent
-                }
+                if (isCurrentPlaying) BlazeOrange.copy(alpha = 0.12f)
+                else Color.Transparent
             )
             .hoverable(interactionSource)
             .handCursor()

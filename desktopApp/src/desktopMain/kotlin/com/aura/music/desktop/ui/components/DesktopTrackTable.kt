@@ -498,11 +498,7 @@ fun TrackTableRowItem(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(
-                when {
-                    isCurrent -> BlazeOrange.copy(alpha = 0.12f)
-                    isHovered -> PureWhite.copy(alpha = 0.04f)
-                    else -> Color.Transparent
-                }
+                if (isCurrent) BlazeOrange.copy(alpha = 0.12f) else Color.Transparent
             )
             .hoverable(interactionSource)
             .handCursor()
@@ -633,21 +629,15 @@ fun TrackTableRowItem(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .handCursor()
-                    .clickable(onClick = onToggleLike),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (track.isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = "Favori",
-                    tint = if (track.isLiked) BlazeOrange else if (isHovered) PureWhite.copy(alpha = 0.7f) else Color.Transparent,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+            DesktopFavoriteButton(
+                isLiked = track.isLiked,
+                onToggle = onToggleLike,
+                isHovered = isHovered,
+                hideWhenUnhovered = true,
+                size = 28.dp,
+                iconSize = 16.dp,
+                unlikedTint = PureWhite.copy(alpha = 0.7f)
+            )
 
             Spacer(modifier = Modifier.width(4.dp))
 

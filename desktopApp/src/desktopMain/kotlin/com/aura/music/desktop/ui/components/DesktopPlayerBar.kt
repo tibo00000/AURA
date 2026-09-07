@@ -97,17 +97,12 @@ fun DesktopPlayerBar(
                     }
                     if (currentTrack != null) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { onToggleLike(currentTrack.trackId) },
-                            modifier = Modifier.size(36.dp).handCursor()
-                        ) {
-                            Icon(
-                                imageVector = if (uiState.isCurrentTrackLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = if (uiState.isCurrentTrackLiked) "Retirer des favoris" else "Ajouter aux favoris",
-                                tint = if (uiState.isCurrentTrackLiked) BlazeOrange else PureWhite.copy(alpha = 0.5f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        DesktopFavoriteButton(
+                            isLiked = uiState.isCurrentTrackLiked,
+                            onToggle = { onToggleLike(currentTrack.trackId) },
+                            size = 36.dp,
+                            iconSize = 20.dp
+                        )
                     }
                 }
 

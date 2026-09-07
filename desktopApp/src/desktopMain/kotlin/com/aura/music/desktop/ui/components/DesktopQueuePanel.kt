@@ -316,11 +316,8 @@ private fun QueueTrackItem(
             }
             .clip(RoundedCornerShape(6.dp))
             .background(
-                when {
-                    isDragging -> DarkGraphite
-                    isHovered -> DarkGraphite.copy(alpha = 0.7f)
-                    else -> Color.Transparent
-                }
+                if (isDragging) DarkGraphite
+                else Color.Transparent
             )
             .then(
                 if (isDragging) Modifier.border(1.dp, BlazeOrange.copy(alpha = 0.8f), RoundedCornerShape(6.dp))
