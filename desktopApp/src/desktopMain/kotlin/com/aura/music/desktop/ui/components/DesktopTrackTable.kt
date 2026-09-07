@@ -80,7 +80,48 @@ fun DesktopTrackTable(
                 appState.openAlbum(albId)
             },
             onContextMenu = { trk ->
-                trackForContextMenu = trk
+                trackForContextMenu = if (trackForContextMenu?.id == trk.id) null else trk
+            },
+            contextMenuContent = { track ->
+                if (trackForContextMenu?.id == track.id) {
+                    DesktopTrackContextMenu(
+                        expanded = true,
+                        onDismissRequest = { trackForContextMenu = null },
+                        track = track,
+                        onPlayNext = {
+                            orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                        },
+                        onAddToQueue = {
+                            orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                        },
+                        onAddToPlaylist = {
+                            appState.trackIdToAddToPlaylist = track.id
+                            appState.showAddToPlaylistDialog = true
+                        },
+                        onOpenArtist = {
+                            appState.navigateTo("artist_detail")
+                            appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
+                        },
+                        onOpenAlbum = {
+                            track.albumId?.let {
+                                appState.navigateTo("album_detail")
+                                appState.selectedAlbumId = it
+                            }
+                        },
+                        onToggleLike = {
+                            onToggleLike(track.id)
+                        },
+                        onEditMetadata = {
+                            trackForMetadataEdit = track
+                        },
+                        onDownloadCloud = {
+                            orchestrator.triggerSingleFileDownload(track)
+                        },
+                        onUploadCloud = {
+                            orchestrator.triggerSingleFileUpload(track)
+                        }
+                    )
+                }
             },
             showAlbumColumn = showAlbumColumn,
             showDateAddedColumn = showDateAddedColumn,
@@ -88,53 +129,11 @@ fun DesktopTrackTable(
             keyProvider = keyProvider
         )
 
-        // Menu contextuel
-        if (trackForContextMenu != null) {
-            val trk = trackForContextMenu!!
-            DesktopTrackContextMenu(
-                expanded = true,
-                onDismissRequest = { trackForContextMenu = null },
-                track = trk,
-                onPlayNext = {
-                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
-                },
-                onAddToQueue = {
-                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
-                },
-                onAddToPlaylist = {
-                    appState.trackIdToAddToPlaylist = trk.id
-                    appState.showAddToPlaylistDialog = true
-                },
-                onOpenArtist = {
-                    appState.navigateTo("artist_detail")
-                    appState.selectedArtistId = trk.artistId ?: "artist:${trk.artistName}"
-                },
-                onOpenAlbum = {
-                    trk.albumId?.let {
-                        appState.navigateTo("album_detail")
-                        appState.selectedAlbumId = it
-                    }
-                },
-                onToggleLike = {
-                    onToggleLike(trk.id)
-                },
-                onEditMetadata = {
-                    trackForMetadataEdit = trk
-                },
-                onDownloadCloud = {
-                    orchestrator.triggerSingleFileDownload(trk)
-                },
-                onUploadCloud = {
-                    orchestrator.triggerSingleFileUpload(trk)
-                }
-            )
-        }
-
         // Dialogue d'édition de métadonnées
         if (trackForMetadataEdit != null) {
             DesktopEditMetadataDialog(
                 track = trackForMetadataEdit,
-                database = database,
+                database = orchestrator.database,
                 appState = appState,
                 onDismiss = { trackForMetadataEdit = null },
                 onSaved = { }
@@ -154,6 +153,7 @@ fun DesktopTrackTable(
     onOpenArtist: ((String) -> Unit)? = null,
     onOpenAlbum: ((String) -> Unit)? = null,
     onContextMenu: ((TrackListRow) -> Unit)? = null,
+    contextMenuContent: (@Composable BoxScope.(TrackListRow) -> Unit)? = null,
     showAlbumColumn: Boolean = true,
     showDateAddedColumn: Boolean = false,
     isLoading: Boolean = false,
@@ -229,7 +229,8 @@ fun DesktopTrackTable(
                         onOpenAlbum = { track.albumId?.let { onOpenAlbum?.invoke(it) } },
                         onContextMenu = { onContextMenu?.invoke(track) },
                         showAlbumColumn = showAlbumColumn,
-                        showDateAddedColumn = showDateAddedColumn
+                        showDateAddedColumn = showDateAddedColumn,
+                        contextMenuContent = contextMenuContent?.let { content -> { content(track) } }
                     )
                 }
             }
@@ -491,7 +492,8 @@ fun TrackTableRowItem(
     onOpenAlbum: () -> Unit,
     onContextMenu: () -> Unit,
     showAlbumColumn: Boolean,
-    showDateAddedColumn: Boolean
+    showDateAddedColumn: Boolean,
+    contextMenuContent: (@Composable BoxScope.() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -707,6 +709,7 @@ fun TrackTableRowItem(
                     tint = if (isHovered) PureWhite else Color.Transparent,
                     modifier = Modifier.size(18.dp)
                 )
+                contextMenuContent?.invoke(this)
             }
 
             Spacer(modifier = Modifier.width(8.dp))

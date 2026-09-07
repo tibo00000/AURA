@@ -1,8 +1,5 @@
 package com.aura.music.desktop.ui.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +7,8 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -62,6 +61,7 @@ import com.aura.music.domain.search.LocalSearchIndex
 import com.aura.music.domain.search.SearchNormalizer
 import com.aura.music.ui.components.ShimmerTrackRow
 import com.aura.music.ui.components.rememberShimmerBrush
+import com.aura.music.ui.components.shimmer
 import com.aura.music.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -344,11 +344,67 @@ fun SearchScreen(
     val isBuffering = uiState.playbackState == PlaybackState.Buffering || uiState.playbackState == PlaybackState.Preparing
     val shimmerBrush = rememberShimmerBrush()
 
-    // Animation de positionnement de la barre de recherche
-    val topSpacerHeight by animateDpAsState(
-        targetValue = if (isSearchSubmitted) 0.dp else 100.dp,
-        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
-    )
+    // Calcul dynamique de pertinence des sections pour l'onglet "Tout"
+    val localSectionOrder = remember(filteredLocalTracks, filteredLocalArtists, filteredLocalAlbums, appState.searchQuery) {
+        val normQ = SearchNormalizer.normalize(appState.searchQuery).trim()
+        if (normQ.isBlank()) {
+            listOf(SearchSectionType.ARTISTS, SearchSectionType.ALBUMS, SearchSectionType.TRACKS)
+        } else {
+            val topTrack = filteredLocalTracks.firstOrNull()
+            val topArtist = filteredLocalArtists.firstOrNull()
+            val topAlbum = filteredLocalAlbums.firstOrNull()
+
+            val trackScore = topTrack?.let { scoreCandidate(it.title, normQ) } ?: -1
+            val artistScore = topArtist?.let { scoreCandidate(it.name, normQ) } ?: -1
+            val albumScore = topAlbum?.let { scoreCandidate(it.title, normQ) } ?: -1
+
+            listOf(
+                SearchSectionType.TRACKS to trackScore,
+                SearchSectionType.ARTISTS to artistScore,
+                SearchSectionType.ALBUMS to albumScore
+            ).sortedWith(
+                compareByDescending<Pair<SearchSectionType, Int>> { it.second }
+                    .thenBy {
+                        when (it.first) {
+                            SearchSectionType.TRACKS -> 0
+                            SearchSectionType.ARTISTS -> 1
+                            SearchSectionType.ALBUMS -> 2
+                        }
+                    }
+            ).map { it.first }
+        }
+    }
+
+    val onlineSectionOrder = remember(onlineResults, appState.searchQuery) {
+        val results = onlineResults
+        val normQ = SearchNormalizer.normalize(appState.searchQuery).trim()
+        if (results == null || normQ.isBlank()) {
+            listOf(SearchSectionType.ARTISTS, SearchSectionType.ALBUMS, SearchSectionType.TRACKS)
+        } else {
+            val topTrack = results.tracks.firstOrNull()
+            val topArtist = results.artists.firstOrNull()
+            val topAlbum = results.albums.firstOrNull()
+
+            val trackScore = topTrack?.let { scoreCandidate(it.title, normQ) } ?: -1
+            val artistScore = topArtist?.let { scoreCandidate(it.name, normQ) } ?: -1
+            val albumScore = topAlbum?.let { scoreCandidate(it.title, normQ) } ?: -1
+
+            listOf(
+                SearchSectionType.TRACKS to trackScore,
+                SearchSectionType.ARTISTS to artistScore,
+                SearchSectionType.ALBUMS to albumScore
+            ).sortedWith(
+                compareByDescending<Pair<SearchSectionType, Int>> { it.second }
+                    .thenBy {
+                        when (it.first) {
+                            SearchSectionType.TRACKS -> 0
+                            SearchSectionType.ARTISTS -> 1
+                            SearchSectionType.ALBUMS -> 2
+                        }
+                    }
+            ).map { it.first }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -356,36 +412,6 @@ fun SearchScreen(
             .background(DeepBlack)
             .padding(horizontal = 32.dp, vertical = 24.dp)
     ) {
-        Spacer(modifier = Modifier.height(topSpacerHeight))
-
-        // En-tête héro visible uniquement au repos (quand aucune recherche n'est validée)
-        if (!isSearchSubmitted) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Search,
-                    contentDescription = null,
-                    tint = BlazeOrange,
-                    modifier = Modifier.size(44.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Rechercher",
-                    color = PureWhite,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Trouvez vos titres, artistes et albums préférés",
-                    color = PureWhite.copy(alpha = 0.5f),
-                    fontSize = 14.sp
-                )
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-        }
 
         // 1. Barre de recherche avec écoute de la touche Entrée et bouton d'effacement
         OutlinedTextField(
@@ -773,100 +799,148 @@ fun SearchScreen(
                                 contentPadding = PaddingValues(bottom = 40.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                // Artistes
-                                if (filteredLocalArtists.isNotEmpty()) {
-                                    item {
-                                        Text(text = "Artistes", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            items(filteredLocalArtists, key = { it.id }) { artist ->
-                                                DesktopArtistItem(
-                                                    artist = artist,
-                                                    onClick = {
-                                                        appState.selectedArtistId = artist.id
-                                                        appState.navigateTo("artist_detail")
+                                localSectionOrder.forEach { sectionType ->
+                                    when (sectionType) {
+                                        SearchSectionType.ARTISTS -> {
+                                            if (filteredLocalArtists.isNotEmpty()) {
+                                                item {
+                                                    Text(text = "Artistes", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                    Spacer(modifier = Modifier.height(12.dp))
+                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                        items(filteredLocalArtists, key = { it.id }) { artist ->
+                                                            DesktopArtistItem(
+                                                                artist = artist,
+                                                                onClick = {
+                                                                    appState.selectedArtistId = artist.id
+                                                                    appState.navigateTo("artist_detail")
+                                                                }
+                                                            )
+                                                        }
                                                     }
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(20.dp))
-                                    }
-                                }
-
-                                // Albums
-                                if (filteredLocalAlbums.isNotEmpty()) {
-                                    item {
-                                        Text(text = "Albums", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            items(filteredLocalAlbums, key = { it.id }) { album ->
-                                                DesktopAlbumItem(
-                                                    album = album,
-                                                    onClick = {
-                                                        appState.selectedAlbumId = album.id
-                                                        appState.navigateTo("album_detail")
-                                                    }
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(20.dp))
-                                    }
-                                }
-
-                                // Morceaux
-                                if (filteredLocalTracks.isNotEmpty()) {
-                                    item {
-                                        Text(
-                                            text = "Morceaux (${filteredLocalTracks.size})",
-                                            color = PureWhite,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        TrackTableHeaderRow(
-                                            sortField = TrackSortField.DEFAULT,
-                                            sortAscending = true,
-                                            onSortChanged = { },
-                                            showAlbumColumn = true,
-                                            showDateAddedColumn = false
-                                        )
-                                        HorizontalDivider(color = HairlineDark, thickness = 1.dp)
-                                    }
-
-                                    itemsIndexed(filteredLocalTracks, key = { _, track -> track.id }) { index, track ->
-                                        val isCurrent = track.id == uiState.currentTrack?.trackId
-                                        TrackTableRowItem(
-                                            index = index + 1,
-                                            track = track,
-                                            isCurrent = isCurrent,
-                                            isPlaying = uiState.isPlaying && isCurrent,
-                                            isBuffering = isBuffering && isCurrent,
-                                            onPlay = {
-                                                orchestrator.playTrack(
-                                                    trackId = track.id,
-                                                    contextType = "search",
-                                                    contextId = appState.searchQuery,
-                                                    contextTracks = filteredLocalTracks.map { orchestrator.toQueuedTrack(it) },
-                                                    startIndex = index
-                                                )
-                                            },
-                                            onToggleLike = { onToggleLike(track.id) },
-                                            onOpenArtist = {
-                                                appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
-                                                appState.navigateTo("artist_detail")
-                                            },
-                                            onOpenAlbum = {
-                                                track.albumId?.let {
-                                                    appState.selectedAlbumId = it
-                                                    appState.navigateTo("album_detail")
+                                                    Spacer(modifier = Modifier.height(20.dp))
                                                 }
-                                            },
-                                            onContextMenu = {
-                                                trackForContextMenu = track
-                                            },
-                                            showAlbumColumn = true,
-                                            showDateAddedColumn = false
-                                        )
+                                            }
+                                        }
+
+                                        SearchSectionType.ALBUMS -> {
+                                            if (filteredLocalAlbums.isNotEmpty()) {
+                                                item {
+                                                    Text(text = "Albums", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                    Spacer(modifier = Modifier.height(12.dp))
+                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                        items(filteredLocalAlbums, key = { it.id }) { album ->
+                                                            DesktopAlbumItem(
+                                                                album = album,
+                                                                onClick = {
+                                                                    appState.selectedAlbumId = album.id
+                                                                    appState.navigateTo("album_detail")
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.height(20.dp))
+                                                }
+                                            }
+                                        }
+
+                                        SearchSectionType.TRACKS -> {
+                                            if (filteredLocalTracks.isNotEmpty()) {
+                                                item {
+                                                    Text(
+                                                        text = "Morceaux (${filteredLocalTracks.size})",
+                                                        color = PureWhite,
+                                                        fontSize = 18.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(12.dp))
+                                                    TrackTableHeaderRow(
+                                                        sortField = TrackSortField.DEFAULT,
+                                                        sortAscending = true,
+                                                        onSortChanged = { },
+                                                        showAlbumColumn = true,
+                                                        showDateAddedColumn = false
+                                                    )
+                                                    HorizontalDivider(color = HairlineDark, thickness = 1.dp)
+                                                }
+
+                                                itemsIndexed(filteredLocalTracks, key = { _, track -> track.id }) { index, track ->
+                                                    val isCurrent = track.id == uiState.currentTrack?.trackId
+                                                    TrackTableRowItem(
+                                                        index = index + 1,
+                                                        track = track,
+                                                        isCurrent = isCurrent,
+                                                        isPlaying = uiState.isPlaying && isCurrent,
+                                                        isBuffering = isBuffering && isCurrent,
+                                                        onPlay = {
+                                                            orchestrator.playTrack(
+                                                                trackId = track.id,
+                                                                contextType = "search",
+                                                                contextId = appState.searchQuery,
+                                                                contextTracks = filteredLocalTracks.map { orchestrator.toQueuedTrack(it) },
+                                                                startIndex = index
+                                                            )
+                                                        },
+                                                        onToggleLike = { onToggleLike(track.id) },
+                                                        onOpenArtist = {
+                                                            appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
+                                                            appState.navigateTo("artist_detail")
+                                                        },
+                                                        onOpenAlbum = {
+                                                            track.albumId?.let {
+                                                                appState.selectedAlbumId = it
+                                                                appState.navigateTo("album_detail")
+                                                            }
+                                                        },
+                                                        onContextMenu = {
+                                                            trackForContextMenu = if (trackForContextMenu?.id == track.id) null else track
+                                                        },
+                                                        contextMenuContent = {
+                                                            if (trackForContextMenu?.id == track.id) {
+                                                                DesktopTrackContextMenu(
+                                                                    expanded = true,
+                                                                    onDismissRequest = { trackForContextMenu = null },
+                                                                    track = track,
+                                                                    onPlayNext = {
+                                                                        orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                                                                    },
+                                                                    onAddToQueue = {
+                                                                        orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                                                                    },
+                                                                    onAddToPlaylist = {
+                                                                        appState.trackIdToAddToPlaylist = track.id
+                                                                        appState.showAddToPlaylistDialog = true
+                                                                    },
+                                                                    onOpenArtist = {
+                                                                        appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
+                                                                        appState.navigateTo("artist_detail")
+                                                                    },
+                                                                    onOpenAlbum = {
+                                                                        track.albumId?.let {
+                                                                            appState.selectedAlbumId = it
+                                                                            appState.navigateTo("album_detail")
+                                                                        }
+                                                                    },
+                                                                    onToggleLike = {
+                                                                        onToggleLike(track.id)
+                                                                    },
+                                                                    onEditMetadata = {
+                                                                        trackForMetadataEdit = track
+                                                                    },
+                                                                    onDownloadCloud = {
+                                                                        orchestrator.triggerSingleFileDownload(track)
+                                                                    },
+                                                                    onUploadCloud = {
+                                                                        orchestrator.triggerSingleFileUpload(track)
+                                                                    }
+                                                                )
+                                                            }
+                                                        },
+                                                        showAlbumColumn = true,
+                                                        showDateAddedColumn = false
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -907,7 +981,48 @@ fun SearchScreen(
                                     appState.navigateTo("album_detail")
                                 },
                                 onContextMenu = { track ->
-                                    trackForContextMenu = track
+                                    trackForContextMenu = if (trackForContextMenu?.id == track.id) null else track
+                                },
+                                contextMenuContent = { track ->
+                                    if (trackForContextMenu?.id == track.id) {
+                                        DesktopTrackContextMenu(
+                                            expanded = true,
+                                            onDismissRequest = { trackForContextMenu = null },
+                                            track = track,
+                                            onPlayNext = {
+                                                orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                                            },
+                                            onAddToQueue = {
+                                                orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                                            },
+                                            onAddToPlaylist = {
+                                                appState.trackIdToAddToPlaylist = track.id
+                                                appState.showAddToPlaylistDialog = true
+                                            },
+                                            onOpenArtist = {
+                                                appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
+                                                appState.navigateTo("artist_detail")
+                                            },
+                                            onOpenAlbum = {
+                                                track.albumId?.let {
+                                                    appState.selectedAlbumId = it
+                                                    appState.navigateTo("album_detail")
+                                                }
+                                            },
+                                            onToggleLike = {
+                                                onToggleLike(track.id)
+                                            },
+                                            onEditMetadata = {
+                                                trackForMetadataEdit = track
+                                            },
+                                            onDownloadCloud = {
+                                                orchestrator.triggerSingleFileDownload(track)
+                                            },
+                                            onUploadCloud = {
+                                                orchestrator.triggerSingleFileUpload(track)
+                                            }
+                                        )
+                                    }
                                 }
                             )
                         } else {
@@ -982,9 +1097,34 @@ fun SearchScreen(
             } else {
                 // === VUE CATALOGUE CLOUD / EN LIGNE ===
                 if (isOnlineLoading) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        repeat(7) {
-                            ShimmerTrackRow(brush = shimmerBrush)
+                    when (selectedCategory) {
+                        SearchCategoryFilter.ALL -> DesktopMixedSearchSkeleton(brush = shimmerBrush)
+                        SearchCategoryFilter.TRACKS -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                repeat(8) {
+                                    ShimmerTrackRow(brush = shimmerBrush)
+                                }
+                            }
+                        }
+                        SearchCategoryFilter.ARTISTS -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                repeat(5) {
+                                    ShimmerArtistCard(brush = shimmerBrush)
+                                }
+                            }
+                        }
+                        SearchCategoryFilter.ALBUMS -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                repeat(4) {
+                                    ShimmerAlbumCard(brush = shimmerBrush)
+                                }
+                            }
                         }
                     }
                 } else if (onlineError != null) {
@@ -1017,83 +1157,90 @@ fun SearchScreen(
                                 contentPadding = PaddingValues(bottom = 40.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                // Artistes distants
-                                if (results.artists.isNotEmpty()) {
-                                    item {
-                                        Text(text = "Artistes", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            items(results.artists, key = { it.id }) { artist ->
-                                                DesktopOnlineArtistItem(
-                                                    artist = artist,
-                                                    onClick = {
-                                                        appState.selectedArtistId = artist.id
-                                                        appState.navigateTo("artist_detail")
+                                onlineSectionOrder.forEach { sectionType ->
+                                    when (sectionType) {
+                                        SearchSectionType.ARTISTS -> {
+                                            if (results.artists.isNotEmpty()) {
+                                                item {
+                                                    Text(text = "Artistes", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                    Spacer(modifier = Modifier.height(12.dp))
+                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                        items(results.artists, key = { it.id }) { artist ->
+                                                            DesktopOnlineArtistItem(
+                                                                artist = artist,
+                                                                onClick = {
+                                                                    appState.selectedArtistId = artist.id
+                                                                    appState.navigateTo("artist_detail")
+                                                                }
+                                                            )
+                                                        }
                                                     }
-                                                )
+                                                    Spacer(modifier = Modifier.height(20.dp))
+                                                }
                                             }
                                         }
-                                        Spacer(modifier = Modifier.height(20.dp))
-                                    }
-                                }
 
-                                // Albums distants
-                                if (results.albums.isNotEmpty()) {
-                                    item {
-                                        Text(text = "Albums", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            items(results.albums, key = { it.id }) { album ->
-                                                DesktopOnlineAlbumItem(
-                                                    album = album,
-                                                    onClick = {
-                                                        appState.selectedAlbumId = album.id
-                                                        appState.navigateTo("album_detail")
+                                        SearchSectionType.ALBUMS -> {
+                                            if (results.albums.isNotEmpty()) {
+                                                item {
+                                                    Text(text = "Albums", color = PureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                    Spacer(modifier = Modifier.height(12.dp))
+                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                        items(results.albums, key = { it.id }) { album ->
+                                                            DesktopOnlineAlbumItem(
+                                                                album = album,
+                                                                onClick = {
+                                                                    appState.selectedAlbumId = album.id
+                                                                    appState.navigateTo("album_detail")
+                                                                }
+                                                            )
+                                                        }
                                                     }
-                                                )
+                                                    Spacer(modifier = Modifier.height(20.dp))
+                                                }
                                             }
                                         }
-                                        Spacer(modifier = Modifier.height(20.dp))
-                                    }
-                                }
 
-                                // Titres distants en streaming & téléchargement avec en-têtes de colonnes
-                                if (results.tracks.isNotEmpty()) {
-                                    item {
-                                        Text(
-                                            text = "Titres en streaming & téléchargement (${results.tracks.size})",
-                                            color = PureWhite,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        DesktopOnlineTableHeaderRow()
-                                        HorizontalDivider(color = HairlineDark, thickness = 1.dp)
-                                    }
+                                        SearchSectionType.TRACKS -> {
+                                            if (results.tracks.isNotEmpty()) {
+                                                item {
+                                                    Text(
+                                                        text = "Titres en streaming & téléchargement (${results.tracks.size})",
+                                                        color = PureWhite,
+                                                        fontSize = 18.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(10.dp))
+                                                    DesktopOnlineTableHeaderRow()
+                                                    HorizontalDivider(color = HairlineDark, thickness = 1.dp)
+                                                }
 
-                                    itemsIndexed(results.tracks, key = { _, track -> track.id }) { index, track ->
-                                        val matchedLocal = resolveLocalMatch(track)
-                                        val isCurrentPlaying = uiState.currentTrack?.trackId == track.id
-                                        DesktopOnlineTrackRow(
-                                            index = index + 1,
-                                            track = track,
-                                            matchedLocal = matchedLocal,
-                                            isCurrentPlaying = isCurrentPlaying,
-                                            isPlaying = uiState.isPlaying && isCurrentPlaying,
-                                            isBuffering = isBuffering && isCurrentPlaying,
-                                            onPlay = {
-                                                orchestrator.playOnlineTrack(track, results.tracks)
-                                            },
-                                            onDownload = {
-                                                orchestrator.triggerTrackDownload(track)
-                                            },
-                                            onOpenArtist = {
-                                                appState.openArtist("artist:${track.displayArtistName}")
-                                            },
-                                            onOpenAlbum = track.displayAlbumTitle?.let { title ->
-                                                { appState.openAlbum("album:$title") }
+                                                itemsIndexed(results.tracks, key = { _, track -> track.id }) { index, track ->
+                                                    val matchedLocal = resolveLocalMatch(track)
+                                                    val isCurrentPlaying = uiState.currentTrack?.trackId == track.id
+                                                    DesktopOnlineTrackRow(
+                                                        index = index + 1,
+                                                        track = track,
+                                                        matchedLocal = matchedLocal,
+                                                        isCurrentPlaying = isCurrentPlaying,
+                                                        isPlaying = uiState.isPlaying && isCurrentPlaying,
+                                                        isBuffering = isBuffering && isCurrentPlaying,
+                                                        onPlay = {
+                                                            orchestrator.playOnlineTrack(track, results.tracks)
+                                                        },
+                                                        onDownload = {
+                                                            orchestrator.triggerTrackDownload(track)
+                                                        },
+                                                        onOpenArtist = {
+                                                            appState.openArtist("artist:${track.displayArtistName}")
+                                                        },
+                                                        onOpenAlbum = track.displayAlbumTitle?.let { title ->
+                                                            { appState.openAlbum("album:$title") }
+                                                        }
+                                                    )
+                                                }
                                             }
-                                        )
+                                        }
                                     }
                                 }
                             }
@@ -1219,47 +1366,6 @@ fun SearchScreen(
             }
         }
 
-        // Menus contextuels et dialogues d'édition pour les pistes locales
-        if (trackForContextMenu != null) {
-            val trk = trackForContextMenu!!
-            DesktopTrackContextMenu(
-                expanded = true,
-                onDismissRequest = { trackForContextMenu = null },
-                track = trk,
-                onPlayNext = {
-                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
-                },
-                onAddToQueue = {
-                    orchestrator.addToQueue(orchestrator.toQueuedTrack(trk))
-                },
-                onAddToPlaylist = {
-                    appState.trackIdToAddToPlaylist = trk.id
-                    appState.showAddToPlaylistDialog = true
-                },
-                onOpenArtist = {
-                    appState.selectedArtistId = trk.artistId ?: "artist:${trk.artistName}"
-                    appState.navigateTo("artist_detail")
-                },
-                onOpenAlbum = {
-                    trk.albumId?.let {
-                        appState.selectedAlbumId = it
-                        appState.navigateTo("album_detail")
-                    }
-                },
-                onToggleLike = {
-                    onToggleLike(trk.id)
-                },
-                onEditMetadata = {
-                    trackForMetadataEdit = trk
-                },
-                onDownloadCloud = {
-                    orchestrator.triggerSingleFileDownload(trk)
-                },
-                onUploadCloud = {
-                    orchestrator.triggerSingleFileUpload(trk)
-                }
-            )
-        }
 
         if (trackForMetadataEdit != null) {
             DesktopEditMetadataDialog(
@@ -1852,6 +1958,144 @@ private fun DesktopOnlineTrackRow(
             }
 
             Spacer(modifier = Modifier.width(8.dp))
+        }
+    }
+}
+
+enum class SearchSectionType {
+    TRACKS, ARTISTS, ALBUMS
+}
+
+private fun scoreCandidate(candidate: String?, normQ: String): Int {
+    if (candidate.isNullOrBlank() || normQ.isBlank()) return 0
+    val normC = SearchNormalizer.normalize(candidate).trim()
+    return when {
+        normC == normQ -> 1000
+        normC.startsWith(normQ) -> 800 - (normC.length - normQ.length).coerceIn(0, 200)
+        normQ.startsWith(normC) -> 750
+        normC.split(" ").contains(normQ) -> 650
+        normC.contains(normQ) -> 500
+        normQ.contains(normC) -> 450
+        else -> 50
+    }
+}
+
+@Composable
+private fun ShimmerArtistCard(brush: androidx.compose.ui.graphics.Brush) {
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(OffBlack)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .shimmer(brush, CircleShape)
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .width(76.dp)
+                .height(14.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .width(42.dp)
+                .height(11.dp)
+                .shimmer(brush, RoundedCornerShape(3.dp))
+        )
+    }
+}
+
+@Composable
+private fun ShimmerAlbumCard(brush: androidx.compose.ui.graphics.Brush) {
+    Column(
+        modifier = Modifier
+            .width(135.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(OffBlack)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Box(
+            modifier = Modifier
+                .size(111.dp)
+                .shimmer(brush, RoundedCornerShape(8.dp))
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .width(90.dp)
+                .height(14.dp)
+                .shimmer(brush, RoundedCornerShape(4.dp))
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .width(60.dp)
+                .height(11.dp)
+                .shimmer(brush, RoundedCornerShape(3.dp))
+        )
+    }
+}
+
+@Composable
+private fun DesktopMixedSearchSkeleton(brush: androidx.compose.ui.graphics.Brush) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        // Section Artistes skeleton
+        Column {
+            Box(
+                modifier = Modifier
+                    .width(100.dp)
+                    .height(20.dp)
+                    .shimmer(brush, RoundedCornerShape(4.dp))
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                repeat(4) {
+                    ShimmerArtistCard(brush = brush)
+                }
+            }
+        }
+
+        // Section Albums skeleton
+        Column {
+            Box(
+                modifier = Modifier
+                    .width(90.dp)
+                    .height(20.dp)
+                    .shimmer(brush, RoundedCornerShape(4.dp))
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                repeat(4) {
+                    ShimmerAlbumCard(brush = brush)
+                }
+            }
+        }
+
+        // Section Morceaux skeleton
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                modifier = Modifier
+                    .width(130.dp)
+                    .height(20.dp)
+                    .shimmer(brush, RoundedCornerShape(4.dp))
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            repeat(4) {
+                ShimmerTrackRow(brush = brush)
+            }
         }
     }
 }
