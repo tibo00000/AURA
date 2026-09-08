@@ -984,6 +984,19 @@ class DesktopPlaybackOrchestrator(
         }
     }
 
+    val cloudFileIds: StateFlow<Set<String>>
+        get() = cloudSyncManager?.cloudFileIds ?: MutableStateFlow(emptySet()).asStateFlow()
+
+    fun triggerSingleFileDelete(track: TrackListRow, onComplete: ((Boolean) -> Unit)? = null) {
+        scope.launch(Dispatchers.IO) {
+            val token = apiToken ?: return@launch
+            val success = cloudSyncManager?.deleteCloudTrack(token, track.id) ?: false
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke(success)
+            }
+        }
+    }
+
     suspend fun syncCloudData(token: String, onFinished: (() -> Unit)? = null) =
         performCloudSync(token, onFinished)
 
@@ -1003,8 +1016,8 @@ class DesktopPlaybackOrchestrator(
     suspend fun uploadCloudTrack(token: String, trackId: String) =
         cloudSyncManager?.uploadCloudTrack(token, trackId)
 
-    suspend fun deleteCloudTrack(token: String, trackId: String) =
-        cloudSyncManager?.deleteCloudTrack(token, trackId)
+    suspend fun deleteCloudTrack(token: String, trackId: String): Boolean =
+        cloudSyncManager?.deleteCloudTrack(token, trackId) ?: false
 
     fun clearStreamCache(): Long =
         cloudSyncManager?.clearStreamCache() ?: 0L

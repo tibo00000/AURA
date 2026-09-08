@@ -270,11 +270,18 @@ async def delete_sync_file(
     track_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    target_file, metadata_file = _paths(current_user.id, track_id)
+    from app.core.aura_id_codec import get_track_id_aliases
+
+    aliases = get_track_id_aliases(track_id)
     deleted = False
-    for path in (target_file, metadata_file):
-        if path.exists():
-            path.unlink()
-            deleted = True
+    for alias in aliases:
+        target_file, metadata_file = _paths(current_user.id, alias)
+        for path in (target_file, metadata_file):
+            if path.exists():
+                try:
+                    path.unlink()
+                    deleted = True
+                except Exception as exc:
+                    logger.warning("Failed to delete %s: %s", path, exc)
 
     return ResponseEnvelope(data={"track_id": track_id, "deleted": deleted})

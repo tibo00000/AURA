@@ -43,6 +43,9 @@ class DesktopCloudSyncManager(
     private val _lastSyncError = MutableStateFlow<String?>(null)
     val lastSyncError: StateFlow<String?> = _lastSyncError.asStateFlow()
 
+    private val _cloudFileIds = MutableStateFlow<Set<String>>(emptySet())
+    val cloudFileIds: StateFlow<Set<String>> = _cloudFileIds.asStateFlow()
+
     fun startLoop(intervalMs: Long = 60000L) {
         syncJob?.cancel()
         syncJob = scope.launch(Dispatchers.IO) {
@@ -191,6 +194,7 @@ class DesktopCloudSyncManager(
         val mediaLinksToInsert = mutableListOf<TrackMediaLinkEntity>()
 
         val cloudTrackIds = cloudFiles.map { it.trackId }
+        _cloudFileIds.value = cloudTrackIds.toSet()
         val existingTracks = database.trackDao().getTracksByIds(cloudTrackIds).associateBy { it.id }
         val existingLikedIds = database.trackDao().getLikedTrackIds(cloudTrackIds).toSet()
 
@@ -711,18 +715,58 @@ class DesktopCloudSyncManager(
 
         if (response.data != null) {
             System.out.println("Track $trackId uploaded successfully to cloud.")
+            _cloudFileIds.update { it + trackId }
         } else {
             System.err.println("Failed to upload track $trackId: ${response.error?.message}")
         }
     }
 
-    suspend fun deleteCloudTrack(token: String, trackId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteCloudTrack(token: String, trackId: String): Boolean = withContext(Dispatchers.IO) {
         System.out.println("Deleting track $trackId from cloud...")
         val response = apiService.deleteSyncFile(token, trackId)
-        if (response.data?.deleted == true) {
+        val isDeleted = response.data?.deleted == true || (response.error == null && response.data != null)
+        if (isDeleted) {
             System.out.println("Track $trackId deleted successfully from cloud.")
+            _cloudFileIds.update { it - trackId }
+
+            // Vérifier si le titre est présent localement sur le disque
+            val existing = database.trackDao().getTrackById(trackId)
+            val hasLocalFile = !existing?.contentUri.isNullOrBlank()
+
+            if (!hasLocalFile) {
+                // Titre uniquement sur le Cloud : suppression complète de Room
+                database.useWriterConnection { transactor ->
+                    transactor.immediateTransaction {
+                        database.trackDao().deleteTracksByIds(listOf(trackId))
+                        database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+                        database.trackLikeDao().deleteLike(trackId)
+                    }
+                }
+            } else {
+                // Titre présent localement : on le conserve sur le PC mais on bascule sa source canonique en local/downloaded
+                val raw = database.trackDao().getRawTrackById(trackId)
+                if (raw != null && raw.canonicalAudioSourceType == "cloud") {
+                    database.useWriterConnection { transactor ->
+                        transactor.immediateTransaction {
+                            database.trackDao().upsertTrack(raw.copy(canonicalAudioSourceType = "local"))
+                        }
+                    }
+                }
+            }
+
+            // Nettoyage éventuel du cache de streaming temporaire
+            try {
+                val appDir = File(System.getProperty("user.home"), ".aura")
+                val streamCacheDir = File(appDir, "cache/stream")
+                val cleanId = trackId.replace(':', ';')
+                File(streamCacheDir, "$cleanId.audio").delete()
+                File(streamCacheDir, "$cleanId.mp3").delete()
+            } catch (_: Exception) {}
+
+            true
         } else {
-            System.err.println("Failed to delete track $trackId from cloud.")
+            System.err.println("Failed to delete track $trackId from cloud: ${response.error?.message}")
+            false
         }
     }
 

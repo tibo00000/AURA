@@ -58,9 +58,11 @@ fun CloudSyncScreen(
     var selectedFilter by remember { mutableStateOf(0) } // 0 = À récupérer, 1 = À sauvegarder, 2 = Tout
     var searchQuery by remember { mutableStateOf("") }
     var isSyncing by remember { mutableStateOf(false) }
+    val cloudFileIds by orchestrator.cloudFileIds.collectAsState()
+    var trackToDeleteFromCloud by remember { mutableStateOf<TrackListRow?>(null) }
 
     val cloudOnlyTracks = remember(allTracks) { allTracks.filter { it.isCloudOnly } }
-    val localOnlyTracks = remember(allTracks) { allTracks.filter { !it.isCloudOnly } }
+    val localOnlyTracks = remember(allTracks, cloudFileIds) { allTracks.filter { !it.isCloudOnly && !cloudFileIds.contains(it.id) } }
 
     val baseTracks = when (selectedFilter) {
         0 -> cloudOnlyTracks
@@ -81,7 +83,10 @@ fun CloudSyncScreen(
         }
     }
 
-    val usedMb = remember(allTracks) { (allTracks.size * 8).coerceAtLeast(120) } // estimation ~8Mo par titre
+    val totalCloudCount = remember(allTracks, cloudFileIds) {
+        allTracks.count { it.isCloudOnly || cloudFileIds.contains(it.id) }
+    }
+    val usedMb = remember(totalCloudCount) { (totalCloudCount * 8).coerceAtLeast(120) } // estimation ~8Mo par titre
     val totalMb = 20480 // 20 Go (aligné sur mobile)
 
     var showConfirmDownloadAllDialog by remember { mutableStateOf(false) }
@@ -476,7 +481,7 @@ fun CloudSyncScreen(
                     letterSpacing = 1.sp,
                     modifier = Modifier.weight(1.2f)
                 )
-                Box(modifier = Modifier.width(80.dp), contentAlignment = Alignment.CenterEnd) {
+                Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
                     Text(
                         text = "ACTION",
                         color = PureWhite.copy(alpha = 0.5f),
@@ -524,13 +529,16 @@ fun CloudSyncScreen(
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
                     itemsIndexed(filteredTracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
+                        val isOnCloud = track.isCloudOnly || cloudFileIds.contains(track.id)
                         CloudTrackTableRow(
                             index = index + 1,
                             track = track,
+                            isOnCloud = isOnCloud,
                             onOpenArtist = { appState.openArtist(track.artistId ?: "artist:${track.artistName}") },
                             onOpenAlbum = { track.albumId?.let { appState.openAlbum(it) } },
                             onDownload = { orchestrator.triggerSingleFileDownload(track) },
-                            onUpload = { orchestrator.triggerSingleFileUpload(track) }
+                            onUpload = { orchestrator.triggerSingleFileUpload(track) },
+                            onDeleteCloud = { trackToDeleteFromCloud = track }
                         )
                     }
                 }
@@ -566,6 +574,33 @@ fun CloudSyncScreen(
                 onDismiss = { showConfirmUploadAllDialog = false }
             )
         }
+
+        if (trackToDeleteFromCloud != null) {
+            val track = trackToDeleteFromCloud!!
+            CloudActionConfirmDialog(
+                title = "Supprimer du Cloud VPS ?",
+                message = "Êtes-vous sûr de vouloir supprimer « ${track.title} » de votre serveur Cloud ?",
+                detailText = if (track.isCloudOnly) {
+                    "Ce titre n'étant pas stocké sur votre PC, il sera définitivement retiré de votre bibliothèque."
+                } else {
+                    "Le fichier audio restera intact sur votre PC, mais il ne sera plus synchronisé ni accessible sur vos autres appareils."
+                },
+                confirmText = "Supprimer du Cloud",
+                confirmIcon = Icons.Rounded.Delete,
+                confirmColor = Color(0xFFE53935),
+                onConfirm = {
+                    val toDelete = track
+                    trackToDeleteFromCloud = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        orchestrator.apiToken?.let { token ->
+                            orchestrator.deleteCloudTrack(token, toDelete.id)
+                            onReloadData()
+                        }
+                    }
+                },
+                onDismiss = { trackToDeleteFromCloud = null }
+            )
+        }
     }
 }
 
@@ -573,10 +608,12 @@ fun CloudSyncScreen(
 private fun CloudTrackTableRow(
     index: Int,
     track: TrackListRow,
+    isOnCloud: Boolean,
     onOpenArtist: () -> Unit,
     onOpenAlbum: () -> Unit,
     onDownload: () -> Unit,
-    onUpload: () -> Unit
+    onUpload: () -> Unit,
+    onDeleteCloud: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -672,16 +709,28 @@ private fun CloudTrackTableRow(
 
         // Statut
         Box(modifier = Modifier.weight(1.2f), contentAlignment = Alignment.CenterStart) {
-            val statusTooltip = if (track.isCloudOnly) {
-                "Sur le Cloud : stocké sur votre VPS (non téléchargé en local)"
-            } else {
-                "Sur ce PC : stocké localement et disponible hors-ligne"
+            val isSyncedOnBoth = !track.isCloudOnly && isOnCloud
+            val statusTooltip = when {
+                track.isCloudOnly -> "Sur le Cloud : stocké sur votre VPS (non téléchargé en local)"
+                isSyncedOnBoth -> "Synchronisé : présent sur ce PC et sauvegardé sur le Cloud VPS"
+                else -> "Sur ce PC : stocké localement et disponible hors-ligne"
             }
             AuraTooltip(text = statusTooltip) {
                 Surface(
-                    color = if (track.isCloudOnly) BlazeOrange.copy(alpha = 0.15f) else DarkGraphite,
+                    color = when {
+                        track.isCloudOnly -> BlazeOrange.copy(alpha = 0.15f)
+                        isSyncedOnBoth -> Color(0xFF4CAF50).copy(alpha = 0.15f)
+                        else -> DarkGraphite
+                    },
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, if (track.isCloudOnly) BlazeOrange.copy(alpha = 0.4f) else HairlineDark)
+                    border = BorderStroke(
+                        1.dp,
+                        when {
+                            track.isCloudOnly -> BlazeOrange.copy(alpha = 0.4f)
+                            isSyncedOnBoth -> Color(0xFF4CAF50).copy(alpha = 0.4f)
+                            else -> HairlineDark
+                        }
+                    )
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -689,14 +738,30 @@ private fun CloudTrackTableRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            imageVector = if (track.isCloudOnly) Icons.Rounded.Cloud else Icons.Rounded.CheckCircle,
+                            imageVector = when {
+                                track.isCloudOnly -> Icons.Rounded.Cloud
+                                isSyncedOnBoth -> Icons.Rounded.CloudDone
+                                else -> Icons.Rounded.CheckCircle
+                            },
                             contentDescription = null,
-                            tint = if (track.isCloudOnly) BlazeOrange else Color(0xFF4CAF50),
+                            tint = when {
+                                track.isCloudOnly -> BlazeOrange
+                                isSyncedOnBoth -> Color(0xFF4CAF50)
+                                else -> Color(0xFF4CAF50)
+                            },
                             modifier = Modifier.size(11.dp)
                         )
                         Text(
-                            text = if (track.isCloudOnly) "Cloud" else "Local",
-                            color = if (track.isCloudOnly) BlazeOrange else PureWhite.copy(alpha = 0.75f),
+                            text = when {
+                                track.isCloudOnly -> "Cloud"
+                                isSyncedOnBoth -> "Sync"
+                                else -> "Local"
+                            },
+                            color = when {
+                                track.isCloudOnly -> BlazeOrange
+                                isSyncedOnBoth -> Color(0xFF4CAF50)
+                                else -> PureWhite.copy(alpha = 0.75f)
+                            },
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -706,43 +771,88 @@ private fun CloudTrackTableRow(
         }
 
         // Action
-        Box(modifier = Modifier.width(80.dp), contentAlignment = Alignment.CenterEnd) {
-            if (track.isCloudOnly) {
-                AuraTooltip(text = "Rapatrier sur ce PC") {
-                    Surface(
-                        color = BlazeOrange,
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .handClickable(onClick = onDownload)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.Download,
-                                contentDescription = "Rapatrier",
-                                tint = PureWhite,
-                                modifier = Modifier.size(15.dp)
-                            )
+        Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterEnd)
+            ) {
+                if (track.isCloudOnly) {
+                    AuraTooltip(text = "Rapatrier sur ce PC") {
+                        Surface(
+                            color = BlazeOrange,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .handClickable(onClick = onDownload)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Download,
+                                    contentDescription = "Rapatrier",
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
                         }
                     }
-                }
-            } else {
-                AuraTooltip(text = "Sauvegarder sur le Cloud VPS") {
-                    Surface(
-                        color = DarkGraphite,
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, HairlineDark),
-                        modifier = Modifier
-                            .size(30.dp)
-                            .handClickable(onClick = onUpload)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.CloudUpload,
-                                contentDescription = "Sauvegarder",
-                                tint = BlazeOrange,
-                                modifier = Modifier.size(15.dp)
-                            )
+
+                    AuraTooltip(text = "Supprimer du Cloud VPS") {
+                        Surface(
+                            color = DarkGraphite,
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, HairlineDark),
+                            modifier = Modifier
+                                .size(30.dp)
+                                .handClickable(onClick = onDeleteCloud)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = "Supprimer du Cloud",
+                                    tint = Color(0xFFE57373),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    }
+                } else if (isOnCloud) {
+                    AuraTooltip(text = "Supprimer du Cloud VPS (conserver en local)") {
+                        Surface(
+                            color = DarkGraphite,
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, HairlineDark),
+                            modifier = Modifier
+                                .size(30.dp)
+                                .handClickable(onClick = onDeleteCloud)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = "Supprimer du Cloud",
+                                    tint = Color(0xFFE57373),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    AuraTooltip(text = "Sauvegarder sur le Cloud VPS") {
+                        Surface(
+                            color = DarkGraphite,
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, HairlineDark),
+                            modifier = Modifier
+                                .size(30.dp)
+                                .handClickable(onClick = onUpload)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CloudUpload,
+                                    contentDescription = "Sauvegarder",
+                                    tint = BlazeOrange,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -758,6 +868,7 @@ private fun CloudActionConfirmDialog(
     detailText: String,
     confirmText: String,
     confirmIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    confirmColor: Color = BlazeOrange,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -772,13 +883,13 @@ private fun CloudActionConfirmDialog(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(BlazeOrange.copy(alpha = 0.15f)),
+                        .background(confirmColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = confirmIcon,
                         contentDescription = null,
-                        tint = BlazeOrange,
+                        tint = confirmColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -817,7 +928,7 @@ private fun CloudActionConfirmDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                colors = ButtonDefaults.buttonColors(containerColor = confirmColor),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.handCursor()
             ) {

@@ -29,6 +29,7 @@ fun DesktopTrackContextMenu(
     onEditMetadata: (() -> Unit)? = null,
     onDownloadCloud: (() -> Unit)? = null,
     onUploadCloud: (() -> Unit)? = null,
+    onDeleteCloud: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
     offset: DpOffset = DpOffset(0.dp, 0.dp)
 ) {
@@ -116,6 +117,18 @@ fun DesktopTrackContextMenu(
                 iconTint = BlazeOrange,
                 onClick = {
                     onDownloadCloud()
+                    onDismissRequest()
+                }
+            )
+        }
+
+        if (onDeleteCloud != null && track.isCloudOnly) {
+            ContextMenuItem(
+                icon = Icons.Rounded.DeleteOutline,
+                label = "Supprimer du Cloud",
+                iconTint = Color(0xFFE57373),
+                onClick = {
+                    onDeleteCloud()
                     onDismissRequest()
                 }
             )
