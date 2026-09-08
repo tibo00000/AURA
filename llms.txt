@@ -93,3 +93,5 @@ MCP And Operations
 - `docs/ops/logging-observability.md`: logs et correlation.
 - `docs/ops/env-vars.md`: inventaire des variables d'environnement.
 - `docs/ops/hosting-strategy.md`: strategie d'hebergement always-on avant la recherche online produit.
+- `docs/ops/ota-deployment-guide.md`: procedure pas-a-pas pour publier une mise a jour OTA et synchroniser l'APK et version.json sur le VPS.
+
