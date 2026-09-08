@@ -146,11 +146,12 @@ class TrackLookupIndex(
         if (normArtist.isNotEmpty()) {
             val doubletKey = NormalizedDoubletKey(normTitle, normArtist)
             localByDoublet[doubletKey]?.let { list ->
-                val match = list.firstOrNull { row ->
+                val matching = list.filter { row ->
                     val rowAlbumNorm = NormalizedTrackKey.normalizeText(row.albumTitle)
                     normAlbum.isEmpty() || rowAlbumNorm.isEmpty() || normAlbum == rowAlbumNorm
                 }
-                if (match != null) return match
+                val preferred = matching.firstOrNull { !it.contentUri.isNullOrBlank() } ?: matching.firstOrNull()
+                if (preferred != null) return preferred
             }
         }
 

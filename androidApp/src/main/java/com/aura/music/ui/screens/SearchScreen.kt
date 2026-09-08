@@ -856,7 +856,8 @@ private fun OnlineSearchTab(
                 )
                 val displayedTracks = if (showAllTracks) tracks else tracks.take(10)
                 displayedTracks.forEach { track ->
-                    val isDownloadedLocally = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle) != null
+                    val matchedLocal = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                    val isDownloadedLocally = matchedLocal != null && !matchedLocal.contentUri.isNullOrBlank()
                     val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isCloudOnly = isOnCloud && !isDownloadedLocally
                     val effectiveDlStatus = lookupIndex.resolveDownloadStatus(track.id, downloadStatusMap)

@@ -338,7 +338,7 @@ fun HybridArtistScreen(
                 val displayedTracks = if (showAllOnlineTracks.value) onlineData.topTracks else onlineData.topTracks.take(5)
                 items(displayedTracks, key = { it.id }) { track ->
                     val matchedLocal = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
-                    val isDownloaded = matchedLocal != null
+                    val isDownloaded = matchedLocal != null && !matchedLocal.contentUri.isNullOrBlank()
                     val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isSyncedToCloud = isOnCloud && !isDownloaded
                     val dlStatus = lookupIndex.resolveDownloadStatus(track.id, trackDownloadStatusMap)
@@ -740,7 +740,7 @@ fun HybridAlbumScreen(
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->
                     val matchedLocal = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
-                    val isDownloaded = matchedLocal != null
+                    val isDownloaded = matchedLocal != null && !matchedLocal.contentUri.isNullOrBlank()
                     val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isSyncedToCloud = isOnCloud && !isDownloaded
                     val dlStatus = lookupIndex.resolveDownloadStatus(track.id, trackDownloadStatusMap)
