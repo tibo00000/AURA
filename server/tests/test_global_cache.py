@@ -426,6 +426,46 @@ class TestGlobalTrackCache(unittest.TestCase):
         self.assertFalse(personal_audio.exists())
         self.assertFalse(personal_json.exists())
 
+    def test_is_track_in_global_cache_by_metadata_doublet(self):
+        """Vérifie que les uploads de pistes locales sont reconnus lors d'une recherche Deezer par Titre + Artiste."""
+        from app.services.download_service import (
+            is_track_in_global_cache,
+            _get_track_key,
+            _get_global_cache_dir,
+        )
+        import app.services.download_service as ds
+
+        # Simuler un upload utilisateur avec un ID local Android
+        local_track_id = "track:local:1000081054"
+        local_key = _get_track_key(local_track_id)
+        cache_dir = _get_global_cache_dir()
+        audio_file = cache_dir / f"{local_key}.audio"
+        json_file = cache_dir / f"{local_key}.json"
+        audio_file.write_bytes(b"LUV_RESVAL_HADES_AUDIO_DATA")
+        json_file.write_text(json.dumps({
+            "track_id": local_track_id,
+            "title": "Hadès",
+            "artist_name": "Luv Resval"
+        }), encoding="utf-8")
+
+        # Forcer le rafraîchissement
+        ds._cached_global_keys_last_refresh = 0.0
+
+        # Recherche Deezer pour "Hades" par "Luv Resval" avec un identifiant Deezer opaque
+        deezer_track_id = "trk_v1:track:deezer:1397669462"
+        deezer_key = _get_track_key(deezer_track_id)
+
+        # Avant matching, la clé Deezer n'existe pas
+        self.assertFalse((cache_dir / f"{deezer_key}.audio").exists())
+
+        # Détection via is_track_in_global_cache avec titre et artiste (accent vs sans accent)
+        found = is_track_in_global_cache(deezer_track_id, title="Hades", artist_name="Luv Resval")
+        self.assertTrue(found)
+
+        # Après matching, l'auto-aliasing a créé le lien vers la clé Deezer pour streaming direct
+        self.assertTrue((cache_dir / f"{deezer_key}.audio").exists())
+        self.assertEqual((cache_dir / f"{deezer_key}.audio").read_bytes(), b"LUV_RESVAL_HADES_AUDIO_DATA")
+
 
 if __name__ == "__main__":
     unittest.main()

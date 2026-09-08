@@ -52,37 +52,134 @@ def _get_track_key(track_id: str) -> str:
     return hashlib.sha256(track_id.encode("utf-8")).hexdigest()
 
 
+def _normalize_search_string(s: str | None) -> str:
+    """Normalise un titre ou un artiste pour le matching tolérant (diacritiques, casse, ponctuation)."""
+    if not s:
+        return ""
+    import unicodedata
+    import re
+    decomposed = unicodedata.normalize("NFKD", s)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    cleaned = stripped.lower()
+    cleaned = re.sub(r"\(.*?\)", " ", cleaned)
+    cleaned = re.sub(r"\[.*?\]", " ", cleaned)
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    return " ".join(cleaned.split())
+
+
 _cached_global_keys: set[str] = set()
+_cached_doublets: dict[tuple[str, str], tuple[Path, Path, str]] = {}
 _cached_global_keys_last_refresh: float = 0.0
 
 
-def get_cached_track_keys_set() -> set[str]:
-    """Retourne l'ensemble des clés SHA-256 présentes dans le cache global (O(1) en mémoire avec rafraîchissement périodique)."""
-    global _cached_global_keys, _cached_global_keys_last_refresh
+def get_cached_track_keys_and_doublets() -> tuple[set[str], dict[tuple[str, str], tuple[Path, Path, str]]]:
+    """
+    Retourne l'ensemble des clés SHA-256 et le dictionnaire (titre, artiste) -> (audio, json, track_id)
+    présents dans le cache global et les répertoires utilisateurs (O(1) en mémoire avec rafraîchissement périodique 5s).
+    """
+    global _cached_global_keys, _cached_doublets, _cached_global_keys_last_refresh
     import time
+    import json
     now = time.time()
     if now - _cached_global_keys_last_refresh > 5.0 or not _cached_global_keys:
+        new_keys: set[str] = set()
+        new_doublets: dict[tuple[str, str], tuple[Path, Path, str]] = {}
         try:
             cache_dir = _get_global_cache_dir()
-            if cache_dir.exists():
-                _cached_global_keys = {p.stem for p in cache_dir.glob("*.audio") if p.stat().st_size > 0}
-            else:
-                _cached_global_keys = set()
+            sync_base = _get_sync_base()
+            dirs_to_scan = [cache_dir]
+            if sync_base.exists():
+                for sub in sync_base.iterdir():
+                    if sub.is_dir() and sub.name != "_global_cache":
+                        dirs_to_scan.append(sub)
+
+            for d in dirs_to_scan:
+                try:
+                    for json_path in d.glob("*.json"):
+                        stem = json_path.stem
+                        audio_path = d / f"{stem}.audio"
+                        if not (audio_path.exists() and audio_path.stat().st_size > 0):
+                            continue
+                        new_keys.add(stem)
+                        try:
+                            meta = json.loads(json_path.read_text(encoding="utf-8"))
+                            t = meta.get("title")
+                            a = meta.get("artist_name") or meta.get("artist")
+                            original_id = meta.get("track_id") or stem
+                            if t and a:
+                                norm_key = (_normalize_search_string(t), _normalize_search_string(a))
+                                if norm_key not in new_doublets:
+                                    new_doublets[norm_key] = (audio_path, json_path, original_id)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            _cached_global_keys = new_keys
+            _cached_doublets = new_doublets
         except Exception as e:
-            logger.warning("Failed to refresh cached track keys: %s", e)
-            _cached_global_keys = set()
+            logger.warning("Failed to refresh cached track keys and doublets: %s", e)
         _cached_global_keys_last_refresh = now
-    return _cached_global_keys
+    return _cached_global_keys, _cached_doublets
 
 
-def is_track_in_global_cache(track_id: str) -> bool:
-    """Vérifie en mémoire O(1) si une piste ou l'un de ses alias est déjà présente dans le cache global."""
+def get_cached_track_keys_set() -> set[str]:
+    keys, _ = get_cached_track_keys_and_doublets()
+    return keys
+
+
+def is_track_in_global_cache(track_id: str, title: str | None = None, artist_name: str | None = None) -> bool:
+    """
+    Vérifie en mémoire O(1) si une piste est déjà disponible dans le cloud :
+    1. Par correspondance d'alias d'identifiant (trk_..., deezer:..., numeric, ytm:...).
+    2. Par correspondance tolérante Titre + Artiste (avec auto-aliasing immédiat par hardlink pour streaming direct).
+    """
     from app.core.aura_id_codec import get_track_id_aliases
-    cached_keys = get_cached_track_keys_set()
+    import shutil
+
+    cached_keys, cached_doublets = get_cached_track_keys_and_doublets()
     aliases = get_track_id_aliases(track_id)
     for alias in aliases:
         if _get_track_key(alias) in cached_keys:
             return True
+
+    # 2. Vérification par couple (Titre, Artiste)
+    if title and artist_name:
+        norm_t = _normalize_search_string(title)
+        norm_a = _normalize_search_string(artist_name)
+        if not norm_t or not norm_a:
+            return False
+
+        match = cached_doublets.get((norm_t, norm_a))
+        if not match:
+            for (c_t, c_a), val in cached_doublets.items():
+                if c_a == norm_a and (c_t == norm_t or (len(c_t) >= 4 and len(norm_t) >= 4 and (c_t in norm_t or norm_t in c_t))):
+                    match = val
+                    break
+
+        if match:
+            audio_source, json_source, _ = match
+            cache_dir = _get_global_cache_dir()
+            primary_key = _get_track_key(track_id)
+            target_audio = cache_dir / f"{primary_key}.audio"
+            target_json = cache_dir / f"{primary_key}.json"
+            if not target_audio.exists():
+                try:
+                    os.link(audio_source, target_audio)
+                except Exception:
+                    try:
+                        shutil.copyfile(audio_source, target_audio)
+                    except Exception:
+                        pass
+            if not target_json.exists():
+                try:
+                    shutil.copyfile(json_source, target_json)
+                except Exception:
+                    pass
+            _cached_global_keys.add(primary_key)
+            logger.info("Auto-aliased cloud track by metadata match ('%s' - '%s') -> primary key %s", title, artist_name, primary_key)
+            return True
+
     return False
 
 
@@ -257,6 +354,38 @@ def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
                 logger.debug("Could not query Supabase download_jobs for backfill: %s", e)
     except Exception as e:
         logger.warning("Error while scanning DOWNLOADS_DIR for track %s: %s", track_id, e)
+
+    # 4. Résolution par Titre + Artiste pour les identifiants Deezer non encore alignés
+    if track_id.startswith("trk_") or track_id.startswith("deezer:"):
+        try:
+            from app.core.aura_id_codec import parse_aura_id
+            p_id = None
+            if track_id.startswith("trk_"):
+                ref = parse_aura_id(track_id, expected_kind="track")
+                if ref.provider_name.lower() == "deezer":
+                    p_id = ref.provider_id
+            elif track_id.startswith("deezer:"):
+                p_id = track_id.split(":", 1)[1]
+
+            if p_id:
+                client = DeezerClient(base_url=get_settings().deezer_api_base_url)
+                d_track = client.get_track(p_id)
+                if d_track and d_track.title:
+                    artist = getattr(d_track, "artist_name", None)
+                    if not artist and hasattr(d_track, "artist") and d_track.artist:
+                        artist = getattr(d_track.artist, "name", None)
+                    if artist and is_track_in_global_cache(track_id, title=d_track.title, artist_name=artist):
+                        target_audio = cache_dir / f"{primary_key}.audio"
+                        target_json = cache_dir / f"{primary_key}.json"
+                        meta = {}
+                        if target_json.exists():
+                            try:
+                                meta = json.loads(target_json.read_text(encoding="utf-8"))
+                            except Exception:
+                                pass
+                        return target_audio, meta
+        except Exception as e:
+            logger.debug("Could not resolve Deezer metadata fallback for track %s: %s", track_id, e)
 
     return None
 

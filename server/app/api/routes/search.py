@@ -78,12 +78,13 @@ def _to_track_summary(track) -> TrackSummaryResponse:
     from ...services.download_service import is_track_in_global_cache
 
     track_id = build_aura_id("track", track.provider_name, track.provider_id)
+    artist_name = track.artist.display_name if track.artist else None
     artist_id = build_aura_id("artist", track.artist.provider_name, track.artist.provider_id) if track.artist else None
     album_id = build_aura_id("album", track.album.provider_name, track.album.provider_id) if track.album else None
     return TrackSummaryResponse(
         id=track_id,
         title=track.display_title,
-        display_artist_name=track.artist.display_name if track.artist else "Unknown Artist",
+        display_artist_name=artist_name or "Unknown Artist",
         display_album_title=track.album.display_title if track.album else None,
         duration_ms=track.duration_ms,
         cover_uri=(track.album.metadata.get("cover_medium") or track.album.metadata.get("cover")) if track.album else None,
@@ -93,7 +94,7 @@ def _to_track_summary(track) -> TrackSummaryResponse:
         is_liked=False,
         is_local_available=False,
         is_downloaded_by_aura=False,
-        is_available_in_cloud=is_track_in_global_cache(track_id),
+        is_available_in_cloud=is_track_in_global_cache(track_id, title=track.display_title, artist_name=artist_name),
     )
 
 
