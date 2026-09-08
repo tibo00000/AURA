@@ -83,7 +83,7 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.ArtistSummary
 import com.aura.music.data.network.AlbumSummary
 import com.aura.music.data.network.TrackSummary
-import com.aura.music.data.network.BestMatchResult
+import com.aura.music.data.repository.BestMatchResult
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.search.SearchViewModel
@@ -837,9 +837,9 @@ private fun OnlineSearchTab(
     }
 
     val sectionOrder = remember(bestMatch) {
-        when (bestMatch?.kind?.lowercase()) {
-            "artist" -> listOf("artists", "tracks", "albums")
-            "album" -> listOf("albums", "tracks", "artists")
+        when (bestMatch) {
+            is BestMatchResult.LocalArtist, is BestMatchResult.OnlineArtist -> listOf("artists", "tracks", "albums")
+            is BestMatchResult.LocalAlbum, is BestMatchResult.OnlineAlbum -> listOf("albums", "tracks", "artists")
             else -> listOf("tracks", "artists", "albums")
         }
     }
