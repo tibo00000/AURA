@@ -39,6 +39,12 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
 
+data class DownloadResolutionAlert(
+    val count: Int,
+    val singleJobId: String? = null,
+    val singleTitle: String? = null
+)
+
 /**
  * Repository to orchestrate background downloads of tracks from the AURA backend.
  *
@@ -60,6 +66,13 @@ class DownloadRepository(
 
     private val _downloadSuccessFlow = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val downloadSuccessFlow = _downloadSuccessFlow.asSharedFlow()
+
+    private val _resolutionAlertFlow = MutableSharedFlow<DownloadResolutionAlert>(extraBufferCapacity = 64)
+    val resolutionAlertFlow = _resolutionAlertFlow.asSharedFlow()
+
+    private val notifiedResolutionJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private var isFirstPollingSnapshot = true
+    private val jobTrackTitles = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     companion object {
         private const val TAG = "DownloadRepository"
@@ -225,6 +238,8 @@ class DownloadRepository(
                 return@flow
             }
 
+            jobTrackTitles[createData.jobId] = title
+
             // 3. Persist the download job in local Room database
             val jobEntity = DownloadJobEntity(
                 id = createData.jobId,
@@ -300,6 +315,51 @@ class DownloadRepository(
                         if (updatedEntities.isNotEmpty()) {
                             database.downloadJobDao().upsert(updatedEntities)
                         }
+
+                        // Handle requires_resolution alert logic
+                        if (isFirstPollingSnapshot) {
+                            for (item in items) {
+                                if (item.status == "requires_resolution") {
+                                    notifiedResolutionJobIds.add(item.id)
+                                }
+                            }
+                            isFirstPollingSnapshot = false
+                        } else {
+                            val newlyRequiresResolution = mutableListOf<com.aura.music.data.network.DownloadJobResponseData>()
+                            for (item in items) {
+                                if (item.status == "requires_resolution") {
+                                    if (notifiedResolutionJobIds.add(item.id)) {
+                                        newlyRequiresResolution.add(item)
+                                    }
+                                } else {
+                                    notifiedResolutionJobIds.remove(item.id)
+                                    jobTrackTitles.remove(item.id)
+                                }
+                            }
+
+                            if (newlyRequiresResolution.isNotEmpty()) {
+                                val allCurrentUnresolved = items.filter { it.status == "requires_resolution" }
+                                if (allCurrentUnresolved.size == 1) {
+                                    val single = allCurrentUnresolved.first()
+                                    val resolvedTitle = jobTrackTitles[single.id]
+                                        ?: database.trackDao().getRawTrackById(single.trackId)?.title
+                                        ?: "Morceau"
+                                    _resolutionAlertFlow.tryEmit(
+                                        DownloadResolutionAlert(
+                                            count = 1,
+                                            singleJobId = single.id,
+                                            singleTitle = resolvedTitle
+                                        )
+                                    )
+                                } else if (allCurrentUnresolved.size > 1) {
+                                    _resolutionAlertFlow.tryEmit(
+                                        DownloadResolutionAlert(
+                                            count = allCurrentUnresolved.size
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         // Fallback: poll top 3 active jobs with slight delay between requests
                         for (job in activeJobs.take(3)) {
@@ -342,6 +402,22 @@ class DownloadRepository(
                 database.downloadJobDao().upsert(updatedJob)
                 if (jobData.status == "succeeded") {
                     markJobAsCloudReady(job.trackId)
+                } else if (jobData.status == "requires_resolution") {
+                    if (notifiedResolutionJobIds.add(job.id)) {
+                        val resolvedTitle = jobTrackTitles[job.id]
+                            ?: database.trackDao().getRawTrackById(job.trackId)?.title
+                            ?: "Morceau"
+                        _resolutionAlertFlow.tryEmit(
+                            DownloadResolutionAlert(
+                                count = 1,
+                                singleJobId = job.id,
+                                singleTitle = resolvedTitle
+                            )
+                        )
+                    }
+                } else {
+                    notifiedResolutionJobIds.remove(job.id)
+                    jobTrackTitles.remove(job.id)
                 }
             } else {
                 handlePollingFailure(job)
@@ -661,6 +737,8 @@ class DownloadRepository(
      */
     suspend fun retryJob(jobId: String, userToken: String) = withContext(Dispatchers.IO) {
         try {
+            notifiedResolutionJobIds.remove(jobId)
+            jobTrackTitles.remove(jobId)
             Log.i(TAG, "Requesting retry for job $jobId...")
             val response = apiService.retryDownload(userToken, jobId)
             val createData = response.data
@@ -691,6 +769,8 @@ class DownloadRepository(
      */
     suspend fun resolveJob(jobId: String, videoId: String, userToken: String) = withContext(Dispatchers.IO) {
         try {
+            notifiedResolutionJobIds.remove(jobId)
+            jobTrackTitles.remove(jobId)
             Log.i(TAG, "Resolving job $jobId with videoId $videoId...")
             val response = apiService.resolveDownload(
                 token = userToken,
@@ -766,6 +846,8 @@ class DownloadRepository(
      * Clear all download jobs from local database.
      */
     suspend fun clearAllJobs(): Unit = withContext(Dispatchers.IO) {
+        notifiedResolutionJobIds.clear()
+        jobTrackTitles.clear()
         database.downloadJobDao().clearAllJobs()
     }
 
@@ -773,7 +855,16 @@ class DownloadRepository(
      * Delete a single download job by ID.
      */
     suspend fun deleteJob(jobId: String): Unit = withContext(Dispatchers.IO) {
+        notifiedResolutionJobIds.remove(jobId)
+        jobTrackTitles.remove(jobId)
         database.downloadJobDao().deleteJob(jobId)
+    }
+
+    /**
+     * Fetch a job by ID from local database.
+     */
+    suspend fun getJobById(jobId: String): DownloadJobEntity? = withContext(Dispatchers.IO) {
+        database.downloadJobDao().getJobById(jobId)
     }
 
     /**

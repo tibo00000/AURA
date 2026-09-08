@@ -105,6 +105,11 @@ import com.aura.music.ui.components.WhatsNewDialog
 import com.aura.music.ui.version.WhatsNewViewModel
 import com.aura.music.data.repository.AddToPlaylistResult
 import com.aura.music.ui.screens.DuplicateTrackInPlaylistDialog
+import com.aura.music.ui.screens.YtmProposalsDialog
+import com.aura.music.ui.downloads.DownloadsViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.aura.music.ui.theme.*
 
 
@@ -207,6 +212,58 @@ fun AuraApp() {
         }
     }
 
+    val globalSnackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val downloadsViewModel: DownloadsViewModel = viewModel(
+        factory = DownloadsViewModel.Factory(
+            downloadRepository = downloadRepository,
+            tokenProvider = { application.container.authSessionManager.getBearerHeader() }
+        )
+    )
+    var activeResolveJobId by remember { mutableStateOf<String?>(null) }
+    val onRequestJobResolution: (String) -> Unit = remember(downloadsViewModel) {
+        { jobId ->
+            activeResolveJobId = jobId
+            downloadsViewModel.loadCandidatesForJob(jobId)
+        }
+    }
+
+    LaunchedEffect(downloadsViewModel) {
+        downloadsViewModel.resolutionErrorEvents.collect { errorMsg ->
+            activeResolveJobId = null
+            globalSnackbarHostState.showSnackbar(
+                message = errorMsg,
+                duration = androidx.compose.material3.SnackbarDuration.Short
+            )
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, downloadRepository) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            downloadRepository.resolutionAlertFlow.collect { alert ->
+                if (alert.count == 1 && alert.singleJobId != null) {
+                    val result = globalSnackbarHostState.showSnackbar(
+                        message = "Choix de version requis : ${alert.singleTitle ?: "Morceau"}",
+                        actionLabel = "Choisir",
+                        duration = androidx.compose.material3.SnackbarDuration.Long
+                    )
+                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                        onRequestJobResolution(alert.singleJobId)
+                    }
+                } else if (alert.count > 1) {
+                    val result = globalSnackbarHostState.showSnackbar(
+                        message = "${alert.count} morceaux nécessitent un choix de version",
+                        actionLabel = "Voir",
+                        duration = androidx.compose.material3.SnackbarDuration.Long
+                    )
+                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                        navController.navigate(AuraRoute.Downloads)
+                    }
+                }
+            }
+        }
+    }
+
     AuraTheme {
         AppUpdateDialog(
             state = updateState,
@@ -218,11 +275,19 @@ fun AuraApp() {
                 onDismiss = { whatsNewViewModel.dismiss() },
             )
         }
+        if (activeResolveJobId != null) {
+            YtmProposalsDialog(
+                jobId = activeResolveJobId!!,
+                viewModel = downloadsViewModel,
+                onDismiss = { activeResolveJobId = null }
+            )
+        }
         AuraAppScaffold(
             navController = navController,
             topDestinations = topDestinations,
             currentTrack = currentTrack,
             playbackState = playbackState,
+            snackbarHostState = globalSnackbarHostState,
             onMiniPlayerClick = { navController.navigate(AuraRoute.Player) },
             onPrevious = { playerViewModel.onEvent(PlayerEvent.Previous) },
             onTogglePlayPause = { playerViewModel.onEvent(PlayerEvent.TogglePlayPause) },
@@ -258,6 +323,7 @@ fun AuraApp() {
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                     playerViewModel = playerViewModel,
+                    onRequestJobResolution = onRequestJobResolution,
                 )
             }
             composable(AuraRoute.Library) {
@@ -414,7 +480,8 @@ fun AuraApp() {
                     },
                     onAddToQueue = { track ->
                         playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
-                    }
+                    },
+                    onRequestJobResolution = onRequestJobResolution
                 )
 
                 pendingDuplicatePrompt?.let { prompt ->
@@ -527,7 +594,8 @@ fun AuraApp() {
                     },
                     onAddToQueue = { track ->
                         playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
-                    }
+                    },
+                    onRequestJobResolution = onRequestJobResolution
                 )
 
                 pendingDuplicatePrompt?.let { prompt ->
@@ -621,6 +689,7 @@ private fun AuraAppScaffold(
     topDestinations: List<TopLevelDestination>,
     currentTrack: QueuedTrack?,
     playbackState: PlaybackState,
+    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
     onMiniPlayerClick: () -> Unit,
     onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
@@ -634,6 +703,18 @@ private fun AuraAppScaffold(
     val showMiniPlayer = currentTrack != null && currentRoute != AuraRoute.Player
 
     Scaffold(
+        snackbarHost = {
+            if (snackbarHostState != null) {
+                androidx.compose.material3.SnackbarHost(hostState = snackbarHostState) { data ->
+                    androidx.compose.material3.Snackbar(
+                        snackbarData = data,
+                        containerColor = ElevatedGraphite,
+                        contentColor = TextPrimary,
+                        actionColor = BlazeOrange
+                    )
+                }
+            }
+        },
         bottomBar = {
             if (showBottomBar) {
                 Column {

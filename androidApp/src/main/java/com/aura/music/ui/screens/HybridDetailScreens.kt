@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -143,6 +144,7 @@ fun HybridArtistScreen(
     onAddTrackToPlaylist: (PlaylistListRow, TrackListRow) -> Unit,
     onDeleteTrack: (TrackListRow) -> Unit,
     onAddToQueue: (TrackListRow) -> Unit,
+    onRequestJobResolution: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val artist = state.localData
@@ -206,7 +208,8 @@ fun HybridArtistScreen(
                 val status: TrackDownloadStatus = when (job.status) {
                     "succeeded" -> TrackDownloadStatus.Downloaded
                     "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
-                    "queued", "requires_resolution" -> TrackDownloadStatus.Queued
+                    "requires_resolution" -> TrackDownloadStatus.RequiresResolution(job.jobId)
+                    "queued" -> TrackDownloadStatus.Queued
                     "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
                     else -> TrackDownloadStatus.Idle
                 }
@@ -361,16 +364,20 @@ fun HybridArtistScreen(
                             }
                         },
                         onDownloadCloud = {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Ajout au Cloud lancé pour : ${track.title}")
-                                downloadRepository.triggerDownload(
-                                    trackId = track.id,
-                                    title = track.title,
-                                    artistName = track.displayArtistName,
-                                    albumTitle = track.displayAlbumTitle,
-                                    coverUri = track.coverUri,
-                                    userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
-                                ).collect { }
+                            if (dlStatus is TrackDownloadStatus.RequiresResolution) {
+                                onRequestJobResolution(dlStatus.jobId)
+                            } else {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Ajout au Cloud lancé pour : ${track.title}")
+                                    downloadRepository.triggerDownload(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artistName = track.displayArtistName,
+                                        albumTitle = track.displayAlbumTitle,
+                                        coverUri = track.coverUri,
+                                        userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+                                    ).collect { }
+                                }
                             }
                         },
                         onAddToQueue = { onAddToQueue(trackRow) },
@@ -506,6 +513,7 @@ fun HybridAlbumScreen(
     onAddTrackToPlaylist: (PlaylistListRow, TrackListRow) -> Unit,
     onDeleteTrack: (TrackListRow) -> Unit,
     onAddToQueue: (TrackListRow) -> Unit,
+    onRequestJobResolution: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val album = state.localData
@@ -577,7 +585,8 @@ fun HybridAlbumScreen(
                 val status: TrackDownloadStatus = when (job.status) {
                     "succeeded" -> TrackDownloadStatus.Downloaded
                     "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
-                    "queued", "requires_resolution" -> TrackDownloadStatus.Queued
+                    "requires_resolution" -> TrackDownloadStatus.RequiresResolution(job.jobId)
+                    "queued" -> TrackDownloadStatus.Queued
                     "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
                     else -> TrackDownloadStatus.Idle
                 }
@@ -764,16 +773,20 @@ fun HybridAlbumScreen(
                             }
                         },
                         onDownloadCloud = {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Ajout au Cloud lancé pour : ${track.title}")
-                                downloadRepository.triggerDownload(
-                                    trackId = track.id,
-                                    title = track.title,
-                                    artistName = track.displayArtistName,
-                                    albumTitle = track.displayAlbumTitle,
-                                    coverUri = track.coverUri,
-                                    userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
-                                ).collect { }
+                            if (dlStatus is TrackDownloadStatus.RequiresResolution) {
+                                onRequestJobResolution(dlStatus.jobId)
+                            } else {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Ajout au Cloud lancé pour : ${track.title}")
+                                    downloadRepository.triggerDownload(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artistName = track.displayArtistName,
+                                        albumTitle = track.displayAlbumTitle,
+                                        coverUri = track.coverUri,
+                                        userToken = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+                                    ).collect { }
+                                }
                             }
                         },
                         onAddToQueue = { onAddToQueue(trackRow) },
@@ -1249,6 +1262,16 @@ fun InteractiveOnlineTrackRow(
                     color = BlazeOrange,
                     strokeWidth = 2.dp
                 )
+            }
+            downloadStatus is TrackDownloadStatus.RequiresResolution -> {
+                IconButton(onClick = onDownloadCloud, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Choisir la version",
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
             downloadStatus is TrackDownloadStatus.Queued -> {
                 CircularProgressIndicator(

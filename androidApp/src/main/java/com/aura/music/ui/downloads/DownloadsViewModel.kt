@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.data.repository.DownloadRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -53,6 +55,9 @@ class DownloadsViewModel(
     private val _candidates = MutableStateFlow<Map<String, List<com.aura.music.data.network.YtmCandidateDto>>>(emptyMap())
     val candidates = _candidates.asStateFlow()
 
+    private val _resolutionErrorEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val resolutionErrorEvents = _resolutionErrorEvents.asSharedFlow()
+
     private val _selectedErrorJob = MutableStateFlow<DownloadJobRowModel?>(null)
     val selectedErrorJob = _selectedErrorJob.asStateFlow()
 
@@ -90,11 +95,23 @@ class DownloadsViewModel(
 
     fun loadCandidatesForJob(jobId: String) {
         viewModelScope.launch {
+            // Verify job is still valid and in requires_resolution state
+            val localJob = downloadRepository.getJobById(jobId)
+            if (localJob == null || localJob.status != "requires_resolution") {
+                _resolutionErrorEvents.tryEmit("Ce téléchargement n'est plus en attente de choix.")
+                _candidates.value = _candidates.value.toMutableMap().apply {
+                    remove(jobId)
+                }
+                return@launch
+            }
+
             val jobCandidates = downloadRepository.getCandidatesForJob(jobId, userToken)
             if (jobCandidates != null) {
                 _candidates.value = _candidates.value.toMutableMap().apply {
                     put(jobId, jobCandidates)
                 }
+            } else {
+                _resolutionErrorEvents.tryEmit("Impossible de charger les propositions YouTube Music.")
             }
         }
     }

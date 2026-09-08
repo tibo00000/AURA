@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -121,12 +122,13 @@ import com.aura.music.ui.theme.TextSecondary
  */
 @Immutable
 sealed interface TrackDownloadStatus {
-    object Idle : TrackDownloadStatus
-    object NotDownloaded : TrackDownloadStatus
-    object Queued : TrackDownloadStatus
+    data object Idle : TrackDownloadStatus
+    data object NotDownloaded : TrackDownloadStatus
+    data object Queued : TrackDownloadStatus
     data class Downloading(val progressPercent: Float = 0f) : TrackDownloadStatus
-    object Downloaded : TrackDownloadStatus
+    data object Downloaded : TrackDownloadStatus
     data class Failed(val errorCode: String? = null, val message: String? = null) : TrackDownloadStatus
+    data class RequiresResolution(val jobId: String) : TrackDownloadStatus
 }
 
 @Composable
@@ -630,6 +632,21 @@ fun SharedTrackRowItem(
 
                 // Overlay visuel du statut de téléchargement / chargement directement sur la pochette
                 when (downloadStatus) {
+                    is TrackDownloadStatus.RequiresResolution -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.55f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Rounded.Tune,
+                                contentDescription = "Choix requis",
+                                tint = BlazeOrange,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                     is TrackDownloadStatus.Queued -> {
                         Box(
                             modifier = Modifier
@@ -749,6 +766,15 @@ fun SharedTrackRowItem(
                     color = BlazeOrange,
                     strokeWidth = 2.dp
                 )
+            } else if (downloadStatus is TrackDownloadStatus.RequiresResolution) {
+                IconButton(onClick = { onDownload?.invoke() }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Choisir la version",
+                        tint = BlazeOrange,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             } else if (downloadStatus is TrackDownloadStatus.Queued) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),

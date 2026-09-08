@@ -107,6 +107,7 @@ fun SearchScreen(
     onOpenAlbum: (String) -> Unit,
     onOpenDownloads: () -> Unit,
     playerViewModel: PlayerViewModel,
+    onRequestJobResolution: (String) -> Unit = {},
 ) {
     val focusManager = LocalFocusManager.current
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
@@ -124,7 +125,8 @@ fun SearchScreen(
             val status: TrackDownloadStatus = when (job.status) {
                 "succeeded" -> TrackDownloadStatus.Downloaded
                 "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
-                "queued", "requires_resolution" -> TrackDownloadStatus.Queued
+                "requires_resolution" -> TrackDownloadStatus.RequiresResolution(job.jobId)
+                "queued" -> TrackDownloadStatus.Queued
                 "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
                 else -> TrackDownloadStatus.Idle
             }
@@ -543,6 +545,9 @@ fun SearchScreen(
                                                     duration = androidx.compose.material3.SnackbarDuration.Short
                                                 )
                                             }
+                                        }
+                                        is TrackDownloadStatus.RequiresResolution -> {
+                                            onRequestJobResolution(currentStatus.jobId)
                                         }
                                         is TrackDownloadStatus.Downloading, TrackDownloadStatus.Queued -> {
                                             onOpenDownloads()
@@ -1851,6 +1856,7 @@ private fun SearchOnlineTrackRowItem(
     val effectiveDownloadStatus = when {
         isDownloadedLocally -> TrackDownloadStatus.Downloaded
         downloadStatus is TrackDownloadStatus.Downloading -> downloadStatus
+        downloadStatus is TrackDownloadStatus.RequiresResolution -> downloadStatus
         downloadStatus is TrackDownloadStatus.Queued -> downloadStatus
         downloadStatus is TrackDownloadStatus.Failed -> downloadStatus
         isCloudOnly -> TrackDownloadStatus.Idle
