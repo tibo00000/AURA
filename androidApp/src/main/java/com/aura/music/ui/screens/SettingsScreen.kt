@@ -717,13 +717,16 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Button(
                             onClick = onOpenWhatsNew,
+                            modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = ElevatedGraphite,
                                 contentColor = TextPrimary
@@ -750,6 +753,7 @@ fun SettingsScreen(
                         if (appUpdateManager != null) {
                             Button(
                                 onClick = { appUpdateManager.checkForUpdate(isManual = true) },
+                                modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = ElevatedGraphite,
                                     contentColor = TextPrimary
@@ -767,7 +771,7 @@ fun SettingsScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        "Mises à jour",
+                                        "Vérifier les mises à jour",
                                         style = MaterialTheme.typography.labelMedium
                                     )
                                 }
