@@ -82,7 +82,7 @@ class DesktopDownloadManager(
                             normalizedTitle = track.title.lowercase().trim(),
                             displayArtistName = track.displayArtistName,
                             displayAlbumTitle = track.displayAlbumTitle,
-                            durationMs = track.durationMs ?: 0L,
+                            durationMs = track.durationMs.toLong(),
                             coverUri = track.coverUri,
                             canonicalAudioSourceType = "cloud_only",
                             isLiked = false,
