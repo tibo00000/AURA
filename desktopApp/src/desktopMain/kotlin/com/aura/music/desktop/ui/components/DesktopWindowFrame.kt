@@ -309,9 +309,9 @@ fun WindowScope.InstallWindowsTaskbarFix() {
         val os = System.getProperty("os.name").lowercase()
         if (os.contains("win")) {
             try {
-                val hwndPtr = Native.getWindowPointer(window)
-                if (hwndPtr != 0L) {
-                    val hwnd = HWND(Pointer.createConstant(hwndPtr))
+                val hwndPointer = Native.getWindowPointer(window)
+                if (hwndPointer != null && Pointer.nativeValue(hwndPointer) != 0L) {
+                    val hwnd = HWND(hwndPointer)
                     val user32 = User32.INSTANCE
                     val oldStyle = user32.GetWindowLong(hwnd, WinUser.GWL_STYLE)
                     val wsMinimizeBox = 0x00020000
