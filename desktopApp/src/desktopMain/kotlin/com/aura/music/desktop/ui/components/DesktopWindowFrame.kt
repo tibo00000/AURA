@@ -31,6 +31,11 @@ import java.awt.Point
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.SwingUtilities
+import com.sun.jna.Native
+import com.sun.jna.Pointer
+import com.sun.jna.platform.win32.User32
+import com.sun.jna.platform.win32.WinDef.HWND
+import com.sun.jna.platform.win32.WinUser
 
 /**
  * Barre de titre moderne sans bordure apparente (Option 2), parfaitement intégrée
@@ -289,3 +294,38 @@ fun WindowScope.InstallUndecoratedResizer(
         }
     }
 }
+
+/**
+ * Corrige le comportement de la barre des tâches sous Windows pour les fenêtres sans bordure (undecorated).
+ * Sous Windows, lorsqu'une fenêtre est sans bordure (undecorated = true), Java AWT retire les styles natifs
+ * WS_MINIMIZEBOX (0x00020000) et WS_SYSMENU (0x00080000). En conséquence, lors de la réduction via
+ * isMinimized = true, Windows masque l'icône de la barre des tâches au lieu de la conserver.
+ * Cette fonction réinjecte ces styles natifs via JNA sur le handle HWND afin que la réduction maintienne
+ * l'icône dans la barre des tâches et permette sa restauration par simple clic.
+ */
+@Composable
+fun WindowScope.InstallWindowsTaskbarFix() {
+    LaunchedEffect(window) {
+        val os = System.getProperty("os.name").lowercase()
+        if (os.contains("win")) {
+            try {
+                val hwndPtr = Native.getWindowPointer(window)
+                if (hwndPtr != 0L) {
+                    val hwnd = HWND(Pointer.createConstant(hwndPtr))
+                    val user32 = User32.INSTANCE
+                    val oldStyle = user32.GetWindowLong(hwnd, WinUser.GWL_STYLE)
+                    val wsMinimizeBox = 0x00020000
+                    val wsSysMenu = 0x00080000
+                    user32.SetWindowLong(
+                        hwnd,
+                        WinUser.GWL_STYLE,
+                        oldStyle or wsMinimizeBox or wsSysMenu
+                    )
+                }
+            } catch (e: Throwable) {
+                System.err.println("Note: Windows taskbar style adjustment skipped: ${e.message}")
+            }
+        }
+    }
+}
+

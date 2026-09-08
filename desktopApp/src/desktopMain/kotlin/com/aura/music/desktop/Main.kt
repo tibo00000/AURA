@@ -281,6 +281,7 @@ fun main() = application {
             }
         ) {
             InstallUndecoratedResizer(windowState)
+            InstallWindowsTaskbarFix()
 
             MaterialTheme(
                 colorScheme = darkColorScheme(

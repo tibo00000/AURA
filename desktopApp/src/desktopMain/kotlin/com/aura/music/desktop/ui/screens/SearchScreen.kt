@@ -383,30 +383,37 @@ fun SearchScreen(
         val results = onlineResults
         val normQ = SearchNormalizer.normalize(appState.searchQuery).trim()
         if (results == null || normQ.isBlank()) {
-            listOf(SearchSectionType.ARTISTS, SearchSectionType.ALBUMS, SearchSectionType.TRACKS)
+            listOf(SearchSectionType.TRACKS, SearchSectionType.ARTISTS, SearchSectionType.ALBUMS)
         } else {
-            val topTrack = results.tracks.firstOrNull()
-            val topArtist = results.artists.firstOrNull()
-            val topAlbum = results.albums.firstOrNull()
+            when (results.bestMatch?.kind?.lowercase()) {
+                "artist" -> listOf(SearchSectionType.ARTISTS, SearchSectionType.TRACKS, SearchSectionType.ALBUMS)
+                "album" -> listOf(SearchSectionType.ALBUMS, SearchSectionType.TRACKS, SearchSectionType.ARTISTS)
+                "track" -> listOf(SearchSectionType.TRACKS, SearchSectionType.ARTISTS, SearchSectionType.ALBUMS)
+                else -> {
+                    val topTrack = results.tracks.firstOrNull()
+                    val topArtist = results.artists.firstOrNull()
+                    val topAlbum = results.albums.firstOrNull()
 
-            val trackScore = topTrack?.let { scoreCandidate(it.title, normQ) } ?: -1
-            val artistScore = topArtist?.let { scoreCandidate(it.name, normQ) } ?: -1
-            val albumScore = topAlbum?.let { scoreCandidate(it.title, normQ) } ?: -1
+                    val trackScore = topTrack?.let { scoreCandidate(it.title, normQ) } ?: -1
+                    val artistScore = topArtist?.let { scoreCandidate(it.name, normQ) } ?: -1
+                    val albumScore = topAlbum?.let { scoreCandidate(it.title, normQ) } ?: -1
 
-            listOf(
-                SearchSectionType.TRACKS to trackScore,
-                SearchSectionType.ARTISTS to artistScore,
-                SearchSectionType.ALBUMS to albumScore
-            ).sortedWith(
-                compareByDescending<Pair<SearchSectionType, Int>> { it.second }
-                    .thenBy {
-                        when (it.first) {
-                            SearchSectionType.TRACKS -> 0
-                            SearchSectionType.ARTISTS -> 1
-                            SearchSectionType.ALBUMS -> 2
-                        }
-                    }
-            ).map { it.first }
+                    listOf(
+                        SearchSectionType.TRACKS to trackScore,
+                        SearchSectionType.ARTISTS to artistScore,
+                        SearchSectionType.ALBUMS to albumScore
+                    ).sortedWith(
+                        compareByDescending<Pair<SearchSectionType, Int>> { it.second }
+                            .thenBy {
+                                when (it.first) {
+                                    SearchSectionType.TRACKS -> 0
+                                    SearchSectionType.ARTISTS -> 1
+                                    SearchSectionType.ALBUMS -> 2
+                                }
+                            }
+                    ).map { it.first }
+                }
+            }
         }
     }
 
