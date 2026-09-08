@@ -538,10 +538,10 @@ class LocalLibraryRepository(
         } else null
 
         val effectiveTitle = title?.ifBlank { null } ?: resolvedCloudItem?.title ?: "Unknown Title"
-        val effectiveArtist = artistName?.ifBlank { null } ?: resolvedCloudItem?.artist ?: "Unknown artist"
-        val effectiveAlbum = albumTitle?.ifBlank { null } ?: resolvedCloudItem?.album
-        val effectiveDuration = durationMs ?: resolvedCloudItem?.durationSeconds?.let { (it * 1000).toLong() } ?: 0L
-        val effectiveCoverUri = coverUri ?: (if (trackId.startsWith("track:cloud:")) resolvedCloudItem?.coverUrl else null)
+        val effectiveArtist = artistName?.ifBlank { null } ?: resolvedCloudItem?.artistName ?: "Unknown artist"
+        val effectiveAlbum = albumTitle?.ifBlank { null } ?: resolvedCloudItem?.albumTitle
+        val effectiveDuration = durationMs ?: resolvedCloudItem?.durationMs ?: 0L
+        val effectiveCoverUri = coverUri ?: (if (trackId.startsWith("track:cloud:")) resolvedCloudItem?.coverUri else null)
 
         val cleanArtistName = effectiveArtist.trim().ifBlank { "Unknown artist" }
         val normArtist = normalize(cleanArtistName)

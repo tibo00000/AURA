@@ -97,26 +97,41 @@ Ce document constitue la référence normative absolue pour toutes les implémen
 
 ---
 
-## 10. Gestion des Versions Android et Mises à Jour OTA Sécurisées
-- **Incrémentation Monotone Obligatoire** :
-  - Chaque lot de modifications fonctionnelles ou correctives destinées à être testées ou déployées sur Android **DOIT** incrémenter le `versionCode` (entier) dans `androidApp/build.gradle.kts` (ex: `1` -> `2`).
-  - Le `versionName` doit suivre le versionnement sémantique `MAJOR.MINOR.PATCH` (ex: `0.1.0` -> `0.2.0`).
+## 10. Gestion des Versions, Releases et Changelog Utilisateur
+- **Incrémentation Monotone Exclusivement au Déploiement** :
+  - Pendant les phases de développement, de résolution de bugs et les commits intermédiaires, le codebase **demeure sur la version actuellement déployée** (ex: `versionCode = 2`, `versionName = "0.2.0"`).
+  - L'incrémentation strictement monotone de `versionCode` (entier) et l'avancement de `versionName` (`MAJOR.MINOR.PATCH`) dans `androidApp/build.gradle.kts` interviennent **uniquement lors du déploiement effectif d'une nouvelle version (Release)**, en accord avec l'utilisateur selon l'ampleur des avancées.
+- **Synthèse du Changelog Utilisateur (User-Facing Release Notes)** :
+  - Lors de la préparation d'une release, l'agent **DOIT** parcourir l'ensemble des commits et entrées du journal réalisés depuis la dernière version déployée enregistrée dans `BUILD.md`.
+  - Il rédige une synthèse claire en langage naturel destinée à l'utilisateur final, comprenant **exclusivement les éléments qui transforment ou enrichissent son expérience** :
+    1. Nouvelles fonctionnalités visibles (actions, boutons, nouveaux écrans, intégrations).
+    2. Améliorations ergonomiques et de fluidité (transitions, raccourcis, réactivité multi-écrans).
+    3. Corrections de bugs vécus (résolution de crashs, disparitions d'éléments, erreurs réseau visibles).
+  - **Exclusion stricte** de la dette technique interne : refactoring de packages, renommages de fonctions privées, optimisations invisibles ou plomberie interne sans impact perçu.
+- **Balise de Release Obligatoire dans `BUILD.md`** :
+  - Tout déploiement est consigné dans `BUILD.md` sous une balise explicite :
+    ```markdown
+    ### 🚀 [RELEASE vX.Y.Z] - YYYY-MM-DD (versionCode: N)
+    **Nouveautés pour l'utilisateur :**
+    - Résumé clair point par point
+    ```
+  - **Règle absolue pour tout agent** : Pour résumer les nouveautés d'une future version, l'agent doit se référer à la balise `[RELEASE ...]` la plus récente dans `BUILD.md` et agréger tous les commits intervenus depuis ce point d'ancrage.
 - **Synchronisation du Serveur OTA (`version.json`)** :
-  - Tout déploiement d'un binaire APK sur le VPS sous `/app/downloads/updates/` doit être synchronisé avec son descripteur `version.json` :
+  - Tout déploiement d'APK sur le serveur sous `/app/downloads/updates/` est accompagné de la mise à jour de `version.json` :
     ```json
     {
       "version_code": 2,
       "version_name": "0.2.0",
       "download_url": "/app/updates/latest.apk",
       "sha256": "auto",
-      "release_notes": "Description claire des nouveautés",
+      "release_notes": "Résumé utilisateur généré depuis les commits récents",
       "min_supported_version": 1
     }
     ```
-  - `sha256` : positionné sur `"auto"` (calculé à la volée par le serveur) ou sur l'empreinte SHA-256 exacte en minuscules.
-  - `min_supported_version` : définit le `versionCode` en-dessous duquel l'application bloque son utilisation et oblige l'utilisateur à mettre à jour (ex: en cas de rupture de contrat d'API ou de schéma Room).
+  - `sha256` : `"auto"` (calculé par le serveur) ou empreinte hexadécimale exacte.
+  - `min_supported_version` : rehaussé uniquement si une rupture de contrat d'API ou de schéma Room rend les anciennes versions incompatibles.
 - **Sécurité et Intégrité Client (Anti-Tampering)** :
-  - Le client Android doit impérativement valider le hash SHA-256 du fichier téléchargé avant toute installation.
-  - En cas de divergence de hash, le fichier est supprimé immédiatement sans solliciter l'installateur natif.
-  - L'installation passe obligatoirement par `FileProvider` avec `FLAG_GRANT_READ_URI_PERMISSION` (interdiction absolue d'URI `file://`).
+  - Le client Android valide impérativement le hash SHA-256 du fichier APK téléchargé avant toute installation.
+  - En cas de discordance, le fichier est détruit immédiatement.
+  - L'installation native utilise obligatoirement `FileProvider` avec `FLAG_GRANT_READ_URI_PERMISSION`.
 

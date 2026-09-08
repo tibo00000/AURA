@@ -15,12 +15,18 @@ Le fichier canonique [`docs/architecture/engineering-rules.md`](file:///c:/Users
 6. **Scoped Storage Android 10..15 (API 29-35)** : Utilisation exclusive de `ContentUris.withAppendedId` (jamais `_DATA`), extraction des pochettes via `loadThumbnail`, et purge locale conditionnée au succès du scan (`isComplete == true`).
 7. **Sécurité Supabase Auth & RLS** : Tokens chiffrés (`EncryptedSharedPreferences`), RLS activé sur toutes les tables privées avec scoping `auth.uid() = user_id`, interdiction absolue d'endpoints de réclamation anonyme sans preuve de possession.
 8. **Idempotence des Synchronisations** : Vérification multi-niveaux (`batch_id` et `operation_id`) et désérialisation JSON typée sécurisée.
-9. **Cycle de Vie des Versions et OTA** : Incrémentation strictement monotone de `versionCode` dans `build.gradle.kts` pour chaque lot déployable, alignement sémantique de `versionName` (SemVer), synchronisation de `version.json` et de l'APK sur le serveur, et vérification cryptographique d'intégrité SHA-256 obligatoire avant toute installation native.
+9. **Cycle de Vie des Versions, Releases et Changelog Utilisateur** : Maintien strict de la version déployée courante pendant le développement (`versionCode` et `versionName` inchangés lors des tâches intermédiaires). Incrémentation de `versionCode` et avancement de `versionName` (SemVer) **exclusivement lors du déploiement effectif d'une Release**. Synthèse obligatoire d'un résumé centré sur l'expérience utilisateur (sans dette technique interne) généré depuis les commits réalisés depuis la dernière balise `[RELEASE vX.Y.Z]` de `BUILD.md`, synchronisation de `version.json` et de l'APK sur le serveur, et vérification cryptographique SHA-256 obligatoire avant toute installation native.
 
 ## Versioning And OTA Releases Policy
-- Toute modification fonctionnelle ou corrective livrée pour Android DOIT incrémenter de manière strictement monotone `versionCode` dans `androidApp/build.gradle.kts` (ex: `1` -> `2`).
-- Le `versionName` suit la sémantique `MAJOR.MINOR.PATCH` (ex: `0.1.0` -> `0.2.0`).
-- Si une mise à jour Android est déployée sur le serveur OTA (`/app/downloads/updates/`):
+- **Stabilité de version en cours de développement** : Pendant le développement, les corrections et les commits intermédiaires, le codebase **demeure sur la version actuellement déployée** (ex: `versionCode = 2`, `versionName = "0.2.0"`). Ne jamais incrémenter `versionCode` ni modifier `versionName` sur un simple commit de tâche.
+- **Incrémentation et saut de version exclusivement au Déploiement (Release)** :
+  - `versionCode` est incrémenté de manière strictement monotone et `versionName` avance selon la sémantique `MAJOR.MINOR.PATCH` **uniquement lorsqu'une version est déployée**, en accord avec l'utilisateur selon l'ampleur des avancées.
+- **Synthèse des Nouveautés Utilisateur (Changelog Expérience Utilisateur)** :
+  - Pour résumer ce qui a changé, l'agent **DOIT** lire `BUILD.md` depuis la dernière balise `[RELEASE vX.Y.Z]` jusqu'au HEAD.
+  - Rédiger un résumé clair destiné à l'utilisateur final en ne conservant **que ce qui modifie son expérience** (nouvelles fonctionnalités visibles, fluidité/ergonomie, bugs visibles résolus).
+  - Bannir le jargon et la dette technique interne (refactorings, plomberie interne, renommages de code).
+  - Ce résumé est consigné dans `BUILD.md` sous la balise `[RELEASE vX.Y.Z]` et transmis à `version.json` sous `release_notes`.
+- **Déploiement sur le serveur OTA (`/app/downloads/updates/`)** :
   - Déposer l'APK sous `latest.apk` (ou le nom spécifié dans `download_url`).
   - Mettre à jour `version.json` avec le nouveau `version_code`, `version_name`, les notes de version (`release_notes`), et `sha256` (`"auto"` pour calcul automatique ou empreinte réelle).
   - Définir `min_supported_version` : si un changement d'API serveur ou de schéma Room casse la rétro-compatibilité, passer `min_supported_version` au `versionCode` minimal exigé pour forcer la mise à jour bloquante.
@@ -70,5 +76,6 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Si une regle, un contrat ou un schema evolue, mettre a jour d'abord la doc canonique dans `docs/`.
 - Reporter chaque changement significatif dans le `Journal des changements` de `BUILD.md` avec timestamp ISO 8601.
 - Mettre a jour le statut des items (`not_started`, `in_progress`, `blocked`, `completed`, `cancelled`) sans supprimer d'historique.
+- Lors d'une livraison ou déploiement (Release), consulter la dernière balise `[RELEASE vX.Y.Z]` dans `BUILD.md`, synthétiser le changelog centré sur l'expérience utilisateur depuis cette balise, incrémenter `versionCode`/`versionName` et synchroniser `version.json`.
 - Verifier la coherence code <-> docs avant de marquer un item `completed`.
 - Committer avec un message clair, puis demander l'autorisation avant tout `git push`.
