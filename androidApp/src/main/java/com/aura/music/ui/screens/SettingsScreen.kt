@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -43,6 +44,8 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.ui.res.stringResource
+import com.aura.music.R
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -98,6 +101,7 @@ fun SettingsScreen(
     onNavigateToSandbox: () -> Unit,
     onNavigateToCloudSync: () -> Unit,
     appUpdateManager: com.aura.music.core.AppUpdateManager? = null,
+    onOpenWhatsNew: () -> Unit = {},
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -713,30 +717,60 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
-                    if (appUpdateManager != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
                         Button(
-                            onClick = { appUpdateManager.checkForUpdate(isManual = true) },
+                            onClick = onOpenWhatsNew,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = ElevatedGraphite,
                                 contentColor = TextPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.padding(top = 4.dp)
                         ) {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    Icons.Rounded.Refresh,
+                                    Icons.Rounded.AutoAwesome,
                                     contentDescription = null,
                                     tint = BlazeOrange,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    "Vérifier les mises à jour",
+                                    stringResource(id = R.string.settings_whats_new_title),
                                     style = MaterialTheme.typography.labelMedium
                                 )
+                            }
+                        }
+
+                        if (appUpdateManager != null) {
+                            Button(
+                                onClick = { appUpdateManager.checkForUpdate(isManual = true) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = ElevatedGraphite,
+                                    contentColor = TextPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Refresh,
+                                        contentDescription = null,
+                                        tint = BlazeOrange,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        "Mises à jour",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
                             }
                         }
                     }

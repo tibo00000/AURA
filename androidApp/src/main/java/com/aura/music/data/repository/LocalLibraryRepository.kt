@@ -151,6 +151,8 @@ class LocalLibraryRepository(
 
     suspend fun refreshLocalMediaIndex(): Int = localMediaScanner.syncLocalMedia()
 
+    suspend fun getTrackCount(): Int = database.trackDao().getTrackCount()
+
     suspend fun getLibraryDashboardSummary(): LibraryDashboardSummary = coroutineScope {
         val hasPermission = mediaStoreAudioDataSource.hasReadPermission()
         val roomTrackCountDeferred = async { database.trackDao().getTrackCount() }

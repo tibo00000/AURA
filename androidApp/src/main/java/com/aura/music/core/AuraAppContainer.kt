@@ -139,6 +139,13 @@ class AuraAppContainer(context: Context) {
             scope = applicationScope,
         )
     }
+
+    val whatsNewViewModelFactory by lazy {
+        com.aura.music.ui.version.WhatsNewViewModel.Factory(
+            context = appContext,
+            repository = localLibraryRepository,
+        )
+    }
 }
 
 

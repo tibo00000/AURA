@@ -101,6 +101,8 @@ import com.aura.music.ui.screens.SettingsScreen
 import com.aura.music.ui.screens.CloudSyncScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
 import com.aura.music.ui.components.AppUpdateDialog
+import com.aura.music.ui.components.WhatsNewDialog
+import com.aura.music.ui.version.WhatsNewViewModel
 import com.aura.music.data.repository.AddToPlaylistResult
 import com.aura.music.ui.screens.DuplicateTrackInPlaylistDialog
 import com.aura.music.ui.theme.*
@@ -141,6 +143,12 @@ fun AuraApp() {
 
     val appUpdateManager = application.container.appUpdateManager
     val updateState by appUpdateManager.state.collectAsState()
+
+    val whatsNewViewModel: WhatsNewViewModel = viewModel(
+        factory = application.container.whatsNewViewModelFactory
+    )
+    val showWhatsNew by whatsNewViewModel.showDialog.collectAsState()
+    val whatsNewNotes by whatsNewViewModel.releaseNotes.collectAsState()
 
     LaunchedEffect(Unit) {
         appUpdateManager.checkForUpdate(isManual = false)
@@ -204,6 +212,12 @@ fun AuraApp() {
             state = updateState,
             updateManager = appUpdateManager,
         )
+        if (showWhatsNew && whatsNewNotes != null) {
+            WhatsNewDialog(
+                releaseNotes = whatsNewNotes!!,
+                onDismiss = { whatsNewViewModel.dismiss() },
+            )
+        }
         AuraAppScaffold(
             navController = navController,
             topDestinations = topDestinations,
@@ -557,7 +571,8 @@ fun AuraApp() {
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToSandbox = { navController.navigate(AuraRoute.Sandbox) },
                     onNavigateToCloudSync = { navController.navigate(AuraRoute.CloudSync) },
-                    appUpdateManager = appContainer.appUpdateManager
+                    appUpdateManager = appContainer.appUpdateManager,
+                    onOpenWhatsNew = { whatsNewViewModel.openManually() }
                 )
 
             }
