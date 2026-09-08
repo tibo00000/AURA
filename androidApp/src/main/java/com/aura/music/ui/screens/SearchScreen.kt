@@ -52,6 +52,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.ui.screens.SelectPlaylistDialog
+import com.aura.music.ui.screens.DuplicateTrackInPlaylistDialog
+import com.aura.music.data.repository.AddToPlaylistResult
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -138,6 +140,7 @@ fun SearchScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDuplicatePrompt by remember { mutableStateOf<AddToPlaylistResult.AlreadyExists?>(null) }
     var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
     var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
@@ -656,11 +659,42 @@ fun SearchScreen(
             playlists = playlists,
             onDismiss = { activeTrackForPlaylist = null },
             onPlaylistSelected = { playlist ->
+                val track = activeTrackForPlaylist!!
+                activeTrackForPlaylist = null
                 scope.launch {
-                    repository.addTrackToPlaylist(playlist.id, activeTrackForPlaylist!!.id, contextType = "search")
-                    activeTrackForPlaylist = null
+                    val result = repository.addTrackToPlaylist(
+                        playlistId = playlist.id,
+                        trackId = track.id,
+                        contextType = "search",
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumTitle = track.albumTitle,
+                        durationMs = track.durationMs,
+                        coverUri = track.coverUri
+                    )
+                    if (result is AddToPlaylistResult.AlreadyExists) {
+                        pendingDuplicatePrompt = result
+                    }
                 }
             }
+        )
+    }
+
+    pendingDuplicatePrompt?.let { prompt ->
+        DuplicateTrackInPlaylistDialog(
+            playlistName = prompt.playlistName,
+            onConfirm = {
+                scope.launch {
+                    repository.addTrackToPlaylist(
+                        playlistId = prompt.playlistId,
+                        trackId = prompt.trackId,
+                        contextType = "search",
+                        allowDuplicate = true
+                    )
+                    pendingDuplicatePrompt = null
+                }
+            },
+            onDismiss = { pendingDuplicatePrompt = null }
         )
     }
 

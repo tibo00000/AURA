@@ -984,6 +984,54 @@ fun SelectPlaylistDialog(
 }
 
 /**
+ * Dialogue de confirmation en cas d'ajout d'un morceau déjà présent dans une playlist.
+ */
+@Composable
+fun DuplicateTrackInPlaylistDialog(
+    playlistName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ElevatedGraphite,
+        shape = RoundedCornerShape(24.dp),
+        title = {
+            Text(
+                text = "Morceau déjà présent",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+        },
+        text = {
+            Text(
+                text = "Ce titre se trouve déjà dans la playlist « $playlistName ». Voulez-vous l'ajouter quand même ?",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = "Ajouter quand même",
+                    color = BlazeOrange,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = "Annuler",
+                    color = TextMuted
+                )
+            }
+        }
+    )
+}
+
+/**
  * Pochette intelligente de playlist :
  * - Si coverUri est non-nul : affiche l'image unique.
  * - Si previewCovers a >= 4 éléments : compose une mosaïque 2x2.

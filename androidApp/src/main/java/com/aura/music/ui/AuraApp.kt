@@ -101,6 +101,8 @@ import com.aura.music.ui.screens.SettingsScreen
 import com.aura.music.ui.screens.CloudSyncScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
 import com.aura.music.ui.components.AppUpdateDialog
+import com.aura.music.data.repository.AddToPlaylistResult
+import com.aura.music.ui.screens.DuplicateTrackInPlaylistDialog
 import com.aura.music.ui.theme.*
 
 
@@ -330,6 +332,7 @@ fun AuraApp() {
                 }
                 val scope = rememberCoroutineScope()
                 var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
+                var pendingDuplicatePrompt by remember { mutableStateOf<AddToPlaylistResult.AlreadyExists?>(null) }
                 val intentSenderLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -359,8 +362,21 @@ fun AuraApp() {
                     },
                     onAddTrackToPlaylist = { playlist, track ->
                         scope.launch {
-                            repository.addTrackToPlaylist(playlist.id, track.id, "artist")
-                            vm.refreshLocal()
+                            val result = repository.addTrackToPlaylist(
+                                playlistId = playlist.id,
+                                trackId = track.id,
+                                contextType = "artist",
+                                title = track.title,
+                                artistName = track.artistName,
+                                albumTitle = track.albumTitle,
+                                durationMs = track.durationMs,
+                                coverUri = track.coverUri
+                            )
+                            if (result is AddToPlaylistResult.AlreadyExists) {
+                                pendingDuplicatePrompt = result
+                            } else {
+                                vm.refreshLocal()
+                            }
                         }
                     },
                     onDeleteTrack = { track ->
@@ -386,6 +402,25 @@ fun AuraApp() {
                         playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
                     }
                 )
+
+                pendingDuplicatePrompt?.let { prompt ->
+                    DuplicateTrackInPlaylistDialog(
+                        playlistName = prompt.playlistName,
+                        onConfirm = {
+                            scope.launch {
+                                repository.addTrackToPlaylist(
+                                    playlistId = prompt.playlistId,
+                                    trackId = prompt.trackId,
+                                    contextType = "artist",
+                                    allowDuplicate = true
+                                )
+                                pendingDuplicatePrompt = null
+                                vm.refreshLocal()
+                            }
+                        },
+                        onDismiss = { pendingDuplicatePrompt = null }
+                    )
+                }
             }
             composable(AuraRoute.AlbumPattern) { backStackEntry ->
                 val albumId = backStackEntry.arguments?.getString(AuraRoute.AlbumIdArg).orEmpty()
@@ -410,6 +445,7 @@ fun AuraApp() {
                 }
                 val scope = rememberCoroutineScope()
                 var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
+                var pendingDuplicatePrompt by remember { mutableStateOf<AddToPlaylistResult.AlreadyExists?>(null) }
                 val intentSenderLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -439,8 +475,21 @@ fun AuraApp() {
                     },
                     onAddTrackToPlaylist = { playlist, track ->
                         scope.launch {
-                            repository.addTrackToPlaylist(playlist.id, track.id, "album")
-                            vm.refreshLocal()
+                            val result = repository.addTrackToPlaylist(
+                                playlistId = playlist.id,
+                                trackId = track.id,
+                                contextType = "album",
+                                title = track.title,
+                                artistName = track.artistName,
+                                albumTitle = track.albumTitle,
+                                durationMs = track.durationMs,
+                                coverUri = track.coverUri
+                            )
+                            if (result is AddToPlaylistResult.AlreadyExists) {
+                                pendingDuplicatePrompt = result
+                            } else {
+                                vm.refreshLocal()
+                            }
                         }
                     },
                     onDeleteTrack = { track ->
@@ -466,6 +515,25 @@ fun AuraApp() {
                         playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
                     }
                 )
+
+                pendingDuplicatePrompt?.let { prompt ->
+                    DuplicateTrackInPlaylistDialog(
+                        playlistName = prompt.playlistName,
+                        onConfirm = {
+                            scope.launch {
+                                repository.addTrackToPlaylist(
+                                    playlistId = prompt.playlistId,
+                                    trackId = prompt.trackId,
+                                    contextType = "album",
+                                    allowDuplicate = true
+                                )
+                                pendingDuplicatePrompt = null
+                                vm.refreshLocal()
+                            }
+                        },
+                        onDismiss = { pendingDuplicatePrompt = null }
+                    )
+                }
             }
             composable(AuraRoute.Downloads) {
                 val ctx = LocalContext.current
