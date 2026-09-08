@@ -94,3 +94,29 @@ Ce document constitue la référence normative absolue pour toutes les implémen
 - **Compose Performance** :
   - Fournir des clés stables (`key = { it.id }`) dans toutes les `LazyColumn`, `LazyRow` et `LazyVerticalGrid`.
   - Utiliser `derivedStateOf` pour isoler les lectures d'états haute fréquence (sliders, scrolls).
+
+---
+
+## 10. Gestion des Versions Android et Mises à Jour OTA Sécurisées
+- **Incrémentation Monotone Obligatoire** :
+  - Chaque lot de modifications fonctionnelles ou correctives destinées à être testées ou déployées sur Android **DOIT** incrémenter le `versionCode` (entier) dans `androidApp/build.gradle.kts` (ex: `1` -> `2`).
+  - Le `versionName` doit suivre le versionnement sémantique `MAJOR.MINOR.PATCH` (ex: `0.1.0` -> `0.2.0`).
+- **Synchronisation du Serveur OTA (`version.json`)** :
+  - Tout déploiement d'un binaire APK sur le VPS sous `/app/downloads/updates/` doit être synchronisé avec son descripteur `version.json` :
+    ```json
+    {
+      "version_code": 2,
+      "version_name": "0.2.0",
+      "download_url": "/app/updates/latest.apk",
+      "sha256": "auto",
+      "release_notes": "Description claire des nouveautés",
+      "min_supported_version": 1
+    }
+    ```
+  - `sha256` : positionné sur `"auto"` (calculé à la volée par le serveur) ou sur l'empreinte SHA-256 exacte en minuscules.
+  - `min_supported_version` : définit le `versionCode` en-dessous duquel l'application bloque son utilisation et oblige l'utilisateur à mettre à jour (ex: en cas de rupture de contrat d'API ou de schéma Room).
+- **Sécurité et Intégrité Client (Anti-Tampering)** :
+  - Le client Android doit impérativement valider le hash SHA-256 du fichier téléchargé avant toute installation.
+  - En cas de divergence de hash, le fichier est supprimé immédiatement sans solliciter l'installateur natif.
+  - L'installation passe obligatoirement par `FileProvider` avec `FLAG_GRANT_READ_URI_PERMISSION` (interdiction absolue d'URI `file://`).
+

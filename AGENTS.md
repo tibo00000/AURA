@@ -15,8 +15,18 @@ Le fichier canonique [`docs/architecture/engineering-rules.md`](file:///c:/Users
 6. **Scoped Storage Android 10..15 (API 29-35)** : Utilisation exclusive de `ContentUris.withAppendedId` (jamais `_DATA`), extraction des pochettes via `loadThumbnail`, et purge locale conditionnée au succès du scan (`isComplete == true`).
 7. **Sécurité Supabase Auth & RLS** : Tokens chiffrés (`EncryptedSharedPreferences`), RLS activé sur toutes les tables privées avec scoping `auth.uid() = user_id`, interdiction absolue d'endpoints de réclamation anonyme sans preuve de possession.
 8. **Idempotence des Synchronisations** : Vérification multi-niveaux (`batch_id` et `operation_id`) et désérialisation JSON typée sécurisée.
+9. **Cycle de Vie des Versions et OTA** : Incrémentation strictement monotone de `versionCode` dans `build.gradle.kts` pour chaque lot déployable, alignement sémantique de `versionName` (SemVer), synchronisation de `version.json` et de l'APK sur le serveur, et vérification cryptographique d'intégrité SHA-256 obligatoire avant toute installation native.
+
+## Versioning And OTA Releases Policy
+- Toute modification fonctionnelle ou corrective livrée pour Android DOIT incrémenter de manière strictement monotone `versionCode` dans `androidApp/build.gradle.kts` (ex: `1` -> `2`).
+- Le `versionName` suit la sémantique `MAJOR.MINOR.PATCH` (ex: `0.1.0` -> `0.2.0`).
+- Si une mise à jour Android est déployée sur le serveur OTA (`/app/downloads/updates/`):
+  - Déposer l'APK sous `latest.apk` (ou le nom spécifié dans `download_url`).
+  - Mettre à jour `version.json` avec le nouveau `version_code`, `version_name`, les notes de version (`release_notes`), et `sha256` (`"auto"` pour calcul automatique ou empreinte réelle).
+  - Définir `min_supported_version` : si un changement d'API serveur ou de schéma Room casse la rétro-compatibilité, passer `min_supported_version` au `versionCode` minimal exigé pour forcer la mise à jour bloquante.
 
 ## Build And Compilation Rules
+
 - L'utilisateur gere les builds et la compilation manuellement.
 - Ne lance jamais de commandes Gradle de ta propre initiative.
 - Si une erreur de compilation survient, attends que l'utilisateur fournisse le message exact ou une capture avant de proposer un correctif.

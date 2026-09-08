@@ -97,7 +97,8 @@ fun AppUpdateDialog(
                             )
                         }
 
-                        if (!state.updateInfo.releaseNotes.isNullOrBlank()) {
+                        val notes = state.updateInfo.releaseNotes
+                        if (!notes.isNullOrBlank()) {
                             Text(
                                 text = "Nouveautés :",
                                 style = MaterialTheme.typography.labelLarge,
@@ -111,13 +112,14 @@ fun AppUpdateDialog(
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
-                                    text = state.updateInfo.releaseNotes,
+                                    text = notes,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(12.dp),
                                 )
                             }
                         }
+
                     }
                 },
                 confirmButton = {
