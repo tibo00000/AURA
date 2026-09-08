@@ -105,7 +105,18 @@ def get_track_id_aliases(track_id: str) -> list[str]:
                 candidates.append(f"ytm:{p_id}")
                 candidates.append(f"youtube:{p_id}")
         except Exception:
-            pass
+            # Support des identifiants au format trk_deezer_12345
+            parts = raw.split("_", 2)
+            if len(parts) >= 3:
+                p_name = parts[1].lower()
+                p_id = parts[2]
+                candidates.append(f"{p_name}:{p_id}")
+                candidates.append(p_id)
+                if p_name == "deezer":
+                    candidates.append(f"deezer:{p_id}")
+                elif p_name in ("youtube", "ytmusic", "ytm"):
+                    candidates.append(f"ytm:{p_id}")
+                    candidates.append(f"youtube:{p_id}")
 
     # 2. Préfixe deezer:
     elif raw.startswith("deezer:"):

@@ -339,7 +339,7 @@ fun HybridArtistScreen(
                 items(displayedTracks, key = { it.id }) { track ->
                     val matchedLocal = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isDownloaded = matchedLocal != null
-                    val isOnCloud = lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                    val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isSyncedToCloud = isOnCloud && !isDownloaded
                     val dlStatus = lookupIndex.resolveDownloadStatus(track.id, trackDownloadStatusMap)
                     val trackRow = track.toTrackListRow(artistId = artist?.summary?.id ?: onlineData.id)
@@ -647,7 +647,7 @@ fun HybridAlbumScreen(
                         Button(
                             onClick = {
                                 val firstSynced = onlineData.tracks.firstOrNull { track ->
-                                    lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                                    track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                                 } ?: onlineData.tracks.first()
                                 onPlayTrackInList(firstSynced.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id), allOnlineAlbumMapped, "album_online")
                             },
@@ -741,7 +741,7 @@ fun HybridAlbumScreen(
                 itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->
                     val matchedLocal = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isDownloaded = matchedLocal != null
-                    val isOnCloud = lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                    val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isSyncedToCloud = isOnCloud && !isDownloaded
                     val dlStatus = lookupIndex.resolveDownloadStatus(track.id, trackDownloadStatusMap)
                     val trackRow = track.toTrackListRow(artistId = artistId, albumId = album?.summary?.id ?: onlineData.id)

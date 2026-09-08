@@ -99,7 +99,8 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
   "is_explicit": false,
   "is_liked": false,
   "is_local_available": false,
-  "is_downloaded_by_aura": false
+  "is_downloaded_by_aura": false,
+  "is_available_in_cloud": false
 }
 ```
 

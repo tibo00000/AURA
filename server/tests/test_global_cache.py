@@ -367,6 +367,65 @@ class TestGlobalTrackCache(unittest.TestCase):
             self.assertIsNotNone(cached_second)
             self.assertEqual(cached_second[0].read_bytes(), content)
 
+    def test_is_track_in_global_cache_in_memory(self):
+        """Vérifie que is_track_in_global_cache détecte en RAM O(1) les pistes et alias."""
+        from app.services.download_service import (
+            is_track_in_global_cache,
+            get_cached_track_keys_set,
+            _cached_global_keys,
+        )
+        import app.services.download_service as ds
+
+        track_id = "deezer:11223344"
+        key = _get_track_key(track_id)
+        cache_dir = _get_global_cache_dir()
+        audio_file = cache_dir / f"{key}.audio"
+        audio_file.write_bytes(b"TEST_AUDIO_CONTENT")
+
+        # Forcer le rafraîchissement
+        ds._cached_global_keys_last_refresh = 0.0
+
+        # Vérification par identifiant canonique et alias
+        self.assertTrue(is_track_in_global_cache(track_id))
+        self.assertTrue(is_track_in_global_cache("trk_deezer_11223344"))
+        self.assertTrue(is_track_in_global_cache("11223344"))
+
+        # Piste inexistante
+        self.assertFalse(is_track_in_global_cache("deezer:9999999999"))
+
+    def test_ephemeral_streaming_without_personal_library_hardlink(self):
+        """Vérifie que le streaming éphémère ne crée AUCUN hardlink ni JSON dans le dossier personnel de l'utilisateur."""
+        from app.api.routes.sync_files import download_sync_file, _paths, _user_dir
+        from app.core.auth import AuthenticatedUser
+        import asyncio
+
+        track_id = "deezer:55667788"
+        key = _get_track_key(track_id)
+        cache_dir = _get_global_cache_dir()
+        audio_file = cache_dir / f"{key}.audio"
+        json_file = cache_dir / f"{key}.json"
+        audio_file.write_bytes(b"STREAM_AUDIO_BYTES")
+        json_file.write_text(json.dumps({"track_id": track_id, "title": "Ephemeral Song"}), encoding="utf-8")
+
+        test_user = AuthenticatedUser(id="user_friend_uuid", token="test_token_123")
+        user_personal_dir = _user_dir(test_user.id)
+
+        # Avant le stream, le dossier utilisateur est vide
+        self.assertEqual(len(list(user_personal_dir.glob("*"))), 0)
+
+        # Appel direct de download_sync_file (simule GET /me/sync/files/{track_id})
+        async def run_stream():
+            resp = await download_sync_file(track_id=track_id, current_user=test_user)
+            self.assertEqual(resp.path, str(audio_file))
+
+        asyncio.run(run_stream())
+
+        # APRÈS le stream : AUCUN fichier ne doit avoir été créé dans le dossier personnel (0 hardlink, 0 JSON)
+        self.assertEqual(len(list(user_personal_dir.glob("*"))), 0)
+        personal_audio, personal_json = _paths(test_user.id, track_id)
+        self.assertFalse(personal_audio.exists())
+        self.assertFalse(personal_json.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,6 +96,7 @@ class TrackSummaryResponse(BaseModel):
     is_liked: bool = False
     is_local_available: bool = False
     is_downloaded_by_aura: bool = False
+    is_available_in_cloud: bool = False
 
 
 class SearchBestMatchResponse(BaseModel):

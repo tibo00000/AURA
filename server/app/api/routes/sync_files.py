@@ -158,18 +158,13 @@ async def download_sync_file(
             break
 
     # 2. Si absent du dossier personnel, vérification du Cache Global (_global_cache et backfill)
+    # STREAMING ÉPHÉMÈRE : on sert directement le fichier audio du cache global
+    # SANS créer de hardlink silencieux ni de fichier .json dans l'espace personnel de l'utilisateur (zéro pollution de bibliothèque / quota).
     if target_file is None:
         cached = _find_globally_cached_track(track_id)
         if cached:
             cached_audio, cached_meta = cached
-            # Liaison hardlink immédiate vers l'espace personnel de l'utilisateur
-            _link_cached_track_to_user(
-                user_id=current_user.id,
-                track_id=track_id,
-                cached_audio=cached_audio,
-                metadata=cached_meta,
-            )
-            target_file, metadata_file = _paths(current_user.id, track_id)
+            target_file = cached_audio
             metadata = cached_meta
 
     if target_file is None or not target_file.exists():

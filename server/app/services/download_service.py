@@ -52,6 +52,40 @@ def _get_track_key(track_id: str) -> str:
     return hashlib.sha256(track_id.encode("utf-8")).hexdigest()
 
 
+_cached_global_keys: set[str] = set()
+_cached_global_keys_last_refresh: float = 0.0
+
+
+def get_cached_track_keys_set() -> set[str]:
+    """Retourne l'ensemble des clés SHA-256 présentes dans le cache global (O(1) en mémoire avec rafraîchissement périodique)."""
+    global _cached_global_keys, _cached_global_keys_last_refresh
+    import time
+    now = time.time()
+    if now - _cached_global_keys_last_refresh > 5.0 or not _cached_global_keys:
+        try:
+            cache_dir = _get_global_cache_dir()
+            if cache_dir.exists():
+                _cached_global_keys = {p.stem for p in cache_dir.glob("*.audio") if p.stat().st_size > 0}
+            else:
+                _cached_global_keys = set()
+        except Exception as e:
+            logger.warning("Failed to refresh cached track keys: %s", e)
+            _cached_global_keys = set()
+        _cached_global_keys_last_refresh = now
+    return _cached_global_keys
+
+
+def is_track_in_global_cache(track_id: str) -> bool:
+    """Vérifie en mémoire O(1) si une piste ou l'un de ses alias est déjà présente dans le cache global."""
+    from app.core.aura_id_codec import get_track_id_aliases
+    cached_keys = get_cached_track_keys_set()
+    aliases = get_track_id_aliases(track_id)
+    for alias in aliases:
+        if _get_track_key(alias) in cached_keys:
+            return True
+    return False
+
+
 def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
     """
     Vérifie si une piste existe déjà dans le cache global (_global_cache),

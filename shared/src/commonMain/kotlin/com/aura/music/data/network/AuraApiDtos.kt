@@ -106,7 +106,9 @@ data class TrackSummary(
     @SerialName("is_local_available")
     val isLocalAvailable: Boolean = false,
     @SerialName("is_downloaded_by_aura")
-    val isDownloadedByAura: Boolean = false
+    val isDownloadedByAura: Boolean = false,
+    @SerialName("is_available_in_cloud")
+    val isAvailableInCloud: Boolean = false
 ) : BestMatchItem
 
 @Serializable

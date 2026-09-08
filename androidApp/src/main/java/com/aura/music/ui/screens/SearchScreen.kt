@@ -83,6 +83,7 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.ArtistSummary
 import com.aura.music.data.network.AlbumSummary
 import com.aura.music.data.network.TrackSummary
+import com.aura.music.data.network.BestMatchResult
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.search.SearchViewModel
@@ -442,6 +443,7 @@ fun SearchScreen(
                                 tracks = result.onlineTracks,
                                 artists = result.onlineArtists,
                                 albums = result.onlineAlbums,
+                                bestMatch = result.bestMatch,
                                 downloadStatusMap = trackDownloadStatusMap,
                                 localTracks = localTracks,
                                 cloudFiles = cloudFiles,
@@ -456,7 +458,8 @@ fun SearchScreen(
                                           (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
                                         !local.contentUri.isNullOrBlank()
                                     }
-                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                                    val isOnCloud = track.isAvailableInCloud ||
+                                        syncedCloudTrackIds.contains(track.id) ||
                                         syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
                                         cloudFiles.any { cloud ->
                                             isDeezerTrackMatch(cloud.trackId, track.id) ||
@@ -497,7 +500,8 @@ fun SearchScreen(
                                           (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
                                         !local.contentUri.isNullOrBlank()
                                     }
-                                    val isOnCloud = syncedCloudTrackIds.contains(track.id) ||
+                                    val isOnCloud = track.isAvailableInCloud ||
+                                        syncedCloudTrackIds.contains(track.id) ||
                                         syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
                                         cloudFiles.any { cloud ->
                                             isDeezerTrackMatch(cloud.trackId, track.id) ||
@@ -810,6 +814,7 @@ private fun OnlineSearchTab(
     tracks: List<TrackSummary>,
     artists: List<ArtistSummary>,
     albums: List<AlbumSummary>,
+    bestMatch: BestMatchResult? = null,
     downloadStatusMap: Map<String, TrackDownloadStatus> = emptyMap(),
     localTracks: List<TrackListRow> = emptyList(),
     cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
@@ -831,7 +836,16 @@ private fun OnlineSearchTab(
         TrackLookupIndex.build(localTracks, cloudFiles, syncedCloudTrackIds)
     }
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val sectionOrder = remember(bestMatch) {
+        when (bestMatch?.kind?.lowercase()) {
+            "artist" -> listOf("artists", "tracks", "albums")
+            "album" -> listOf("albums", "tracks", "artists")
+            else -> listOf("tracks", "artists", "albums")
+        }
+    }
+
+    @Composable
+    fun RenderTracks() {
         if (tracks.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -843,7 +857,7 @@ private fun OnlineSearchTab(
                 val displayedTracks = if (showAllTracks) tracks else tracks.take(10)
                 displayedTracks.forEach { track ->
                     val isDownloadedLocally = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle) != null
-                    val isOnCloud = lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                    val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
                     val isCloudOnly = isOnCloud && !isDownloadedLocally
                     val effectiveDlStatus = lookupIndex.resolveDownloadStatus(track.id, downloadStatusMap)
 
@@ -875,7 +889,10 @@ private fun OnlineSearchTab(
                 }
             }
         }
+    }
 
+    @Composable
+    fun RenderArtists() {
         if (artists.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -902,7 +919,10 @@ private fun OnlineSearchTab(
                 }
             }
         }
+    }
 
+    @Composable
+    fun RenderAlbums() {
         if (albums.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -927,6 +947,16 @@ private fun OnlineSearchTab(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        sectionOrder.forEach { section ->
+            when (section) {
+                "artists" -> RenderArtists()
+                "albums" -> RenderAlbums()
+                "tracks" -> RenderTracks()
             }
         }
     }
