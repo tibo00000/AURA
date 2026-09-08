@@ -164,3 +164,13 @@ class ResolveAlbumResponseData(BaseModel):
     resolved: bool
     match_confidence: float
     album: Optional[ResolvedAlbumData] = None
+
+
+class AppVersionResponse(BaseModel):
+    version_code: int
+    version_name: str
+    download_url: str
+    sha256: str
+    release_notes: Optional[str] = None
+    min_supported_version: int = 1
+

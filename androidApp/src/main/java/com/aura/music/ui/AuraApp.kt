@@ -100,7 +100,9 @@ import com.aura.music.ui.screens.SearchScreen
 import com.aura.music.ui.screens.SettingsScreen
 import com.aura.music.ui.screens.CloudSyncScreen
 import com.aura.music.ui.screens.ArtistRouteScreen
+import com.aura.music.ui.components.AppUpdateDialog
 import com.aura.music.ui.theme.*
+
 
 private data class TopLevelDestination(
     val route: String,
@@ -134,6 +136,14 @@ fun AuraApp() {
             android.widget.Toast.makeText(appContext, playerErrorMessage, android.widget.Toast.LENGTH_LONG).show()
         }
     }
+
+    val appUpdateManager = application.container.appUpdateManager
+    val updateState by appUpdateManager.state.collectAsState()
+
+    LaunchedEffect(Unit) {
+        appUpdateManager.checkForUpdate(isManual = false)
+    }
+
 
     val topDestinations = remember {
         listOf(
@@ -188,6 +198,10 @@ fun AuraApp() {
     }
 
     AuraTheme {
+        AppUpdateDialog(
+            state = updateState,
+            updateManager = appUpdateManager,
+        )
         AuraAppScaffold(
             navController = navController,
             topDestinations = topDestinations,
@@ -474,8 +488,10 @@ fun AuraApp() {
                     syncRepository = appContainer.syncRepository,
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToSandbox = { navController.navigate(AuraRoute.Sandbox) },
-                    onNavigateToCloudSync = { navController.navigate(AuraRoute.CloudSync) }
+                    onNavigateToCloudSync = { navController.navigate(AuraRoute.CloudSync) },
+                    appUpdateManager = appContainer.appUpdateManager
                 )
+
             }
             composable(AuraRoute.CloudSync) {
                 val ctx = LocalContext.current

@@ -119,4 +119,7 @@ interface AuraApiService {
     ): AuraResponse<SyncedFileBatchMetadataResponse>
 
     suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse>
+ 
+     suspend fun getAppVersion(): AuraResponse<AppVersionResponseData>
 }
+

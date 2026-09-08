@@ -583,3 +583,14 @@ data class SupabaseAuthErrorDto(
     @SerialName("message") val message: String? = null
 )
 
+@Serializable
+data class AppVersionResponseData(
+    @SerialName("version_code") val versionCode: Int,
+    @SerialName("version_name") val versionName: String,
+    @SerialName("download_url") val downloadUrl: String,
+    @SerialName("sha256") val sha256: String,
+    @SerialName("release_notes") val releaseNotes: String? = null,
+    @SerialName("min_supported_version") val minSupportedVersion: Int = 1
+)
+
+

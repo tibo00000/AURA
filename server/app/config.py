@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     deezer_api_base_url: str = "https://api.deezer.com"
     log_level: str = "INFO"
     sync_files_dir: str = "sync_files"
+    updates_dir: str = "updates"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -97,10 +97,26 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToSandbox: () -> Unit,
     onNavigateToCloudSync: () -> Unit,
+    appUpdateManager: com.aura.music.core.AppUpdateManager? = null,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
+
+    if (appUpdateManager != null) {
+        val updateState by appUpdateManager.state.collectAsState()
+        androidx.compose.runtime.LaunchedEffect(updateState) {
+            if (updateState is com.aura.music.core.UpdateState.UpToDate) {
+                android.widget.Toast.makeText(
+                    ctx,
+                    "AURA est à jour (v${com.aura.music.BuildConfig.VERSION_NAME})",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                appUpdateManager.dismiss()
+            }
+        }
+    }
+
 
     var cookiesText by remember { mutableStateOf("") }
     var isUploading by remember { mutableStateOf(false) }
@@ -693,10 +709,38 @@ fun SettingsScreen(
                         color = TextSecondary
                     )
                     Text(
-                        text = "Version 1.0.0 • Architecture Hybride MVVM",
+                        text = "Version ${com.aura.music.BuildConfig.VERSION_NAME} (build ${com.aura.music.BuildConfig.VERSION_CODE}) • Architecture Hybride MVVM",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
+                    if (appUpdateManager != null) {
+                        Button(
+                            onClick = { appUpdateManager.checkForUpdate(isManual = true) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ElevatedGraphite,
+                                contentColor = TextPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Refresh,
+                                    contentDescription = null,
+                                    tint = BlazeOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    "Vérifier les mises à jour",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+
                 }
             }
         }

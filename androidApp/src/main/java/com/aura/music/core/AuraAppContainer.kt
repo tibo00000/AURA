@@ -131,5 +131,14 @@ class AuraAppContainer(context: Context) {
             downloadRepository = downloadRepository
         )
     }
+
+    val appUpdateManager by lazy {
+        AppUpdateManager(
+            context = appContext,
+            apiService = auraApiService,
+            scope = applicationScope,
+        )
+    }
 }
+
 

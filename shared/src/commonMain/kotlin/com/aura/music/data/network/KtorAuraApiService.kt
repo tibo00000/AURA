@@ -258,6 +258,9 @@ class KtorAuraApiService(
         header("Authorization", token)
     }.body()
 
+    override suspend fun getAppVersion(): AuraResponse<AppVersionResponseData> = client.get("$cleanBaseUrl/app/version").body()
+
+
 
     companion object {
         /**
