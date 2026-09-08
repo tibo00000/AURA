@@ -40,11 +40,11 @@ data class QueuedTrack(
     val trackId: String,
     val title: String,
     val artistName: String,
-    val albumTitle: String?,
-    val contentUri: String?,
-    val durationMs: Long?,
-    val coverUri: String?,
-    val source: TrackSource,
+    val albumTitle: String? = null,
+    val contentUri: String? = null,
+    val durationMs: Long? = null,
+    val coverUri: String? = null,
+    val source: TrackSource = TrackSource.CONTEXT,
     val internalId: String = java.util.UUID.randomUUID().toString()
 )
 

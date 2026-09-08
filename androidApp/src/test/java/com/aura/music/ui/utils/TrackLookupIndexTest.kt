@@ -87,7 +87,6 @@ class TrackLookupIndexTest {
     @Test
     fun testCloudSyncMatching() {
         val cloudFile = SyncedFileResponseData(
-            id = "cloud_1",
             trackId = "cloud_track_123",
             title = "Starboy",
             artistName = "The Weeknd",
