@@ -985,7 +985,7 @@ class DesktopPlaybackOrchestrator(
     }
 
     val cloudFileIds: StateFlow<Set<String>>
-        get() = cloudSyncManager?.cloudFileIds ?: MutableStateFlow(emptySet()).asStateFlow()
+        get() = cloudSyncManager?.cloudFileIds ?: MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
 
     fun triggerSingleFileDelete(track: TrackListRow, onComplete: ((Boolean) -> Unit)? = null) {
         scope.launch(Dispatchers.IO) {

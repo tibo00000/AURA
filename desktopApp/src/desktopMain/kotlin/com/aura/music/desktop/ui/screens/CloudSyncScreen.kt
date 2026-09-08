@@ -774,7 +774,7 @@ private fun CloudTrackTableRow(
         Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterEnd)
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
             ) {
                 if (track.isCloudOnly) {
                     AuraTooltip(text = "Rapatrier sur ce PC") {
