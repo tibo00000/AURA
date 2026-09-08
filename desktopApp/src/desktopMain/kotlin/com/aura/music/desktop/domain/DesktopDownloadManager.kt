@@ -69,6 +69,31 @@ class DesktopDownloadManager(
     suspend fun createDownload(track: TrackSummary) = withContext(Dispatchers.IO) {
         val token = apiToken ?: return@withContext
         try {
+            val now = System.currentTimeMillis()
+            val existing = database.trackDao().getRawTrackById(track.id)
+            if (existing == null) {
+                database.trackDao().upsertTracks(
+                    listOf(
+                        TrackEntity(
+                            id = track.id,
+                            primaryArtistId = null,
+                            albumId = null,
+                            title = track.title,
+                            normalizedTitle = track.title.lowercase().trim(),
+                            displayArtistName = track.displayArtistName,
+                            displayAlbumTitle = track.displayAlbumTitle,
+                            durationMs = track.durationMs ?: 0L,
+                            coverUri = track.coverUri,
+                            canonicalAudioSourceType = "cloud_only",
+                            isLiked = false,
+                            isDownloadedByAura = false,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                )
+            }
+
             val response = apiService.createDownload(
                 token = token,
                 request = DownloadRequestDto(
@@ -128,23 +153,28 @@ class DesktopDownloadManager(
             val jobsToUpsert = mutableListOf<DownloadJobEntity>()
             val tracksToInsert = mutableListOf<TrackEntity>()
 
+            val allTrackIds = items.map { it.trackId }.distinct()
+            val existingTrackIds = database.trackDao().getTracksByIds(allTrackIds).map { it.id }.toSet()
+            val knownTrackIds = existingTrackIds.toMutableSet()
+
             for (item in items) {
                 // Ne pas réinsérer un job annulé localement
                 if (cancelledJobIds.contains(item.id)) {
                     continue
                 }
 
-                val trackExists = database.trackDao().getRawTrackById(item.trackId) != null
-                val isFinished = item.status == "succeeded" || item.status == "completed" || item.status == "failed"
-
-                if (!trackExists && !isFinished) {
+                // Toujours garantir l'existence de TrackEntity pour respecter la contrainte FOREIGN KEY
+                if (!knownTrackIds.contains(item.trackId)) {
+                    knownTrackIds.add(item.trackId)
+                    val deezerId = com.aura.music.desktop.utils.DesktopTrackMatcher.extractDeezerId(item.trackId)
+                    val placeholderTitle = if (deezerId != null) "Piste Deezer $deezerId" else "Titre ${item.trackId}"
                     tracksToInsert.add(
                         TrackEntity(
                             id = item.trackId,
                             primaryArtistId = null,
                             albumId = null,
-                            title = "Titre ${item.trackId}",
-                            normalizedTitle = "titre ${item.trackId}",
+                            title = placeholderTitle,
+                            normalizedTitle = placeholderTitle.lowercase().trim(),
                             displayArtistName = "Artiste Inconnu",
                             displayAlbumTitle = null,
                             durationMs = 0L,
