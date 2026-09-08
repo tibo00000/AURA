@@ -17,21 +17,45 @@ router = APIRouter(prefix="/app", tags=["app-updates"])
 
 def _get_updates_dir() -> Path:
     """Retourne le répertoire contenant les mises à jour et APKs."""
+    import os
     settings = get_settings()
+
     configured = Path(settings.updates_dir)
-    if configured.is_absolute():
-        configured.mkdir(parents=True, exist_ok=True)
+    if configured.is_absolute() and configured.exists():
         return configured
 
+    # 1. Vérifier DOWNLOADS_DIR (défini dans docker-compose.vps.yml : /app/downloads)
+    downloads_env = os.environ.get("DOWNLOADS_DIR")
+    if downloads_env:
+        cand = Path(downloads_env) / "updates"
+        if cand.exists():
+            return cand
+
+    # 2. Vérifier chemin direct /app/downloads/updates (volume partagé VPS)
+    if Path("/app/downloads/updates").exists():
+        return Path("/app/downloads/updates")
+
+    # 3. Vérifier sous sync_files_dir
     sync_base = Path(settings.sync_files_dir)
     sync_base_abs = sync_base if sync_base.is_absolute() else Path.cwd() / sync_base
     sync_updates = sync_base_abs / "updates"
     if sync_updates.exists():
         return sync_updates
 
+    # 4. Vérifier Path.cwd() / "updates"
+    if (Path.cwd() / "updates").exists():
+        return Path.cwd() / "updates"
+
+    # Fallback création
+    if downloads_env:
+        cand = Path(downloads_env) / "updates"
+        cand.mkdir(parents=True, exist_ok=True)
+        return cand
+
     target = Path.cwd() / configured
     target.mkdir(parents=True, exist_ok=True)
     return target
+
 
 
 def _compute_sha256(file_path: Path) -> str:
