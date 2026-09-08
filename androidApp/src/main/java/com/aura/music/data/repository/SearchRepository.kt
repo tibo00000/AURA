@@ -416,10 +416,20 @@ class SearchRepository(
      */
     suspend fun toggleLike(
         trackId: String,
-        currentlyLiked: Boolean
+        currentlyLiked: Boolean,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
     ) = localLibraryRepository.toggleLike(
         trackId = trackId,
         currentlyLiked = currentlyLiked,
-        contextType = "search"
+        contextType = "search",
+        title = title,
+        artistName = artistName,
+        albumTitle = albumTitle,
+        durationMs = durationMs,
+        coverUri = coverUri,
     )
 }

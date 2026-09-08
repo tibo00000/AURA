@@ -814,15 +814,8 @@ class PlaybackOrchestrator(
         val uri = if (!track.contentUri.isNullOrBlank()) {
             track.contentUri
         } else if (track.trackId.isNotBlank()) {
-            // Stream direct depuis le Cloud personnel AURA
-            val rawToken = com.aura.music.core.AuthSessionManager.getInstance(context).authToken.value
-            val base = "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
-            if (!rawToken.isNullOrBlank()) {
-                val clean = if (rawToken.startsWith("Bearer ", ignoreCase = true)) rawToken.substring(7).trim() else rawToken.trim()
-                "$base?token=$clean"
-            } else {
-                base
-            }
+            // Stream direct depuis le Cloud personnel AURA (le Bearer token est injecté via MediaCacheManager)
+            "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
         } else {
             return null
         }

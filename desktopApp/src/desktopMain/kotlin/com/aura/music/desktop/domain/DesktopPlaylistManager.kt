@@ -2,10 +2,12 @@ package com.aura.music.desktop.domain
 
 import androidx.room3.immediateTransaction
 import androidx.room3.useWriterConnection
+import com.aura.music.data.local.ArtistEntity
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.PlaylistEntity
 import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.SyncOutboxEntity
+import com.aura.music.data.local.TrackEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -116,6 +118,45 @@ class DesktopPlaylistManager(
 
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
+                val existingTrack = database.trackDao().getRawTrackById(trackId)
+                if (existingTrack == null) {
+                    val artistId = "artist:unknown-artist"
+                    database.artistDao().insertArtistsIgnore(
+                        listOf(
+                            ArtistEntity(
+                                id = artistId,
+                                name = "Unknown artist",
+                                normalizedName = "unknown artist",
+                                pictureUri = null,
+                                summary = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
+                    )
+                    database.trackDao().upsertTrack(
+                        TrackEntity(
+                            id = trackId,
+                            primaryArtistId = artistId,
+                            albumId = null,
+                            title = "Unknown Title",
+                            normalizedTitle = "unknown title",
+                            displayArtistName = "Unknown artist",
+                            displayAlbumTitle = null,
+                            durationMs = 0L,
+                            coverUri = null,
+                            canonicalAudioSourceType = if (trackId.startsWith("track:cloud:")) "cloud" else "online",
+                            isLiked = false,
+                            isDownloadedByAura = false,
+                            isExplicit = null,
+                            popularity = null,
+                            genresJson = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                }
+
                 database.playlistDao().insertPlaylistItem(
                     PlaylistItemEntity(
                         id = UUID.randomUUID().toString(),

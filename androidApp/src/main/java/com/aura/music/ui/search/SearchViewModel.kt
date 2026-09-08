@@ -63,6 +63,8 @@ class SearchViewModel(
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
+    private val _togglingTrackIds = MutableStateFlow<Set<String>>(emptySet())
+
     init {
         // Load recent queries on startup
         loadRecentQueries()
@@ -335,6 +337,9 @@ class SearchViewModel(
      * @param currentlyLiked the current like status
      */
     fun likeLocalTrack(trackId: String, currentlyLiked: Boolean) {
+        if (_togglingTrackIds.value.contains(trackId)) return
+        _togglingTrackIds.update { it + trackId }
+
         // Mise à jour optimiste immédiate dans le StateFlow
         _uiState.update { current ->
             val updateHybridResult: (HybridSearchResult?) -> HybridSearchResult? = { res ->
@@ -357,9 +362,25 @@ class SearchViewModel(
                     searchRepository.toggleLike(trackId, currentlyLiked)
                 }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(errorMessage = "Erreur lors de la modification du favori")
+                // Rollback optimiste en cas d'erreur
+                _uiState.update { current ->
+                    val updateHybridResult: (HybridSearchResult?) -> HybridSearchResult? = { res ->
+                        res?.let { r ->
+                            r.copy(
+                                localTracks = r.localTracks.map {
+                                    if (it.id == trackId) it.copy(isLiked = currentlyLiked) else it
+                                }
+                            )
+                        }
+                    }
+                    current.copy(
+                        currentFullSearchResult = updateHybridResult(current.currentFullSearchResult),
+                        localSuggestions = updateHybridResult(current.localSuggestions),
+                        errorMessage = "Erreur lors de la modification du favori"
+                    )
                 }
+            } finally {
+                _togglingTrackIds.update { it - trackId }
             }
         }
     }
@@ -368,6 +389,9 @@ class SearchViewModel(
      * Like or unlike an online track (toggle).
      */
     fun likeOnlineTrack(track: TrackSummary) {
+        if (_togglingTrackIds.value.contains(track.id)) return
+        _togglingTrackIds.update { it + track.id }
+
         val nextLiked = !track.isLiked
         // Mise à jour optimiste immédiate dans le StateFlow
         _uiState.update { current ->
@@ -388,12 +412,36 @@ class SearchViewModel(
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    searchRepository.toggleLike(track.id, track.isLiked)
+                    searchRepository.toggleLike(
+                        trackId = track.id,
+                        currentlyLiked = track.isLiked,
+                        title = track.title,
+                        artistName = track.displayArtistName,
+                        albumTitle = track.displayAlbumTitle,
+                        durationMs = track.durationMs.toLong(),
+                        coverUri = track.coverUri,
+                    )
                 }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(errorMessage = "Erreur lors de la modification du favori")
+                // Rollback optimiste en cas d'erreur
+                _uiState.update { current ->
+                    val updateHybridResult: (HybridSearchResult?) -> HybridSearchResult? = { res ->
+                        res?.let { r ->
+                            r.copy(
+                                onlineTracks = r.onlineTracks.map {
+                                    if (it.id == track.id) it.copy(isLiked = track.isLiked) else it
+                                }
+                            )
+                        }
+                    }
+                    current.copy(
+                        currentFullSearchResult = updateHybridResult(current.currentFullSearchResult),
+                        localSuggestions = updateHybridResult(current.localSuggestions),
+                        errorMessage = "Erreur lors de la modification du favori"
+                    )
                 }
+            } finally {
+                _togglingTrackIds.update { it - track.id }
             }
         }
     }

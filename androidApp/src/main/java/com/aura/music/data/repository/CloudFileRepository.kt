@@ -39,6 +39,15 @@ class CloudFileRepository(
     private val _syncedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val syncedTrackIds = _syncedTrackIds.asStateFlow()
 
+    private val _cachedCloudFiles = MutableStateFlow<List<com.aura.music.data.network.SyncedFileResponseData>>(emptyList())
+    val cachedCloudFiles = _cachedCloudFiles.asStateFlow()
+
+    fun getCachedCloudFile(trackId: String): com.aura.music.data.network.SyncedFileResponseData? {
+        val list = _cachedCloudFiles.value
+        return list.firstOrNull { it.trackId == trackId }
+            ?: list.firstOrNull { com.aura.music.ui.screens.isDeezerTrackMatch(it.trackId, trackId) }
+    }
+
     fun isCloudTrackSynced(trackId: String): Boolean {
         val ids = _syncedTrackIds.value
         if (ids.contains(trackId)) return true
@@ -52,6 +61,7 @@ class CloudFileRepository(
         val authManager = com.aura.music.core.AuthSessionManager.getInstance(context)
         if (!authManager.isLoggedIn.value) {
             _syncedTrackIds.value = emptySet()
+            _cachedCloudFiles.value = emptyList()
             return
         }
         try {
@@ -59,6 +69,7 @@ class CloudFileRepository(
             val data = response.data
             if (response.error == null && data != null) {
                 _syncedTrackIds.value = data.items.map { it.trackId }.toSet()
+                _cachedCloudFiles.value = data.items
                 reconcileCloudTracksWithDatabase(data.items)
                 Log.i(TAG, "Refreshed synced track IDs: ${_syncedTrackIds.value.size} tracks")
             }
@@ -642,6 +653,7 @@ class CloudFileRepository(
             }
             val items = data.items
             _syncedTrackIds.value = items.map { it.trackId }.toSet()
+            _cachedCloudFiles.value = items
             reconcileCloudTracksWithDatabase(items)
             emit(Result.success(items))
         } catch (e: Exception) {
@@ -693,7 +705,7 @@ class CloudFileRepository(
      * Retrieves all local tracks stored in the database.
      */
     suspend fun getLocalTracks(): List<com.aura.music.data.local.TrackListRow> = withContext(Dispatchers.IO) {
-        database.trackDao().getAllTracks()
+        database.trackDao().getDownloadedTracks()
     }
 
     suspend fun getSettings(): com.aura.music.data.local.UserSettingsEntity? = withContext(Dispatchers.IO) {

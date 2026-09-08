@@ -507,14 +507,8 @@ fun TrackListRow.toMediaItem(
     val mediaUri = if (!contentUri.isNullOrBlank()) {
         Uri.parse(contentUri)
     } else if (id.isNotBlank()) {
-        val rawToken = com.aura.music.core.AuthSessionManager.getInstance(context).authToken.value
-        val base = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$id"
-        val fullUrl = if (!rawToken.isNullOrBlank()) {
-            val clean = if (rawToken.startsWith("Bearer ", ignoreCase = true)) rawToken.substring(7).trim() else rawToken.trim()
-            "$base?token=$clean"
-        } else {
-            base
-        }
+        // Stream direct depuis le Cloud personnel AURA (le Bearer token est injecté via MediaCacheManager)
+        val fullUrl = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$id"
         Uri.parse(fullUrl)
     } else null
     val metadata = MediaMetadata.Builder()

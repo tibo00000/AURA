@@ -45,6 +45,7 @@ import com.aura.music.domain.player.PlayerUiState
 import com.aura.music.domain.player.RepeatMode
 import com.aura.music.ui.components.rememberAuraFlingBehavior
 import com.aura.music.ui.player.PlayerViewModel
+import com.aura.music.ui.player.PlaylistUiEvent
 import com.aura.music.ui.utils.FastTimeFormatter
 import com.aura.music.ui.theme.*
 import kotlin.math.roundToInt
@@ -70,6 +71,21 @@ fun PlayerScreen(
     var showEditMetadataBottomSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
+    var duplicatePromptEvent by remember { mutableStateOf<PlaylistUiEvent.ShowDuplicatePrompt?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(playerViewModel) {
+        playerViewModel.playlistEvents.collect { event ->
+            when (event) {
+                is PlaylistUiEvent.ShowDuplicatePrompt -> {
+                    duplicatePromptEvent = event
+                }
+                is PlaylistUiEvent.ShowSnackbar -> {
+                    android.widget.Toast.makeText(context, event.message, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     val trackDetailsState = produceState<com.aura.music.data.local.TrackListRow?>(initialValue = null, track?.trackId) {
         value = track?.trackId?.let { playerViewModel.getTrackById(it) }
@@ -912,6 +928,48 @@ fun PlayerScreen(
             onPlaylistSelected = { playlist ->
                 playerViewModel.addTrackToPlaylist(playlist.id, track.trackId)
                 showSelectPlaylistDialog = false
+            }
+        )
+    }
+
+    duplicatePromptEvent?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = { duplicatePromptEvent = null },
+            containerColor = ElevatedGraphite,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Morceau déjà présent",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "Ce titre se trouve déjà dans la playlist « ${prompt.playlistName} ». Voulez-vous l'ajouter quand même ?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextMuted
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        playerViewModel.addTrackToPlaylist(
+                            playlistId = prompt.playlistId,
+                            trackId = prompt.trackId,
+                            allowDuplicate = true
+                        )
+                        duplicatePromptEvent = null
+                    }
+                ) {
+                    Text("Ajouter quand même", color = BlazeOrange, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { duplicatePromptEvent = null }) {
+                    Text("Annuler", color = TextSecondary)
+                }
             }
         )
     }

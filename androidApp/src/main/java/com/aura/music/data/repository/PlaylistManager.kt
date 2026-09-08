@@ -6,12 +6,19 @@ import com.aura.music.data.local.PlaylistEntity
 import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.local.TrackListRow
+import android.util.Log
 import androidx.room3.useWriterConnection
 import androidx.room3.immediateTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.util.UUID
+
+sealed interface AddToPlaylistResult {
+    data class Success(val playlistName: String) : AddToPlaylistResult
+    data class AlreadyExists(val trackId: String, val playlistId: String, val playlistName: String) : AddToPlaylistResult
+    data class Error(val message: String) : AddToPlaylistResult
+}
 
 /**
  * Gestionnaire dédié des playlists et items de playlist.
@@ -21,6 +28,15 @@ import java.util.UUID
 class PlaylistManager(
     private val database: AuraDatabase,
     private val syncRepositoryProvider: () -> SyncRepository,
+    private val ensureTrackExists: (suspend (
+        trackId: String,
+        title: String?,
+        artistName: String?,
+        albumTitle: String?,
+        durationMs: Long?,
+        coverUri: String?,
+        contextType: String?
+    ) -> Unit)? = null,
 ) {
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
 
@@ -110,41 +126,66 @@ class PlaylistManager(
         playlistId: String,
         trackId: String,
         contextType: String = "playlist_detail",
-    ) = withContext(Dispatchers.IO) {
-        val nextPosition = database.playlistDao().getNextPlaylistPosition(playlistId)
-        val now = System.currentTimeMillis()
-        val itemId = "playlist-item:${UUID.randomUUID()}"
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist_item",
-            entityId = itemId,
-            operationType = "create",
-            payload = mapOf(
-                "playlist_id" to playlistId,
-                "track_id" to trackId,
-                "position" to nextPosition,
-                "added_at" to LocalLibraryRepository.formatMillisToIsoDate(now),
-                "added_from_context_type" to contextType,
-                "added_from_context_id" to playlistId
-            )
-        )
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                database.playlistDao().insertPlaylistItem(
-                    PlaylistItemEntity(
-                        id = itemId,
-                        playlistId = playlistId,
-                        trackId = trackId,
-                        position = nextPosition,
-                        addedAt = now,
-                        addedFromContextType = contextType,
-                        addedFromContextId = playlistId,
-                    ),
+        allowDuplicate: Boolean = false,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
+    ): AddToPlaylistResult = withContext(Dispatchers.IO) {
+        try {
+            val playlistSummary = database.playlistDao().getPlaylistDetail(playlistId)
+            val playlistName = playlistSummary?.name ?: "Playlist"
+
+            val alreadyInPlaylist = database.playlistDao().isTrackInPlaylist(playlistId, trackId)
+            if (alreadyInPlaylist && !allowDuplicate) {
+                return@withContext AddToPlaylistResult.AlreadyExists(
+                    trackId = trackId,
+                    playlistId = playlistId,
+                    playlistName = playlistName
                 )
-                database.playlistDao().touchPlaylist(playlistId, now)
-                database.syncOutboxDao().insert(outboxOp)
             }
+
+            val nextPosition = database.playlistDao().getNextPlaylistPosition(playlistId)
+            val now = System.currentTimeMillis()
+            val itemId = "playlist-item:${UUID.randomUUID()}"
+            val outboxOp = syncRepository.createOutboxEntity(
+                entityType = "playlist_item",
+                entityId = itemId,
+                operationType = "create",
+                payload = mapOf(
+                    "playlist_id" to playlistId,
+                    "track_id" to trackId,
+                    "position" to nextPosition,
+                    "added_at" to LocalLibraryRepository.formatMillisToIsoDate(now),
+                    "added_from_context_type" to contextType,
+                    "added_from_context_id" to playlistId
+                )
+            )
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    ensureTrackExists?.invoke(trackId, title, artistName, albumTitle, durationMs, coverUri, contextType)
+                    database.playlistDao().insertPlaylistItem(
+                        PlaylistItemEntity(
+                            id = itemId,
+                            playlistId = playlistId,
+                            trackId = trackId,
+                            position = nextPosition,
+                            addedAt = now,
+                            addedFromContextType = contextType,
+                            addedFromContextId = playlistId,
+                        ),
+                    )
+                    database.playlistDao().touchPlaylist(playlistId, now)
+                    database.syncOutboxDao().insert(outboxOp)
+                }
+            }
+            syncRepository.triggerManualSync()
+            AddToPlaylistResult.Success(playlistName)
+        } catch (e: Exception) {
+            Log.e("PlaylistManager", "Failed to add track $trackId to playlist $playlistId", e)
+            AddToPlaylistResult.Error(e.message ?: "Erreur lors de l'ajout à la playlist")
         }
-        syncRepository.triggerManualSync()
     }
 
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = withContext(Dispatchers.IO) {

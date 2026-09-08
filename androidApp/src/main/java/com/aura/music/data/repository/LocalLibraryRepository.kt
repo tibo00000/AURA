@@ -94,7 +94,18 @@ class LocalLibraryRepository(
     private val playlistManager by lazy {
         PlaylistManager(
             database = database,
-            syncRepositoryProvider = syncRepositoryProvider
+            syncRepositoryProvider = syncRepositoryProvider,
+            ensureTrackExists = { trackId, title, artistName, albumTitle, durationMs, coverUri, contextType ->
+                ensureTrackEntityExistsInTx(
+                    trackId = trackId,
+                    title = title,
+                    artistName = artistName,
+                    albumTitle = albumTitle,
+                    durationMs = durationMs,
+                    coverUri = coverUri,
+                    contextType = contextType,
+                )
+            }
         )
     }
 
@@ -422,7 +433,23 @@ class LocalLibraryRepository(
         playlistId: String,
         trackId: String,
         contextType: String = "playlist_detail",
-    ) = playlistManager.addTrackToPlaylist(playlistId, trackId, contextType)
+        allowDuplicate: Boolean = false,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
+    ): AddToPlaylistResult = playlistManager.addTrackToPlaylist(
+        playlistId = playlistId,
+        trackId = trackId,
+        contextType = contextType,
+        allowDuplicate = allowDuplicate,
+        title = title,
+        artistName = artistName,
+        albumTitle = albumTitle,
+        durationMs = durationMs,
+        coverUri = coverUri,
+    )
 
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) =
         playlistManager.removeTrackFromPlaylist(playlistId, playlistItemId)
@@ -484,6 +511,117 @@ class LocalLibraryRepository(
     }
 
     /**
+     * Garantit qu'une TrackEntity (ainsi que ses ArtistEntity et AlbumEntity dépendants)
+     * existe dans Room avant l'insertion d'un like ou d'un item de playlist pour une source distante.
+     * Doit être appelée au sein d'une transaction SQLite immédiate.
+     */
+    suspend fun ensureTrackEntityExistsInTx(
+        trackId: String,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
+        contextType: String? = null,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val existing = database.trackDao().getRawTrackById(trackId)
+        if (existing != null) {
+            if (existing.coverUri == null && coverUri != null) {
+                database.trackDao().upsertTrack(existing.copy(coverUri = coverUri, updatedAt = now))
+            }
+            return
+        }
+
+        val resolvedCloudItem = if (trackId.startsWith("track:cloud:")) {
+            cloudFileRepositoryProvider?.invoke()?.getCachedCloudFile(trackId)
+        } else null
+
+        val effectiveTitle = title?.ifBlank { null } ?: resolvedCloudItem?.title ?: "Unknown Title"
+        val effectiveArtist = artistName?.ifBlank { null } ?: resolvedCloudItem?.artist ?: "Unknown artist"
+        val effectiveAlbum = albumTitle?.ifBlank { null } ?: resolvedCloudItem?.album
+        val effectiveDuration = durationMs ?: resolvedCloudItem?.durationSeconds?.let { (it * 1000).toLong() } ?: 0L
+        val effectiveCoverUri = coverUri ?: (if (trackId.startsWith("track:cloud:")) resolvedCloudItem?.coverUrl else null)
+
+        val cleanArtistName = effectiveArtist.trim().ifBlank { "Unknown artist" }
+        val normArtist = normalize(cleanArtistName)
+        val existingArtist = database.artistDao().getArtistByNormalizedName(normArtist)
+        val artistId = existingArtist?.id ?: artistIdOf(cleanArtistName)
+        if (existingArtist == null) {
+            database.artistDao().insertArtistsIgnore(
+                listOf(
+                    ArtistEntity(
+                        id = artistId,
+                        name = cleanArtistName,
+                        normalizedName = normArtist,
+                        pictureUri = null,
+                        summary = null,
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                )
+            )
+        }
+
+        val cleanAlbumTitle = effectiveAlbum?.trim()?.ifBlank { null }
+        val albumId = if (cleanAlbumTitle != null) {
+            val normAlbum = normalize(cleanAlbumTitle)
+            val existingAlbum = database.albumDao().getAlbumByNormalizedTitle(normAlbum, artistId)
+            val albId = existingAlbum?.id ?: albumIdOf(cleanArtistName, cleanAlbumTitle)
+            if (existingAlbum == null) {
+                database.albumDao().insertAlbumsIgnore(
+                    listOf(
+                        AlbumEntity(
+                            id = albId,
+                            primaryArtistId = artistId,
+                            title = cleanAlbumTitle,
+                            normalizedTitle = normAlbum,
+                            coverUri = effectiveCoverUri,
+                            releaseDate = null,
+                            trackCount = null,
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    )
+                )
+            }
+            albId
+        } else null
+
+        val cleanTitle = effectiveTitle.trim().ifBlank { "Unknown Title" }
+        val sourceType = when {
+            trackId.startsWith("track:cloud:") -> "cloud"
+            trackId.startsWith("track:deezer:") -> "deezer"
+            trackId.startsWith("track:spotify:") -> "spotify"
+            contextType == "cloud" -> "cloud"
+            contextType == "online" -> "online"
+            else -> "online"
+        }
+
+        database.trackDao().upsertTrack(
+            TrackEntity(
+                id = trackId,
+                primaryArtistId = artistId,
+                albumId = albumId,
+                title = cleanTitle,
+                normalizedTitle = normalize(cleanTitle),
+                displayArtistName = cleanArtistName,
+                displayAlbumTitle = cleanAlbumTitle,
+                durationMs = effectiveDuration,
+                coverUri = effectiveCoverUri,
+                canonicalAudioSourceType = sourceType,
+                isLiked = false,
+                isDownloadedByAura = false,
+                isExplicit = null,
+                popularity = null,
+                genresJson = null,
+                createdAt = now,
+                updatedAt = now,
+            )
+        )
+    }
+
+    /**
      * Bascule l'etat de like d'une piste de maniere atomique.
      * La transaction garantit l'invariant : tracks.is_liked reflete track_likes.
      * Gouverne par : docs/android/room-schema.md, docs/android/local-persistence.md
@@ -498,6 +636,11 @@ class LocalLibraryRepository(
         currentlyLiked: Boolean,
         contextType: String? = null,
         contextId: String? = null,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         // 1. Mise à jour Room locale synchrone immédiate (0 ms)
@@ -521,6 +664,16 @@ class LocalLibraryRepository(
                     database.trackLikeDao().deleteLike(trackId)
                     database.trackLikeDao().setTrackIsLiked(trackId, liked = false, updatedAt = now)
                 } else {
+                    ensureTrackEntityExistsInTx(
+                        trackId = trackId,
+                        title = title,
+                        artistName = artistName,
+                        albumTitle = albumTitle,
+                        durationMs = durationMs,
+                        coverUri = coverUri,
+                        contextType = contextType,
+                        now = now,
+                    )
                     database.trackLikeDao().insertLike(
                         TrackLikeEntity(
                             trackId = trackId,
@@ -562,6 +715,9 @@ class LocalLibraryRepository(
             }
         }
     }
+
+    fun isLikedFlow(trackId: String): kotlinx.coroutines.flow.Flow<Boolean> =
+        database.trackLikeDao().isLikedFlow(trackId)
 
     suspend fun seedPlaybackPreview(trackId: String, contextType: String = "single_track") =
         withContext(Dispatchers.IO) {
@@ -676,12 +832,13 @@ class LocalLibraryRepository(
             }
         }
 
-        private fun artistIdOf(artistName: String): String = "artist:${normalize(artistName)}"
+        fun artistIdOf(artistName: String): String =
+            "artist:${normalize(artistName).ifBlank { "unknown-artist" }}"
 
-        private fun albumIdOf(artistName: String, albumTitle: String): String =
-            "album:${normalize(artistName)}:${normalize(albumTitle)}"
+        fun albumIdOf(artistName: String, albumTitle: String): String =
+            "album:${normalize(artistName).ifBlank { "unknown-artist" }}:${normalize(albumTitle).ifBlank { "unknown-album" }}"
 
-        private fun normalize(value: String): String {
+        fun normalize(value: String): String {
             val slug = value
                 .trim()
                 .lowercase()

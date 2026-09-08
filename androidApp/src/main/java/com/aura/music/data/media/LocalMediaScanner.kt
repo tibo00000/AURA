@@ -32,6 +32,8 @@ class LocalMediaScanner(
         val scannedAlbums = mutableMapOf<String, AlbumEntity>()
         val scannedTracks = mutableListOf<TrackEntity>()
         val scannedMediaLinks = mutableListOf<TrackMediaLinkEntity>()
+        val resolvedArtistIds = mutableMapOf<String, String>()
+        val resolvedAlbumIds = mutableMapOf<String, String>()
 
         // 1. Scan private downloads/ directory
         val downloadsDir = File(context.filesDir, "downloads")
@@ -105,8 +107,8 @@ class LocalMediaScanner(
                         rawAlbum?.ifBlank { null }
                     }
 
-                    val artistId = existingTrack?.primaryArtistId ?: artistIdOf(artistName)
-                    val albumId = existingTrack?.albumId ?: albumTitle?.let { albumIdOf(artistName, it) }
+                    val artistId = existingTrack?.primaryArtistId ?: resolveArtistId(artistName, resolvedArtistIds)
+                    val albumId = existingTrack?.albumId ?: albumTitle?.let { resolveAlbumId(artistName, it, artistId, resolvedAlbumIds) }
                     val fileUri = Uri.fromFile(file).toString()
 
                     if (!scannedArtists.containsKey(artistId)) {
@@ -210,8 +212,8 @@ class LocalMediaScanner(
                     media.albumTitle
                 }
 
-                val artistId = existingTrack?.primaryArtistId ?: artistIdOf(artistName)
-                val albumId = existingTrack?.albumId ?: albumTitle?.let { albumIdOf(artistName, it) }
+                val artistId = existingTrack?.primaryArtistId ?: resolveArtistId(artistName, resolvedArtistIds)
+                val albumId = existingTrack?.albumId ?: albumTitle?.let { resolveAlbumId(artistName, it, artistId, resolvedAlbumIds) }
                 val coverUri = existingTrack?.coverUri ?: media.coverUri
 
                 if (!scannedArtists.containsKey(artistId)) {
@@ -310,8 +312,8 @@ class LocalMediaScanner(
                 }
 
                 if (scannedTracks.isNotEmpty()) {
-                    database.artistDao().upsertArtists(scannedArtists.values.toList())
-                    database.albumDao().upsertAlbums(scannedAlbums.values.toList())
+                    database.artistDao().insertArtistsIgnore(scannedArtists.values.toList())
+                    database.albumDao().insertAlbumsIgnore(scannedAlbums.values.toList())
                     database.trackDao().upsertTracks(scannedTracks)
                     database.trackDao().upsertTrackMediaLinks(scannedMediaLinks)
                 }
@@ -322,12 +324,37 @@ class LocalMediaScanner(
         scannedTracks.size
     }
 
+    private suspend fun resolveArtistId(artistName: String, sessionCache: MutableMap<String, String>): String {
+        val norm = normalize(artistName)
+        sessionCache[norm]?.let { return it }
+        val existing = database.artistDao().getArtistByNormalizedName(norm)
+        val resolved = existing?.id ?: artistIdOf(artistName)
+        sessionCache[norm] = resolved
+        return resolved
+    }
+
+    private suspend fun resolveAlbumId(
+        artistName: String,
+        albumTitle: String,
+        artistId: String,
+        sessionCache: MutableMap<String, String>
+    ): String {
+        val normTitle = normalize(albumTitle)
+        val cacheKey = "$artistId:$normTitle"
+        sessionCache[cacheKey]?.let { return it }
+        val existing = database.albumDao().getAlbumByNormalizedTitle(normTitle, artistId)
+        val resolved = existing?.id ?: albumIdOf(artistName, albumTitle)
+        sessionCache[cacheKey] = resolved
+        return resolved
+    }
+
     private fun trackIdOf(mediaStoreId: Long): String = "track:local:$mediaStoreId"
 
-    private fun artistIdOf(artistName: String): String = "artist:${normalize(artistName)}"
+    private fun artistIdOf(artistName: String): String =
+        "artist:${normalize(artistName).ifBlank { "unknown-artist" }}"
 
     private fun albumIdOf(artistName: String, albumTitle: String): String =
-        "album:${normalize(artistName)}:${normalize(albumTitle)}"
+        "album:${normalize(artistName).ifBlank { "unknown-artist" }}:${normalize(albumTitle).ifBlank { "unknown-album" }}"
 
     private fun normalize(value: String): String {
         val slug = value

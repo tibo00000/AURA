@@ -369,10 +369,24 @@ class DesktopPlaybackOrchestrator(
     // ATOMIC LIKES & OUTBOX (RÈGLE #3)
     // =======================================================================
 
-    fun toggleLike(trackId: String, onComplete: (() -> Unit)? = null) {
+    fun toggleLike(
+        trackId: String,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        coverUri: String? = null,
+        onComplete: (() -> Unit)? = null
+    ) {
         scope.launch {
-            val trackRow = database.trackDao().getTrackById(trackId) ?: return@launch
-            val currentlyLiked = trackRow.isLiked
+            val currentTrack = _uiState.value.currentTrack
+            val effectiveTitle = title ?: if (currentTrack?.trackId == trackId) currentTrack.title else "Unknown Title"
+            val effectiveArtist = artistName ?: if (currentTrack?.trackId == trackId) currentTrack.artistName else "Unknown artist"
+            val effectiveAlbum = albumTitle ?: if (currentTrack?.trackId == trackId) currentTrack.albumTitle else null
+            val effectiveDuration = durationMs ?: if (currentTrack?.trackId == trackId) currentTrack.durationMs ?: 0L else 0L
+            val effectiveCover = coverUri ?: if (currentTrack?.trackId == trackId) currentTrack.coverUri else null
+
+            val currentlyLiked = database.trackLikeDao().isTrackLiked(trackId)
             val now = System.currentTimeMillis()
             val opId = "outbox_like_${UUID.randomUUID().toString().take(12)}"
 
@@ -394,6 +408,78 @@ class DesktopPlaybackOrchestrator(
                             )
                         )
                     } else {
+                        // Garantir l'existence de TrackEntity pour éviter tout échec de clé étrangère
+                        val existingTrack = database.trackDao().getRawTrackById(trackId)
+                        if (existingTrack == null) {
+                            val cleanArtist = effectiveArtist.trim().ifBlank { "Unknown artist" }
+                            val normArtist = cleanArtist.lowercase().trim()
+                            val existingArtist = database.artistDao().getArtistByNormalizedName(normArtist)
+                            val artistId = existingArtist?.id ?: "artist:${normArtist.ifBlank { "unknown-artist" }}"
+                            if (existingArtist == null) {
+                                database.artistDao().insertArtistsIgnore(
+                                    listOf(
+                                        ArtistEntity(
+                                            id = artistId,
+                                            name = cleanArtist,
+                                            normalizedName = normArtist,
+                                            pictureUri = null,
+                                            summary = null,
+                                            createdAt = now,
+                                            updatedAt = now
+                                        )
+                                    )
+                                )
+                            }
+
+                            val cleanAlbum = effectiveAlbum?.trim()?.ifBlank { null }
+                            val albumId = if (cleanAlbum != null) {
+                                val normAlbum = cleanAlbum.lowercase().trim()
+                                val existingAlbum = database.albumDao().getAlbumByNormalizedTitle(normAlbum, artistId)
+                                val albId = existingAlbum?.id ?: "album:${normArtist.ifBlank { "unknown-artist" }}:${normAlbum.ifBlank { "unknown-album" }}"
+                                if (existingAlbum == null) {
+                                    database.albumDao().insertAlbumsIgnore(
+                                        listOf(
+                                            AlbumEntity(
+                                                id = albId,
+                                                primaryArtistId = artistId,
+                                                title = cleanAlbum,
+                                                normalizedTitle = normAlbum,
+                                                coverUri = effectiveCover,
+                                                releaseDate = null,
+                                                trackCount = null,
+                                                createdAt = now,
+                                                updatedAt = now
+                                            )
+                                        )
+                                    )
+                                }
+                                albId
+                            } else null
+
+                            val cleanTrackTitle = effectiveTitle.trim().ifBlank { "Unknown Title" }
+                            database.trackDao().upsertTrack(
+                                TrackEntity(
+                                    id = trackId,
+                                    primaryArtistId = artistId,
+                                    albumId = albumId,
+                                    title = cleanTrackTitle,
+                                    normalizedTitle = cleanTrackTitle.lowercase().trim(),
+                                    displayArtistName = cleanArtist,
+                                    displayAlbumTitle = cleanAlbum,
+                                    durationMs = effectiveDuration,
+                                    coverUri = effectiveCover,
+                                    canonicalAudioSourceType = if (trackId.startsWith("track:cloud:")) "cloud" else "online",
+                                    isLiked = false,
+                                    isDownloadedByAura = false,
+                                    isExplicit = null,
+                                    popularity = null,
+                                    genresJson = null,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
+
                         database.trackLikeDao().insertLike(
                             TrackLikeEntity(
                                 trackId = trackId,
@@ -419,7 +505,6 @@ class DesktopPlaybackOrchestrator(
                 }
             }
 
-            val currentTrack = _uiState.value.currentTrack
             if (currentTrack != null && currentTrack.trackId == trackId) {
                 _uiState.update { it.copy(isCurrentTrackLiked = !currentlyLiked) }
             }

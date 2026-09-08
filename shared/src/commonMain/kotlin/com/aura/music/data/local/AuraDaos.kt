@@ -131,6 +131,9 @@ interface ArtistDao {
      */
     @Query("SELECT artwork_last_resolved_at FROM artists WHERE id = :artistId LIMIT 1")
     suspend fun getArtworkLastResolvedAt(artistId: String): Long?
+
+    @Query("SELECT * FROM artists WHERE normalized_name = :normalizedName LIMIT 1")
+    suspend fun getArtistByNormalizedName(normalizedName: String): ArtistEntity?
 }
 
 @Dao
@@ -304,6 +307,9 @@ interface AlbumDao {
 
     @Query("SELECT title FROM albums WHERE primary_artist_id = :artistId AND title IS NOT NULL LIMIT 1")
     suspend fun getSampleAlbumTitleForArtist(artistId: String): String?
+
+    @Query("SELECT * FROM albums WHERE normalized_title = :normalizedTitle AND (:artistId IS NULL OR primary_artist_id = :artistId) LIMIT 1")
+    suspend fun getAlbumByNormalizedTitle(normalizedTitle: String, artistId: String? = null): AlbumEntity?
 }
 
 @Dao
@@ -458,6 +464,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE track_media_links.content_uri IS NOT NULL OR tracks.canonical_audio_source_type = 'cloud' OR tracks.canonical_audio_source_type = 'local'
         ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
         """,
     )
@@ -551,6 +558,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE track_media_links.content_uri IS NOT NULL OR tracks.canonical_audio_source_type = 'cloud' OR tracks.canonical_audio_source_type = 'local'
         ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
         """,
     )
@@ -793,6 +801,12 @@ interface PlaylistDao {
 
     @Query("SELECT DISTINCT track_id FROM playlist_items")
     suspend fun getAllPlaylistTrackIds(): List<String>
+
+    @Query("SELECT COUNT(*) > 0 FROM playlist_items WHERE playlist_id = :playlistId AND track_id = :trackId")
+    suspend fun isTrackInPlaylist(playlistId: String, trackId: String): Boolean
+
+    @Query("SELECT COUNT(*) > 0 FROM playlist_items WHERE track_id = :trackId")
+    suspend fun isTrackInAnyPlaylist(trackId: String): Boolean
 }
 
 @Dao
@@ -862,6 +876,12 @@ interface TrackLikeDao {
      */
     @Query("UPDATE tracks SET is_liked = :liked, updated_at = :updatedAt WHERE id = :trackId")
     suspend fun setTrackIsLiked(trackId: String, liked: Boolean, updatedAt: Long)
+
+    @Query("SELECT COUNT(*) > 0 FROM track_likes WHERE track_id = :trackId")
+    suspend fun isTrackLiked(trackId: String): Boolean
+
+    @Query("SELECT COUNT(*) > 0 FROM track_likes WHERE track_id = :trackId")
+    fun isLikedFlow(trackId: String): Flow<Boolean>
 }
 
 @Dao
