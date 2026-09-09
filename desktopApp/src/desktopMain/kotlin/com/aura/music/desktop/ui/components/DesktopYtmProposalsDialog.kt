@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aura.music.data.network.YtmCandidateDto
 import com.aura.music.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun DesktopYtmProposalsDialog(
@@ -149,7 +150,7 @@ fun DesktopYtmProposalsDialog(
                                                 }
                                             }
 
-                                            if (candidate.durationSeconds != null && candidate.durationSeconds > 0) {
+                                            if (!candidate.duration.isNullOrBlank()) {
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -160,10 +161,8 @@ fun DesktopYtmProposalsDialog(
                                                         tint = PureWhite.copy(alpha = 0.5f),
                                                         modifier = Modifier.size(13.dp)
                                                     )
-                                                    val minutes = candidate.durationSeconds / 60
-                                                    val seconds = candidate.durationSeconds % 60
                                                     Text(
-                                                        text = "%d:%02d".format(minutes, seconds),
+                                                        text = candidate.duration,
                                                         color = PureWhite.copy(alpha = 0.5f),
                                                         fontSize = 12.sp
                                                     )
@@ -279,13 +278,13 @@ fun DesktopChangeAudioModals(
             trackTitle = appState.changeAudioTrackTitle,
             candidates = appState.changeAudioCandidates,
             onSelectCandidate = { videoId ->
-                kotlinx.coroutines.CoroutineScope(coroutineScope.coroutineContext).launch {
+                coroutineScope.launch {
                     orchestrator.resolveDownload(jobId, videoId)
                 }
                 appState.clearChangeAudio()
             },
             onDismiss = {
-                kotlinx.coroutines.CoroutineScope(coroutineScope.coroutineContext).launch {
+                coroutineScope.launch {
                     orchestrator.cancelResolutionJob(jobId)
                 }
                 appState.clearChangeAudio()

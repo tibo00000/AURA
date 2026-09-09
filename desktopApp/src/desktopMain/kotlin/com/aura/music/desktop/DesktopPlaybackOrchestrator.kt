@@ -1028,7 +1028,7 @@ class DesktopPlaybackOrchestrator(
         artistName: String,
         albumTitle: String?,
         coverUri: String?
-    ): Result<com.aura.music.data.network.DownloadJobResponseData> = withContext(Dispatchers.IO) {
+    ): Result<com.aura.music.data.network.JobStatusResponseData> = withContext(Dispatchers.IO) {
         val token = apiToken ?: return@withContext Result.failure(IllegalStateException("Non authentifié"))
         try {
             val resp = apiService.createDownload(
@@ -1037,7 +1037,7 @@ class DesktopPlaybackOrchestrator(
                     trackId = trackId,
                     forceResolution = true,
                     sourceHint = com.aura.music.data.network.SourceHintDto(
-                        providerName = "deezer",
+                        providerName = "youtube",
                         providerTrackId = trackId,
                         title = title,
                         artistName = artistName,
@@ -1046,9 +1046,15 @@ class DesktopPlaybackOrchestrator(
                     )
                 )
             )
-            val data = resp.data
-            if (resp.success && data != null) {
-                Result.success(data)
+            val createData = resp.data
+            if (createData != null) {
+                val statusResp = apiService.getJobStatus(token = token, jobId = createData.jobId)
+                val statusData = statusResp.data
+                if (statusData != null) {
+                    Result.success(statusData)
+                } else {
+                    Result.failure(Exception(statusResp.error?.message ?: "Impossible de récupérer les propositions"))
+                }
             } else {
                 Result.failure(Exception(resp.error?.message ?: "Erreur inconnue"))
             }
@@ -1063,9 +1069,9 @@ class DesktopPlaybackOrchestrator(
             val resp = apiService.resolveDownload(
                 token = token,
                 jobId = jobId,
-                request = com.aura.music.data.network.ResolveDownloadRequestDto(selectedVideoId = selectedVideoId)
+                request = com.aura.music.data.network.ResolveDownloadRequestDto(videoId = selectedVideoId)
             )
-            if (resp.success) {
+            if (resp.data != null) {
                 Result.success(Unit)
             } else {
                 Result.failure(Exception(resp.error?.message ?: "Erreur lors de la sélection"))
@@ -1079,7 +1085,7 @@ class DesktopPlaybackOrchestrator(
         val token = apiToken ?: return@withContext Result.failure(IllegalStateException("Non authentifié"))
         try {
             val resp = apiService.deleteDownload(token = token, jobId = jobId)
-            if (resp.success) {
+            if (resp.error == null) {
                 Result.success(Unit)
             } else {
                 Result.failure(Exception(resp.error?.message ?: "Erreur d'annulation"))

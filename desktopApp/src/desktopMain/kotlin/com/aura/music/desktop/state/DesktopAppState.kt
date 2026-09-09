@@ -2,6 +2,7 @@ package com.aura.music.desktop.state
 
 import androidx.compose.runtime.*
 import com.aura.music.data.local.TrackListRow
+import kotlinx.coroutines.launch
 
 /**
  * Gestionnaire d'état UI global pour le client Desktop AURA.
@@ -78,7 +79,7 @@ class DesktopAppState {
                     changeAudioTrackTitle = title
                     changeAudioCandidates = job.candidates ?: emptyList()
                 } else if (job.status == "failed") {
-                    changeAudioErrorMessage = job.errorMessage ?: "Aucune version alternative trouvée"
+                    changeAudioErrorMessage = job.error?.message ?: "Aucune version alternative trouvée"
                 }
             }.onFailure { err ->
                 changeAudioErrorMessage = err.message ?: "Impossible de changer la version"

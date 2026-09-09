@@ -149,7 +149,36 @@ class LocalLibraryRepository(
         return settings != null && settings.syncEnabled && NetworkPolicyChecker.isConnected(context)
     }
 
-    suspend fun refreshLocalMediaIndex(): Int = localMediaScanner.syncLocalMedia()
+    private var ongoingScanDeferred: kotlinx.coroutines.Deferred<Int>? = null
+    private val scanLock = Any()
+
+    suspend fun refreshLocalMediaIndex(): Int {
+        val deferred = synchronized(scanLock) {
+            val existing = ongoingScanDeferred
+            if (existing != null && existing.isActive) {
+                existing
+            } else {
+                val newDeferred = repositoryScope.async {
+                    try {
+                        localMediaScanner.syncLocalMedia()
+                    } finally {
+                        synchronized(scanLock) {
+                            if (ongoingScanDeferred === this) {
+                                ongoingScanDeferred = null
+                            }
+                        }
+                    }
+                }
+                ongoingScanDeferred = newDeferred
+                newDeferred
+            }
+        }
+        return try {
+            deferred.await()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        }
+    }
 
     suspend fun getTrackCount(): Int = database.trackDao().getTrackCount()
 
