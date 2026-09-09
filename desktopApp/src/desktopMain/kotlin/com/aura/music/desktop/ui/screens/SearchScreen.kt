@@ -969,6 +969,9 @@ fun SearchScreen(
                                                                     },
                                                                     onUploadCloud = {
                                                                         orchestrator.triggerSingleFileUpload(track)
+                                                                    },
+                                                                    onChangeAudio = {
+                                                                        appState.triggerChangeAudio(track, orchestrator, coroutineScope)
                                                                     }
                                                                 )
                                                             }
@@ -1063,6 +1066,9 @@ fun SearchScreen(
                                             },
                                             onUploadCloud = {
                                                 orchestrator.triggerSingleFileUpload(track)
+                                            },
+                                            onChangeAudio = {
+                                                appState.triggerChangeAudio(track, orchestrator, coroutineScope)
                                             }
                                         )
                                     }

@@ -24,13 +24,14 @@ class DownloadRequest(BaseModel):
     """Request schema for POST /downloads (triggering a download)."""
     track_id: str = Field(..., description="Target AURA track ID (trk_{ulid})")
     source_hint: Optional[SourceHint] = Field(None, description="Optional advice for track resolution")
+    force_resolution: bool = Field(False, description="Whether to bypass cache and force interactive resolution")
 
 
 class DownloadCreateResponse(BaseModel):
     """Immediate response after submitting a download job."""
     job_id: str
     track_id: str
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
 
 
 class YtmCandidate(BaseModel):
@@ -48,11 +49,12 @@ class DownloadJobResponse(BaseModel):
     id: str
     track_id: str
     provider_name: str
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
     progress_percent: float = 0.0
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     attempt_count: int = 1
+    candidates: Optional[List[YtmCandidate]] = None
     created_at: datetime
     updated_at: datetime
 
@@ -73,7 +75,7 @@ class JobStatusResponse(BaseModel):
     """Generic async job status representation for GET /jobs/{id}."""
     id: str
     kind: Literal["download", "enrichment", "maintenance"]
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
     progress_percent: float = 0.0
     result: Optional[dict] = None
     error: Optional[dict] = None  # Contains code and message keys

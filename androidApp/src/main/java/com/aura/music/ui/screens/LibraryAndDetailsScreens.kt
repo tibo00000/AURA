@@ -623,6 +623,7 @@ fun FavoritesScreen(
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onChangeAudio: ((TrackListRow) -> Unit)? = null,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     var localTracksList by remember { mutableStateOf<List<TrackListRow>?>(null) }
@@ -1049,6 +1050,12 @@ fun FavoritesScreen(
                         } else null
                     }
 
+                    val onChangeAudioLambda = remember(track.id, onChangeAudio != null) {
+                        if (onChangeAudio != null) {
+                            { onChangeAudio(track) }
+                        } else null
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
@@ -1073,7 +1080,8 @@ fun FavoritesScreen(
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
                         onDeleteFromCloud = onDeleteFromCloudLambda,
-                        onEditMetadata = { trackToEditMetadata = track }
+                        onEditMetadata = { trackToEditMetadata = track },
+                        onChangeAudio = onChangeAudioLambda
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -3305,7 +3313,10 @@ fun YtmProposalsDialog(
     val candidatesMap by viewModel.candidates.collectAsState()
     val candidates = candidatesMap[jobId]
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = {
+        viewModel.cancelResolutionJob(jobId)
+        onDismiss()
+    }) {
         androidx.compose.material3.Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3437,7 +3448,10 @@ fun YtmProposalsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    androidx.compose.material3.TextButton(onClick = {
+                        viewModel.cancelResolutionJob(jobId)
+                        onDismiss()
+                    }) {
                         Text(text = "Annuler", color = BlazeOrange)
                     }
                 }
@@ -3455,6 +3469,7 @@ fun LibraryTracksScreen(
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onChangeAudio: ((TrackListRow) -> Unit)? = null,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     var localTracksList by remember { mutableStateOf<List<TrackListRow>?>(null) }
@@ -3871,6 +3886,12 @@ fun LibraryTracksScreen(
                         } else null
                     }
 
+                    val onChangeAudioLambda = remember(track.id, onChangeAudio != null) {
+                        if (onChangeAudio != null) {
+                            { onChangeAudio(track) }
+                        } else null
+                    }
+
                     val isOfflineBlocked = isCloudOnlyTrack && !isOnline
 
                     SharedTrackRowItem(
@@ -3898,7 +3919,8 @@ fun LibraryTracksScreen(
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
                         onDeleteFromCloud = onDeleteFromCloudLambda,
-                        onEditMetadata = { trackToEditMetadata = track }
+                        onEditMetadata = { trackToEditMetadata = track },
+                        onChangeAudio = onChangeAudioLambda
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }

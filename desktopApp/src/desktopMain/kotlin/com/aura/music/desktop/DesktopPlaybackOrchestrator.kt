@@ -1021,4 +1021,71 @@ class DesktopPlaybackOrchestrator(
 
     fun clearStreamCache(): Long =
         cloudSyncManager?.clearStreamCache() ?: 0L
+
+    suspend fun changeTrackAudio(
+        trackId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String?,
+        coverUri: String?
+    ): Result<com.aura.music.data.network.DownloadJobResponseData> = withContext(Dispatchers.IO) {
+        val token = apiToken ?: return@withContext Result.failure(IllegalStateException("Non authentifié"))
+        try {
+            val resp = apiService.createDownload(
+                token = token,
+                request = com.aura.music.data.network.DownloadRequestDto(
+                    trackId = trackId,
+                    forceResolution = true,
+                    sourceHint = com.aura.music.data.network.SourceHintDto(
+                        providerName = "deezer",
+                        providerTrackId = trackId,
+                        title = title,
+                        artistName = artistName,
+                        albumTitle = albumTitle,
+                        coverUri = coverUri
+                    )
+                )
+            )
+            val data = resp.data
+            if (resp.success && data != null) {
+                Result.success(data)
+            } else {
+                Result.failure(Exception(resp.error?.message ?: "Erreur inconnue"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun resolveDownload(jobId: String, selectedVideoId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val token = apiToken ?: return@withContext Result.failure(IllegalStateException("Non authentifié"))
+        try {
+            val resp = apiService.resolveDownload(
+                token = token,
+                jobId = jobId,
+                request = com.aura.music.data.network.ResolveDownloadRequestDto(selectedVideoId = selectedVideoId)
+            )
+            if (resp.success) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(resp.error?.message ?: "Erreur lors de la sélection"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun cancelResolutionJob(jobId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val token = apiToken ?: return@withContext Result.failure(IllegalStateException("Non authentifié"))
+        try {
+            val resp = apiService.deleteDownload(token = token, jobId = jobId)
+            if (resp.success) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(resp.error?.message ?: "Erreur d'annulation"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

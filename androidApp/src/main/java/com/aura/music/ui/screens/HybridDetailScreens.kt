@@ -145,6 +145,7 @@ fun HybridArtistScreen(
     onDeleteTrack: (TrackListRow) -> Unit,
     onAddToQueue: (TrackListRow) -> Unit,
     onRequestJobResolution: (String) -> Unit = {},
+    onChangeAudio: ((TrackListRow) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val artist = state.localData
@@ -326,7 +327,8 @@ fun HybridArtistScreen(
                     onDeleteDownload = { track -> trackToDelete = track },
                     onUploadToCloud = onUploadToCloudLambda,
                     onDownloadFromCloud = onDownloadFromCloudLambda,
-                    onEditMetadata = { track -> trackToEditMetadata = track }
+                    onEditMetadata = { track -> trackToEditMetadata = track },
+                    onChangeAudio = onChangeAudio
                 )
             } else if (onlineData != null && onlineData.topTracks.isNotEmpty()) {
                 item(key = "online_tracklist_header") {
@@ -514,6 +516,7 @@ fun HybridAlbumScreen(
     onDeleteTrack: (TrackListRow) -> Unit,
     onAddToQueue: (TrackListRow) -> Unit,
     onRequestJobResolution: (String) -> Unit = {},
+    onChangeAudio: ((TrackListRow) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val album = state.localData
@@ -744,7 +747,8 @@ fun HybridAlbumScreen(
                     onDeleteDownload = { track -> trackToDelete = track },
                     onUploadToCloud = onUploadToCloudLambda,
                     onDownloadFromCloud = onDownloadFromCloudLambda,
-                    onEditMetadata = { track -> trackToEditMetadata = track }
+                    onEditMetadata = { track -> trackToEditMetadata = track },
+                    onChangeAudio = onChangeAudio
                 )
             } else if (onlineData != null && onlineData.tracks.isNotEmpty()) {
                 itemsIndexed(onlineData.tracks, key = { _, track -> track.id }) { index, track ->

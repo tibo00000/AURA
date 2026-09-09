@@ -464,6 +464,11 @@ fun main() = application {
                         playlistManager = playlistManager,
                         onPlaylistImported = { }
                     )
+
+                    DesktopChangeAudioModals(
+                        appState = appState,
+                        orchestrator = orchestrator
+                    )
                 }
             }
         }

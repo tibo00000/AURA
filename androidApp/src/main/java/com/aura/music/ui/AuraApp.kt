@@ -213,6 +213,7 @@ fun AuraApp() {
     }
 
     val globalSnackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val downloadsViewModel: DownloadsViewModel = viewModel(
         factory = DownloadsViewModel.Factory(
             downloadRepository = downloadRepository,
@@ -224,6 +225,41 @@ fun AuraApp() {
         { jobId ->
             activeResolveJobId = jobId
             downloadsViewModel.loadCandidatesForJob(jobId)
+        }
+    }
+
+    val onTriggerChangeAudio: (String, String, String, String?, String?) -> Unit = remember(downloadRepository, application, downloadsViewModel) {
+        { trackId, title, artist, album, cover ->
+            coroutineScope.launch {
+                val token = application.container.authSessionManager.getBearerHeader()
+                if (token.isBlank()) {
+                    globalSnackbarHostState.showSnackbar("Veuillez vous connecter pour modifier la version audio")
+                    return@launch
+                }
+                val res = downloadRepository.changeTrackAudio(
+                    trackId = trackId,
+                    title = title,
+                    artistName = artist,
+                    albumTitle = album,
+                    coverUri = cover,
+                    userToken = token
+                )
+                res.onSuccess { job ->
+                    if (job.status == "requires_resolution") {
+                        onRequestJobResolution(job.id)
+                    } else if (job.status == "failed") {
+                        globalSnackbarHostState.showSnackbar(
+                            message = job.errorMessage ?: "Aucune version alternative trouvée",
+                            duration = androidx.compose.material3.SnackbarDuration.Short
+                        )
+                    }
+                }.onFailure { err ->
+                    globalSnackbarHostState.showSnackbar(
+                        message = "Erreur : ${err.message ?: "Impossible de changer la version"}",
+                        duration = androidx.compose.material3.SnackbarDuration.Short
+                    )
+                }
+            }
         }
     }
 
@@ -324,6 +360,9 @@ fun AuraApp() {
                     onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                     playerViewModel = playerViewModel,
                     onRequestJobResolution = onRequestJobResolution,
+                    onChangeAudio = { trackId, title, artist, album, cover ->
+                        onTriggerChangeAudio(trackId, title, artist, album, cover)
+                    }
                 )
             }
             composable(AuraRoute.Library) {
@@ -350,6 +389,9 @@ fun AuraApp() {
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                    onChangeAudio = { track ->
+                        onTriggerChangeAudio(track.id, track.title, track.artistName ?: "", track.albumTitle, track.coverUri)
+                    }
                 )
             }
             composable(AuraRoute.LibraryArtists) {
@@ -376,6 +418,9 @@ fun AuraApp() {
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                    onChangeAudio = { track ->
+                        onTriggerChangeAudio(track.id, track.title, track.artistName ?: "", track.albumTitle, track.coverUri)
+                    }
                 )
             }
             composable(AuraRoute.PlaylistDetailPattern) { backStackEntry ->
@@ -387,6 +432,9 @@ fun AuraApp() {
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },
                     onOpenAlbum = { albumId -> navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true } },
+                    onChangeAudio = { track ->
+                        onTriggerChangeAudio(track.id, track.title, track.artistName ?: "", track.albumTitle, track.coverUri)
+                    }
                 )
             }
             composable(AuraRoute.ArtistPattern) { backStackEntry ->
@@ -481,7 +529,10 @@ fun AuraApp() {
                     onAddToQueue = { track ->
                         playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
                     },
-                    onRequestJobResolution = onRequestJobResolution
+                    onRequestJobResolution = onRequestJobResolution,
+                    onChangeAudio = { track ->
+                        onTriggerChangeAudio(track.id, track.title, track.artistName ?: "", track.albumTitle, track.coverUri)
+                    }
                 )
 
                 pendingDuplicatePrompt?.let { prompt ->
@@ -595,7 +646,10 @@ fun AuraApp() {
                     onAddToQueue = { track ->
                         playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toQueuedTrack()))
                     },
-                    onRequestJobResolution = onRequestJobResolution
+                    onRequestJobResolution = onRequestJobResolution,
+                    onChangeAudio = { track ->
+                        onTriggerChangeAudio(track.id, track.title, track.artistName ?: "", track.albumTitle, track.coverUri)
+                    }
                 )
 
                 pendingDuplicatePrompt?.let { prompt ->
@@ -650,7 +704,10 @@ fun AuraApp() {
                 CloudSyncScreen(
                     cloudFileRepository = appContainer.cloudFileRepository,
                     onNavigateBack = { navController.popBackStack() },
-                    playerViewModel = playerViewModel
+                    playerViewModel = playerViewModel,
+                    onChangeAudio = { trackId, title, artist, album, cover ->
+                        onTriggerChangeAudio(trackId, title, artist, album, cover)
+                    }
                 )
             }
             composable(AuraRoute.Sandbox) {
@@ -964,6 +1021,7 @@ fun LazyListScope.trackList(
     onDownloadFromCloud: ((TrackListRow) -> Unit)? = null,
     onDeleteFromCloud: ((TrackListRow) -> Unit)? = null,
     onEditMetadata: ((TrackListRow) -> Unit)? = null,
+    onChangeAudio: ((TrackListRow) -> Unit)? = null,
 ) {
     if (title.isNotBlank()) {
         item(key = "tracklist_title_${title}_${contextType}") {
@@ -1002,6 +1060,7 @@ fun LazyListScope.trackList(
             val currentOnDownloadFromCloud = rememberUpdatedState(onDownloadFromCloud)
             val currentOnDeleteFromCloud = rememberUpdatedState(onDeleteFromCloud)
             val currentOnEditMetadata = rememberUpdatedState(onEditMetadata)
+            val currentOnChangeAudio = rememberUpdatedState(onChangeAudio)
 
             val currentOnClick = remember(track.id, tracks, contextType) {
                 { currentOnPlay.value(track, tracks, contextType) }
@@ -1058,6 +1117,10 @@ fun LazyListScope.trackList(
                 val cb = currentOnEditMetadata.value
                 if (cb != null) { { cb(track) } } else null
             }
+            val onChangeAudioLambda = remember(track.id, currentOnChangeAudio.value != null) {
+                val cb = currentOnChangeAudio.value
+                if (cb != null) { { cb(track) } } else null
+            }
 
             val isDownloadedLocally = !track.contentUri.isNullOrBlank()
             val isCloudOnly = !isDownloadedLocally
@@ -1083,6 +1146,7 @@ fun LazyListScope.trackList(
                 onDownloadFromCloud = onDownloadFromCloudLambda,
                 onDeleteFromCloud = onDeleteFromCloudLambda,
                 onEditMetadata = onEditMetadataLambda,
+                onChangeAudio = onChangeAudioLambda,
             )
         }
     }

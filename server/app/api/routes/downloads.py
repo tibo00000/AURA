@@ -45,11 +45,12 @@ async def create_download(
     Validates user authentication and creates an asynchronous download job.
     """
     try:
-        job = download_service.create_job(
+        job = await download_service.create_job(
             user_id=current_user.id,
             track_id=request.track_id,
             provider_name="youtube",
             source_hint=request.source_hint.model_dump() if request.source_hint else None,
+            force_resolution=request.force_resolution,
         )
 
         data = DownloadCreateResponse(
@@ -98,6 +99,7 @@ async def list_downloads(
             error_code=job.error_code,
             error_message=job.error_message,
             attempt_count=job.attempt_count,
+            candidates=job.candidates or None,
             created_at=job.created_at,
             updated_at=job.updated_at,
         )

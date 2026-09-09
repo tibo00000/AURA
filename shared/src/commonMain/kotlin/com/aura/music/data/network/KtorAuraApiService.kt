@@ -87,6 +87,10 @@ class KtorAuraApiService(
         setBody(request)
     }.body()
 
+    override suspend fun deleteDownload(token: String, jobId: String): AuraResponse<Map<String, Boolean>> = client.delete("$cleanBaseUrl/downloads/$jobId") {
+        header("Authorization", token)
+    }.body()
+
     override suspend fun getJobStatus(token: String, jobId: String): AuraResponse<JobStatusResponseData> = client.get("$cleanBaseUrl/jobs/$jobId") {
         header("Authorization", token)
     }.body()

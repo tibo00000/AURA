@@ -196,7 +196,23 @@ class DownloadsViewModel(
     fun deleteJob(jobId: String) {
         viewModelScope.launch {
             try {
-                downloadRepository.deleteJob(jobId)
+                downloadRepository.deleteJob(jobId, userToken)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+
+    /**
+     * Cancel a pending resolution job when the user dismisses the proposals dialog without choosing.
+     */
+    fun cancelResolutionJob(jobId: String) {
+        viewModelScope.launch {
+            _candidates.value = _candidates.value.toMutableMap().apply {
+                remove(jobId)
+            }
+            try {
+                downloadRepository.deleteJob(jobId, userToken)
             } catch (e: Exception) {
                 // Ignore
             }

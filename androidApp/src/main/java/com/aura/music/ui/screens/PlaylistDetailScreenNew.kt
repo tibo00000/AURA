@@ -81,6 +81,7 @@ fun PlaylistDetailScreenNew(
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onChangeAudio: ((com.aura.music.data.local.TrackListRow) -> Unit)? = null,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId, refreshTick, refreshToken) {
@@ -418,6 +419,11 @@ fun PlaylistDetailScreenNew(
                                 playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toTrackListRow().toQueuedTrack()))
                             }
                         }
+                        val onChangeAudioLambda = remember(track.trackId, onChangeAudio != null) {
+                            if (onChangeAudio != null) {
+                                { onChangeAudio(track.toTrackListRow()) }
+                            } else null
+                        }
                         PlaylistTrackRowItem(
                             track = track,
                             playlistId = detail.summary.id,
@@ -433,7 +439,8 @@ fun PlaylistDetailScreenNew(
                             cloudFiles = cloudFiles,
                             downloadJobs = downloadJobs,
                             snackbarHostState = snackbarHostState,
-                            onEditMetadata = { t -> trackToEditMetadata = t }
+                            onEditMetadata = { t -> trackToEditMetadata = t },
+                            onChangeAudio = onChangeAudioLambda
                         )
                     }
                 }
@@ -560,6 +567,7 @@ private fun PlaylistTrackRowItem(
     downloadJobs: List<com.aura.music.data.local.DownloadJobEntity> = emptyList(),
     snackbarHostState: SnackbarHostState,
     onEditMetadata: ((com.aura.music.data.local.TrackListRow) -> Unit)? = null,
+    onChangeAudio: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -698,7 +706,8 @@ private fun PlaylistTrackRowItem(
         onViewAlbum = onViewAlbumClick,
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda,
-        onEditMetadata = if (onEditMetadata != null) { { onEditMetadata(track.toTrackListRow()) } } else null
+        onEditMetadata = if (onEditMetadata != null) { { onEditMetadata(track.toTrackListRow()) } } else null,
+        onChangeAudio = onChangeAudio
     )
 }
 

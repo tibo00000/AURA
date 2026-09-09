@@ -63,7 +63,8 @@ private enum class LocalFilterType {
 fun CloudSyncScreen(
     cloudFileRepository: CloudFileRepository,
     onNavigateBack: () -> Unit,
-    playerViewModel: PlayerViewModel? = null
+    playerViewModel: PlayerViewModel? = null,
+    onChangeAudio: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -827,6 +828,28 @@ fun CloudSyncScreen(
                                                             modifier = Modifier.size(36.dp)
                                                         ) {
                                                             Icon(Icons.Rounded.Download, contentDescription = "Télécharger sur le téléphone", tint = TextPrimary)
+                                                        }
+                                                    }
+
+                                                    // Change audio version button
+                                                    if (onChangeAudio != null) {
+                                                        IconButton(
+                                                            onClick = {
+                                                                onChangeAudio(
+                                                                    file.trackId,
+                                                                    file.title ?: "",
+                                                                    file.artistName ?: "",
+                                                                    file.albumTitle,
+                                                                    file.coverUri
+                                                                )
+                                                            },
+                                                            modifier = Modifier.size(36.dp)
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Rounded.Tune,
+                                                                contentDescription = "Changer la version audio",
+                                                                tint = BlazeOrange
+                                                            )
                                                         }
                                                     }
 

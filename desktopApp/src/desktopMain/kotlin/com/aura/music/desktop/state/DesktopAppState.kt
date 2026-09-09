@@ -46,6 +46,70 @@ class DesktopAppState {
     var playlistToRename by mutableStateOf<Pair<String, String>?>(null) // id, currentName
     var playlistToDelete by mutableStateOf<Pair<String, String>?>(null) // id, name
 
+    // Changement de version audio (YouTube Music)
+    var changeAudioJobId by mutableStateOf<String?>(null)
+    var changeAudioTrackTitle by mutableStateOf<String?>(null)
+    var changeAudioCandidates by mutableStateOf<List<com.aura.music.data.network.YtmCandidateDto>>(emptyList())
+    var isChangeAudioLoading by mutableStateOf(false)
+    var changeAudioErrorMessage by mutableStateOf<String?>(null)
+
+    fun triggerChangeAudio(
+        trackId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String?,
+        coverUri: String?,
+        orchestrator: com.aura.music.desktop.DesktopPlaybackOrchestrator,
+        scope: kotlinx.coroutines.CoroutineScope
+    ) {
+        scope.launch {
+            isChangeAudioLoading = true
+            val res = orchestrator.changeTrackAudio(
+                trackId = trackId,
+                title = title,
+                artistName = artistName,
+                albumTitle = albumTitle,
+                coverUri = coverUri
+            )
+            isChangeAudioLoading = false
+            res.onSuccess { job ->
+                if (job.status == "requires_resolution") {
+                    changeAudioJobId = job.id
+                    changeAudioTrackTitle = title
+                    changeAudioCandidates = job.candidates ?: emptyList()
+                } else if (job.status == "failed") {
+                    changeAudioErrorMessage = job.errorMessage ?: "Aucune version alternative trouvée"
+                }
+            }.onFailure { err ->
+                changeAudioErrorMessage = err.message ?: "Impossible de changer la version"
+            }
+        }
+    }
+
+    fun triggerChangeAudio(
+        track: TrackListRow,
+        orchestrator: com.aura.music.desktop.DesktopPlaybackOrchestrator,
+        scope: kotlinx.coroutines.CoroutineScope
+    ) {
+        triggerChangeAudio(
+            trackId = track.id,
+            title = track.title,
+            artistName = track.artistName ?: "",
+            albumTitle = track.albumTitle,
+            coverUri = track.coverUri,
+            orchestrator = orchestrator,
+            scope = scope
+        )
+    }
+
+    fun clearChangeAudio() {
+        changeAudioJobId = null
+        changeAudioTrackTitle = null
+        changeAudioCandidates = emptyList()
+        isChangeAudioLoading = false
+        changeAudioErrorMessage = null
+    }
+
     // Navigation methods
     fun navigateTo(screen: String) {
         screenStack = screenStack + screen

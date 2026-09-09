@@ -481,7 +481,7 @@ fun CloudSyncScreen(
                     letterSpacing = 1.sp,
                     modifier = Modifier.weight(1.2f)
                 )
-                Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
+                Box(modifier = Modifier.width(124.dp), contentAlignment = Alignment.CenterEnd) {
                     Text(
                         text = "ACTION",
                         color = PureWhite.copy(alpha = 0.5f),
@@ -538,7 +538,8 @@ fun CloudSyncScreen(
                             onOpenAlbum = { track.albumId?.let { appState.openAlbum(it) } },
                             onDownload = { orchestrator.triggerSingleFileDownload(track) },
                             onUpload = { orchestrator.triggerSingleFileUpload(track) },
-                            onDeleteCloud = { trackToDeleteFromCloud = track }
+                            onDeleteCloud = { trackToDeleteFromCloud = track },
+                            onChangeAudio = { appState.triggerChangeAudio(track, orchestrator, coroutineScope) }
                         )
                     }
                 }
@@ -613,7 +614,8 @@ private fun CloudTrackTableRow(
     onOpenAlbum: () -> Unit,
     onDownload: () -> Unit,
     onUpload: () -> Unit,
-    onDeleteCloud: () -> Unit
+    onDeleteCloud: () -> Unit,
+    onChangeAudio: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -771,11 +773,31 @@ private fun CloudTrackTableRow(
         }
 
         // Action
-        Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
+        Box(modifier = Modifier.width(124.dp), contentAlignment = Alignment.CenterEnd) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
             ) {
+                AuraTooltip(text = "Changer la version audio") {
+                    Surface(
+                        color = DarkGraphite,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, HairlineDark),
+                        modifier = Modifier
+                            .size(30.dp)
+                            .handClickable(onClick = onChangeAudio)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = "Changer la version audio",
+                                tint = PureWhite.copy(alpha = 0.85f),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                }
+
                 if (track.isCloudOnly) {
                     AuraTooltip(text = "Rapatrier sur ce PC") {
                         Surface(

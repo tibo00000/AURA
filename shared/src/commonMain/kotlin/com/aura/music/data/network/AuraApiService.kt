@@ -40,6 +40,8 @@ interface AuraApiService {
         request: ResolveDownloadRequestDto
     ): AuraResponse<DownloadCreateResponseData>
 
+    suspend fun deleteDownload(token: String, jobId: String): AuraResponse<Map<String, Boolean>>
+
     suspend fun getJobStatus(token: String, jobId: String): AuraResponse<JobStatusResponseData>
 
     suspend fun uploadCookies(token: String, request: CookieUploadRequestDto): AuraResponse<CookieUploadResponseData>

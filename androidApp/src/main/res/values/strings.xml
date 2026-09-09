@@ -21,5 +21,18 @@
 
     <string name="whats_new_v2_feature4_title">Fluidité et Performances audio</string>
     <string name="whats_new_v2_feature4_desc">Chargement instantané de l\'interface, transitions optimisées et gestion haute performance de la file d\'attente.</string>
+
+    <!-- Version 3 / 0.2.1 features -->
+    <string name="whats_new_v3_feature1_title">Changement de version audio</string>
+    <string name="whats_new_v3_feature1_desc">Corrigez l\'audio associé à un titre en un clic : choisissez parmi les meilleures propositions YouTube Music directement depuis le menu Plus ou la gestion Cloud.</string>
+
+    <string name="whats_new_v3_feature2_title">Alertes de téléchargement interactives</string>
+    <string name="whats_new_v3_feature2_desc">Soyez immédiatement averti lorsqu\'un choix de version est requis lors d\'un téléchargement ou d\'une synchronisation Cloud, avec accès direct à la sélection.</string>
+
+    <string name="whats_new_v3_feature3_title">Gestion Cloud enrichie</string>
+    <string name="whats_new_v3_feature3_desc">Contrôle direct et instantané de vos fichiers synchronisés et locaux sur mobile et desktop.</string>
+
+    <string name="whats_new_v3_feature4_title">Fiabilité et streaming optimisés</string>
+    <string name="whats_new_v3_feature4_desc">Conservation sécurisée de la version audio en cours et fluidité de lecture renforcée.</string>
 </resources>
 

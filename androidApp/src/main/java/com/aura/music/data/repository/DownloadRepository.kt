@@ -852,11 +852,73 @@ class DownloadRepository(
     }
 
     /**
-     * Delete a single download job by ID.
+     * Re-assigns the audio version of a track by bypassing the cache and forcing interactive resolution.
+     * Returns the created job entity (typically with status "requires_resolution").
      */
-    suspend fun deleteJob(jobId: String): Unit = withContext(Dispatchers.IO) {
+    suspend fun changeTrackAudio(
+        trackId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String?,
+        coverUri: String?,
+        userToken: String
+    ): Result<DownloadJobEntity> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.createDownload(
+                token = userToken,
+                request = DownloadRequestDto(
+                    trackId = trackId,
+                    sourceHint = SourceHintDto(
+                        providerName = "youtube",
+                        providerTrackId = trackId,
+                        title = title,
+                        artistName = artistName,
+                        albumTitle = albumTitle,
+                        coverUri = coverUri
+                    ),
+                    forceResolution = true
+                )
+            )
+            val createData = response.data
+            if (createData == null) {
+                val errorMsg = response.error?.message ?: "Erreur lors de la recherche des versions audio"
+                return@withContext Result.failure(Exception(errorMsg))
+            }
+
+            jobTrackTitles[createData.jobId] = title
+
+            val now = System.currentTimeMillis()
+            val jobEntity = DownloadJobEntity(
+                id = createData.jobId,
+                trackId = trackId,
+                providerName = "aura_backend",
+                status = createData.status,
+                progressPercent = 0f,
+                createdAt = now,
+                updatedAt = now
+            )
+            database.downloadJobDao().upsert(jobEntity)
+            ensurePollingStarted(userToken)
+            Result.success(jobEntity)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting audio version change for track $trackId", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Delete a single download job by ID (both locally and on backend if userToken provided).
+     */
+    suspend fun deleteJob(jobId: String, userToken: String? = null): Unit = withContext(Dispatchers.IO) {
         notifiedResolutionJobIds.remove(jobId)
         jobTrackTitles.remove(jobId)
+        if (!userToken.isNullOrBlank()) {
+            try {
+                apiService.deleteDownload(userToken, jobId)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete job $jobId on server", e)
+            }
+        }
         database.downloadJobDao().deleteJob(jobId)
     }
 

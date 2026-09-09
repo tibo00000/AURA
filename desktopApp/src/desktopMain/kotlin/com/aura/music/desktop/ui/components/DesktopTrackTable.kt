@@ -64,6 +64,7 @@ fun DesktopTrackTable(
     val isBuffering = uiState.playbackState == PlaybackState.Buffering || uiState.playbackState == PlaybackState.Preparing
     var trackForContextMenu by remember { mutableStateOf<TrackListRow?>(null) }
     var trackForMetadataEdit by remember { mutableStateOf<TrackListRow?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     Box(modifier = modifier.fillMaxSize()) {
         DesktopTrackTable(
@@ -120,6 +121,9 @@ fun DesktopTrackTable(
                         },
                         onUploadCloud = {
                             orchestrator.triggerSingleFileUpload(track)
+                        },
+                        onChangeAudio = {
+                            appState.triggerChangeAudio(track, orchestrator, coroutineScope)
                         }
                     )
                 }

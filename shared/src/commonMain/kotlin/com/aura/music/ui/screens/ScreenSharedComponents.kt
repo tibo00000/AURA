@@ -584,12 +584,13 @@ fun SharedTrackRowItem(
     onDownloadFromCloud: (() -> Unit)? = null,
     onDeleteFromCloud: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
+    onChangeAudio: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var menuPage by remember { mutableStateOf(0) } // 0 = Principal, 1 = Avancé (Fichiers & Données)
 
     val hasAdvancedItems = onRemoveFromPlaylist != null || onDownload != null || onDeleteDownload != null ||
-            onUploadToCloud != null || onDownloadFromCloud != null || onDeleteFromCloud != null || onEditMetadata != null
+            onUploadToCloud != null || onDownloadFromCloud != null || onDeleteFromCloud != null || onEditMetadata != null || onChangeAudio != null
 
     val hasMenu = onAddToQueue != null || onAddToPlaylist != null ||
             onViewArtist != null || onViewAlbum != null || hasAdvancedItems
@@ -903,6 +904,17 @@ fun SharedTrackRowItem(
                                             onDownload()
                                         },
                                         leadingIcon = { Icon(if (contextType == "search_online") Icons.Rounded.CloudDownload else Icons.Rounded.Download, contentDescription = null) }
+                                    )
+                                }
+                                if (onChangeAudio != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Changer la version audio") },
+                                        onClick = {
+                                            menuExpanded = false
+                                            menuPage = 0
+                                            onChangeAudio()
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) }
                                     )
                                 }
                                 if (onDeleteDownload != null) {

@@ -95,23 +95,24 @@ def get_cached_track_keys_and_doublets() -> tuple[set[str], dict[tuple[str, str]
 
             for d in dirs_to_scan:
                 try:
-                    for json_path in d.glob("*.json"):
-                        stem = json_path.stem
-                        audio_path = d / f"{stem}.audio"
+                    for audio_path in d.glob("*.audio"):
                         if not (audio_path.exists() and audio_path.stat().st_size > 0):
                             continue
+                        stem = audio_path.stem
                         new_keys.add(stem)
-                        try:
-                            meta = json.loads(json_path.read_text(encoding="utf-8"))
-                            t = meta.get("title")
-                            a = meta.get("artist_name") or meta.get("artist")
-                            original_id = meta.get("track_id") or stem
-                            if t and a:
-                                norm_key = (_normalize_search_string(t), _normalize_search_string(a))
-                                if norm_key not in new_doublets:
-                                    new_doublets[norm_key] = (audio_path, json_path, original_id)
-                        except Exception:
-                            pass
+                        json_path = d / f"{stem}.json"
+                        if json_path.exists():
+                            try:
+                                meta = json.loads(json_path.read_text(encoding="utf-8"))
+                                t = meta.get("title")
+                                a = meta.get("artist_name") or meta.get("artist")
+                                original_id = meta.get("track_id") or stem
+                                if t and a:
+                                    norm_key = (_normalize_search_string(t), _normalize_search_string(a))
+                                    if norm_key not in new_doublets:
+                                        new_doublets[norm_key] = (audio_path, json_path, original_id)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 
@@ -508,6 +509,36 @@ def _auto_register_in_sync_files(
             metadata=metadata,
         )
 
+        # 3. Synchronisation et écrasement des alias dans _global_cache
+        try:
+            from app.core.aura_id_codec import get_track_id_aliases
+            aliases = get_track_id_aliases(track_id)
+            for alias in aliases:
+                alias_key = _get_track_key(alias)
+                if alias_key != track_key:
+                    alias_audio = cache_dir / f"{alias_key}.audio"
+                    alias_json = cache_dir / f"{alias_key}.json"
+                    try:
+                        if alias_audio.exists():
+                            alias_audio.unlink()
+                        os.link(cache_audio, alias_audio)
+                    except Exception:
+                        try:
+                            shutil.copyfile(cache_audio, alias_audio)
+                        except Exception:
+                            pass
+                    try:
+                        if alias_json.exists():
+                            alias_json.unlink()
+                        shutil.copyfile(cache_json, alias_json)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("Could not sync aliases in global cache for %s: %s", track_id, e)
+
+        global _cached_global_keys_last_refresh
+        _cached_global_keys_last_refresh = 0.0
+
         logger.info("Auto-registered downloaded track %s in global cache and sync_files for user %s", track_id, user_id)
         return True
     except Exception as e:
@@ -878,27 +909,121 @@ class DownloadService:
             logger.error("Failed to fetch YTM candidates: %s", e)
             return []
 
-    def create_job(
-        self, user_id: str, track_id: str, provider_name: str = "youtube", source_hint: Optional[dict] = None
+    async def create_job(
+        self,
+        user_id: str,
+        track_id: str,
+        provider_name: str = "youtube",
+        source_hint: Optional[dict] = None,
+        force_resolution: bool = False,
     ) -> DownloadJob:
         """Create a new download job and triggers the async background download."""
         if not track_id.startswith("trk_"):
             raise BadRequest("Invalid track ID format. Must start with 'trk_'")
 
-        # Check if a download job already exists for this track and user
-        try:
-            existing = supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
-            if existing.data:
+        track_lock = await self._get_track_lock(f"{user_id}:{track_id}")
+        async with track_lock:
+            # Query existing jobs for this track and user
+            existing_jobs_data = []
+            try:
+                existing = supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
+                existing_jobs_data = existing.data or []
+            except Exception as e:
+                logger.error("Failed to query existing jobs in Supabase: %s", e)
+
+            if force_resolution:
+                now = datetime.now(timezone.utc)
+                # Check for an active requires_resolution job within 30 min TTL
+                sorted_jobs = sorted(existing_jobs_data, key=lambda x: x.get("created_at") or "", reverse=True)
+                for j_dict in sorted_jobs:
+                    j_obj = DownloadJob.from_dict(j_dict)
+                    if j_obj.status == "requires_resolution" and j_obj.candidates:
+                        if j_obj.created_at and (now - j_obj.created_at).total_seconds() < 1800:
+                            logger.info("Reusing active requires_resolution job %s within TTL (30 min)", j_obj.id)
+                            return j_obj
+
+                # Mark all existing active/succeeded/failed jobs as superseded
+                for j_dict in existing_jobs_data:
+                    if j_dict.get("status") != "superseded":
+                        try:
+                            self._update_job_status(j_dict["id"], status="superseded")
+                        except Exception as e:
+                            logger.warning("Failed to mark job %s as superseded: %s", j_dict.get("id"), e)
+
+                # Resolve metadata (artist, title)
+                artist = None
+                title = None
+                if source_hint:
+                    artist = source_hint.get("artist_name")
+                    title = source_hint.get("title")
+                if not (artist and title):
+                    try:
+                        ref = parse_aura_id(track_id)
+                        if ref.provider_name == "deezer":
+                            track_data = await self.deezer_client.get_track(ref.provider_id)
+                            title = title or track_data.get("title")
+                            artist = artist or track_data.get("artist", {}).get("name")
+                    except Exception as e:
+                        logger.warning("Could not resolve Deezer metadata for %s: %s", track_id, e)
+
+                # Fetch 5 candidates from YTM in thread pool executor
+                loop = asyncio.get_running_loop()
+                candidates = await loop.run_in_executor(None, self._fetch_5_candidates, artist or "", title or "")
+
+                job_id = generate_id("job")
+                if candidates:
+                    job = DownloadJob(
+                        id=job_id,
+                        user_id=user_id,
+                        track_id=track_id,
+                        provider_name=provider_name,
+                        status="requires_resolution",
+                        progress_percent=0.0,
+                        attempt_count=1,
+                        candidates=candidates,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                else:
+                    job = DownloadJob(
+                        id=job_id,
+                        user_id=user_id,
+                        track_id=track_id,
+                        provider_name=provider_name,
+                        status="failed",
+                        progress_percent=0.0,
+                        attempt_count=1,
+                        error_code="no_candidates_found",
+                        error_message="Aucune version alternative trouvée sur YouTube Music",
+                        candidates=[],
+                        created_at=now,
+                        updated_at=now,
+                    )
+
+                try:
+                    supabase.table("download_jobs").insert(job.to_dict()).execute()
+                except Exception as e:
+                    logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
+                    raise BadRequest(f"Failed to create job in database: {str(e)}")
+
+                logger.info(
+                    "Created force_resolution job %s (status=%s, candidates=%d) for user %s, track %s",
+                    job_id, job.status, len(job.candidates), user_id, track_id
+                )
+                return job
+
+            # Standard download flow
+            if existing_jobs_data:
                 # Find the most recent active or successful job
-                sorted_jobs = sorted(existing.data, key=lambda x: x.get("created_at", ""), reverse=True)
+                sorted_jobs = sorted(existing_jobs_data, key=lambda x: x.get("created_at") or "", reverse=True)
                 for job_dict in sorted_jobs:
                     existing_job = DownloadJob.from_dict(job_dict)
-                    
+
                     # If job is currently active (queued, running, requires_resolution), reuse it
                     if existing_job.status in ("queued", "running", "requires_resolution"):
                         logger.info("Reusing existing active download job %s for user %s, track %s", existing_job.id, user_id, track_id)
                         return existing_job
-                        
+
                     # If job is already succeeded, verify the physical file exists on disk
                     if existing_job.status == "succeeded":
                         expected_file = DOWNLOADS_DIR / f"{existing_job.id}.mp3"
@@ -921,74 +1046,71 @@ class DownloadService:
                                 "error_message": None,
                                 "updated_at": now.isoformat()
                             }).eq("id", existing_job.id).execute()
-                            
+
                             asyncio.create_task(self._run_download_job(existing_job.id, source_hint))
                             return existing_job
-        except Exception as e:
-            logger.error("Failed to query existing jobs in Supabase: %s", e)
-            # Fail silently and proceed to create a new job to prevent blocking downloads
 
-        # 2. Vérification du Cache Global (_global_cache) pour Hit Instantané et Dédoublonné
-        cached = _find_globally_cached_track(track_id)
-        if cached:
-            cached_audio, metadata = cached
-            logger.info("GLOBAL CACHE HIT pour track %s ! Association instantanée à user %s (0s)", track_id, user_id)
-            _link_cached_track_to_user(
-                user_id=user_id,
-                track_id=track_id,
-                cached_audio=cached_audio,
-                metadata=metadata,
-                override_metadata=source_hint,
-            )
+            # 2. Vérification du Cache Global (_global_cache) pour Hit Instantané et Dédoublonné
+            cached = _find_globally_cached_track(track_id)
+            if cached:
+                cached_audio, metadata = cached
+                logger.info("GLOBAL CACHE HIT pour track %s ! Association instantanée à user %s (0s)", track_id, user_id)
+                _link_cached_track_to_user(
+                    user_id=user_id,
+                    track_id=track_id,
+                    cached_audio=cached_audio,
+                    metadata=metadata,
+                    override_metadata=source_hint,
+                )
 
+                job_id = generate_id("job")
+                now = datetime.now(timezone.utc)
+                job = DownloadJob(
+                    id=job_id,
+                    user_id=user_id,
+                    track_id=track_id,
+                    provider_name=provider_name,
+                    status="succeeded",
+                    progress_percent=100.0,
+                    attempt_count=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                try:
+                    supabase.table("download_jobs").insert(job.to_dict()).execute()
+                except Exception as e:
+                    logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
+                    raise BadRequest(f"Failed to create job in database: {str(e)}")
+                return job
+
+            # 3. Cache MISS : Création du job queued standard et lancement du worker
             job_id = generate_id("job")
             now = datetime.now(timezone.utc)
+
             job = DownloadJob(
                 id=job_id,
                 user_id=user_id,
                 track_id=track_id,
                 provider_name=provider_name,
-                status="succeeded",
-                progress_percent=100.0,
+                status="queued",
+                progress_percent=0.0,
                 attempt_count=1,
                 created_at=now,
                 updated_at=now,
             )
+
             try:
                 supabase.table("download_jobs").insert(job.to_dict()).execute()
             except Exception as e:
-                logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
+                logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
                 raise BadRequest(f"Failed to create job in database: {str(e)}")
+
+            logger.info("Created download job %s for user %s, track %s in Supabase", job_id, user_id, track_id)
+
+            # Trigger real background download task
+            asyncio.create_task(self._run_download_job(job_id, source_hint))
+
             return job
-
-        # 3. Cache MISS : Création du job queued standard et lancement du worker
-        job_id = generate_id("job")
-        now = datetime.now(timezone.utc)
-
-        job = DownloadJob(
-            id=job_id,
-            user_id=user_id,
-            track_id=track_id,
-            provider_name=provider_name,
-            status="queued",
-            progress_percent=0.0,
-            attempt_count=1,
-            created_at=now,
-            updated_at=now,
-        )
-
-        try:
-            supabase.table("download_jobs").insert(job.to_dict()).execute()
-        except Exception as e:
-            logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
-            raise BadRequest(f"Failed to create job in database: {str(e)}")
-
-        logger.info("Created download job %s for user %s, track %s in Supabase", job_id, user_id, track_id)
-
-        # Trigger real background download task
-        asyncio.create_task(self._run_download_job(job_id, source_hint))
-
-        return job
 
     def get_job(self, user_id: str, job_id: str) -> DownloadJob:
         """Retrieve a specific job for a user from Supabase."""

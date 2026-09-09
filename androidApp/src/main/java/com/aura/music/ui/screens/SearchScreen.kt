@@ -108,6 +108,7 @@ fun SearchScreen(
     onOpenDownloads: () -> Unit,
     playerViewModel: PlayerViewModel,
     onRequestJobResolution: (String) -> Unit = {},
+    onChangeAudio: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
@@ -426,6 +427,7 @@ fun SearchScreen(
                                 localLibraryRepository = repository,
                                 onRefresh = { viewModel.refreshDisplayedLocalResults() },
                                 onEditMetadata = { track -> trackToEditMetadata = track },
+                                onChangeAudio = onChangeAudio,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -640,6 +642,7 @@ fun SearchScreen(
                                     focusManager.clearFocus()
                                     onOpenAlbum(albumId)
                                 },
+                                onChangeAudio = onChangeAudio,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -785,6 +788,7 @@ private fun LocalLibrarySearchTab(
     localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
     onRefresh: () -> Unit,
     onEditMetadata: ((TrackListRow) -> Unit)? = null,
+    onChangeAudio: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (tracks.isNotEmpty()) {
@@ -813,7 +817,8 @@ private fun LocalLibrarySearchTab(
                         scope = scope,
                         localLibraryRepository = localLibraryRepository,
                         onRefresh = onRefresh,
-                        onEditMetadata = onEditMetadata
+                        onEditMetadata = onEditMetadata,
+                        onChangeAudio = onChangeAudio
                     )
                 }
             }
@@ -867,6 +872,7 @@ private fun OnlineSearchTab(
     onAddToPlaylist: (TrackSummary) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onChangeAudio: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showAllTracks by remember { mutableStateOf(false) }
@@ -915,7 +921,8 @@ private fun OnlineSearchTab(
                         onUploadToCloud = onUploadToCloud,
                         onDeleteDownload = onDeleteDownload,
                         onOpenArtist = onOpenArtist,
-                        onOpenAlbum = onOpenAlbum
+                        onOpenAlbum = onOpenAlbum,
+                        onChangeAudio = onChangeAudio
                     )
                 }
 
@@ -1664,6 +1671,7 @@ private fun SearchTrackRowItem(
     localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
     onRefresh: () -> Unit,
     onEditMetadata: ((TrackListRow) -> Unit)? = null,
+    onChangeAudio: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
 ) {
     val currentOnPlay = rememberUpdatedState(onPlayTrack)
     val currentOnQueue = rememberUpdatedState(onAddToQueue)
@@ -1673,6 +1681,7 @@ private fun SearchTrackRowItem(
     val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
     val currentOnDelete = rememberUpdatedState(onDeleteTrack)
     val currentOnEditMetadata = rememberUpdatedState(onEditMetadata)
+    val currentOnChangeAudio = rememberUpdatedState(onChangeAudio)
 
     val onClick = remember(track.id, tracks) { { currentOnPlay.value(track, tracks) } }
     val onAddToQueueClick = remember(track.id) { { currentOnQueue.value(track) } }
@@ -1777,6 +1786,21 @@ private fun SearchTrackRowItem(
         } else null
     }
 
+    val currentOnChangeAudioLambda = remember(track.id, currentOnChangeAudio.value != null) {
+        val cb = currentOnChangeAudio.value
+        if (cb != null) {
+            {
+                cb(
+                    track.id,
+                    track.title,
+                    track.artistName ?: "",
+                    track.albumTitle,
+                    track.coverUri
+                )
+            }
+        } else null
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "",
@@ -1796,7 +1820,8 @@ private fun SearchTrackRowItem(
         onDeleteDownload = if (isDownloadedLocally) onDeleteClick else null,
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda,
-        onEditMetadata = if (currentOnEditMetadata.value != null) { { currentOnEditMetadata.value?.invoke(track) } } else null
+        onEditMetadata = if (currentOnEditMetadata.value != null) { { currentOnEditMetadata.value?.invoke(track) } } else null,
+        onChangeAudio = currentOnChangeAudioLambda
     )
 }
 
@@ -1816,6 +1841,7 @@ private fun SearchOnlineTrackRowItem(
     onDeleteDownload: ((String) -> Unit)? = null,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onChangeAudio: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
 ) {
     val currentOnPlay = rememberUpdatedState(onPlayTrack)
     val currentOnQueue = rememberUpdatedState(onAddToQueue)
@@ -1825,6 +1851,7 @@ private fun SearchOnlineTrackRowItem(
     val currentOnArtist = rememberUpdatedState(onOpenArtist)
     val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
     val currentOnLike = rememberUpdatedState(onLikeTrack)
+    val currentOnChangeAudio = rememberUpdatedState(onChangeAudio)
 
     val onClick = remember(track.id) { { currentOnPlay.value(track) } }
     val onAddToQueueClick = remember(track.id, currentOnQueue.value != null) {
@@ -1878,6 +1905,21 @@ private fun SearchOnlineTrackRowItem(
         }
     }
 
+    val currentOnChangeAudioLambda = remember(track.id, currentOnChangeAudio.value != null, isDownloadedLocally, isCloudOnly) {
+        val cb = currentOnChangeAudio.value
+        if (cb != null && (isDownloadedLocally || isCloudOnly)) {
+            {
+                cb(
+                    track.id,
+                    track.title,
+                    track.displayArtistName,
+                    track.displayAlbumTitle,
+                    track.coverUri
+                )
+            }
+        } else null
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.displayArtistName,
@@ -1895,6 +1937,7 @@ private fun SearchOnlineTrackRowItem(
         onUploadToCloud = if (isDownloadedLocally && !isCloudOnly) onUpload else null,
         onDeleteDownload = if (isDownloadedLocally) onDelete else null,
         onViewArtist = onViewArtist,
-        onViewAlbum = onViewAlbum
+        onViewAlbum = onViewAlbum,
+        onChangeAudio = currentOnChangeAudioLambda
     )
 }

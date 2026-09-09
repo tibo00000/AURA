@@ -224,7 +224,8 @@ data class SourceHintDto(
 @Serializable
 data class DownloadRequestDto(
     @SerialName("track_id") val trackId: String,
-    @SerialName("source_hint") val sourceHint: SourceHintDto? = null
+    @SerialName("source_hint") val sourceHint: SourceHintDto? = null,
+    @SerialName("force_resolution") val forceResolution: Boolean = false
 )
 
 @Serializable
@@ -244,6 +245,7 @@ data class DownloadJobResponseData(
     @SerialName("error_code") val errorCode: String? = null,
     @SerialName("error_message") val errorMessage: String? = null,
     @SerialName("attempt_count") val attemptCount: Int = 1,
+    @SerialName("candidates") val candidates: List<YtmCandidateDto>? = null,
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String
 )
