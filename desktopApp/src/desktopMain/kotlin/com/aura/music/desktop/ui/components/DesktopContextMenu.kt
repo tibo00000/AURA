@@ -32,6 +32,7 @@ fun DesktopTrackContextMenu(
     onUploadCloud: (() -> Unit)? = null,
     onDeleteCloud: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
+    onChangeAudioVersion: (() -> Unit)? = null,
     offset: DpOffset = DpOffset(0.dp, 0.dp)
 ) {
     DropdownMenu(
@@ -94,6 +95,17 @@ fun DesktopTrackContextMenu(
                 label = "Modifier les informations",
                 onClick = {
                     onEditMetadata()
+                    onDismissRequest()
+                }
+            )
+        }
+
+        if (onChangeAudioVersion != null) {
+            ContextMenuItem(
+                icon = Icons.Rounded.Tune,
+                label = "Changer la version audio",
+                onClick = {
+                    onChangeAudioVersion()
                     onDismissRequest()
                 }
             )

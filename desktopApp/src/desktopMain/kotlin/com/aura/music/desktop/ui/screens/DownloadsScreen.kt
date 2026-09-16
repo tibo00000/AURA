@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.state.DesktopReassignTarget
 import com.aura.music.desktop.ui.components.DesktopDownloadErrorDetailDialog
 import com.aura.music.desktop.ui.*
 import com.aura.music.ui.theme.*
@@ -105,7 +106,27 @@ fun DownloadsScreen(
                         jobItem = jobItem,
                         onRetry = { orchestrator.retryDownloadJob(jobItem.jobId) },
                         onCancel = { orchestrator.cancelDownloadJob(jobItem.jobId) },
-                        onErrorClick = { selectedJobForError = jobItem }
+                        onErrorClick = { selectedJobForError = jobItem },
+                        onChooseResolution = {
+                            appState.openReassignAudio(
+                                DesktopReassignTarget(
+                                    trackId = jobItem.trackId,
+                                    title = jobItem.title,
+                                    artist = jobItem.artistName,
+                                    coverUri = jobItem.coverUri
+                                )
+                            )
+                        },
+                        onChangeAudioVersion = {
+                            appState.openReassignAudio(
+                                DesktopReassignTarget(
+                                    trackId = jobItem.trackId,
+                                    title = jobItem.title,
+                                    artist = jobItem.artistName,
+                                    coverUri = jobItem.coverUri
+                                )
+                            )
+                        }
                     )
                 }
             }
@@ -128,7 +149,9 @@ private fun DownloadJobRowItem(
     jobItem: DownloadJobRowModel,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onErrorClick: () -> Unit
+    onErrorClick: () -> Unit,
+    onChooseResolution: () -> Unit,
+    onChangeAudioVersion: () -> Unit
 ) {
     val isFailed = jobItem.status.equals("failed", ignoreCase = true)
 
@@ -147,6 +170,8 @@ private fun DownloadJobRowItem(
             val (icon, tint) = when (jobItem.status.lowercase()) {
                 "running" -> Icons.Rounded.Download to BlazeOrange
                 "queued" -> Icons.Rounded.HourglassEmpty to PureWhite.copy(alpha = 0.6f)
+                "requires_resolution" -> Icons.Rounded.Tune to BlazeOrange
+                "superseded" -> Icons.Rounded.History to PureWhite.copy(alpha = 0.4f)
                 "succeeded", "completed" -> Icons.Rounded.CheckCircle to Color(0xFF4CAF50)
                 "failed" -> Icons.Rounded.Error to MaterialTheme.colorScheme.error
                 else -> Icons.Rounded.CloudDownload to BlazeOrange
@@ -211,6 +236,8 @@ private fun DownloadJobRowItem(
                 text = when (jobItem.status.lowercase()) {
                     "running" -> "${(jobItem.progressPercent ?: 0f).toInt()}%"
                     "queued" -> "En attente"
+                    "requires_resolution" -> "À choisir"
+                    "superseded" -> "Remplacé"
                     "succeeded", "completed" -> "Terminé"
                     "failed" -> "Échoué"
                     else -> jobItem.status
@@ -222,13 +249,39 @@ private fun DownloadJobRowItem(
             )
 
             // Actions
+            if (jobItem.status.equals("requires_resolution", ignoreCase = true)) {
+                Button(
+                    onClick = onChooseResolution,
+                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(imageVector = Icons.Rounded.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Choisir", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            if (jobItem.status.equals("succeeded", ignoreCase = true) || jobItem.status.equals("completed", ignoreCase = true)) {
+                IconButton(onClick = onChangeAudioVersion) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Changer la version audio",
+                        tint = PureWhite.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
             if (isFailed) {
                 IconButton(onClick = onRetry) {
                     Icon(imageVector = Icons.Rounded.Refresh, contentDescription = "Réessayer", tint = BlazeOrange)
                 }
             }
 
-            if (jobItem.status.equals("running", ignoreCase = true) || jobItem.status.equals("queued", ignoreCase = true)) {
+            if (jobItem.status.equals("running", ignoreCase = true) || jobItem.status.equals("queued", ignoreCase = true) || jobItem.status.equals("requires_resolution", ignoreCase = true)) {
                 IconButton(onClick = onCancel) {
                     Icon(imageVector = Icons.Rounded.Close, contentDescription = "Annuler", tint = PureWhite.copy(alpha = 0.5f))
                 }

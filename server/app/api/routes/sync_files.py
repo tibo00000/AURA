@@ -170,11 +170,19 @@ async def download_sync_file(
     if target_file is None or not target_file.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Synced audio file not found")
 
+    stat_res = target_file.stat()
+    last_modified = datetime.fromtimestamp(stat_res.st_mtime, tz=timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    etag = f'"{hashlib.md5(f"{stat_res.st_mtime}-{stat_res.st_size}".encode()).hexdigest()}"'
+
     return FileResponse(
         path=str(target_file),
         media_type=(metadata.get("mime_type") if metadata else None) or "audio/mpeg",
         filename=f"{track_id}.audio",
-        headers={"Accept-Ranges": "bytes"},
+        headers={
+            "Accept-Ranges": "bytes",
+            "ETag": etag,
+            "Last-Modified": last_modified,
+        },
     )
 
 

@@ -87,6 +87,29 @@ class KtorAuraApiService(
         setBody(request)
     }.body()
 
+    override suspend fun searchCandidates(
+        token: String,
+        artist: String?,
+        title: String?,
+        query: String?,
+        limit: Int
+    ): AuraResponse<CandidatesQueryResponseData> = client.get("$cleanBaseUrl/downloads/candidates") {
+        header("Authorization", token)
+        artist?.let { parameter("artist", it) }
+        title?.let { parameter("title", it) }
+        query?.let { parameter("query", it) }
+        parameter("limit", limit)
+    }.body()
+
+    override suspend fun reassignAudio(
+        token: String,
+        request: ReassignAudioRequestDto
+    ): AuraResponse<DownloadCreateResponseData> = client.post("$cleanBaseUrl/downloads/reassign") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
+
     override suspend fun getJobStatus(token: String, jobId: String): AuraResponse<JobStatusResponseData> = client.get("$cleanBaseUrl/jobs/$jobId") {
         header("Authorization", token)
     }.body()

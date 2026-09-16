@@ -3,6 +3,14 @@ package com.aura.music.desktop.state
 import androidx.compose.runtime.*
 import com.aura.music.data.local.TrackListRow
 
+data class DesktopReassignTarget(
+    val trackId: String,
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    val coverUri: String? = null
+)
+
 /**
  * Gestionnaire d'état UI global pour le client Desktop AURA.
  * Centralise la pile de navigation, l'ouverture des panneaux et la gestion du focus clavier.
@@ -45,6 +53,15 @@ class DesktopAppState {
     var trackForPlaylistPicker by mutableStateOf<TrackListRow?>(null)
     var playlistToRename by mutableStateOf<Pair<String, String>?>(null) // id, currentName
     var playlistToDelete by mutableStateOf<Pair<String, String>?>(null) // id, name
+    var reassignAudioTarget by mutableStateOf<DesktopReassignTarget?>(null)
+
+    fun openReassignAudio(target: DesktopReassignTarget) {
+        reassignAudioTarget = target
+    }
+
+    fun closeReassignAudio() {
+        reassignAudioTarget = null
+    }
 
     // Navigation methods
     fun navigateTo(screen: String) {

@@ -33,6 +33,7 @@ import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.state.DesktopReassignTarget
 import com.aura.music.desktop.ui.formatDuration
 import com.aura.music.desktop.ui.*
 import com.aura.music.domain.player.PlaybackState
@@ -120,6 +121,17 @@ fun DesktopTrackTable(
                         },
                         onUploadCloud = {
                             orchestrator.triggerSingleFileUpload(track)
+                        },
+                        onChangeAudioVersion = {
+                            appState.openReassignAudio(
+                                DesktopReassignTarget(
+                                    trackId = track.id,
+                                    title = track.title,
+                                    artist = track.artistName ?: "Artiste Inconnu",
+                                    album = track.albumTitle,
+                                    coverUri = track.coverUri
+                                )
+                            )
                         }
                     )
                 }

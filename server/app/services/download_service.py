@@ -95,6 +95,12 @@ def get_cached_track_keys_and_doublets() -> tuple[set[str], dict[tuple[str, str]
 
             for d in dirs_to_scan:
                 try:
+                    for audio_path in d.glob("*.audio"):
+                        try:
+                            if audio_path.stat().st_size > 0:
+                                new_keys.add(audio_path.stem)
+                        except Exception:
+                            pass
                     for json_path in d.glob("*.json"):
                         stem = json_path.stem
                         audio_path = d / f"{stem}.audio"
@@ -515,6 +521,86 @@ def _auto_register_in_sync_files(
         return False
 
 
+def _propagate_reassigned_track_to_all_users(
+    track_id: str,
+    cached_audio: Path,
+    title: Optional[str] = None,
+    artist_name: Optional[str] = None,
+    album_title: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    cover_uri: Optional[str] = None,
+) -> None:
+    """
+    Met à jour les hardlinks et metadata.json pour tous les utilisateurs ayant déjà ce track_id
+    dans leur répertoire personnel sync_files.
+    """
+    try:
+        import json
+        import shutil
+        sync_base = _get_sync_base()
+        track_key = _get_track_key(track_id)
+        if not sync_base.exists():
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        for user_dir in sync_base.iterdir():
+            if not user_dir.is_dir() or user_dir.name.startswith("_"):
+                continue
+            user_audio = user_dir / f"{track_key}.audio"
+            user_json = user_dir / f"{track_key}.json"
+            if user_audio.exists():
+                try:
+                    user_audio.unlink()
+                    os.link(cached_audio, user_audio)
+                except Exception:
+                    shutil.copyfile(cached_audio, user_audio)
+
+                if user_json.exists():
+                    try:
+                        data = json.loads(user_json.read_text(encoding="utf-8"))
+                        data["size_bytes"] = user_audio.stat().st_size if user_audio.exists() else 0
+                        data["updated_at"] = now
+                        if title:
+                            data["title"] = title
+                        if artist_name:
+                            data["artist_name"] = artist_name
+                        if album_title:
+                            data["album_title"] = album_title
+                        if duration_ms:
+                            data["duration_ms"] = duration_ms
+                        if cover_uri:
+                            data["cover_uri"] = cover_uri
+                        user_json.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                    except Exception as err:
+                        logger.warning("Failed to update user json metadata during reassign propagation: %s", err)
+        logger.info("Propagated reassigned track %s across all existing user directories", track_id)
+    except Exception as e:
+        logger.warning("Error propagating reassigned track %s: %s", track_id, e)
+
+
+def _cleanup_orphaned_job_files(track_id: str, keep_job_id: str) -> None:
+    """
+    Supprime les fichiers physiques de travail job_{old_id}.mp3 résiduels dans DOWNLOADS_DIR
+    pour le track_id donné (sauf keep_job_id).
+    """
+    try:
+        res = supabase.table("download_jobs").select("id").eq("track_id", track_id).execute()
+        if res.data:
+            for row in res.data:
+                jid = row.get("id")
+                if jid and jid != keep_job_id:
+                    for ext in (".mp3", ".part", ".ytdl", ".m4a", ".webm"):
+                        cand = DOWNLOADS_DIR / f"{jid}{ext}"
+                        if cand.exists():
+                            try:
+                                cand.unlink()
+                                logger.info("Cleaned up orphaned work file: %s", cand.name)
+                            except Exception as e:
+                                logger.warning("Could not delete %s: %s", cand.name, e)
+    except Exception as e:
+        logger.warning("Failed to clean up orphaned job files for track %s: %s", track_id, e)
+
+
 def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
     """Build yt-dlp options optimised for VPS bypass."""
     pot_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416/token")
@@ -594,6 +680,7 @@ class DownloadService:
         # migrer vers un verrou inter-processus (ex: fcntl.flock ou pg_advisory_lock).
         self._track_locks: Dict[str, asyncio.Lock] = {}
         self._track_locks_guard = asyncio.Lock()
+        self._candidates_cache: Dict[str, Tuple[float, List[dict]]] = {}
         self._recover_stale_jobs_on_startup()
         self._backfill_global_cache()
 
@@ -840,43 +927,67 @@ class DownloadService:
             logger.error("YTM Smart Song Search error: %s", e)
             return None
 
-    def _fetch_5_candidates(self, artist: str, title: str) -> List[dict]:
-        """Fetch 5 candidate songs from YTM search for user choice."""
+    def search_candidates(
+        self,
+        artist: str = "",
+        title: str = "",
+        query: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[dict]:
+        """Fetch candidate songs from YTM search for user choice (with 5-minute in-memory cache)."""
+        clean_artist = (artist or "").strip()
+        clean_title = (title or "").strip()
+        clean_query = (query or "").strip()
+        limit = min(max(1, limit), 20)
+
+        cache_key = f"{clean_artist.lower()}:{clean_title.lower()}:{clean_query.lower()}:{limit}"
+        now = time.time()
+        cached = self._candidates_cache.get(cache_key)
+        if cached and (now - cached[0] < 300.0):
+            return cached[1]
+
+        target_query = clean_query if clean_query else f"{clean_artist} {clean_title}".strip()
+        if not target_query:
+            return []
+
         try:
-            query = f"{artist} {title}".strip()
-            logger.info("Fetching 5 YTM candidates for query: %r", query)
-            results = ytmusic.search(query, filter="songs")
+            logger.info("Fetching YTM candidates for query: %r (limit=%d)", target_query, limit)
+            results = ytmusic.search(target_query, filter="songs")
             candidates = []
-            for item in results[:5]:
+            for item in (results or [])[:limit]:
                 video_id = item.get("videoId")
                 if not video_id:
                     continue
-                
-                # Format artist name
+
                 artists_found = item.get("artists", [])
-                artist_name = ", ".join([a.get("name", "") for a in artists_found if a.get("name")])
-                
-                # Cover URI
+                item_artist_name = ", ".join([a.get("name", "") for a in artists_found if a.get("name")])
+
                 cover_uri = None
                 thumbnails = item.get("thumbnails", [])
                 if thumbnails:
-                    cover_uri = thumbnails[0].get("url")
-                
+                    cover_uri = thumbnails[-1].get("url") or thumbnails[0].get("url")
+
                 duration = item.get("duration")
                 album_name = item.get("album", {}).get("name") if isinstance(item.get("album"), dict) else None
 
                 candidates.append({
                     "video_id": video_id,
                     "title": item.get("title", ""),
-                    "artist": artist_name or artist,
+                    "artist": item_artist_name or clean_artist,
                     "album": album_name,
                     "duration": duration,
                     "cover_uri": cover_uri,
                 })
+
+            self._candidates_cache[cache_key] = (now, candidates)
             return candidates
         except Exception as e:
             logger.error("Failed to fetch YTM candidates: %s", e)
             return []
+
+    def _fetch_5_candidates(self, artist: str, title: str) -> List[dict]:
+        """Fetch 5 candidate songs from YTM search for user choice."""
+        return self.search_candidates(artist=artist, title=title, limit=5)
 
     def create_job(
         self, user_id: str, track_id: str, provider_name: str = "youtube", source_hint: Optional[dict] = None
@@ -1085,6 +1196,65 @@ class DownloadService:
 
         return job
 
+    async def reassign_track_audio(
+        self,
+        user_id: str,
+        track_id: str,
+        video_id: str,
+        source_hint: Optional[dict] = None,
+    ) -> DownloadJob:
+        """
+        Manually reassign the audio stream of a track to a specific YouTube video_id.
+        Acquires track lock, supersedes conflicting pending jobs, bypasses global cache,
+        and starts a download worker with trigger='manual_reassign'.
+        """
+        if not track_id.startswith("trk_"):
+            raise BadRequest("Invalid track ID format. Must start with 'trk_'")
+        if not video_id or not video_id.strip():
+            raise BadRequest("A valid video_id must be provided")
+
+        clean_video_id = video_id.strip()
+        lock = await self._get_track_lock(track_id)
+        async with lock:
+            # 1. Supersede any active download jobs for this track in Supabase
+            try:
+                supabase.table("download_jobs").update({
+                    "status": "superseded",
+                    "error_message": "Remplacé par une réassignation manuelle",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("track_id", track_id).in_("status", ["queued", "running", "requires_resolution"]).execute()
+            except Exception as e:
+                logger.warning("Failed to mark previous jobs superseded for track %s: %s", track_id, e)
+
+            # 2. Create a new queued job specifically for manual reassign
+            job_id = generate_id("job")
+            now = datetime.now(timezone.utc)
+            job = DownloadJob(
+                id=job_id,
+                user_id=user_id,
+                track_id=track_id,
+                provider_name="youtube",
+                status="queued",
+                progress_percent=0.0,
+                attempt_count=1,
+                created_at=now,
+                updated_at=now,
+            )
+
+            try:
+                supabase.table("download_jobs").insert(job.to_dict()).execute()
+            except Exception as e:
+                logger.error("Failed to insert reassign job %s in Supabase: %s", job_id, e)
+                raise BadRequest(f"Failed to create job in database: {str(e)}")
+
+            merged_hint = dict(source_hint or {})
+            merged_hint["resolved_video_id"] = clean_video_id
+            merged_hint["trigger"] = "manual_reassign"
+
+            logger.info("Created reassign job %s for user %s, track %s (video_id: %s)", job_id, user_id, track_id, clean_video_id)
+            asyncio.create_task(self._run_download_job(job_id, merged_hint))
+            return job
+
     def update_user_cookies(self, cookies_text: str) -> bool:
         """Upload Netscape cookies to the persistent storage."""
         cookies_text = cookies_text.strip()
@@ -1150,19 +1320,22 @@ class DownloadService:
         track_lock = await self._get_track_lock(job.track_id)
         async with track_lock:
             # Double-Checked Locking : vérification si la piste a été téléchargée par un job concurrent
-            cached = _find_globally_cached_track(job.track_id)
-            if cached:
-                cached_audio, metadata = cached
-                logger.info("Worker job %s: track %s trouvé dans le cache global sous verrou ! Association 0s", job_id, job.track_id)
-                _link_cached_track_to_user(
-                    user_id=job.user_id,
-                    track_id=job.track_id,
-                    cached_audio=cached_audio,
-                    metadata=metadata,
-                    override_metadata=source_hint,
-                )
-                self._update_job_status(job_id, status="succeeded", progress_percent=100.0)
-                return
+            # Ignoré en cas de réassignation manuelle explicite pour forcer le nouveau téléchargement
+            is_manual_reassign = (source_hint or {}).get("trigger") == "manual_reassign"
+            if not is_manual_reassign:
+                cached = _find_globally_cached_track(job.track_id)
+                if cached:
+                    cached_audio, metadata = cached
+                    logger.info("Worker job %s: track %s trouvé dans le cache global sous verrou ! Association 0s", job_id, job.track_id)
+                    _link_cached_track_to_user(
+                        user_id=job.user_id,
+                        track_id=job.track_id,
+                        cached_audio=cached_audio,
+                        metadata=metadata,
+                        override_metadata=source_hint,
+                    )
+                    self._update_job_status(job_id, status="succeeded", progress_percent=100.0)
+                    return
 
             await self._execute_download_workflow(job, source_hint)
 
@@ -1327,6 +1500,18 @@ class DownloadService:
                             album_id=album_id,
                             cover_uri=cover_uri,
                         )
+                        if (source_hint or {}).get("trigger") == "manual_reassign":
+                            _propagate_reassigned_track_to_all_users(
+                                track_id=job.track_id,
+                                cached_audio=audio_final,
+                                title=title,
+                                artist_name=artist,
+                                album_title=album,
+                                duration_ms=duration_ms,
+                                cover_uri=cover_uri,
+                            )
+                            _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id)
+
                         status = "succeeded"
                         progress_percent = 100.0
                     else:

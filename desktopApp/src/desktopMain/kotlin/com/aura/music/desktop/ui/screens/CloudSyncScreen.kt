@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.state.DesktopReassignTarget
 import com.aura.music.desktop.ui.*
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.domain.search.SearchNormalizer
@@ -481,7 +482,7 @@ fun CloudSyncScreen(
                     letterSpacing = 1.sp,
                     modifier = Modifier.weight(1.2f)
                 )
-                Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
+                Box(modifier = Modifier.width(126.dp), contentAlignment = Alignment.CenterEnd) {
                     Text(
                         text = "ACTION",
                         color = PureWhite.copy(alpha = 0.5f),
@@ -538,7 +539,18 @@ fun CloudSyncScreen(
                             onOpenAlbum = { track.albumId?.let { appState.openAlbum(it) } },
                             onDownload = { orchestrator.triggerSingleFileDownload(track) },
                             onUpload = { orchestrator.triggerSingleFileUpload(track) },
-                            onDeleteCloud = { trackToDeleteFromCloud = track }
+                            onDeleteCloud = { trackToDeleteFromCloud = track },
+                            onChangeAudioVersion = {
+                                appState.openReassignAudio(
+                                    DesktopReassignTarget(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artist = track.artistName ?: "Artiste Inconnu",
+                                        album = track.albumTitle,
+                                        coverUri = track.coverUri
+                                    )
+                                )
+                            }
                         )
                     }
                 }
@@ -613,7 +625,8 @@ private fun CloudTrackTableRow(
     onOpenAlbum: () -> Unit,
     onDownload: () -> Unit,
     onUpload: () -> Unit,
-    onDeleteCloud: () -> Unit
+    onDeleteCloud: () -> Unit,
+    onChangeAudioVersion: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -771,11 +784,33 @@ private fun CloudTrackTableRow(
         }
 
         // Action
-        Box(modifier = Modifier.width(92.dp), contentAlignment = Alignment.CenterEnd) {
+        Box(modifier = Modifier.width(126.dp), contentAlignment = Alignment.CenterEnd) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
             ) {
+                if (onChangeAudioVersion != null) {
+                    AuraTooltip(text = "Changer la version audio") {
+                        Surface(
+                            color = DarkGraphite,
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, HairlineDark),
+                            modifier = Modifier
+                                .size(30.dp)
+                                .handClickable(onClick = onChangeAudioVersion)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Tune,
+                                    contentDescription = "Changer la version audio",
+                                    tint = PureWhite.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (track.isCloudOnly) {
                     AuraTooltip(text = "Rapatrier sur ce PC") {
                         Surface(

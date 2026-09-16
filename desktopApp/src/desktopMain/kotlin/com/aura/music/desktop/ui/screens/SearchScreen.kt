@@ -48,6 +48,7 @@ import com.aura.music.data.network.SearchResponseData
 import com.aura.music.data.network.TrackSummary
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.state.DesktopReassignTarget
 import com.aura.music.desktop.ui.isCloudOnly
 import com.aura.music.desktop.ui.components.DesktopArtworkCover
 import com.aura.music.desktop.ui.components.DesktopEditMetadataDialog
@@ -969,6 +970,17 @@ fun SearchScreen(
                                                                     },
                                                                     onUploadCloud = {
                                                                         orchestrator.triggerSingleFileUpload(track)
+                                                                    },
+                                                                    onChangeAudioVersion = {
+                                                                        appState.openReassignAudio(
+                                                                            DesktopReassignTarget(
+                                                                                trackId = track.id,
+                                                                                title = track.title,
+                                                                                artist = track.artistName ?: "Artiste Inconnu",
+                                                                                album = track.albumTitle,
+                                                                                coverUri = track.coverUri
+                                                                            )
+                                                                        )
                                                                     }
                                                                 )
                                                             }
@@ -1063,6 +1075,17 @@ fun SearchScreen(
                                             },
                                             onUploadCloud = {
                                                 orchestrator.triggerSingleFileUpload(track)
+                                            },
+                                            onChangeAudioVersion = {
+                                                appState.openReassignAudio(
+                                                    DesktopReassignTarget(
+                                                        trackId = track.id,
+                                                        title = track.title,
+                                                        artist = track.artistName ?: "Artiste Inconnu",
+                                                        album = track.albumTitle,
+                                                        coverUri = track.coverUri
+                                                    )
+                                                )
                                             }
                                         )
                                     }

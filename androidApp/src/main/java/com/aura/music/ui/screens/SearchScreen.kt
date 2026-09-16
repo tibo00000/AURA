@@ -1777,6 +1777,23 @@ private fun SearchTrackRowItem(
         } else null
     }
 
+    val reassignAudioLocalCallback = com.aura.music.ui.components.LocalReassignAudio.current
+    val onLocalChangeAudioVersionLambda = remember(track.id, reassignAudioLocalCallback != null) {
+        if (reassignAudioLocalCallback != null) {
+            {
+                reassignAudioLocalCallback(
+                    com.aura.music.ui.components.ReassignAudioTarget(
+                        trackId = track.id,
+                        title = track.title,
+                        artist = track.artistName ?: "",
+                        album = track.albumTitle,
+                        coverUri = track.coverUri
+                    )
+                )
+            }
+        } else null
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "",
@@ -1796,7 +1813,8 @@ private fun SearchTrackRowItem(
         onDeleteDownload = if (isDownloadedLocally) onDeleteClick else null,
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda,
-        onEditMetadata = if (currentOnEditMetadata.value != null) { { currentOnEditMetadata.value?.invoke(track) } } else null
+        onEditMetadata = if (currentOnEditMetadata.value != null) { { currentOnEditMetadata.value?.invoke(track) } } else null,
+        onChangeAudioVersion = onLocalChangeAudioVersionLambda
     )
 }
 
@@ -1878,6 +1896,23 @@ private fun SearchOnlineTrackRowItem(
         }
     }
 
+    val reassignAudioOnlineCallback = com.aura.music.ui.components.LocalReassignAudio.current
+    val onOnlineChangeAudioVersionLambda = remember(track.id, reassignAudioOnlineCallback != null) {
+        if (reassignAudioOnlineCallback != null) {
+            {
+                reassignAudioOnlineCallback(
+                    com.aura.music.ui.components.ReassignAudioTarget(
+                        trackId = track.id,
+                        title = track.title,
+                        artist = track.displayArtistName,
+                        album = track.displayAlbumTitle,
+                        coverUri = track.coverUri
+                    )
+                )
+            }
+        } else null
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.displayArtistName,
@@ -1895,6 +1930,7 @@ private fun SearchOnlineTrackRowItem(
         onUploadToCloud = if (isDownloadedLocally && !isCloudOnly) onUpload else null,
         onDeleteDownload = if (isDownloadedLocally) onDelete else null,
         onViewArtist = onViewArtist,
-        onViewAlbum = onViewAlbum
+        onViewAlbum = onViewAlbum,
+        onChangeAudioVersion = if (isDownloadedLocally || isCloudOnly) onOnlineChangeAudioVersionLambda else null
     )
 }

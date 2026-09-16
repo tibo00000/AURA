@@ -30,7 +30,7 @@ class DownloadCreateResponse(BaseModel):
     """Immediate response after submitting a download job."""
     job_id: str
     track_id: str
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
 
 
 class YtmCandidate(BaseModel):
@@ -43,12 +43,17 @@ class YtmCandidate(BaseModel):
     cover_uri: Optional[str] = None
 
 
+class CandidatesQueryResponse(BaseModel):
+    """List of YTM candidates for manual audio version selection."""
+    items: List[YtmCandidate]
+
+
 class DownloadJobResponse(BaseModel):
     """Standard download job representation in list responses."""
     id: str
     track_id: str
     provider_name: str
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
     progress_percent: float = 0.0
     error_code: Optional[str] = None
     error_message: Optional[str] = None
@@ -73,7 +78,7 @@ class JobStatusResponse(BaseModel):
     """Generic async job status representation for GET /jobs/{id}."""
     id: str
     kind: Literal["download", "enrichment", "maintenance"]
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
     progress_percent: float = 0.0
     result: Optional[dict] = None
     error: Optional[dict] = None  # Contains code and message keys
@@ -85,6 +90,13 @@ class JobStatusResponse(BaseModel):
 class ResolveDownloadRequest(BaseModel):
     """Request schema to resolve a pending download with a specific video ID."""
     video_id: str = Field(..., description="The YTM video ID selected by the user")
+
+
+class ReassignAudioRequest(BaseModel):
+    """Request schema to reassign the audio version of a track."""
+    track_id: str = Field(..., description="Target AURA track ID (trk_{ulid})")
+    video_id: str = Field(..., description="The YTM video ID selected by the user")
+    source_hint: Optional[SourceHint] = Field(None, description="Optional metadata advice for track re-download")
 
 
 class CookieUploadRequest(BaseModel):

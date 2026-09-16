@@ -61,6 +61,7 @@ fun PlayerScreen(
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onChangeAudioVersion: ((trackId: String, title: String, artist: String, album: String?, coverUri: String?) -> Unit)? = null,
 ) {
     val uiState by playerViewModel.staticUiState.collectAsState()
     val track = uiState.currentTrack
@@ -352,6 +353,25 @@ fun PlayerScreen(
                                 },
                                 leadingIcon = {
                                     Icon(Icons.Rounded.Edit, contentDescription = null, tint = TextPrimary)
+                                }
+                            )
+                        }
+                        // Changer la version audio
+                        if (track != null && onChangeAudioVersion != null) {
+                            DropdownMenuItem(
+                                text = { Text("Changer la version audio", color = TextPrimary) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onChangeAudioVersion(
+                                        track.trackId,
+                                        track.title,
+                                        track.artistName,
+                                        track.albumTitle,
+                                        track.coverUri
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Tune, contentDescription = null, tint = BlazeOrange)
                                 }
                             )
                         }

@@ -110,6 +110,10 @@ import com.aura.music.ui.downloads.DownloadsViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.aura.music.ui.components.ReassignAudioVersionDialog
+import com.aura.music.ui.components.ReassignAudioTarget
+import com.aura.music.ui.components.LocalReassignAudio
+import androidx.compose.runtime.CompositionLocalProvider
 import com.aura.music.ui.theme.*
 
 
@@ -227,6 +231,18 @@ fun AuraApp() {
         }
     }
 
+    var reassignTarget by remember { mutableStateOf<ReassignAudioTarget?>(null) }
+    val onOpenReassignAudio: (ReassignAudioTarget) -> Unit = remember {
+        { target -> reassignTarget = target }
+    }
+    val appScope = rememberCoroutineScope()
+
+    LaunchedEffect(downloadRepository, playerViewModel) {
+        downloadRepository.audioVersionReassignedFlow.collect { trackId ->
+            playerViewModel.onAudioVersionReassigned(trackId)
+        }
+    }
+
     LaunchedEffect(downloadsViewModel) {
         downloadsViewModel.resolutionErrorEvents.collect { errorMsg ->
             activeResolveJobId = null
@@ -265,6 +281,7 @@ fun AuraApp() {
     }
 
     AuraTheme {
+        CompositionLocalProvider(LocalReassignAudio provides onOpenReassignAudio) {
         AppUpdateDialog(
             state = updateState,
             updateManager = appUpdateManager,
@@ -280,6 +297,28 @@ fun AuraApp() {
                 jobId = activeResolveJobId!!,
                 viewModel = downloadsViewModel,
                 onDismiss = { activeResolveJobId = null }
+            )
+        }
+        if (reassignTarget != null) {
+            val target = reassignTarget!!
+            ReassignAudioVersionDialog(
+                trackId = target.trackId,
+                initialTitle = target.title,
+                initialArtist = target.artist,
+                initialAlbum = target.album,
+                initialCoverUri = target.coverUri,
+                downloadRepository = downloadRepository,
+                userToken = application.container.authSessionManager.getBearerHeader(),
+                onDismiss = { reassignTarget = null },
+                onAudioReassigned = { jobId ->
+                    reassignTarget = null
+                    appScope.launch {
+                        globalSnackbarHostState.showSnackbar(
+                            message = "Téléchargement de la nouvelle version lancé",
+                            duration = androidx.compose.material3.SnackbarDuration.Short
+                        )
+                    }
+                }
             )
         }
         AuraAppScaffold(
@@ -626,7 +665,8 @@ fun AuraApp() {
                 DownloadsScreen(
                     viewModel = downloadsViewModel,
                     playerViewModel = playerViewModel,
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onChangeAudioVersion = onOpenReassignAudio
                 )
             }
             composable(AuraRoute.Settings) {
@@ -650,7 +690,8 @@ fun AuraApp() {
                 CloudSyncScreen(
                     cloudFileRepository = appContainer.cloudFileRepository,
                     onNavigateBack = { navController.popBackStack() },
-                    playerViewModel = playerViewModel
+                    playerViewModel = playerViewModel,
+                    onChangeAudioVersion = onOpenReassignAudio
                 )
             }
             composable(AuraRoute.Sandbox) {
@@ -675,10 +716,14 @@ fun AuraApp() {
                     },
                     onOpenAlbum = { albumId ->
                         navController.navigate(AuraRoute.album(albumId)) { launchSingleTop = true }
+                    },
+                    onChangeAudioVersion = { trackId, title, artist, album, coverUri ->
+                        onOpenReassignAudio(ReassignAudioTarget(trackId, title, artist, album, coverUri))
                     }
                 )
             }
         }
+    }
     }
     }
 }
@@ -1058,6 +1103,22 @@ fun LazyListScope.trackList(
                 val cb = currentOnEditMetadata.value
                 if (cb != null) { { cb(track) } } else null
             }
+            val reassignAudioCallback = com.aura.music.ui.components.LocalReassignAudio.current
+            val onChangeAudioVersionLambda = remember(track.id, reassignAudioCallback != null) {
+                if (reassignAudioCallback != null) {
+                    {
+                        reassignAudioCallback(
+                            com.aura.music.ui.components.ReassignAudioTarget(
+                                trackId = track.id,
+                                title = track.title,
+                                artist = track.artistName ?: "Artiste inconnu",
+                                album = track.albumTitle,
+                                coverUri = track.coverUri
+                            )
+                        )
+                    }
+                } else null
+            }
 
             val isDownloadedLocally = !track.contentUri.isNullOrBlank()
             val isCloudOnly = !isDownloadedLocally
@@ -1083,6 +1144,7 @@ fun LazyListScope.trackList(
                 onDownloadFromCloud = onDownloadFromCloudLambda,
                 onDeleteFromCloud = onDeleteFromCloudLambda,
                 onEditMetadata = onEditMetadataLambda,
+                onChangeAudioVersion = onChangeAudioVersionLambda,
             )
         }
     }

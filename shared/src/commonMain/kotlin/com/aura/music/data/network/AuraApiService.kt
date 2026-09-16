@@ -40,6 +40,19 @@ interface AuraApiService {
         request: ResolveDownloadRequestDto
     ): AuraResponse<DownloadCreateResponseData>
 
+    suspend fun searchCandidates(
+        token: String,
+        artist: String? = null,
+        title: String? = null,
+        query: String? = null,
+        limit: Int = 10
+    ): AuraResponse<CandidatesQueryResponseData>
+
+    suspend fun reassignAudio(
+        token: String,
+        request: ReassignAudioRequestDto
+    ): AuraResponse<DownloadCreateResponseData>
+
     suspend fun getJobStatus(token: String, jobId: String): AuraResponse<JobStatusResponseData>
 
     suspend fun uploadCookies(token: String, request: CookieUploadRequestDto): AuraResponse<CookieUploadResponseData>

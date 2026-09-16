@@ -28,6 +28,31 @@ object MediaCacheManager {
         return simpleCache!!
     }
 
+    @Synchronized
+    fun evictTrack(context: Context, trackId: String) {
+        try {
+            val cache = getCache(context)
+            val keys = cache.keys
+            for (key in keys) {
+                if (key.contains(trackId)) {
+                    try {
+                        cache.removeResource(key)
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                }
+            }
+            // Also clean any downloaded mp3 in context.filesDir/downloads/
+            val downloadsDir = File(context.applicationContext.filesDir, "downloads")
+            val localMp3 = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+            if (localMp3.exists()) {
+                localMp3.delete()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MediaCacheManager", "Error evicting track $trackId from cache", e)
+        }
+    }
+
     fun createMediaSourceFactory(context: Context): DefaultMediaSourceFactory {
         val appContext = context.applicationContext
         val httpDataSourceFactory = androidx.media3.datasource.DataSource.Factory {

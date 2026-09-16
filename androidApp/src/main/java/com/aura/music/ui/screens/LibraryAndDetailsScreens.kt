@@ -1049,6 +1049,23 @@ fun FavoritesScreen(
                         } else null
                     }
 
+                    val reassignAudioCallback = com.aura.music.ui.components.LocalReassignAudio.current
+                    val onChangeAudioVersionLambda = remember(track.id, reassignAudioCallback != null) {
+                        if (reassignAudioCallback != null) {
+                            {
+                                reassignAudioCallback(
+                                    com.aura.music.ui.components.ReassignAudioTarget(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artist = track.artistName ?: "Artiste inconnu",
+                                        album = track.albumTitle,
+                                        coverUri = track.coverUri
+                                    )
+                                )
+                            }
+                        } else null
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
@@ -1073,7 +1090,8 @@ fun FavoritesScreen(
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
                         onDeleteFromCloud = onDeleteFromCloudLambda,
-                        onEditMetadata = { trackToEditMetadata = track }
+                        onEditMetadata = { trackToEditMetadata = track },
+                        onChangeAudioVersion = onChangeAudioVersionLambda
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -2469,12 +2487,14 @@ fun AlbumRouteScreen(
 fun DownloadsScreen(
     viewModel: com.aura.music.ui.downloads.DownloadsViewModel,
     playerViewModel: PlayerViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onChangeAudioVersion: ((com.aura.music.ui.components.ReassignAudioTarget) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val selectedErrorJob by viewModel.selectedErrorJob.collectAsState()
     var activeResolveJobId by remember { mutableStateOf<String?>(null) }
+    val reassignAudioCallback = onChangeAudioVersion ?: com.aura.music.ui.components.LocalReassignAudio.current
 
     val filterLabels = listOf(
         "En cours (${uiState.queuedCount})",
@@ -2607,6 +2627,19 @@ fun DownloadsScreen(
                             onInspectError = {
                                 viewModel.inspectError(job)
                             },
+                            onChangeAudioVersion = if (reassignAudioCallback != null) {
+                                {
+                                    reassignAudioCallback(
+                                        com.aura.music.ui.components.ReassignAudioTarget(
+                                            trackId = job.trackId,
+                                            title = job.title,
+                                            artist = job.artistName,
+                                            album = null,
+                                            coverUri = job.coverUri
+                                        )
+                                    )
+                                }
+                            } else null,
                             onPlay = {
                                 val downloadsDir = File(context.filesDir, "downloads")
                                 val targetFile = File(downloadsDir, "${job.trackId.replace(':', ';')}.mp3")
@@ -2879,7 +2912,8 @@ private fun DownloadJobRow(
     onRetry: () -> Unit,
     onResolve: () -> Unit,
     onInspectError: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onChangeAudioVersion: (() -> Unit)? = null
 ) {
     androidx.compose.material3.Card(
         modifier = Modifier
@@ -3039,12 +3073,23 @@ private fun DownloadJobRow(
                     }
                 }
                 "succeeded" -> {
-                    IconButton(onClick = onPlay) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = "Lire",
-                            tint = Color.Green
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onChangeAudioVersion != null) {
+                            IconButton(onClick = onChangeAudioVersion) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Tune,
+                                    contentDescription = "Changer la version audio",
+                                    tint = TextSecondary
+                                )
+                            }
+                        }
+                        IconButton(onClick = onPlay) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Lire",
+                                tint = Color.Green
+                            )
+                        }
                     }
                 }
             }
@@ -3873,6 +3918,23 @@ fun LibraryTracksScreen(
 
                     val isOfflineBlocked = isCloudOnlyTrack && !isOnline
 
+                    val reassignAudioCallback = com.aura.music.ui.components.LocalReassignAudio.current
+                    val onChangeAudioVersionLambda = remember(track.id, reassignAudioCallback != null) {
+                        if (reassignAudioCallback != null) {
+                            {
+                                reassignAudioCallback(
+                                    com.aura.music.ui.components.ReassignAudioTarget(
+                                        trackId = track.id,
+                                        title = track.title,
+                                        artist = track.artistName ?: "Artiste inconnu",
+                                        album = track.albumTitle,
+                                        coverUri = track.coverUri
+                                    )
+                                )
+                            }
+                        } else null
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
@@ -3898,7 +3960,8 @@ fun LibraryTracksScreen(
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
                         onDeleteFromCloud = onDeleteFromCloudLambda,
-                        onEditMetadata = { trackToEditMetadata = track }
+                        onEditMetadata = { trackToEditMetadata = track },
+                        onChangeAudioVersion = onChangeAudioVersionLambda
                     )
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }

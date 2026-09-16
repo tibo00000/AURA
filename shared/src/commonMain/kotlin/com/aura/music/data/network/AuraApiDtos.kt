@@ -275,6 +275,18 @@ data class ResolveDownloadRequestDto(
 )
 
 @Serializable
+data class CandidatesQueryResponseData(
+    @SerialName("items") val items: List<YtmCandidateDto>
+)
+
+@Serializable
+data class ReassignAudioRequestDto(
+    @SerialName("track_id") val trackId: String,
+    @SerialName("video_id") val videoId: String,
+    @SerialName("source_hint") val sourceHint: SourceHintDto? = null
+)
+
+@Serializable
 data class JobStatusResponseData(
     @SerialName("id") val id: String,
     @SerialName("kind") val kind: String,

@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aura.music.desktop.DesktopPlaybackOrchestrator
 import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.state.DesktopReassignTarget
 import com.aura.music.desktop.ui.*
 import com.aura.music.domain.player.PlaybackState
 import com.aura.music.domain.player.RepeatMode
@@ -63,7 +64,7 @@ fun DesktopPlayerBar(
             ) {
                 // 1. BLOC GAUCHE : Métadonnées de la piste
                 Row(
-                    modifier = Modifier.width(280.dp),
+                    modifier = Modifier.width(320.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     DesktopArtworkCover(
@@ -108,6 +109,27 @@ fun DesktopPlayerBar(
                             size = 36.dp,
                             iconSize = 20.dp
                         )
+                        IconButton(
+                            onClick = {
+                                appState.openReassignAudio(
+                                    DesktopReassignTarget(
+                                        trackId = currentTrack.trackId,
+                                        title = currentTrack.title,
+                                        artist = currentTrack.artistName,
+                                        album = currentTrack.albumTitle,
+                                        coverUri = currentTrack.coverUri
+                                    )
+                                )
+                            },
+                            modifier = Modifier.size(36.dp).handCursor()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = "Changer la version audio",
+                                tint = PureWhite.copy(alpha = 0.6f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 

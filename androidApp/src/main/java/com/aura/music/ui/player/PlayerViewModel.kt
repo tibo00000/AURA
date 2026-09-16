@@ -232,6 +232,10 @@ class PlayerViewModel(
         }
     }
 
+    fun onAudioVersionReassigned(trackId: String) {
+        orchestrator.onAudioVersionReassigned(trackId)
+    }
+
     companion object {
         private const val PROGRESS_UPDATE_INTERVAL_MS = 250L
         private const val SNAPSHOT_SAVE_INTERVAL_MS = 10_000L

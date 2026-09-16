@@ -464,6 +464,11 @@ fun main() = application {
                         playlistManager = playlistManager,
                         onPlaylistImported = { }
                     )
+
+                    DesktopReassignAudioDialog(
+                        appState = appState,
+                        orchestrator = orchestrator
+                    )
                 }
             }
         }

@@ -16,6 +16,8 @@ import com.aura.music.data.network.SourceHintDto
 import com.aura.music.data.network.CookieUploadRequestDto
 import com.aura.music.data.network.DownloadJobListResponseData
 import com.aura.music.data.network.ResolveDownloadRequestDto
+import com.aura.music.data.network.ReassignAudioRequestDto
+import com.aura.music.data.network.YtmCandidateDto
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.call.body
@@ -66,6 +68,9 @@ class DownloadRepository(
 
     private val _downloadSuccessFlow = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val downloadSuccessFlow = _downloadSuccessFlow.asSharedFlow()
+
+    private val _audioVersionReassignedFlow = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val audioVersionReassignedFlow = _audioVersionReassignedFlow.asSharedFlow()
 
     private val _resolutionAlertFlow = MutableSharedFlow<DownloadResolutionAlert>(extraBufferCapacity = 64)
     val resolutionAlertFlow = _resolutionAlertFlow.asSharedFlow()
@@ -446,6 +451,7 @@ class DownloadRepository(
                 }
             }
             _downloadSuccessFlow.tryEmit(trackId)
+            _audioVersionReassignedFlow.tryEmit(trackId)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to mark track $trackId as cloud-ready", e)
         }
@@ -503,6 +509,37 @@ class DownloadRepository(
                     updatedAt = updatedAtEpoch
                 )
             }
+            // 1. Ensure TrackEntity placeholders exist in Room before inserting jobs (strict FK constraint)
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    for (item in items) {
+                        if (database.trackDao().getRawTrackById(item.trackId) == null) {
+                            val placeholderTrack = TrackEntity(
+                                id = item.trackId,
+                                primaryArtistId = null,
+                                albumId = null,
+                                title = "Piste ${item.trackId.takeLast(6)}",
+                                normalizedTitle = "piste",
+                                displayArtistName = "Téléchargement",
+                                displayAlbumTitle = null,
+                                durationMs = null,
+                                coverUri = null,
+                                canonicalAudioSourceType = if (item.status == "succeeded") "cloud" else "cloud_only",
+                                isLiked = false,
+                                isDownloadedByAura = false,
+                                isExplicit = null,
+                                popularity = null,
+                                genresJson = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                            database.trackDao().upsertTrack(placeholderTrack)
+                        }
+                    }
+                }
+            }
+
+            // 2. Safely upsert jobs now that parent tracks are guaranteed to exist
             database.downloadJobDao().upsert(jobs)
             Log.i(TAG, "Synchronized ${jobs.size} download jobs from server")
 
@@ -512,28 +549,6 @@ class DownloadRepository(
             }
 
             for (item in items) {
-                if (database.trackDao().getRawTrackById(item.trackId) == null) {
-                    val placeholderTrack = TrackEntity(
-                        id = item.trackId,
-                        primaryArtistId = null,
-                        albumId = null,
-                        title = "Piste ${item.trackId.takeLast(6)}",
-                        normalizedTitle = "piste",
-                        displayArtistName = "Téléchargement",
-                        displayAlbumTitle = null,
-                        durationMs = null,
-                        coverUri = null,
-                        canonicalAudioSourceType = if (item.status == "succeeded") "cloud" else "cloud_only",
-                        isLiked = false,
-                        isDownloadedByAura = false,
-                        isExplicit = null,
-                        popularity = null,
-                        genresJson = null,
-                        createdAt = now,
-                        updatedAt = now
-                    )
-                    database.trackDao().upsertTrack(placeholderTrack)
-                }
                 if (item.status == "succeeded") {
                     markJobAsCloudReady(item.trackId)
                 }
@@ -670,6 +685,7 @@ class DownloadRepository(
                         database.trackDao().upsertTrack(updatedTrack)
                         Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
                         _downloadSuccessFlow.tryEmit(trackId)
+                        _audioVersionReassignedFlow.tryEmit(trackId)
                     }
                 }
             }
@@ -877,6 +893,124 @@ class DownloadRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching candidates for job $jobId", e)
             return@withContext null
+        }
+    }
+
+    /**
+     * Search alternative YouTube Music candidates for a track.
+     */
+    suspend fun searchCandidates(
+        userToken: String,
+        artist: String? = null,
+        title: String? = null,
+        query: String? = null,
+        limit: Int = 10
+    ): List<YtmCandidateDto> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.searchCandidates(
+                token = userToken,
+                artist = artist,
+                title = title,
+                query = query,
+                limit = limit
+            )
+            return@withContext response.data?.items ?: emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error searching YTM candidates", e)
+            return@withContext emptyList()
+        }
+    }
+
+    /**
+     * Manually reassign the audio stream of a track to a chosen videoId.
+     * Ensures TrackEntity exists in Room, submits reassign request to backend,
+     * updates Room download jobs, and starts polling.
+     */
+    suspend fun reassignAudio(
+        userToken: String,
+        trackId: String,
+        videoId: String,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        coverUri: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            // 1. Ensure TrackEntity exists BEFORE any job insertion (FK constraint)
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    if (database.trackDao().getRawTrackById(trackId) == null) {
+                        val placeholder = TrackEntity(
+                            id = trackId,
+                            primaryArtistId = null,
+                            albumId = null,
+                            title = title ?: "Piste ${trackId.takeLast(6)}",
+                            normalizedTitle = normalize(title ?: "piste"),
+                            displayArtistName = artistName ?: "Artiste",
+                            displayAlbumTitle = albumTitle,
+                            durationMs = null,
+                            coverUri = coverUri,
+                            canonicalAudioSourceType = "cloud_only",
+                            isLiked = false,
+                            isDownloadedByAura = false,
+                            isExplicit = null,
+                            popularity = null,
+                            genresJson = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                        database.trackDao().upsertTrack(placeholder)
+                    }
+                }
+            }
+
+            // 2. Call backend POST /downloads/reassign
+            val response = apiService.reassignAudio(
+                token = userToken,
+                request = ReassignAudioRequestDto(
+                    trackId = trackId,
+                    videoId = videoId,
+                    sourceHint = SourceHintDto(
+                        providerName = "youtube",
+                        providerTrackId = trackId,
+                        title = title,
+                        artistName = artistName,
+                        albumTitle = albumTitle,
+                        coverUri = coverUri
+                    )
+                )
+            )
+
+            val createData = response.data
+            if (createData == null) {
+                val errorMsg = response.error?.message ?: "Erreur lors de la réassignation audio"
+                return@withContext Result.failure(Exception(errorMsg))
+            }
+
+            if (title != null) {
+                jobTrackTitles[createData.jobId] = title
+            }
+
+            // 3. Mark any existing local jobs for this track as superseded, and insert new job
+            val jobEntity = DownloadJobEntity(
+                id = createData.jobId,
+                trackId = trackId,
+                providerName = "aura_backend",
+                status = createData.status,
+                progressPercent = 0f,
+                createdAt = now,
+                updatedAt = now
+            )
+            database.downloadJobDao().upsert(jobEntity)
+
+            // Auto-start polling in background
+            ensurePollingStarted(userToken)
+
+            return@withContext Result.success(createData.jobId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reassigning audio for track $trackId", e)
+            return@withContext Result.failure(e)
         }
     }
 

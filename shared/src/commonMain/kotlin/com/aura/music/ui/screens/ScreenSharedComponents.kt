@@ -584,12 +584,14 @@ fun SharedTrackRowItem(
     onDownloadFromCloud: (() -> Unit)? = null,
     onDeleteFromCloud: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
+    onChangeAudioVersion: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var menuPage by remember { mutableStateOf(0) } // 0 = Principal, 1 = Avancé (Fichiers & Données)
 
     val hasAdvancedItems = onRemoveFromPlaylist != null || onDownload != null || onDeleteDownload != null ||
-            onUploadToCloud != null || onDownloadFromCloud != null || onDeleteFromCloud != null || onEditMetadata != null
+            onUploadToCloud != null || onDownloadFromCloud != null || onDeleteFromCloud != null || onEditMetadata != null ||
+            onChangeAudioVersion != null
 
     val hasMenu = onAddToQueue != null || onAddToPlaylist != null ||
             onViewArtist != null || onViewAlbum != null || hasAdvancedItems
@@ -958,6 +960,17 @@ fun SharedTrackRowItem(
                                             onEditMetadata()
                                         },
                                         leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
+                                    )
+                                }
+                                if (onChangeAudioVersion != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Changer la version audio") },
+                                        onClick = {
+                                            menuExpanded = false
+                                            menuPage = 0
+                                            onChangeAudioVersion()
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) }
                                     )
                                 }
                             }

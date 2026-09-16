@@ -63,11 +63,13 @@ private enum class LocalFilterType {
 fun CloudSyncScreen(
     cloudFileRepository: CloudFileRepository,
     onNavigateBack: () -> Unit,
-    playerViewModel: PlayerViewModel? = null
+    playerViewModel: PlayerViewModel? = null,
+    onChangeAudioVersion: ((com.aura.music.ui.components.ReassignAudioTarget) -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var refreshTick by remember { mutableIntStateOf(0) }
+    val reassignAudioCallback = onChangeAudioVersion ?: com.aura.music.ui.components.LocalReassignAudio.current
 
     // Multi-page Tab selector: 0: Dashboard / 1: Explorateur Cloud / 2: Stockage Local
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -836,6 +838,26 @@ fun CloudSyncScreen(
                                                         modifier = Modifier.size(36.dp)
                                                     ) {
                                                         Icon(Icons.Rounded.Delete, contentDescription = "Supprimer du Cloud", tint = Color.Red.copy(alpha = 0.8f))
+                                                    }
+
+                                                    // Change audio version button
+                                                    if (reassignAudioCallback != null) {
+                                                        IconButton(
+                                                            onClick = {
+                                                                reassignAudioCallback(
+                                                                    com.aura.music.ui.components.ReassignAudioTarget(
+                                                                        trackId = file.trackId,
+                                                                        title = file.title ?: "Titre inconnu",
+                                                                        artist = file.artistName ?: "Artiste inconnu",
+                                                                        album = file.albumTitle,
+                                                                        coverUri = file.coverUri
+                                                                    )
+                                                                )
+                                                            },
+                                                            modifier = Modifier.size(36.dp)
+                                                        ) {
+                                                            Icon(Icons.Rounded.Tune, contentDescription = "Changer la version audio", tint = TextSecondary)
+                                                        }
                                                     }
                                                 }
                                             }

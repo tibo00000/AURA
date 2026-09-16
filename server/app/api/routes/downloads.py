@@ -10,15 +10,21 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from collections import defaultdict
+import time
+
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.schemas.downloads import (
+    CandidatesQueryResponse,
     CookieUploadRequest,
     DownloadCreateResponse,
     DownloadJobListResponse,
     DownloadJobResponse,
     DownloadRequest,
     PaginationMeta,
+    ReassignAudioRequest,
     ResolveDownloadRequest,
+    YtmCandidate,
 )
 from app.schemas.responses import ErrorDetails, ResponseEnvelope
 from app.services.download_service import DownloadService, DOWNLOADS_DIR
@@ -202,7 +208,93 @@ async def resolve_download(
         )
 
 
+_candidates_rate_limits: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_candidates_rate_limit(user_id: str, limit: int = 15, window_seconds: float = 60.0) -> bool:
+    now = time.time()
+    timestamps = [t for t in _candidates_rate_limits[user_id] if now - t < window_seconds]
+    if len(timestamps) >= limit:
+        _candidates_rate_limits[user_id] = timestamps
+        return False
+    timestamps.append(now)
+    _candidates_rate_limits[user_id] = timestamps
+    return True
+
+
+@router.get(
+    "/downloads/candidates",
+    response_model=ResponseEnvelope[CandidatesQueryResponse],
+)
+async def get_audio_candidates(
+    artist: Optional[str] = Query(None),
+    title: Optional[str] = Query(None),
+    query: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=20),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Search YouTube Music candidates for manual audio version selection.
+    Rate limited to 15 requests per minute per user.
+    """
+    if not _check_candidates_rate_limit(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded for audio candidates search (max 15/min).",
+        )
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    candidates = await loop.run_in_executor(
+        None,
+        lambda: download_service.search_candidates(
+            artist=artist or "",
+            title=title or "",
+            query=query,
+            limit=limit,
+        ),
+    )
+
+    items = [YtmCandidate(**c) for c in candidates]
+    return ResponseEnvelope(data=CandidatesQueryResponse(items=items))
+
+
+@router.post(
+    "/downloads/reassign",
+    response_model=ResponseEnvelope[DownloadCreateResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def reassign_audio(
+    request: ReassignAudioRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Manually reassign the audio stream of a track to a specific YouTube video_id.
+    """
+    try:
+        job = await download_service.reassign_track_audio(
+            user_id=current_user.id,
+            track_id=request.track_id,
+            video_id=request.video_id,
+            source_hint=request.source_hint.model_dump() if request.source_hint else None,
+        )
+
+        data = DownloadCreateResponse(
+            job_id=job.id,
+            track_id=job.track_id,
+            status=job.status,
+        )
+        return ResponseEnvelope(data=data)
+
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
 @router.delete(
+
     "/downloads/{job_id}",
     response_model=ResponseEnvelope[dict],
 )

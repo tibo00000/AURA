@@ -680,6 +680,23 @@ private fun PlaylistTrackRowItem(
         } else null
     }
 
+    val reassignAudioCallback = com.aura.music.ui.components.LocalReassignAudio.current
+    val onChangeAudioVersionLambda = remember(track.trackId, reassignAudioCallback != null) {
+        if (reassignAudioCallback != null) {
+            {
+                reassignAudioCallback(
+                    com.aura.music.ui.components.ReassignAudioTarget(
+                        trackId = track.trackId,
+                        title = track.title,
+                        artist = track.artistName ?: "Artiste inconnu",
+                        album = track.albumTitle,
+                        coverUri = track.coverUri
+                    )
+                )
+            }
+        } else null
+    }
+
     SharedTrackRowItem(
         title = track.title,
         subtitle = track.artistName ?: "Artiste inconnu",
@@ -698,7 +715,8 @@ private fun PlaylistTrackRowItem(
         onViewAlbum = onViewAlbumClick,
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda,
-        onEditMetadata = if (onEditMetadata != null) { { onEditMetadata(track.toTrackListRow()) } } else null
+        onEditMetadata = if (onEditMetadata != null) { { onEditMetadata(track.toTrackListRow()) } } else null,
+        onChangeAudioVersion = onChangeAudioVersionLambda
     )
 }
 

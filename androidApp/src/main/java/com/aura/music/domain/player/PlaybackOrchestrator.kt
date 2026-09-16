@@ -21,6 +21,7 @@ import com.aura.music.data.repository.ArtistDetail
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.service.PlaybackService
 import com.aura.music.data.network.BuildConfig
+import com.aura.music.core.MediaCacheManager
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
@@ -251,6 +252,25 @@ class PlaybackOrchestrator(
         android.util.Log.d("PlaybackOrchestrator", "syncPlaylistAfterExternalChange: triggering playlist sync")
         syncExoPlayerPlaylist()
         syncUiState()
+    }
+
+    /**
+     * Appelé lorsqu'une version audio a été réassignée avec succès.
+     * Évince le cache de flux de la piste et rafraîchit immédiatement ExoPlayer si la piste est en cours de lecture.
+     */
+    fun onAudioVersionReassigned(trackId: String) {
+        val ctrl = controller ?: return
+        val current = _uiState.value.currentTrack
+        MediaCacheManager.evictTrack(context, trackId)
+        if (current?.trackId == trackId) {
+            val currentPos = ctrl.currentPosition
+            val isPlaying = ctrl.isPlaying
+            ctrl.clearMediaItems()
+            syncExoPlayerPlaylist(currentPos)
+            if (isPlaying) {
+                ctrl.play()
+            }
+        }
     }
 
     init {

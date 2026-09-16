@@ -25,6 +25,8 @@ class DesktopDownloadManager(
 ) {
     var apiToken: String? = null
 
+    val audioVersionReassignedFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>()
+
     private val isSyncing = AtomicBoolean(false)
     private var downloadSyncJob: Job? = null
     private val activeJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -137,6 +139,115 @@ class DesktopDownloadManager(
 
     suspend fun clearCompletedJobs() = withContext(Dispatchers.IO) {
         database.downloadJobDao().clearCompletedJobs()
+    }
+
+    fun evictTrackCache(trackId: String) {
+        val appDir = File(System.getProperty("user.home"), ".aura")
+        val cleanId = trackId.replace(':', ';')
+
+        // Éviction du cache de streaming
+        val streamCacheDir = File(appDir, "cache/stream")
+        streamCacheDir.listFiles()?.filter { it.name.startsWith("$cleanId.") || it.name.startsWith("$cleanId-") }?.forEach {
+            try { it.delete() } catch (_: Exception) {}
+        }
+
+        // Éviction des fichiers téléchargés
+        val downloadsDir = File(appDir, "downloads")
+        downloadsDir.listFiles()?.filter { it.name.startsWith("$cleanId.") || it.name.startsWith("$cleanId-") }?.forEach {
+            try { it.delete() } catch (_: Exception) {}
+        }
+    }
+
+    suspend fun searchCandidates(
+        artist: String,
+        title: String,
+        query: String? = null,
+        limit: Int = 10
+    ): List<com.aura.music.data.network.YtmCandidateDto> = withContext(Dispatchers.IO) {
+        val token = apiToken ?: return@withContext emptyList()
+        try {
+            val response = apiService.searchCandidates(
+                token = token,
+                artist = artist,
+                title = title,
+                query = query,
+                limit = limit
+            )
+            response.data?.items ?: emptyList()
+        } catch (e: Exception) {
+            System.err.println("Failed to search candidates: ${e.message}")
+            emptyList()
+        }
+    }
+
+    suspend fun reassignAudio(
+        trackId: String,
+        videoId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String? = null,
+        coverUri: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val token = apiToken ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+        try {
+            val now = System.currentTimeMillis()
+            // Invariant Room Foreign Key : garantir impérativement que la TrackEntity existe avant tout DownloadJobEntity
+            // et avec primaryArtistId = null et albumId = null pour ne violer aucune FK transitive
+            val existing = database.trackDao().getRawTrackById(trackId)
+            if (existing == null) {
+                database.trackDao().upsertTracks(
+                    listOf(
+                        TrackEntity(
+                            id = trackId,
+                            primaryArtistId = null,
+                            albumId = null,
+                            title = title,
+                            normalizedTitle = title.lowercase().trim(),
+                            displayArtistName = artistName,
+                            displayAlbumTitle = albumTitle,
+                            durationMs = 0L,
+                            coverUri = coverUri,
+                            canonicalAudioSourceType = "cloud_only",
+                            isLiked = false,
+                            isDownloadedByAura = false,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                )
+            }
+
+            // Éviction locale immédiate
+            evictTrackCache(trackId)
+
+            val request = com.aura.music.data.network.ReassignAudioRequestDto(
+                trackId = trackId,
+                videoId = videoId,
+                sourceHint = SourceHintDto(
+                    providerName = "deezer",
+                    providerTrackId = trackId,
+                    title = title,
+                    artistName = artistName,
+                    albumTitle = albumTitle,
+                    coverUri = coverUri
+                )
+            )
+
+            val response = apiService.reassignAudio(token, request)
+            val newJobId = response.data?.jobId ?: "job_${System.currentTimeMillis()}"
+            activeJobIds.add(newJobId)
+
+            // Déclencher la synchronisation immédiate des jobs
+            syncActiveJobs(token)
+
+            // Émettre l'événement de réassignation
+            audioVersionReassignedFlow.emit(trackId)
+
+            Result.success(newJobId)
+        } catch (e: Exception) {
+            System.err.println("Failed to reassign audio for $trackId: ${e.message}")
+            Result.failure(e)
+        }
     }
 
     suspend fun syncActiveJobs(token: String): Boolean = withContext(Dispatchers.IO) {
@@ -331,6 +442,7 @@ class DesktopDownloadManager(
                 }
             }
             System.out.println("Downloaded file for job $jobId saved and committed to Room successfully.")
+            audioVersionReassignedFlow.emit(trackId)
         } catch (e: Exception) {
             System.err.println("Failed to retrieve physical file for job $jobId: ${e.message}")
         }

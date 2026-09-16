@@ -96,6 +96,14 @@ class DesktopPlaybackOrchestrator(
         downloadManager?.startLoop()
         cloudSyncManager?.startLoop()
 
+        downloadManager?.let { dm ->
+            scope.launch {
+                dm.audioVersionReassignedFlow.collect { trackId ->
+                    onAudioVersionReassigned(trackId)
+                }
+            }
+        }
+
         val token = apiToken
         if (!token.isNullOrBlank()) {
             scope.launch(Dispatchers.IO) {
@@ -933,6 +941,47 @@ class DesktopPlaybackOrchestrator(
     fun cancelDownloadJob(jobId: String) {
         scope.launch(Dispatchers.IO) {
             downloadManager?.cancelJob(jobId)
+        }
+    }
+
+    suspend fun searchCandidates(
+        artist: String,
+        title: String,
+        query: String? = null,
+        limit: Int = 10
+    ): List<com.aura.music.data.network.YtmCandidateDto> {
+        return downloadManager?.searchCandidates(artist, title, query, limit) ?: emptyList()
+    }
+
+    suspend fun reassignAudio(
+        trackId: String,
+        videoId: String,
+        title: String,
+        artistName: String,
+        albumTitle: String? = null,
+        coverUri: String? = null
+    ): Result<String> {
+        return downloadManager?.reassignAudio(trackId, videoId, title, artistName, albumTitle, coverUri)
+            ?: Result.failure(IllegalStateException("DownloadManager not initialized"))
+    }
+
+    fun onAudioVersionReassigned(trackId: String) {
+        downloadManager?.evictTrackCache(trackId)
+        val current = _uiState.value.currentTrack
+        if (current != null && current.trackId == trackId) {
+            val currentPos = audioPlayer.getCurrentPosition()
+            val wasPlaying = audioPlayer.isPlaying()
+            scope.launch(Dispatchers.Default) {
+                val newContentUri = database.trackDao().getTrackContentUri(trackId)
+                val updatedQueued = current.copy(contentUri = newContentUri)
+                playTrackItem(updatedQueued)
+                if (currentPos > 0) {
+                    audioPlayer.seekTo(currentPos)
+                }
+                if (!wasPlaying) {
+                    audioPlayer.pause()
+                }
+            }
         }
     }
 
