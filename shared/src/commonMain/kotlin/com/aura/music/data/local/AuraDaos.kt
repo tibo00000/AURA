@@ -576,13 +576,12 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked,
+            1 AS is_liked,
             tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         INNER JOIN track_likes ON track_likes.track_id = tracks.id
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.is_liked = 1
         ORDER BY track_likes.liked_at DESC
         """,
     )
@@ -600,13 +599,12 @@ interface TrackDao {
             track_media_links.content_uri AS content_uri,
             tracks.duration_ms AS duration_ms,
             tracks.cover_uri AS cover_uri,
-            tracks.is_liked AS is_liked,
+            1 AS is_liked,
             tracks.created_at AS created_at,
             tracks.updated_at AS updated_at
         FROM tracks
         INNER JOIN track_likes ON track_likes.track_id = tracks.id
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.is_liked = 1
         ORDER BY track_likes.liked_at DESC
         """,
     )
