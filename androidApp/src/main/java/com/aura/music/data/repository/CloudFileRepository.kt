@@ -11,7 +11,12 @@ import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.SyncedFileResponseData
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -33,6 +38,10 @@ class CloudFileRepository(
     companion object {
         private const val TAG = "CloudFileRepository"
     }
+
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var ongoingRefreshDeferred: Deferred<Unit>? = null
+    private val refreshLock = Any()
 
     private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
 
@@ -58,6 +67,34 @@ class CloudFileRepository(
     }
 
     suspend fun refreshSyncedTrackIds() {
+        val deferred = synchronized(refreshLock) {
+            val existing = ongoingRefreshDeferred
+            if (existing != null && existing.isActive) {
+                existing
+            } else {
+                val newDeferred = repositoryScope.async {
+                    try {
+                        doRefreshSyncedTrackIds()
+                    } finally {
+                        synchronized(refreshLock) {
+                            if (ongoingRefreshDeferred === this) {
+                                ongoingRefreshDeferred = null
+                            }
+                        }
+                    }
+                }
+                ongoingRefreshDeferred = newDeferred
+                newDeferred
+            }
+        }
+        try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            throw e
+        }
+    }
+
+    private suspend fun doRefreshSyncedTrackIds() {
         val authManager = com.aura.music.core.AuthSessionManager.getInstance(context)
         if (!authManager.isLoggedIn.value) {
             _syncedTrackIds.value = emptySet()
@@ -74,6 +111,7 @@ class CloudFileRepository(
                 Log.i(TAG, "Refreshed synced track IDs: ${_syncedTrackIds.value.size} tracks")
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Failed to refresh synced track IDs", e)
         }
     }

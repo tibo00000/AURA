@@ -332,18 +332,18 @@ class SyncService:
         if ops_to_record:
             try:
                 for i in range(0, len(ops_to_record), 100):
-                    supabase.table("processed_operations").insert(ops_to_record[i:i + 100]).execute()
+                    supabase.table("processed_operations").upsert(ops_to_record[i:i + 100], on_conflict="operation_id").execute()
             except Exception as e:
                 logger.error("Failed to bulk record processed_operations: %s", e)
 
         # Record completed batch for future idempotency checks
         if batch_id:
             try:
-                supabase.table("processed_batches").insert({
+                supabase.table("processed_batches").upsert({
                     "batch_id": batch_id,
                     "user_id": user_id,
                     "processed_at": datetime.now(timezone.utc).isoformat(),
-                }).execute()
+                }, on_conflict="batch_id").execute()
             except Exception as be:
                 logger.debug("Failed to record processed_batches for %s: %s", batch_id, be)
 
