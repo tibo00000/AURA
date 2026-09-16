@@ -300,6 +300,12 @@ Resultat attendu :
 
 ## Releases Déployées
 
+### 🚀 [RELEASE v0.3.0] - 2026-09-16 (versionCode: 3)
+**Nouveautés pour l'utilisateur :**
+- **Changement manuel de la version audio** : Choisissez et remplacez en un clic la version audio d'un morceau parmi les versions YouTube Music suggérées (live, studio, remix) depuis le menu 3-points, la file d'attente ou la gestion des téléchargements.
+- **Continuité d'écoute fluide** : Le lecteur synchronise et recharge immédiatement la nouvelle version sans coupure de lecture et en conservant votre position d'écoute.
+- **Synchronisation & Téléchargements** : Gestion plus rapide et résiliente des téléchargements et mise à jour en temps réel sur tous vos appareils.
+
 ### 🚀 [RELEASE v0.2.0] - 2026-09-08 (versionCode: 2)
 **Nouveautés pour l'utilisateur :**
 - Système de mise à jour automatique in-app (OTA) sécurisé avec notification de mise à jour, téléchargement direct et intégrité SHA-256.

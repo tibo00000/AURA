@@ -74,12 +74,12 @@ Toujours sur le VPS, exécutez la commande suivante pour aligner le descripteur 
 ```bash
 docker exec -i aura-api bash -c 'cat << "EOF" > /app/downloads/updates/version.json
 {
-  "version_code": 2,
-  "version_name": "0.2.0",
+  "version_code": 3,
+  "version_name": "0.3.0",
   "download_url": "/app/updates/latest.apk",
   "sha256": "auto",
-  "release_notes": "Tri dynamique des résultats, streaming éphémère multi-comptes et mise à jour OTA sécurisée.",
-  "min_supported_version": 1
+  "release_notes": "Changement manuel de la version audio d'un morceau, reprise de lecture sans coupure et fluidité améliorée.",
+  "min_supported_version": 2
 }
 EOF'
 ```

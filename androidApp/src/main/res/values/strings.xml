@@ -21,5 +21,15 @@
 
     <string name="whats_new_v2_feature4_title">Fluidité et Performances audio</string>
     <string name="whats_new_v2_feature4_desc">Chargement instantané de l\'interface, transitions optimisées et gestion haute performance de la file d\'attente.</string>
+
+    <!-- Version 3 / 0.3.0 features -->
+    <string name="whats_new_v3_feature1_title">Changer la version audio</string>
+    <string name="whats_new_v3_feature1_desc">Choisissez la version souhaitée (live, studio, remix) parmi les suggestions YouTube Music depuis le menu d\'un morceau.</string>
+
+    <string name="whats_new_v3_feature2_title">Écoute sans coupure</string>
+    <string name="whats_new_v3_feature2_desc">La nouvelle version audio est rechargée instantanément en conservant votre position de lecture.</string>
+
+    <string name="whats_new_v3_feature3_title">Synchronisation &amp; Téléchargements</string>
+    <string name="whats_new_v3_feature3_desc">Gestion plus rapide et résiliente des téléchargements et mise à jour en temps réel sur vos appareils.</string>
 </resources>
 
