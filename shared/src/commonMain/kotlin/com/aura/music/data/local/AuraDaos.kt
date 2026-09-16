@@ -880,6 +880,9 @@ interface TrackLikeDao {
     @Query("SELECT COUNT(*) > 0 FROM track_likes WHERE track_id = :trackId")
     suspend fun isTrackLiked(trackId: String): Boolean
 
+    @Query("SELECT track_id FROM track_likes")
+    suspend fun getAllLikedTrackIds(): List<String>
+
     @Query("SELECT COUNT(*) > 0 FROM track_likes WHERE track_id = :trackId")
     fun isLikedFlow(trackId: String): Flow<Boolean>
 }

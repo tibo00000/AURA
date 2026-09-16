@@ -45,7 +45,10 @@ class SyncRepository(
         private const val WORK_NAME_ONETIME = "aura_onetime_sync"
     }
 
-    private fun getAuthToken(): String = authSessionManager?.getBearerHeader() ?: AUTH_TOKEN
+    private fun getAuthToken(): String {
+        val userToken = authSessionManager?.getBearerHeader().orEmpty().trim()
+        return if (userToken.isNotEmpty()) userToken else AUTH_TOKEN
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -191,8 +194,7 @@ class SyncRepository(
         }
 
         if (authSessionManager != null && !authSessionManager.isLoggedIn.value) {
-            Log.d(TAG, "Sync skipped: user is not logged in.")
-            return@withContext false
+            Log.d(TAG, "Sync: user not logged in via Supabase Auth, proceeding with single-owner transitional mode.")
         }
 
         if (!force && !isNetworkAllowed(settings.statsSyncNetworkPolicy)) {
@@ -243,8 +245,44 @@ class SyncRepository(
         val snapshot = data.snapshot
         val serverToken = data.syncToken.value
 
-        // Clear local sync outbox as we are starting fresh
-        database.syncOutboxDao().clearAll()
+        // Flush pending outbox operations to server so local mutations made offline are never lost
+        val pendingOps = database.syncOutboxDao().getPendingOperations()
+        if (pendingOps.isNotEmpty()) {
+            Log.i(TAG, "Bootstrap: detected ${pendingOps.size} pending outbox operations. Flushing before applying snapshot...")
+            try {
+                val chunks = pendingOps.chunked(30)
+                for (chunk in chunks) {
+                    val syncOps = chunk.map { op ->
+                        SyncOperationDto(
+                            operationId = op.id,
+                            entityType = op.entityType,
+                            entityId = op.entityId,
+                            operationType = op.operationType,
+                            deviceId = deviceId,
+                            occurredAt = formatMillisToIsoDate(op.createdAt),
+                            payload = json.decodeFromString<JsonObject>(op.payloadJson)
+                        )
+                    }
+                    val request = PushBatchRequestDto(
+                        deviceId = deviceId,
+                        batchId = "batch_boot_${UUID.randomUUID()}",
+                        sentAt = formatMillisToIsoDate(System.currentTimeMillis()),
+                        operations = syncOps
+                    )
+                    val pushResponse = apiService.pushBatch(getAuthToken(), request)
+                    val pushData = pushResponse.data
+                    if (pushData != null) {
+                        for (res in pushData.results) {
+                            if (res.status in listOf("applied", "merged", "ignored_duplicate", "conflict")) {
+                                database.syncOutboxDao().deleteOperation(res.operationId)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Pre-bootstrap outbox flush warning: ${e.message}. Pending operations retained.")
+            }
+        }
 
         // 1. Process server snapshot settings
         val userSettingsMap = snapshot["user_settings"] as? JsonObject

@@ -35,6 +35,10 @@ class LocalMediaScanner(
         val resolvedArtistIds = mutableMapOf<String, String>()
         val resolvedAlbumIds = mutableMapOf<String, String>()
 
+        val likedTrackIds = database.trackLikeDao().getAllLikedTrackIds().toSet()
+        val playlistTrackIds = database.playlistDao().getAllPlaylistTrackIds().toSet()
+        val preservedTrackIds = likedTrackIds + playlistTrackIds
+
         // 1. Scan private downloads/ directory
         val downloadsDir = File(context.filesDir, "downloads")
         if (downloadsDir.exists() && downloadsDir.isDirectory) {
@@ -151,7 +155,7 @@ class LocalMediaScanner(
                             durationMs = durationMs,
                             coverUri = coverUri,
                             canonicalAudioSourceType = "downloaded",
-                            isLiked = existingTrack?.isLiked ?: false,
+                            isLiked = existingTrack?.isLiked == true || likedTrackIds.contains(trackId),
                             isDownloadedByAura = true,
                             isExplicit = null,
                             popularity = null,
@@ -256,7 +260,7 @@ class LocalMediaScanner(
                         durationMs = existingTrack?.durationMs ?: media.durationMs,
                         coverUri = coverUri,
                         canonicalAudioSourceType = "local",
-                        isLiked = existingTrack?.isLiked ?: false,
+                        isLiked = existingTrack?.isLiked == true || likedTrackIds.contains(trackId),
                         isDownloadedByAura = false,
                         isExplicit = null,
                         popularity = null,
@@ -308,7 +312,18 @@ class LocalMediaScanner(
                 }
 
                 if (obsoleteIds.isNotEmpty()) {
-                    database.trackDao().deleteTracksByIds(obsoleteIds)
+                    // Les morceaux qui sont aimés ou présents dans une playlist sont préservés pour ne pas détruire
+                    // les métadonnées de l'utilisateur par cascade SQLite (onDelete = CASCADE).
+                    // On supprime uniquement leur lien média physique (track_media_links).
+                    val toDeleteCompletely = obsoleteIds.filter { it !in preservedTrackIds }
+                    val toDetachOnly = obsoleteIds.filter { it in preservedTrackIds }
+
+                    if (toDeleteCompletely.isNotEmpty()) {
+                        database.trackDao().deleteTracksByIds(toDeleteCompletely)
+                    }
+                    for (id in toDetachOnly) {
+                        database.trackDao().deleteTrackMediaLinksByTrackId(id)
+                    }
                 }
 
                 if (scannedTracks.isNotEmpty()) {
