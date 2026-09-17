@@ -1,7 +1,7 @@
 package com.aura.music.data.repository
 
 import android.util.Log
-import com.aura.music.BuildConfig
+import com.aura.music.data.network.BuildConfig
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.DiscoveryFeedResponseData
 import com.aura.music.data.network.DiscoveryItemResponseData
@@ -53,14 +53,16 @@ class DiscoveryRepository(
             if (forceGenerate) {
                 Log.d(TAG, "Génération d'un nouveau lot de découvertes demandée...")
                 val genResp = apiService.generateDiscoveryBatch(token)
-                if (genResp.error != null) {
-                    Log.w(TAG, "Erreur génération batch: ${genResp.error.message}")
+                val genError = genResp.error
+                if (genError != null) {
+                    Log.w(TAG, "Erreur génération batch: ${genError.message}")
                 }
             }
 
             val feedResp = apiService.getDiscoveryFeed(token)
-            if (feedResp.error != null) {
-                _feedState.value = DiscoveryFeedState.Error(feedResp.error.message)
+            val feedError = feedResp.error
+            if (feedError != null) {
+                _feedState.value = DiscoveryFeedState.Error(feedError.message)
                 return@withContext
             }
 

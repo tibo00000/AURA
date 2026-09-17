@@ -8,6 +8,7 @@ import com.aura.music.data.repository.DiscoveryFeedState
 import com.aura.music.data.repository.DiscoveryRepository
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.domain.player.PlaybackOrchestrator
+import com.aura.music.domain.player.PlayerEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -126,12 +127,14 @@ class DiscoveryViewModel(
 
         viewModelScope.launch {
             // Démarre la lecture dans le contexte de découverte
-            playbackOrchestrator.handlePlay(
-                trackId = selectedTrack.trackId,
-                contextType = "discovery",
-                contextId = uiState.value.batchId ?: "discovery_mix",
-                contextTracks = queuedTracks,
-                startIndex = targetIndex
+            playbackOrchestrator.onEvent(
+                PlayerEvent.PlayTrack(
+                    trackId = selectedTrack.trackId,
+                    contextType = "discovery",
+                    contextId = uiState.value.batchId ?: "discovery_mix",
+                    contextTracks = queuedTracks,
+                    startIndex = targetIndex
+                )
             )
             // Envoi du feedback played
             discoveryRepository.recordFeedback(selectedItem.id, "played")
@@ -149,7 +152,7 @@ class DiscoveryViewModel(
             }
 
             try {
-                localLibraryRepository.setTrackLiked(
+                localLibraryRepository.toggleLike(
                     trackId = effectiveTrackId,
                     currentlyLiked = isCurrentlyLiked,
                     contextType = "discovery",
