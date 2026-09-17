@@ -12,7 +12,7 @@ All endpoints require authentication.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.schemas.discover import (
@@ -50,8 +50,10 @@ def _get_service() -> DiscoveryService:
 @router.post(
     "/generate",
     response_model=ResponseEnvelope[GenerateBatchResponse],
+    status_code=status.HTTP_200_OK,
 )
 async def generate_discovery_batch(
+    force: bool = Query(default=True, description="Force generation even if recent batch is fresh"),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
@@ -60,25 +62,25 @@ async def generate_discovery_batch(
     Runs 4 strategies in parallel (artist_radar, genre_drift, artist_radio, wildcard),
     mixes results according to adaptive weights, and triggers pre-downloads for top items.
 
-    If a recent batch is still fresh (< 24h), returns it without regenerating.
+    If force=False and a recent batch is still fresh (< 24h), returns it without regenerating.
     If a generation is already in progress for this user, returns immediately.
     """
     service = _get_service()
     try:
-        result = await service.generate_batch(user_id=current_user.id)
+        result = await service.generate_batch(user_id=current_user.id, force=force)
 
         if result.get("skipped"):
             return ResponseEnvelope(data=GenerateBatchResponse(
-                batch_id=result.get("batch_id", ""),
+                batch_id=result.get("batch_id"),
                 items_generated=0,
                 predownloads_triggered=0,
                 is_cold_start=result.get("is_cold_start", False),
             ))
 
         return ResponseEnvelope(data=GenerateBatchResponse(
-            batch_id=result["batch_id"],
-            items_generated=result["items_generated"],
-            predownloads_triggered=result["predownloads_triggered"],
+            batch_id=result.get("batch_id"),
+            items_generated=result.get("items_generated", 0),
+            predownloads_triggered=result.get("predownloads_triggered", 0),
             is_cold_start=result.get("is_cold_start", False),
         ))
     except Exception as e:

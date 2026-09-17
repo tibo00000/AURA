@@ -57,9 +57,9 @@ class DiscoveryFeedResponse(BaseModel):
 
 class GenerateBatchResponse(BaseModel):
     """Response for POST /me/discover/generate."""
-    batch_id: str
-    items_generated: int
-    predownloads_triggered: int
+    batch_id: Optional[str] = None
+    items_generated: int = 0
+    predownloads_triggered: int = 0
     is_cold_start: bool = False
 
 

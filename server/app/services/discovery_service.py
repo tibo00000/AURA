@@ -663,11 +663,11 @@ class DiscoveryService:
     # Orchestration
     # ===================================================================
 
-    async def generate_batch(self, user_id: str, target_count: int = 30) -> dict:
+    async def generate_batch(self, user_id: str, target_count: int = 30, force: bool = False) -> dict:
         """
         Main pipeline: generate a batch of discovery items.
 
-        1. Check staleness (skip if latest batch < STALENESS_HOURS old)
+        1. Check staleness (skip if latest batch < STALENESS_HOURS old and not force)
         2. Acquire per-user mutex
         3. Purge expired files
         4. Build user profile
@@ -685,9 +685,10 @@ class DiscoveryService:
             return {"batch_id": None, "items_generated": 0, "predownloads_triggered": 0, "is_cold_start": False, "skipped": True}
 
         async with lock:
-            # Staleness check
-            if await self._is_recent_batch_fresh(user_id):
+            # Staleness check (can be bypassed with force=True)
+            if not force and await self._is_recent_batch_fresh(user_id):
                 latest = await self._get_latest_batch_id(user_id)
+                logger.info("Recent batch is still fresh for user %s, returning %s", user_id, latest)
                 return {"batch_id": latest, "items_generated": 0, "predownloads_triggered": 0, "is_cold_start": False, "skipped": True}
 
             # Purge expired items + files
@@ -732,6 +733,16 @@ class DiscoveryService:
 
             # Score and diversify (MMR)
             final = self._score_and_diversify(mixed, profile, target_count)
+
+            # Expire prior active batch items so the feed serves the new mix
+            try:
+                supabase.table("discovery_items") \
+                    .update({"is_expired": True}) \
+                    .eq("user_id", user_id) \
+                    .eq("is_expired", False) \
+                    .execute()
+            except Exception as e:
+                logger.debug("Failed to expire prior discovery items for user %s: %s", user_id, e)
 
             # Persist
             batch_id = generate_id("batch")
