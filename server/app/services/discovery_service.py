@@ -889,8 +889,9 @@ class DiscoveryService:
                     provider_name="youtube",
                     source_hint={
                         "title": item.track_title,
-                        "artist": item.artist_name,
-                        "album": item.album_title,
+                        "artist_name": item.artist_name,
+                        "album_title": item.album_title,
+                        "cover_uri": item.cover_url,
                         "is_discovery_preload": True,
                     },
                 )

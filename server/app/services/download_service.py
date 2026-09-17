@@ -1498,19 +1498,24 @@ class DownloadService:
                             audio_final = non_thumb[0]
 
                     if audio_final is not None and audio_final.exists():
-                        # Auto-register in user's personal Cloud sync storage
-                        _auto_register_in_sync_files(
-                            user_id=job.user_id,
-                            track_id=job.track_id,
-                            audio_file=audio_final,
-                            title=title,
-                            artist_name=artist,
-                            album_title=album,
-                            duration_ms=duration_ms,
-                            artist_id=artist_id,
-                            album_id=album_id,
-                            cover_uri=cover_uri,
-                        )
+                        # Skip sync registration for discovery preloads —
+                        # these files must NOT appear in the user's library.
+                        # They live only in _global_cache until the user adopts them.
+                        is_preload = (source_hint or {}).get("is_discovery_preload", False)
+                        if not is_preload:
+                            # Auto-register in user's personal Cloud sync storage
+                            _auto_register_in_sync_files(
+                                user_id=job.user_id,
+                                track_id=job.track_id,
+                                audio_file=audio_final,
+                                title=title,
+                                artist_name=artist,
+                                album_title=album,
+                                duration_ms=duration_ms,
+                                artist_id=artist_id,
+                                album_id=album_id,
+                                cover_uri=cover_uri,
+                            )
                         if (source_hint or {}).get("trigger") == "manual_reassign":
                             _propagate_reassigned_track_to_all_users(
                                 track_id=job.track_id,
