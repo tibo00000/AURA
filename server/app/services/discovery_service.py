@@ -114,6 +114,7 @@ class DiscoveryService:
         # NOTE: Process-local only. Confirmed single-worker Uvicorn deployment.
         self._generation_locks: Dict[str, asyncio.Lock] = {}
         self._generation_locks_guard = asyncio.Lock()
+        self._track_artist_cache: Dict[str, Tuple[str, str]] = {}
 
     async def _get_generation_lock(self, user_id: str) -> asyncio.Lock:
         """Get or create a per-user asyncio lock for generate_batch."""
@@ -145,7 +146,7 @@ class DiscoveryService:
                 .execute()
             for like in (likes_resp.data or []):
                 track_id = like["track_id"]
-                artist_info = await self._resolve_artist_from_track_id(track_id)
+                artist_info = await self._resolve_artist_from_track_id(track_id, user_id)
                 if artist_info:
                     aid, aname = artist_info
                     artist_names[aid] = aname
@@ -175,7 +176,7 @@ class DiscoveryService:
                     .execute()
                 artist_counts: Dict[str, int] = defaultdict(int)
                 for item in (items_resp.data or []):
-                    artist_info = await self._resolve_artist_from_track_id(item["track_id"])
+                    artist_info = await self._resolve_artist_from_track_id(item["track_id"], user_id)
                     if artist_info:
                         aid, aname = artist_info
                         artist_names[aid] = aname
@@ -198,7 +199,7 @@ class DiscoveryService:
                     continue
                 completion = item.get("completion_percent") or 0
                 if completion > 0.7:
-                    artist_info = await self._resolve_artist_from_track_id(item["track_id"])
+                    artist_info = await self._resolve_artist_from_track_id(item["track_id"], user_id)
                     if artist_info:
                         aid, aname = artist_info
                         artist_names[aid] = aname
@@ -235,39 +236,85 @@ class DiscoveryService:
 
         return profile
 
-    async def _resolve_artist_from_track_id(self, track_id: str) -> Optional[tuple]:
+    async def _resolve_artist_from_track_id(self, track_id: str, user_id: Optional[str] = None) -> Optional[tuple]:
         """
         Extract (artist_id, artist_name) from a track_id.
-        Looks up likes/playlist_items which store track_ids — we need to map
-        back to an artist. Uses Deezer resolution if track_id is trk_deezer_*.
-        Falls back to searching the local catalog tables.
+        Handles:
+        1. In-memory cache for speed
+        2. AURA opaque transport IDs (e.g. trk_djE... => Deezer track ID)
+        3. Plain Deezer track IDs (trk_deezer_12345, deezer:12345)
+        4. User synced files metadata (.json on VPS) for track:local:* and other tracks
+        5. Global cache metadata on VPS
         """
-        # For Deezer-style track IDs, extract artist from Deezer
+        if track_id in self._track_artist_cache:
+            return self._track_artist_cache[track_id]
+
+        # 1. Try decoding AURA transport codec (e.g. trk_djE6dHJhY2s6ZGVlemVyOjUxODQ1ODA5Mg)
+        if track_id.startswith("trk_"):
+            try:
+                from app.core.aura_id_codec import parse_aura_id
+                ref = parse_aura_id(track_id)
+                if ref.provider_name == "deezer" and ref.provider_id:
+                    track_data = await self.deezer.get_track(ref.provider_id)
+                    artist = track_data.get("artist", {})
+                    if artist.get("name"):
+                        res = (f"deezer:{artist['id']}", artist["name"])
+                        self._track_artist_cache[track_id] = res
+                        return res
+            except Exception:
+                pass
+
+        # 2. Plain Deezer format (trk_deezer_12345, deezer:12345)
         if "deezer" in track_id.lower():
             try:
-                # Extract numeric ID from formats like trk_deezer_12345
-                parts = track_id.split("_")
-                for p in reversed(parts):
+                for p in track_id.replace(":", "_").split("_"):
                     if p.isdigit():
                         track_data = await self.deezer.get_track(p)
                         artist = track_data.get("artist", {})
                         if artist.get("name"):
-                            return (f"deezer:{artist['id']}", artist["name"])
-                        break
-            except DeezerError:
+                            res = (f"deezer:{artist['id']}", artist["name"])
+                            self._track_artist_cache[track_id] = res
+                            return res
+            except Exception:
                 pass
 
-        # For local track IDs (track:local:*), try catalog tables
+        # 3. Look up metadata in user's sync directory on VPS (for track:local:* etc.)
         try:
-            # Look up in the catalog to find an artist_name
-            # The likes table stores track_id but not artist info,
-            # so we derive it from the track_id format
-            if track_id.startswith("track:local:"):
-                # Local tracks: use the slug pattern
-                # Can't easily resolve without Room DB access on server side
-                pass
+            from app.api.routes.sync_files import _paths, _read_metadata
+            from app.services.download_service import _find_globally_cached_track
+            from app.core.aura_id_codec import get_track_id_aliases
+
+            candidates = get_track_id_aliases(track_id)
+            for cand in candidates:
+                if user_id:
+                    _, meta_path = _paths(user_id, cand)
+                    meta = _read_metadata(meta_path)
+                    if meta and meta.get("artist_name"):
+                        aname = meta["artist_name"].strip()
+                        aid = meta.get("artist_id") or f"artist:{aname.lower()}"
+                        res = (aid, aname)
+                        self._track_artist_cache[track_id] = res
+                        return res
+
+                # Fallback to _global_cache
+                cached = _find_globally_cached_track(cand)
+                if cached and cached[1] and cached[1].get("artist_name"):
+                    aname = cached[1]["artist_name"].strip()
+                    aid = cached[1].get("artist_id") or f"artist:{aname.lower()}"
+                    res = (aid, aname)
+                    self._track_artist_cache[track_id] = res
+                    return res
         except Exception:
             pass
+
+        # 4. Fallback for cloud tracks (e.g. trk_cloud_sdm_bolideallemand)
+        if track_id.startswith("trk_cloud_"):
+            parts = track_id.split("_")
+            if len(parts) >= 3 and parts[2]:
+                artist_hint = parts[2].title()
+                res = (f"cloud:{parts[2].lower()}", artist_hint)
+                self._track_artist_cache[track_id] = res
+                return res
 
         return None
 
