@@ -42,6 +42,16 @@ import com.aura.music.ui.theme.*
 import com.aura.music.AuraApplication
 import coil3.compose.AsyncImage
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.ui.layout.ContentScale
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aura.music.ui.discovery.DiscoveryViewModel
+import com.aura.music.ui.discovery.DiscoveryUiState
+import com.aura.music.data.network.DiscoveryItemResponseData
+import androidx.compose.runtime.LaunchedEffect
 import com.aura.music.ui.components.ShimmerTrackList
 import com.aura.music.ui.components.ShimmerCard
 import com.aura.music.ui.components.rememberShimmerBrush
@@ -74,6 +84,10 @@ fun HomeScreen(
     onOpenFavorites: () -> Unit,
 ) {
     val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
+    val discoveryViewModel: DiscoveryViewModel = viewModel(
+        factory = application.container.discoveryViewModelFactory
+    )
+    val discoveryState by discoveryViewModel.uiState.collectAsState()
     val cloudFileRepository = application.container.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     var isCloudBannerDismissed by remember { mutableStateOf(false) }
@@ -201,7 +215,20 @@ fun HomeScreen(
             }
             
             item {
-                DiscoveryMixCard()
+                DiscoverySection(
+                    state = discoveryState,
+                    onPlayMix = {
+                        discoveryViewModel.playMix()
+                        onOpenPlayer()
+                    },
+                    onPlayTrack = { index ->
+                        discoveryViewModel.playMix(startIndex = index)
+                        onOpenPlayer()
+                    },
+                    onToggleLike = { item -> discoveryViewModel.toggleLike(item) },
+                    onRefresh = { discoveryViewModel.loadFeed(forceGenerate = true) },
+                    onMarkSeen = { items -> discoveryViewModel.markSeen(items) }
+                )
             }
             
             item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -597,15 +624,73 @@ private fun DenseTrackRow(track: TrackListRow, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DiscoveryMixCard() {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(
-            text = "Mix Découvertes",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-        
+private fun DiscoverySection(
+    state: DiscoveryUiState,
+    onPlayMix: () -> Unit,
+    onPlayTrack: (Int) -> Unit,
+    onToggleLike: (DiscoveryItemResponseData) -> Unit,
+    onRefresh: () -> Unit,
+    onMarkSeen: (List<DiscoveryItemResponseData>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LaunchedEffect(state.items) {
+        if (state.items.isNotEmpty()) {
+            onMarkSeen(state.items)
+        }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // En-tête de section
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = ElectricCyan,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "AURA Mix & Découvertes",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+            }
+
+            IconButton(
+                onClick = onRefresh,
+                enabled = !state.isGenerating && !state.isLoading
+            ) {
+                if (state.isGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = ElectricCyan
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = "Générer un nouveau lot",
+                        tint = if (state.isStale) BlazeOrange else TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // Hero Card AURA Mix
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -613,30 +698,254 @@ private fun DiscoveryMixCard() {
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = Color.Transparent)
         ) {
-            Column(
+            Box(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .background(Brush.linearGradient(listOf(DeepViolet, ElectricCyan)))
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(24.dp)
             ) {
-                Text(
-                    text = "AURA Mix",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = TextPrimary
-                )
-                Text(
-                    text = "Généré à partir de votre bibliothèque locale.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextPrimary.copy(alpha = 0.9f)
-                )
-                Button(
-                    onClick = { /* TODO */ },
-                    colors = ButtonDefaults.buttonColors(containerColor = DeepBlack, contentColor = TextPrimary),
-                    shape = RoundedCornerShape(999.dp)
-                ) {
-                    Text("JOUER LE MIX", style = MaterialTheme.typography.labelLarge)
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = "MIX PERSONNALISÉ",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp,
+                        color = TextPrimary.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = "AURA Mix",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    val subtitle = when {
+                        state.isGenerating -> "Génération de votre prochain mix personnalisé..."
+                        state.isLoading && state.items.isEmpty() -> "Recherche de nouveautés..."
+                        state.items.isNotEmpty() -> "${state.items.size} pépites sélectionnées selon vos écoutes"
+                        else -> "Touchez ci-dessous pour composer votre mix sur mesure."
+                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextPrimary.copy(alpha = 0.9f)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = onPlayMix,
+                            enabled = state.items.isNotEmpty() && !state.isGenerating,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DeepBlack,
+                                contentColor = TextPrimary,
+                                disabledContainerColor = DeepBlack.copy(alpha = 0.5f),
+                                disabledContentColor = TextMuted
+                            ),
+                            shape = RoundedCornerShape(999.dp),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text("JOUER LE MIX", style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+
+                        if (state.isStale && state.items.isNotEmpty()) {
+                            Text(
+                                text = "Nouveau mix prêt",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = DeepBlack,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(AmberGlow)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
             }
+        }
+
+        // Rail horizontal des recommandations
+        if (state.items.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                items(
+                    items = state.items,
+                    key = { it.id }
+                ) { item ->
+                    val effectiveId = item.auraTrackId?.ifBlank { null } ?: "trk_deezer_${item.deezerTrackId}"
+                    val isPlaying = state.currentPlayingTrackId == effectiveId
+                    val isLiked = state.likedTrackIds.contains(effectiveId)
+                    val index = state.items.indexOf(item)
+
+                    DiscoveryTrackCard(
+                        item = item,
+                        isPlaying = isPlaying,
+                        isLiked = isLiked,
+                        onClick = { onPlayTrack(index) },
+                        onToggleLike = { onToggleLike(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryTrackCard(
+    item: DiscoveryItemResponseData,
+    isPlaying: Boolean,
+    isLiked: Boolean,
+    onClick: () -> Unit,
+    onToggleLike: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(160.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Pochette et badges
+        Box(
+            modifier = Modifier
+                .size(152.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(ElevatedGraphite)
+        ) {
+            if (!item.coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = item.coverUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                PlaceholderCover(
+                    modifier = Modifier.fillMaxSize(),
+                    icon = Icons.Rounded.MusicNote,
+                    gradient = Brush.linearGradient(listOf(ElevatedGraphite, DeepBlack))
+                )
+            }
+
+            // Dégradé sombre discret au bas de la pochette
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, DeepBlack.copy(alpha = 0.8f))
+                        )
+                    )
+            )
+
+            // Badge de stratégie en haut à gauche
+            val (badgeText, badgeColor) = when (item.sourceStrategy) {
+                "artist_radar" -> "Radar" to DeepViolet
+                "genre_drift" -> "Dérive" to BlazeOrange
+                "artist_radio" -> "Radio" to ElectricCyan
+                else -> "Tendance" to AmberGlow
+            }
+
+            Box(
+                modifier = Modifier
+                    .padding(8.dp)
+                    .align(Alignment.TopStart)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(badgeColor.copy(alpha = 0.85f))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = badgeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (badgeColor == ElectricCyan || badgeColor == AmberGlow) DeepBlack else PureWhite,
+                    fontSize = 10.sp
+                )
+            }
+
+            // Bouton Like en haut à droite
+            Box(
+                modifier = Modifier
+                    .padding(4.dp)
+                    .align(Alignment.TopEnd)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(DeepBlack.copy(alpha = 0.5f))
+                    .clickable(onClick = onToggleLike)
+                    .padding(6.dp)
+            ) {
+                Icon(
+                    imageVector = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = if (isLiked) "Ne plus aimer" else "Aimer",
+                    tint = if (isLiked) RoseSignal else PureWhite,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Indicateur de lecture en bas à droite
+            if (isPlaying) {
+                Box(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .align(Alignment.BottomEnd)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(ElectricCyan)
+                        .padding(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = "En cours de lecture",
+                        tint = DeepBlack,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+
+        // Titre & Artiste
+        Text(
+            text = item.trackTitle,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isPlaying) ElectricCyan else TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Text(
+            text = item.artistName,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        // Raison d'attribution
+        val reason = item.reasonText ?: item.sourceArtistName?.let { "Inspiré par $it" }
+        if (!reason.isNullOrBlank()) {
+            Text(
+                text = reason,
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 11.sp
+            )
         }
     }
 }

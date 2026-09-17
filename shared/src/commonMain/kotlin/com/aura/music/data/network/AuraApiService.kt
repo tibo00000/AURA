@@ -133,6 +133,14 @@ interface AuraApiService {
 
     suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse>
  
-     suspend fun getAppVersion(): AuraResponse<AppVersionResponseData>
+    suspend fun getAppVersion(): AuraResponse<AppVersionResponseData>
+
+    suspend fun getDiscoveryFeed(token: String): AuraResponse<DiscoveryFeedResponseData>
+
+    suspend fun generateDiscoveryBatch(token: String): AuraResponse<GenerateBatchResponseData>
+
+    suspend fun sendDiscoveryFeedback(token: String, itemId: String, action: String): AuraResponse<Map<String, String>>
+
+    suspend fun getDiscoveryWeights(token: String): AuraResponse<StrategyWeightsResponseData>
 }
 

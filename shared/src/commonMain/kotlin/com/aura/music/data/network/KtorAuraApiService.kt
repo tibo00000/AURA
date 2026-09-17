@@ -283,6 +283,24 @@ class KtorAuraApiService(
 
     override suspend fun getAppVersion(): AuraResponse<AppVersionResponseData> = client.get("$cleanBaseUrl/app/version").body()
 
+    override suspend fun getDiscoveryFeed(token: String): AuraResponse<DiscoveryFeedResponseData> = client.get("$cleanBaseUrl/me/discover/feed") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun generateDiscoveryBatch(token: String): AuraResponse<GenerateBatchResponseData> = client.post("$cleanBaseUrl/me/discover/generate") {
+        header("Authorization", token)
+    }.body()
+
+    override suspend fun sendDiscoveryFeedback(token: String, itemId: String, action: String): AuraResponse<Map<String, String>> = client.post("$cleanBaseUrl/me/discover/feedback/$itemId") {
+        header("Authorization", token)
+        contentType(ContentType.Application.Json)
+        setBody(FeedbackRequestDto(action = action))
+    }.body()
+
+    override suspend fun getDiscoveryWeights(token: String): AuraResponse<StrategyWeightsResponseData> = client.get("$cleanBaseUrl/me/discover/weights") {
+        header("Authorization", token)
+    }.body()
+
 
 
     companion object {

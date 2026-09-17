@@ -11,6 +11,8 @@ import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.data.repository.SearchRepository
 import com.aura.music.data.repository.DownloadRepository
 import com.aura.music.ui.downloads.DownloadsViewModel
+import com.aura.music.data.repository.DiscoveryRepository
+import com.aura.music.ui.discovery.DiscoveryViewModel
 import com.aura.music.domain.player.PlaybackOrchestrator
 import com.aura.music.ui.player.PlayerViewModel
 
@@ -113,6 +115,22 @@ class AuraAppContainer(context: Context) {
 
     val playerViewModelFactory by lazy {
         PlayerViewModel.Factory(playbackOrchestrator, localLibraryRepository)
+    }
+
+    val discoveryRepository by lazy {
+        DiscoveryRepository(
+            apiService = auraApiService,
+            tokenProvider = { authSessionManager.getBearerHeader() },
+            repositoryScope = applicationScope
+        )
+    }
+
+    val discoveryViewModelFactory by lazy {
+        DiscoveryViewModel.Factory(
+            discoveryRepository = discoveryRepository,
+            localLibraryRepository = localLibraryRepository,
+            playbackOrchestrator = playbackOrchestrator
+        )
     }
 
     val connectivityObserver by lazy {

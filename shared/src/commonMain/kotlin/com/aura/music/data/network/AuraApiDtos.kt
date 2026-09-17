@@ -605,4 +605,59 @@ data class AppVersionResponseData(
     @SerialName("min_supported_version") val minSupportedVersion: Int = 1
 )
 
+// ============================================================================
+// Discovery Engine (Recommandations multi-stratégies)
+// ============================================================================
+
+@Serializable
+data class DiscoveryItemResponseData(
+    @SerialName("id") val id: String,
+    @SerialName("source_strategy") val sourceStrategy: String,
+    @SerialName("reason_text") val reasonText: String? = null,
+    @SerialName("source_artist_name") val sourceArtistName: String? = null,
+    @SerialName("deezer_track_id") val deezerTrackId: Long,
+    @SerialName("track_title") val trackTitle: String,
+    @SerialName("artist_name") val artistName: String,
+    @SerialName("album_title") val albumTitle: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("record_type") val recordType: String? = null,
+    @SerialName("preview_url") val previewUrl: String? = null,
+    @SerialName("download_status") val downloadStatus: String = "pending",
+    @SerialName("aura_track_id") val auraTrackId: String? = null,
+    @SerialName("score") val score: Float = 0f,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class DiscoveryFeedResponseData(
+    @SerialName("items") val items: List<DiscoveryItemResponseData> = emptyList(),
+    @SerialName("batch_id") val batchId: String? = null,
+    @SerialName("is_stale") val isStale: Boolean = false,
+    @SerialName("total_count") val totalCount: Int = 0
+)
+
+@Serializable
+data class GenerateBatchResponseData(
+    @SerialName("batch_id") val batchId: String? = null,
+    @SerialName("items_generated") val itemsGenerated: Int = 0,
+    @SerialName("predownloads_triggered") val predownloadsTriggered: Int = 0,
+    @SerialName("is_cold_start") val isColdStart: Boolean = false
+)
+
+@Serializable
+data class FeedbackRequestDto(
+    @SerialName("action") val action: String
+)
+
+@Serializable
+data class StrategyWeightsResponseData(
+    @SerialName("artist_radar_weight") val artistRadarWeight: Float = 0.45f,
+    @SerialName("genre_drift_weight") val genreDriftWeight: Float = 0.25f,
+    @SerialName("artist_radio_weight") val artistRadioWeight: Float = 0.20f,
+    @SerialName("wildcard_weight") val wildcardWeight: Float = 0.10f,
+    @SerialName("total_feedback_count") val totalFeedbackCount: Int = 0
+)
+
 
