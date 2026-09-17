@@ -1339,6 +1339,15 @@ class DiscoveryService:
 
             items = resp.data or []
 
+            # Vérification physique : si un fichier audio a été supprimé ou purgé du disque,
+            # rétrograder download_status pour éviter que le client tente de streamer un fichier 404
+            from app.services.download_service import _find_globally_cached_track
+            for item in items:
+                if item.get("download_status") == "ready" and item.get("aura_track_id"):
+                    cached = _find_globally_cached_track(item["aura_track_id"])
+                    if not cached:
+                        item["download_status"] = "failed"
+
             # Get latest batch_id
             batch_id = items[0]["batch_id"] if items else None
 
