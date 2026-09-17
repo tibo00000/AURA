@@ -1,0 +1,22 @@
+﻿## Fichier de configuration locale pour Android et Desktop
+## Copiez ce fichier sous le nom local.properties à la racine du projet et adaptez vos valeurs.
+## IMPORTANT : local.properties ne doit JAMAIS être commité sur Git.
+
+# Chemin vers votre Android SDK local (spécifique à votre machine)
+# Exemple Windows : C:\\Users\\<NomUtilisateur>\\AppData\\Local\\Android\\Sdk
+# Exemple macOS / Linux : /Users/<NomUtilisateur>/Library/Android/sdk
+sdk.dir=C:\\Users\\<USER>\\AppData\\Local\\Android\\Sdk
+
+# URL du backend AURA (Production ou Dev HTTPS)
+# Production : https://aura-prod.duckdns.org
+# Dev VPS : https://aura-dev.duckdns.org
+# Local (émulateur Android) : http://10.0.2.2:8000
+# Local (Desktop) : http://127.0.0.1:8000
+API_BASE_URL=https://aura-prod.duckdns.org
+
+# Identifiants Spotify (pour l'import/export de playlists)
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+
+# Supabase (pour l'authentification et la synchronisation)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
