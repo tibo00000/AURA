@@ -2,3 +2,8 @@ aura-prod.duckdns.org {
     encode gzip zstd
     reverse_proxy aura-api:8000
 }
+
+aura-dev.duckdns.org {
+    encode gzip zstd
+    reverse_proxy aura-api-dev:8000
+}

@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     depends_on:
       - aura-api
+      - aura-api-dev
     ports:
       - "80:80"
       - "443:443"
