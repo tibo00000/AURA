@@ -39,19 +39,25 @@ class LocalMediaScanner(
         val playlistTrackIds = database.playlistDao().getAllPlaylistTrackIds().toSet()
         val preservedTrackIds = likedTrackIds + playlistTrackIds
 
-        // 1. Scan private downloads/ directory
+        // 1. Scan private downloads/ directory in a single pass
         val downloadsDir = File(context.filesDir, "downloads")
+        val validAudioExtensions = setOf("mp3", "m4a", "flac", "wav", "opus", "ogg")
+        val downloadedFilesByTrackId = mutableMapOf<String, File>()
+
         if (downloadsDir.exists() && downloadsDir.isDirectory) {
             val audioFiles = downloadsDir.listFiles { file ->
-                file.isFile && (file.extension.equals("mp3", ignoreCase = true) ||
-                                file.extension.equals("m4a", ignoreCase = true) ||
-                                file.extension.equals("flac", ignoreCase = true) ||
-                                file.extension.equals("wav", ignoreCase = true))
+                file.isFile &&
+                file.length() > 0L &&
+                !file.name.endsWith(".part", ignoreCase = true) &&
+                !file.name.endsWith(".ytdl", ignoreCase = true) &&
+                !file.name.endsWith(".tmp", ignoreCase = true) &&
+                file.extension.lowercase() in validAudioExtensions
             } ?: emptyArray()
 
             for (file in audioFiles) {
+                val trackId = file.nameWithoutExtension.replace(';', ':')
+                downloadedFilesByTrackId[trackId] = file
                 try {
-                    val trackId = file.nameWithoutExtension.replace(';', ':')
                     val existingTrack = database.trackDao().getRawTrackById(trackId)
 
                     var rawTitle: String? = null
@@ -157,11 +163,11 @@ class LocalMediaScanner(
                             canonicalAudioSourceType = "downloaded",
                             isLiked = existingTrack?.isLiked == true || likedTrackIds.contains(trackId),
                             isDownloadedByAura = true,
-                            isExplicit = null,
-                            popularity = null,
-                            genresJson = null,
-                            createdAt = file.lastModified(),
-                            updatedAt = file.lastModified(),
+                            isExplicit = existingTrack?.isExplicit,
+                            popularity = existingTrack?.popularity,
+                            genresJson = existingTrack?.genresJson,
+                            createdAt = existingTrack?.createdAt ?: file.lastModified(),
+                            updatedAt = existingTrack?.updatedAt ?: file.lastModified(),
                         )
                     )
 
@@ -305,8 +311,13 @@ class LocalMediaScanner(
 
                 // Purge obsolete downloaded tracks based on physical file scan
                 val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
+                val activeJobTrackIds = try {
+                    database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
+                } catch (e: Exception) {
+                    emptySet()
+                }
                 for (id in existingDownloadedIds) {
-                    if (id !in scannedIds) {
+                    if (id !in downloadedFilesByTrackId.keys && id !in activeJobTrackIds) {
                         obsoleteIds.add(id)
                     }
                 }

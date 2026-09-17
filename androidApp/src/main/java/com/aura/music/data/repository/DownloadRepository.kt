@@ -10,6 +10,7 @@ import com.aura.music.data.local.TrackEntity
 import com.aura.music.data.local.DownloadJobEntity
 import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.data.local.TrackMediaLinkEntity
+import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.DownloadRequestDto
 import com.aura.music.data.network.SourceHintDto
@@ -834,6 +835,34 @@ class DownloadRepository(
      */
     fun getAllJobsWithTrack(): Flow<List<DownloadJobRowModel>> {
         return database.downloadJobDao().getAllJobsWithTrackFlow()
+    }
+
+    /**
+     * Compute total size of all downloaded audio files in bytes asynchronously on Dispatchers.IO.
+     */
+    suspend fun getDownloadedStorageSizeBytes(): Long = withContext(Dispatchers.IO) {
+        val downloadsDir = File(context.filesDir, "downloads")
+        if (!downloadsDir.exists() || !downloadsDir.isDirectory) return@withContext 0L
+        val validAudioExtensions = setOf("mp3", "m4a", "flac", "wav", "opus", "ogg")
+        var totalBytes = 0L
+        downloadsDir.listFiles { file ->
+            file.isFile &&
+            file.length() > 0L &&
+            !file.name.endsWith(".part", ignoreCase = true) &&
+            !file.name.endsWith(".ytdl", ignoreCase = true) &&
+            !file.name.endsWith(".tmp", ignoreCase = true) &&
+            file.extension.lowercase() in validAudioExtensions
+        }?.forEach { file ->
+            totalBytes += file.length()
+        }
+        totalBytes
+    }
+
+    /**
+     * Fetch all downloaded tracks with their media link contentUri from Room.
+     */
+    suspend fun getDownloadedTracks(): List<TrackListRow> = withContext(Dispatchers.IO) {
+        database.trackDao().getDownloadedTracks()
     }
 
     /**

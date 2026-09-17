@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -2494,26 +2495,17 @@ fun DownloadsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val selectedErrorJob by viewModel.selectedErrorJob.collectAsState()
     var activeResolveJobId by remember { mutableStateOf<String?>(null) }
+    var showClearDialog by remember { mutableStateOf(false) }
     val reassignAudioCallback = onChangeAudioVersion ?: com.aura.music.ui.components.LocalReassignAudio.current
-
-    val filterLabels = listOf(
-        "En cours (${uiState.queuedCount})",
-        "Terminés (${uiState.succeededCount})",
-        "Erreurs (${uiState.failedCount})"
-    )
-    val filterMapping = mapOf(
-        "En cours (${uiState.queuedCount})" to "En cours",
-        "Terminés (${uiState.succeededCount})" to "Terminés",
-        "Erreurs (${uiState.failedCount})" to "Erreurs"
-    )
-    val activeLabel = filterLabels.firstOrNull { it.startsWith(uiState.selectedTab) } ?: filterLabels.first()
 
     RouteScaffold(
         title = "Téléchargements",
         onNavigateBack = onNavigateBack,
         actions = {
-            IconButton(onClick = { viewModel.clearAllJobs() }) {
-                Icon(Icons.Rounded.Delete, contentDescription = "Vider la file d'attente", tint = TextPrimary)
+            if (uiState.jobs.isNotEmpty()) {
+                IconButton(onClick = { showClearDialog = true }) {
+                    Icon(Icons.Rounded.DeleteSweep, contentDescription = "Vider la file d'attente", tint = TextSecondary)
+                }
             }
             IconButton(onClick = { viewModel.forceRefresh() }) {
                 Icon(Icons.Rounded.Refresh, contentDescription = "Rafraîchir", tint = TextPrimary)
@@ -2557,63 +2549,36 @@ fun DownloadsScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 item {
-                    HeroIdentityCard(
-                        title = "Downloads",
-                        subtitle = "Gère et écoute tes pistes hors-ligne en temps réel.",
-                        gradient = Brush.linearGradient(listOf(Color(0xFFFF6B00), Color(0xFF101010))),
-                    )
-                }
-
-                item {
-                    FilterRow(
-                        values = filterLabels,
-                        selected = activeLabel,
-                        onSelect = { label ->
-                            val mappedTab = filterMapping[label] ?: "En cours"
-                            viewModel.selectTab(mappedTab)
-                        }
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (uiState.jobs.isNotEmpty()) {
+                                "${uiState.jobs.size} titre${if (uiState.jobs.size > 1) "s" else ""}"
+                            } else {
+                                "Aucun téléchargement"
+                            },
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
                 }
 
                 if (uiState.jobs.isEmpty()) {
                     item {
-                        when (uiState.selectedTab) {
-                            "En attente", "En cours" -> {
-                                if (uiState.succeededCount > 0) {
-                                    DownloadStateCard(
-                                        Icons.Rounded.DownloadDone,
-                                        "Aucun téléchargement en cours",
-                                        "Vous avez ${uiState.succeededCount} téléchargement(s) terminé(s). Consultez l'onglet « Terminés » ci-dessus."
-                                    )
-                                } else if (uiState.failedCount > 0) {
-                                    DownloadStateCard(
-                                        Icons.Rounded.ErrorOutline,
-                                        "Aucun téléchargement en cours",
-                                        "Vous avez ${uiState.failedCount} tâche(s) en échec. Consultez l'onglet « Erreurs » ci-dessus."
-                                    )
-                                } else {
-                                    DownloadStateCard(
-                                        Icons.Rounded.Sync,
-                                        "Pas de progression active",
-                                        "Les barres de progression s'activent lorsque le téléchargement démarre."
-                                    )
-                                }
-                            }
-                            "Terminés" -> DownloadStateCard(
-                                Icons.Rounded.DownloadDone,
-                                "Aucun download finalisé",
-                                "Quand un titre sera disponible sur le Cloud ou localement, tu pourras l'ouvrir ou le lire depuis ici."
-                            )
-                            else -> DownloadStateCard(
-                                Icons.Rounded.ErrorOutline,
-                                "Pas d'erreur de job",
-                                "Les détails d'erreur et les boutons Retry seront branchés en cas d'échec."
-                            )
-                        }
+                        DownloadStateCard(
+                            icon = Icons.Rounded.DownloadDone,
+                            title = "Aucun téléchargement",
+                            message = "Les téléchargements récents et les tâches en cours apparaîtront ici."
+                        )
                     }
                 } else {
                     items(uiState.jobs, key = { it.jobId }) { job ->
@@ -2641,41 +2606,50 @@ fun DownloadsScreen(
                                 }
                             } else null,
                             onPlay = {
-                                val downloadsDir = File(context.filesDir, "downloads")
-                                val targetFile = File(downloadsDir, "${job.trackId.replace(':', ';')}.mp3")
-                                val resolvedUri = if (targetFile.exists() && targetFile.length() > 0L) {
-                                    android.net.Uri.fromFile(targetFile).toString()
-                                } else {
-                                    null
-                                }
-
-                                val trackRow = TrackListRow(
-                                    id = job.trackId,
-                                    artistId = null,
-                                    albumId = null,
-                                    title = job.title,
-                                    artistName = job.artistName,
-                                    albumTitle = null,
-                                    contentUri = resolvedUri,
-                                    durationMs = null,
-                                    coverUri = job.coverUri,
-                                    isLiked = false
-                                )
-                                playerViewModel.onEvent(
-                                    PlayerEvent.PlayTrack(
-                                        trackId = job.trackId,
-                                        contextType = "downloads",
-                                        contextId = "downloads",
-                                        contextTracks = listOf(trackRow.toQueuedTrack()),
-                                        startIndex = 0
-                                    )
-                                )
+                                viewModel.playJob(job, playerViewModel)
                             }
                         )
                     }
                 }
             }
         }
+    }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            containerColor = ElevatedGraphite,
+            title = {
+                Text(
+                    text = "Vider l'historique ?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "Cette action réinitialise la liste des téléchargements. Les fichiers audio déjà enregistrés restent disponibles sur l'appareil.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearDialog = false
+                        viewModel.clearAllJobs()
+                    }
+                ) {
+                    Text("Vider", color = BlazeOrange, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Annuler", color = TextMuted)
+                }
+            }
+        )
     }
 
     if (activeResolveJobId != null) {
@@ -2923,6 +2897,10 @@ private fun DownloadJobRow(
         onClick = {
             if (job.status == "failed" || job.status == "cancelled") {
                 onInspectError()
+            } else if (job.status == "requires_resolution") {
+                onResolve()
+            } else if (job.status == "succeeded") {
+                onPlay()
             }
         }
     ) {
@@ -3046,12 +3024,23 @@ private fun DownloadJobRow(
             // 3. Trailing Actions
             when (job.status) {
                 "failed", "cancelled" -> {
-                    IconButton(onClick = onRetry) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Réessayer",
-                            tint = BlazeOrange
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onChangeAudioVersion != null) {
+                            IconButton(onClick = onChangeAudioVersion) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Tune,
+                                    contentDescription = "Changer la version audio",
+                                    tint = TextSecondary
+                                )
+                            }
+                        }
+                        IconButton(onClick = onRetry) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = "Réessayer",
+                                tint = BlazeOrange
+                            )
+                        }
                     }
                 }
                 "requires_resolution" -> {

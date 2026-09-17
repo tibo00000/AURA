@@ -13,10 +13,8 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
@@ -39,17 +37,11 @@ import com.aura.music.data.repository.LibraryDashboardSummary
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.theme.*
-import com.aura.music.AuraApplication
 import coil3.compose.AsyncImage
 import androidx.compose.material.icons.rounded.Favorite
 import com.aura.music.ui.components.ShimmerTrackList
 import com.aura.music.ui.components.ShimmerCard
 import com.aura.music.ui.components.rememberShimmerBrush
-
-import androidx.compose.foundation.border
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 
 sealed interface ResumeItem {
     object Favorites : ResumeItem
@@ -73,11 +65,6 @@ fun HomeScreen(
     onOpenCloudSync: () -> Unit,
     onOpenFavorites: () -> Unit,
 ) {
-    val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
-    val cloudFileRepository = application.container.cloudFileRepository
-    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
-    var isCloudBannerDismissed by remember { mutableStateOf(false) }
-
     val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
         value = repository.getLibraryDashboardSummary()
     }
@@ -95,30 +82,6 @@ fun HomeScreen(
     }
     val likedCountState = produceState(initialValue = 0, repository, refreshToken) {
         value = repository.getLikedTracks().size
-    }
-    val allTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
-        value = repository.getAllTracks()
-    }
-
-    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshToken) {
-        cloudFileRepository.listCloudFiles().collect { res ->
-            res.onSuccess { value = it }
-        }
-    }
-    val cloudFiles = cloudFilesState.value
-
-    val cloudOnlyCount = remember(allTracksState.value, syncedCloudTrackIds, cloudFiles) {
-        allTracksState.value.count { track ->
-            val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
-                syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
-                cloudFiles.any { cloud ->
-                    isDeezerTrackMatch(cloud.trackId, track.id) ||
-                    (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
-                     (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
-                     (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
-                }
-            track.contentUri.isNullOrBlank() && isPresentInCloud
-        }
     }
 
     val resumeItems = remember(playlistsState.value, albumsState.value, artistsState.value) {
@@ -170,17 +133,6 @@ fun HomeScreen(
                 HomeHeader(summaryState.value, onRequestAudioPermission)
             }
             
-            if (cloudOnlyCount > 5 && !isCloudBannerDismissed) {
-                item {
-                    CloudRecoveryBanner(
-                        count = cloudOnlyCount,
-                        onOpenCloudSync = onOpenCloudSync,
-                        onDismiss = { isCloudBannerDismissed = true },
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
-            }
-            
             item {
                 ResumeRail(
                     items = resumeItems,
@@ -205,91 +157,6 @@ fun HomeScreen(
             }
             
             item { Spacer(modifier = Modifier.height(24.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun CloudRecoveryBanner(
-    count: Int,
-    onOpenCloudSync: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(ElevatedGraphite)
-            .border(1.dp, BlazeOrange.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(BlazeOrange.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CloudDownload,
-                    contentDescription = null,
-                    tint = BlazeOrange,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Musique sur le Cloud",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "$count titres disponibles sur votre serveur.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Button(
-                    onClick = onOpenCloudSync,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BlazeOrange,
-                        contentColor = DeepBlack
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Gérer",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "Masquer le rappel",
-                        tint = TextMuted,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
         }
     }
 }
