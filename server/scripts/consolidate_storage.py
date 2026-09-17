@@ -608,19 +608,80 @@ def main():
         help="Surcharger la clé de service Supabase.",
     )
 
+    parser.add_argument(
+        "--purge-discovery",
+        action="store_true",
+        default=False,
+        help="Purge les fichiers audio discovery expirés (non adoptés) et le cache artistes > 7 jours.",
+    )
+
     args = parser.parse_args()
 
     downloads_path = get_downloads_dir(args.downloads_dir)
     supabase = get_supabase_client(args.supabase_url, args.service_key)
     consolidator = StorageConsolidator(downloads_path, supabase)
 
-    if args.purge_trash:
+    if args.purge_discovery:
+        _run_discovery_purge(supabase)
+    elif args.purge_trash:
         consolidator.purge_trash(force_immediate=args.force_immediate_purge)
     elif args.consolidate:
         consolidator.consolidate()
     else:
         # Par défaut : mode preview
         consolidator.preview()
+
+
+def _run_discovery_purge(supabase_client) -> None:
+    """
+    Purge des fichiers discovery expirés et du cache artiste périmé.
+    
+    Indépendant de l'activité utilisateur — destiné à être lancé par cron ou manuellement.
+    Résout le problème des fichiers qui s'accumulent quand un user arrête d'utiliser l'app.
+    """
+    import asyncio
+
+    async def _do_purge():
+        if not supabase_client:
+            logger.error("Supabase client required for discovery purge.")
+            return
+
+        # 1. Purge expired discovery files for ALL users
+        try:
+            # Get all users who have discovery items
+            users_resp = supabase_client.table("discovery_items") \
+                .select("user_id") \
+                .eq("is_expired", False) \
+                .execute()
+            user_ids = list({d["user_id"] for d in (users_resp.data or [])})
+
+            if not user_ids:
+                print("[*] Aucun item discovery à purger.")
+            else:
+                from app.services.discovery_service import DiscoveryService
+                service = DiscoveryService()
+                total_purged = 0
+                for uid in user_ids:
+                    purged = await service.purge_expired_discovery_files(uid)
+                    total_purged += purged
+                print(f"[OK] Discovery: {total_purged} fichier(s) purgé(s) pour {len(user_ids)} utilisateur(s).")
+        except Exception as e:
+            logger.error("Erreur lors de la purge discovery: %s", e)
+
+        # 2. Purge stale artist_graph_cache entries (> 7 days)
+        try:
+            from datetime import datetime, timedelta, timezone as tz
+            cutoff = (datetime.now(tz.utc) - timedelta(days=7)).isoformat()
+            result = supabase_client.table("artist_graph_cache") \
+                .delete() \
+                .lt("cached_at", cutoff) \
+                .execute()
+            deleted = len(result.data or [])
+            print(f"[OK] Artist graph cache: {deleted} entrée(s) expirée(s) supprimée(s).")
+        except Exception as e:
+            logger.error("Erreur lors de la purge du graph cache: %s", e)
+
+    asyncio.run(_do_purge())
 
 
 if __name__ == "__main__":

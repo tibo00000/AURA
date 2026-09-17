@@ -1066,7 +1066,11 @@ class DownloadService:
                 updated_at=now,
             )
             try:
-                supabase.table("download_jobs").insert(job.to_dict()).execute()
+                job_dict = job.to_dict()
+                # Propagate is_discovery_preload from source_hint to the DB row
+                if source_hint and source_hint.get("is_discovery_preload"):
+                    job_dict["is_discovery_preload"] = True
+                supabase.table("download_jobs").insert(job_dict).execute()
             except Exception as e:
                 logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
                 raise BadRequest(f"Failed to create job in database: {str(e)}")
@@ -1089,7 +1093,11 @@ class DownloadService:
         )
 
         try:
-            supabase.table("download_jobs").insert(job.to_dict()).execute()
+            job_dict = job.to_dict()
+            # Propagate is_discovery_preload from source_hint to the DB row
+            if source_hint and source_hint.get("is_discovery_preload"):
+                job_dict["is_discovery_preload"] = True
+            supabase.table("download_jobs").insert(job_dict).execute()
         except Exception as e:
             logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
             raise BadRequest(f"Failed to create job in database: {str(e)}")
@@ -1136,6 +1144,9 @@ class DownloadService:
         """List download jobs for a user from Supabase."""
         try:
             query = supabase.table("download_jobs").select("*").eq("user_id", user_id)
+            # Exclude discovery preload jobs — they reference tracks not in Room
+            # and would cause SQLiteForeignKeyConstraintException if synced
+            query = query.neq("is_discovery_preload", True)
             if status:
                 query = query.eq("status", status)
 
