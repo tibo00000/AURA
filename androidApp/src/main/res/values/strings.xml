@@ -30,6 +30,8 @@
     <string name="whats_new_v3_feature2_desc">La nouvelle version audio est rechargée instantanément en conservant votre position de lecture.</string>
 
     <string name="whats_new_v3_feature3_title">Synchronisation &amp; Téléchargements</string>
+    <string name="whats_new_v3_feature3_desc">Gestion plus rapide et résiliente des téléchargements et mise à jour en temps réel sur vos appareils.</string>
+
     <!-- Version 4 / 0.4.0 features -->
     <string name="whats_new_v4_feature1_title">Navigation Artiste &amp; Album</string>
     <string name="whats_new_v4_feature1_desc">Touchez le nom de l\'artiste ou de l\'album sur le lecteur pour ouvrir directement sa page dédiée.</string>
