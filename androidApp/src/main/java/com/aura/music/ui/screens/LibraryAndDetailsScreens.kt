@@ -1078,8 +1078,8 @@ fun FavoritesScreen(
                     val effectiveDownloadStatus = when {
                         isDownloadedLocally -> com.aura.music.ui.screens.TrackDownloadStatus.Downloaded
                         activeJob?.status == "requires_resolution" -> com.aura.music.ui.screens.TrackDownloadStatus.RequiresResolution(activeJob.id)
-                        activeJob?.status == "running" || activeJob?.status == "downloading" -> com.aura.music.ui.screens.TrackDownloadStatus.Downloading(activeJob.progressPercent.toInt())
-                        activeJob?.status == "queued" -> com.aura.music.ui.screens.TrackDownloadStatus.Queued(activeJob.id)
+                        activeJob?.status == "running" || activeJob?.status == "downloading" -> com.aura.music.ui.screens.TrackDownloadStatus.Downloading((activeJob.progressPercent ?: 0f) / 100f)
+                        activeJob?.status == "queued" -> com.aura.music.ui.screens.TrackDownloadStatus.Queued
                         else -> com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded
                     }
 

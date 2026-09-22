@@ -74,6 +74,7 @@ fun PlayerScreen(
     var showQueue by remember { mutableStateOf(false) }
     var duplicatePromptEvent by remember { mutableStateOf<PlaylistUiEvent.ShowDuplicatePrompt?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(playerViewModel) {
         playerViewModel.playlistEvents.collect { event ->
