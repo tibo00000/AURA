@@ -159,7 +159,6 @@ fun PlayerScreen(
     val totalQueueCount by remember { derivedStateOf { visiblePriorityQueue.size + uiState.mainQueueTracks.size } }
     val queueLabel by remember { derivedStateOf { if (totalQueueCount > 0) "File ($totalQueueCount)" else "File" } }
 
-    val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val swipeCoverThreshold = with(density) { 80.dp.toPx() }
     val dismissThreshold = with(density) { 130.dp.toPx() }
