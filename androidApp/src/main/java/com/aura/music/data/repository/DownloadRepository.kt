@@ -323,49 +323,41 @@ class DownloadRepository(
                         }
 
                         // Handle requires_resolution alert logic
-                        if (isFirstPollingSnapshot) {
-                            for (item in items) {
-                                if (item.status == "requires_resolution") {
-                                    notifiedResolutionJobIds.add(item.id)
+                        val newlyRequiresResolution = mutableListOf<com.aura.music.data.network.DownloadJobResponseData>()
+                        for (item in items) {
+                            if (item.status == "requires_resolution") {
+                                if (notifiedResolutionJobIds.add(item.id)) {
+                                    newlyRequiresResolution.add(item)
                                 }
-                            }
-                            isFirstPollingSnapshot = false
-                        } else {
-                            val newlyRequiresResolution = mutableListOf<com.aura.music.data.network.DownloadJobResponseData>()
-                            for (item in items) {
-                                if (item.status == "requires_resolution") {
-                                    if (notifiedResolutionJobIds.add(item.id)) {
-                                        newlyRequiresResolution.add(item)
-                                    }
-                                } else {
-                                    notifiedResolutionJobIds.remove(item.id)
-                                    jobTrackTitles.remove(item.id)
-                                }
-                            }
-
-                            if (newlyRequiresResolution.isNotEmpty()) {
-                                val allCurrentUnresolved = items.filter { it.status == "requires_resolution" }
-                                if (allCurrentUnresolved.size == 1) {
-                                    val single = allCurrentUnresolved.first()
-                                    val resolvedTitle = jobTrackTitles[single.id]
-                                        ?: database.trackDao().getRawTrackById(single.trackId)?.title
-                                        ?: "Morceau"
-                                    _resolutionAlertFlow.tryEmit(
-                                        DownloadResolutionAlert(
-                                            count = 1,
-                                            singleJobId = single.id,
-                                            singleTitle = resolvedTitle
-                                        )
-                                    )
-                                } else if (allCurrentUnresolved.size > 1) {
-                                    _resolutionAlertFlow.tryEmit(
-                                        DownloadResolutionAlert(
-                                            count = allCurrentUnresolved.size
-                                        )
-                                    )
-                                }
+                            } else {
+                                notifiedResolutionJobIds.remove(item.id)
+                                jobTrackTitles.remove(item.id)
                             }
                         }
+
+                        if (newlyRequiresResolution.isNotEmpty()) {
+                            val allCurrentUnresolved = items.filter { it.status == "requires_resolution" }
+                            if (allCurrentUnresolved.size == 1) {
+                                val single = allCurrentUnresolved.first()
+                                val resolvedTitle = jobTrackTitles[single.id]
+                                    ?: database.trackDao().getRawTrackById(single.trackId)?.title
+                                    ?: "Morceau"
+                                _resolutionAlertFlow.tryEmit(
+                                    DownloadResolutionAlert(
+                                        count = 1,
+                                        singleJobId = single.id,
+                                        singleTitle = resolvedTitle
+                                    )
+                                )
+                            } else if (allCurrentUnresolved.size > 1) {
+                                _resolutionAlertFlow.tryEmit(
+                                    DownloadResolutionAlert(
+                                        count = allCurrentUnresolved.size
+                                    )
+                                )
+                            }
+                        }
+                        isFirstPollingSnapshot = false
                     } else {
                         // Fallback: poll top 3 active jobs with slight delay between requests
                         for (job in activeJobs.take(3)) {
@@ -580,20 +572,35 @@ class DownloadRepository(
             }
 
             val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            if (targetFile.exists()) {
-                targetFile.delete()
+            val tempFile = File(downloadsDir, "${trackId.replace(':', ';')}.tmp")
+            if (tempFile.exists()) {
+                tempFile.delete()
             }
 
-            // Stream download to prevent OOM
-            val channel = response.bodyAsChannel()
-            channel.toInputStream().use { inputStream ->
-                FileOutputStream(targetFile).use { outputStream ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
+            try {
+                // Stream download to prevent OOM
+                val channel = response.bodyAsChannel()
+                channel.toInputStream().use { inputStream ->
+                    FileOutputStream(tempFile).use { outputStream ->
+                        val buffer = ByteArray(32768)
+                        var bytesRead: Int
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                        }
                     }
                 }
+                if (targetFile.exists()) {
+                    targetFile.delete()
+                }
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+            } catch (streamEx: Exception) {
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+                throw streamEx
             }
 
             Log.i(TAG, "Downloaded file saved successfully to ${targetFile.absolutePath} (size: ${targetFile.length()} bytes)")

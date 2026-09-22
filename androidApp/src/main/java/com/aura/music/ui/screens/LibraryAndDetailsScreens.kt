@@ -663,6 +663,13 @@ fun FavoritesScreen(
     val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
     var isAutoDownloadFavorites by remember { mutableStateOf(sharedPrefs.getBoolean("auto_download_favorites", false)) }
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val allJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
+    val activeJobsByTrackId by remember(allJobs) {
+        derivedStateOf {
+            allJobs.filter { it.status in setOf("queued", "running", "requires_resolution", "downloading") }
+                .associateBy { it.trackId }
+        }
+    }
     val cloudFileRepository = appContainer.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
@@ -1067,6 +1074,15 @@ fun FavoritesScreen(
                         } else null
                     }
 
+                    val activeJob = activeJobsByTrackId[track.id]
+                    val effectiveDownloadStatus = when {
+                        isDownloadedLocally -> com.aura.music.ui.screens.TrackDownloadStatus.Downloaded
+                        activeJob?.status == "requires_resolution" -> com.aura.music.ui.screens.TrackDownloadStatus.RequiresResolution(activeJob.id)
+                        activeJob?.status == "running" || activeJob?.status == "downloading" -> com.aura.music.ui.screens.TrackDownloadStatus.Downloading(activeJob.progressPercent.toInt())
+                        activeJob?.status == "queued" -> com.aura.music.ui.screens.TrackDownloadStatus.Queued(activeJob.id)
+                        else -> com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded
+                    }
+
                     SharedTrackRowItem(
                         title = track.title,
                         subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
@@ -1074,7 +1090,7 @@ fun FavoritesScreen(
                         coverUri = track.coverUri,
                         contextType = "favorites",
                         isLiked = true,
-                        downloadStatus = if (isDownloadedLocally) com.aura.music.ui.screens.TrackDownloadStatus.Downloaded else com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded,
+                        downloadStatus = effectiveDownloadStatus,
                         isCloudOnly = isCloudOnlyTrack,
                         isOfflineDisabled = isOfflineBlocked,
                         onOfflineBlocked = {
@@ -3044,21 +3060,33 @@ private fun DownloadJobRow(
                     }
                 }
                 "requires_resolution" -> {
-                    androidx.compose.material3.Button(
-                        onClick = onResolve,
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = BlazeOrange,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(32.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = "Choisir",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        IconButton(onClick = onRetry) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = "Réessayer",
+                                tint = BlazeOrange
+                            )
+                        }
+                        androidx.compose.material3.Button(
+                            onClick = onResolve,
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = BlazeOrange,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text(
+                                text = "Choisir",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
                 "succeeded" -> {

@@ -638,7 +638,8 @@ fun SharedTrackRowItem(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.55f)),
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .clickable { (onChangeAudioVersion ?: onDownload)?.invoke() },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -740,6 +741,18 @@ fun SharedTrackRowItem(
                         modifier = Modifier.size(13.dp)
                     )
                 }
+                if (downloadStatus is TrackDownloadStatus.RequiresResolution) {
+                    Text(
+                        text = "Choix de version",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = BlazeOrange,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(BlazeOrange.copy(alpha = 0.15f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -769,7 +782,7 @@ fun SharedTrackRowItem(
                     strokeWidth = 2.dp
                 )
             } else if (downloadStatus is TrackDownloadStatus.RequiresResolution) {
-                IconButton(onClick = { onDownload?.invoke() }, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = { (onChangeAudioVersion ?: onDownload)?.invoke() }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.Rounded.Tune,
                         contentDescription = "Choisir la version",

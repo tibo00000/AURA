@@ -261,7 +261,7 @@ fun AuraApp() {
                     val result = globalSnackbarHostState.showSnackbar(
                         message = "Choix de version requis : ${alert.singleTitle ?: "Morceau"}",
                         actionLabel = "Choisir",
-                        duration = androidx.compose.material3.SnackbarDuration.Long
+                        duration = androidx.compose.material3.SnackbarDuration.Indefinite
                     )
                     if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                         onRequestJobResolution(alert.singleJobId)
@@ -270,7 +270,7 @@ fun AuraApp() {
                     val result = globalSnackbarHostState.showSnackbar(
                         message = "${alert.count} morceaux nécessitent un choix de version",
                         actionLabel = "Voir",
-                        duration = androidx.compose.material3.SnackbarDuration.Long
+                        duration = androidx.compose.material3.SnackbarDuration.Indefinite
                     )
                     if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                         navController.navigate(AuraRoute.Downloads)
