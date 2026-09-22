@@ -95,6 +95,49 @@ fun PlayerScreen(
     val artistId = trackDetails?.artistId
     val albumId = trackDetails?.albumId
 
+    var isNavigatingToDetail by remember { mutableStateOf(false) }
+
+    val onArtistClick: () -> Unit = remember(track?.artistName, artistId, onOpenArtist) {
+        {
+            val currentArtist = track?.artistName
+            if (!isNavigatingToDetail && !currentArtist.isNullOrBlank()) {
+                isNavigatingToDetail = true
+                coroutineScope.launch {
+                    try {
+                        val resolvedId = artistId
+                            ?: playerViewModel.getArtistIdByName(currentArtist)
+                            ?: com.aura.music.data.repository.LocalLibraryRepository.artistIdOf(currentArtist)
+                        onOpenArtist(resolvedId)
+                    } finally {
+                        kotlinx.coroutines.delay(500)
+                        isNavigatingToDetail = false
+                    }
+                }
+            }
+        }
+    }
+
+    val onAlbumClick: () -> Unit = remember(track?.albumTitle, track?.artistName, albumId, onOpenAlbum) {
+        {
+            val currentAlbum = track?.albumTitle
+            val currentArtist = track?.artistName.orEmpty()
+            if (!isNavigatingToDetail && !currentAlbum.isNullOrBlank()) {
+                isNavigatingToDetail = true
+                coroutineScope.launch {
+                    try {
+                        val resolvedId = albumId
+                            ?: playerViewModel.getAlbumIdByName(currentAlbum, currentArtist)
+                            ?: com.aura.music.data.repository.LocalLibraryRepository.albumIdOf(currentArtist, currentAlbum)
+                        onOpenAlbum(resolvedId)
+                    } finally {
+                        kotlinx.coroutines.delay(500)
+                        isNavigatingToDetail = false
+                    }
+                }
+            }
+        }
+    }
+
     val playlistsState = produceState<List<com.aura.music.data.local.PlaylistListRow>>(initialValue = emptyList(), playerViewModel) {
         value = playerViewModel.getPlaylists()
     }
@@ -321,26 +364,26 @@ fun PlayerScreen(
                         )
                         // Voir l'artiste
                         DropdownMenuItem(
-                            text = { Text("Voir l'artiste", color = if (artistId != null) TextPrimary else TextMuted) },
+                            text = { Text("Voir l'artiste", color = if (!track?.artistName.isNullOrBlank()) TextPrimary else TextMuted) },
                             onClick = {
-                                artistId?.let { onOpenArtist(it) }
                                 menuExpanded = false
+                                onArtistClick()
                             },
-                            enabled = artistId != null,
+                            enabled = !track?.artistName.isNullOrBlank(),
                             leadingIcon = {
-                                Icon(Icons.Rounded.Person, contentDescription = null, tint = if (artistId != null) TextPrimary else TextMuted)
+                                Icon(Icons.Rounded.Person, contentDescription = null, tint = if (!track?.artistName.isNullOrBlank()) TextPrimary else TextMuted)
                             }
                         )
                         // Voir l'album
                         DropdownMenuItem(
-                            text = { Text("Voir l'album", color = if (albumId != null) TextPrimary else TextMuted) },
+                            text = { Text("Voir l'album", color = if (!track?.albumTitle.isNullOrBlank()) TextPrimary else TextMuted) },
                             onClick = {
-                                albumId?.let { onOpenAlbum(it) }
                                 menuExpanded = false
+                                onAlbumClick()
                             },
-                            enabled = albumId != null,
+                            enabled = !track?.albumTitle.isNullOrBlank(),
                             leadingIcon = {
-                                Icon(Icons.Rounded.Album, contentDescription = null, tint = if (albumId != null) TextPrimary else TextMuted)
+                                Icon(Icons.Rounded.Album, contentDescription = null, tint = if (!track?.albumTitle.isNullOrBlank()) TextPrimary else TextMuted)
                             }
                         )
                         // Modifier les informations
@@ -519,7 +562,11 @@ fun PlayerScreen(
                             style = MaterialTheme.typography.titleMedium,
                             color = TextSecondary,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onArtistClick)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                         val albumTitle = track.albumTitle
                         if (!albumTitle.isNullOrEmpty()) {
@@ -528,7 +575,11 @@ fun PlayerScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextMuted,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(onClick = onAlbumClick)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
                             )
                         }
                     }
@@ -755,7 +806,10 @@ fun PlayerScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = TextSecondary,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .clickable(onClick = onArtistClick)
                                         )
                                     }
 

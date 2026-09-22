@@ -448,6 +448,21 @@ class LocalLibraryRepository(
         database.albumDao().getAlbumByTitleAndArtist(title, artistName)
     }
 
+    suspend fun getArtistIdByName(artistName: String): String? = withContext(Dispatchers.IO) {
+        val normalized = normalize(artistName)
+        database.artistDao().getArtistByNormalizedName(normalized)?.id
+            ?: database.artistDao().searchArtists(artistName, 1).firstOrNull()?.id
+    }
+
+    suspend fun getAlbumIdByTitleAndArtist(title: String, artistName: String?): String? = withContext(Dispatchers.IO) {
+        if (!artistName.isNullOrBlank()) {
+            database.albumDao().getAlbumByTitleAndArtist(title, artistName)?.id
+                ?: database.albumDao().searchAlbums(title, 1).firstOrNull()?.id
+        } else {
+            database.albumDao().searchAlbums(title, 1).firstOrNull()?.id
+        }
+    }
+
     suspend fun getPlaylistDetail(playlistId: String): PlaylistDetail? =
         playlistManager.getPlaylistDetail(playlistId)
 

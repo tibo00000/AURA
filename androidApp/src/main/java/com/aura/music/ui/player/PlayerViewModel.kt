@@ -118,6 +118,17 @@ class PlayerViewModel(
     suspend fun getTrackById(trackId: String): TrackListRow? = repository.getTrackById(trackId)
 
     /**
+     * Récupère l'ID d'un artiste par son nom dans la bibliothèque locale.
+     */
+    suspend fun getArtistIdByName(artistName: String): String? = repository.getArtistIdByName(artistName)
+
+    /**
+     * Récupère l'ID d'un album par son titre et nom d'artiste dans la bibliothèque locale.
+     */
+    suspend fun getAlbumIdByName(albumTitle: String, artistName: String?): String? =
+        repository.getAlbumIdByTitleAndArtist(albumTitle, artistName)
+
+    /**
      * Récupère toutes les listes de lecture locales.
      */
     suspend fun getPlaylists(): List<PlaylistListRow> = repository.getPlaylists()
