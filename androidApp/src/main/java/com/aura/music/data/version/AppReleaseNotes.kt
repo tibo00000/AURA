@@ -5,7 +5,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.aura.music.R
@@ -78,6 +80,27 @@ object AppReleaseNotes {
                     icon = Icons.Rounded.CloudDone,
                     titleRes = R.string.whats_new_v3_feature3_title,
                     descRes = R.string.whats_new_v3_feature3_desc,
+                ),
+            ),
+        ),
+        4 to VersionReleaseNotes(
+            versionCode = 4,
+            versionName = "0.4.0",
+            items = listOf(
+                ReleaseNoteItem(
+                    icon = Icons.Rounded.Person,
+                    titleRes = R.string.whats_new_v4_feature1_title,
+                    descRes = R.string.whats_new_v4_feature1_desc,
+                ),
+                ReleaseNoteItem(
+                    icon = Icons.Rounded.TouchApp,
+                    titleRes = R.string.whats_new_v4_feature2_title,
+                    descRes = R.string.whats_new_v4_feature2_desc,
+                ),
+                ReleaseNoteItem(
+                    icon = Icons.Rounded.Tune,
+                    titleRes = R.string.whats_new_v4_feature3_title,
+                    descRes = R.string.whats_new_v4_feature3_desc,
                 ),
             ),
         ),
