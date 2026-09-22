@@ -51,7 +51,21 @@ class PlaybackService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        mediaSession = MediaLibrarySession.Builder(this, exoPlayer, librarySessionCallback).build()
+        val sessionActivityIntent = Intent(this, com.aura.music.MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val sessionActivityPendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            sessionActivityIntent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        mediaSession = MediaLibrarySession.Builder(this, exoPlayer, librarySessionCallback)
+            .setSessionActivity(sessionActivityPendingIntent)
+            .build()
         player = exoPlayer
     }
 
