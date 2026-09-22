@@ -8,6 +8,7 @@ using yt-dlp, Deno, IPv6, PO Token provider, and user cookies.
 import asyncio
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -817,11 +818,23 @@ class DownloadService:
                         continue
                     found_artist = artists_found[0].get("name", "")
                     
-                    # Fuzzy match artist name (case-insensitive)
-                    ratio = fuzz.ratio(artist.lower(), found_artist.lower())
-                    logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%%", item.get("title"), found_artist, ratio)
+                    # Fuzzy match artist name (case-insensitive) with collaboration support
+                    direct_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                    max_ratio = direct_ratio
+                    if direct_ratio < 75:
+                        candidate_artists = [a.get("name", "").strip() for a in artists_found if a.get("name")]
+                        if found_artist:
+                            split_names = re.split(r",\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+", found_artist, flags=re.IGNORECASE)
+                            for s in split_names:
+                                s_clean = s.strip()
+                                if s_clean and s_clean not in candidate_artists:
+                                    candidate_artists.append(s_clean)
+                        individual_ratios = [fuzz.ratio(artist.lower(), cand.lower()) for cand in candidate_artists if cand]
+                        max_ratio = max([direct_ratio] + individual_ratios) if individual_ratios else direct_ratio
+
+                    logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%% (direct=%d%%)", item.get("title"), found_artist, max_ratio, direct_ratio)
                     
-                    if ratio >= 75:
+                    if max_ratio >= 75:
                         validated_album = item
                         break
                 
@@ -906,15 +919,35 @@ class DownloadService:
                 found_title = item.get("title", "")
                 
                 # Compute fuzzy scores
-                artist_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                direct_artist_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
                 title_ratio = fuzz.ratio(title.lower(), found_title.lower())
                 
-                # Combined score
-                score = (artist_ratio + title_ratio) / 2
-                logger.info("YTM Smart Song Search: candidate %r by %r, score=%d%% (artist=%d%%, title=%d%%)", 
-                            found_title, found_artist, score, artist_ratio, title_ratio)
+                # Evaluation of artist match (direct or collaboration)
+                effective_artist_ratio = direct_artist_ratio
+                if direct_artist_ratio < 75 and title_ratio >= 80:
+                    candidate_artists = [a.get("name", "").strip() for a in artists_found if a.get("name")]
+                    if found_artist:
+                        split_names = re.split(r",\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+", found_artist, flags=re.IGNORECASE)
+                        for s in split_names:
+                            s_clean = s.strip()
+                            if s_clean and s_clean not in candidate_artists:
+                                candidate_artists.append(s_clean)
+                    
+                    individual_ratios = [fuzz.ratio(artist.lower(), cand.lower()) for cand in candidate_artists if cand]
+                    max_individual_ratio = max(individual_ratios) if individual_ratios else 0
+                    
+                    # Strict guard: only accept collaboration if an individual artist matches >= 80%
+                    if max_individual_ratio >= 80:
+                        effective_artist_ratio = max_individual_ratio
+                        logger.info("YTM Smart Song Search: collaboration detected for %r in %r (individual ratio=%d%%)",
+                                    artist, found_artist, max_individual_ratio)
                 
-                if artist_ratio >= 75 and title_ratio >= 75 and score > best_score:
+                # Combined score
+                score = (effective_artist_ratio + title_ratio) / 2
+                logger.info("YTM Smart Song Search: candidate %r by %r, score=%d%% (artist=%d%% [direct=%d%%], title=%d%%)", 
+                            found_title, found_artist, score, effective_artist_ratio, direct_artist_ratio, title_ratio)
+                
+                if effective_artist_ratio >= 75 and title_ratio >= 75 and score > best_score:
                     best_score = score
                     best_song_id = video_id
                     
@@ -1165,7 +1198,7 @@ class DownloadService:
         """Retry a failed or cancelled job in Supabase."""
         job = self.get_job(user_id, job_id)
 
-        if job.status not in ("failed", "cancelled"):
+        if job.status not in ("failed", "cancelled", "requires_resolution"):
             raise BadRequest(f"Cannot retry a job that is currently {job.status}")
 
         now = datetime.now(timezone.utc)
