@@ -10,19 +10,7 @@ import java.io.File
  * de binaire natives/windows_arm64/sqliteJni.dll. On utilise alors JdbcSQLiteDriver (xerial).
  */
 internal fun createDesktopSQLiteDriver(): SQLiteDriver {
-    val osArch = System.getProperty("os.arch", "").lowercase()
-    val osName = System.getProperty("os.name", "").lowercase()
-    val isWindowsArm64 = osName.contains("win") && (osArch.contains("aarch64") || osArch.contains("arm64"))
-
-    return try {
-        if (isWindowsArm64) {
-            JdbcSQLiteDriver()
-        } else {
-            androidx.sqlite.driver.bundled.BundledSQLiteDriver()
-        }
-    } catch (_: Throwable) {
-        JdbcSQLiteDriver()
-    }
+    return JdbcSQLiteDriver()
 }
 
 actual fun createAuraDatabase(context: Any?): AuraDatabase {
