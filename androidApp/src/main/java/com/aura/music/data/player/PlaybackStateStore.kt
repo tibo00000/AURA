@@ -8,6 +8,7 @@ import com.aura.music.data.network.NetworkPolicyChecker
 import com.aura.music.data.repository.SyncRepository
 import com.aura.music.domain.player.RepeatMode
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -131,6 +132,8 @@ class PlaybackStateStore(
                     pendingSnapshotPayload = null
                 }
             }
+        } catch (e: CancellationException) {
+            // Normal coroutine cancellation when a snapshot is superseded or cancelled during debounce
         } catch (e: Exception) {
             Log.w("PlaybackStateStore", "Debounced save snapshot REST failed: ${e.message}", e)
         }

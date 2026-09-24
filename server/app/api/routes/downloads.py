@@ -208,6 +208,30 @@ async def resolve_download(
         )
 
 
+@router.delete(
+    "/downloads/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_download_job(
+    job_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cancel and delete a download job."""
+    try:
+        download_service.delete_job(user_id=current_user.id, job_id=job_id)
+        return None
+    except NotFound as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
 _candidates_rate_limits: dict[str, list[float]] = defaultdict(list)
 
 

@@ -19,6 +19,7 @@ import com.aura.music.data.repository.PlaylistDetail
 import com.aura.music.data.repository.AlbumDetail
 import com.aura.music.data.repository.ArtistDetail
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.local.AuraDatabase
 import com.aura.music.service.PlaybackService
 import com.aura.music.data.network.BuildConfig
 import com.aura.music.core.MediaCacheManager
@@ -54,6 +55,7 @@ class PlaybackOrchestrator(
     private val queueManager: QueueManager,
     private val stateStore: PlaybackStateStore,
     private val repository: LocalLibraryRepository,
+    private val playbackResolver: TrackPlaybackResolver = TrackPlaybackResolver(context, AuraDatabase.getInstance(context)),
 ) {
     companion object {
         private const val SLEEP_TIMER_REQUEST_CODE = 10099
@@ -197,12 +199,74 @@ class PlaybackOrchestrator(
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             android.util.Log.e("PlaybackOrchestrator", "onPlayerError: error=${error.localizedMessage}", error)
+
+            // Walk the exception cause chain (up to depth 10, with cycle detection)
+            val seenCauses = mutableSetOf<Throwable>()
+            var currentCause: Throwable? = error
+            var httpStatusCode: Int? = null
+            var isNotFound = false
+            var isAuthError = false
+            var isNetworkError = false
+            var isParserError = false
+            var isFileNotFound = false
+            var depth = 0
+
+            while (currentCause != null && depth < 10 && seenCauses.add(currentCause)) {
+                val msg = currentCause.message?.lowercase() ?: ""
+                val className = currentCause::class.java.simpleName
+
+                if (currentCause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    httpStatusCode = currentCause.responseCode
+                } else if (msg.contains("response code: 404") || msg.contains("404 not found") || msg.contains("http 404")) {
+                    httpStatusCode = 404
+                } else if (msg.contains("response code: 401") || msg.contains("response code: 403")) {
+                    httpStatusCode = 401
+                }
+
+                if (httpStatusCode == 404 || msg.contains("404") ||
+                    (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && (httpStatusCode == 404 || msg.contains("not found")))) {
+                    isNotFound = true
+                }
+                if (httpStatusCode == 401 || httpStatusCode == 403 || msg.contains("401") || msg.contains("403") || msg.contains("unauthorized")) {
+                    isAuthError = true
+                }
+                if (currentCause is java.io.FileNotFoundException || msg.contains("filenotfound") || msg.contains("no such file")) {
+                    isFileNotFound = true
+                }
+                if (currentCause is androidx.media3.common.ParserException || className.contains("ParserException") || className.contains("Extractor")) {
+                    isParserError = true
+                }
+                if (currentCause is java.net.UnknownHostException ||
+                    currentCause is java.net.SocketTimeoutException ||
+                    currentCause is java.net.ConnectException ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT) {
+                    isNetworkError = true
+                }
+
+                currentCause = currentCause.cause
+                depth++
+            }
+
             val friendlyMsg = when {
-                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
-                error.localizedMessage?.contains("404") == true -> "Morceau introuvable sur le Cloud AURA."
-                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
-                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Erreur de connexion au serveur AURA."
-                else -> "Impossible de lire le morceau : ${error.localizedMessage ?: "erreur réseau"}"
+                isNotFound || httpStatusCode == 404 ->
+                    "Morceau non disponible sur le Cloud AURA (non synchronisé ou en attente)."
+                isAuthError || httpStatusCode in listOf(401, 403) ->
+                    "Session expirée ou accès non autorisé au serveur AURA."
+                isNetworkError ->
+                    "Impossible de joindre le serveur AURA. Vérifiez votre connexion Internet."
+                isFileNotFound ->
+                    "Fichier local introuvable ou déplacé."
+                isParserError ->
+                    "Fichier audio corrompu ou format non supporté."
+                else -> {
+                    val rawMsg = error.localizedMessage
+                    if (rawMsg == null || rawMsg.contains("Source error", ignoreCase = true)) {
+                        "Erreur lors de la lecture du flux audio."
+                    } else {
+                        "Impossible de lire le morceau : $rawMsg"
+                    }
+                }
             }
             lastPlayerErrorMessage = friendlyMsg
             _uiState.update { current ->
@@ -831,13 +895,11 @@ class PlaybackOrchestrator(
     }
 
     private fun createMediaItem(track: QueuedTrack): MediaItem? {
-        val uri = if (!track.contentUri.isNullOrBlank()) {
-            track.contentUri
-        } else if (track.trackId.isNotBlank()) {
-            // Stream direct depuis le Cloud personnel AURA (le Bearer token est injecté via MediaCacheManager)
-            "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
-        } else {
-            return null
+        val resolution = playbackResolver.resolve(track)
+        val uri = when (resolution) {
+            is PlayableResolution.LocalFile -> resolution.uri
+            is PlayableResolution.CloudStream -> resolution.streamUrl
+            is PlayableResolution.NotAvailable -> return null
         }
         
         val artworkUri = track.coverUri?.let { uriStr ->

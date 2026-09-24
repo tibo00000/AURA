@@ -59,6 +59,8 @@ interface AuraApiService {
 
     suspend fun downloadFile(token: String, jobId: String): HttpResponse
 
+    suspend fun deleteDownloadJob(token: String, jobId: String): HttpResponse
+
     suspend fun bootstrap(token: String, request: BootstrapRequestDto): AuraResponse<BootstrapResponseDto>
 
     suspend fun pushBatch(token: String, request: PushBatchRequestDto): AuraResponse<PushBatchResponseDto>

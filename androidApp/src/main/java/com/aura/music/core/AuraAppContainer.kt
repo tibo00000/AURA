@@ -56,7 +56,8 @@ class AuraAppContainer(context: Context) {
         com.aura.music.data.repository.CloudFileRepository(
             database = database,
             apiService = auraApiService,
-            context = appContext
+            context = appContext,
+            downloadRepositoryProvider = { downloadRepository }
         )
     }
 
@@ -102,12 +103,20 @@ class AuraAppContainer(context: Context) {
         )
     }
 
+    val trackPlaybackResolver by lazy {
+        com.aura.music.domain.player.TrackPlaybackResolver(
+            context = appContext,
+            database = database
+        )
+    }
+
     val playbackOrchestrator by lazy {
         PlaybackOrchestrator(
             context = appContext,
             queueManager = queueManager,
             stateStore = playbackStateStore,
             repository = localLibraryRepository,
+            playbackResolver = trackPlaybackResolver
         )
     }
 

@@ -7,6 +7,7 @@ import androidx.room3.immediateTransaction
 import androidx.room3.useWriterConnection
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.TrackMediaLinkEntity
+import com.aura.music.data.media.AudioIntegrityValidator
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.SyncedFileResponseData
 import io.ktor.client.statement.bodyAsChannel
@@ -20,6 +21,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -29,11 +32,17 @@ import java.io.FileOutputStream
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.ConcurrentHashMap
 
 class CloudFileRepository(
     private val database: AuraDatabase,
     private val apiService: AuraApiService,
-    private val context: Context
+    private val context: Context,
+    private val downloadRepositoryProvider: (() -> DownloadRepository)? = null,
 ) {
     companion object {
         private const val TAG = "CloudFileRepository"
@@ -42,6 +51,11 @@ class CloudFileRepository(
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var ongoingRefreshDeferred: Deferred<Unit>? = null
     private val refreshLock = Any()
+
+    private val inFlightAutoDownloads = ConcurrentHashMap.newKeySet<String>()
+    private val autoDownloadSemaphore = Semaphore(1)
+    private val trackDownloadMutexes = ConcurrentHashMap<String, Mutex>()
+    private val cloudDownloadSemaphore = Semaphore(1)
 
     private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
 
@@ -293,31 +307,152 @@ class CloudFileRepository(
     suspend fun autoDownloadFavoriteTrack(trackId: String) = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences("aura_prefs", Context.MODE_PRIVATE)
         if (!prefs.getBoolean("auto_download_favorites", false)) return@withContext
+
+        if (!inFlightAutoDownloads.add(trackId)) {
+            Log.d(TAG, "Auto-download for $trackId already in-flight, skipping duplicate.")
+            return@withContext
+        }
+
         try {
             val trackRow = database.trackDao().getTrackById(trackId)
-            if (trackRow != null && !trackRow.contentUri.isNullOrBlank()) {
-                Log.i(TAG, "Favorite track $trackId is already present on device.")
-                return@withContext
-            }
-            Log.i(TAG, "Auto-downloading favorite track $trackId...")
-            downloadTrack(
-                trackId = trackId,
-                title = trackRow?.title,
-                artistName = trackRow?.artistName,
-                albumTitle = trackRow?.albumTitle,
-                durationMs = trackRow?.durationMs,
-                artistId = trackRow?.artistId,
-                albumId = trackRow?.albumId,
-                coverUri = trackRow?.coverUri
-            ).collect { res ->
-                res.onSuccess {
-                    Log.i(TAG, "Successfully auto-downloaded favorite track $trackId to ${it.absolutePath}")
-                }.onFailure { err ->
-                    Log.w(TAG, "Failed auto-downloading favorite track $trackId: ${err.message}")
+            val downloadsDir = File(context.filesDir, "downloads")
+            val physicalFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+
+            // If track already has a valid existing contentUri
+            val contentUri = trackRow?.contentUri
+            if (!contentUri.isNullOrBlank()) {
+                val localPath = try {
+                    if (contentUri.startsWith("file:")) {
+                        java.net.URI.create(contentUri).path
+                    } else contentUri
+                } catch (e: Exception) {
+                    contentUri.removePrefix("file://")
+                }
+                val existingLocal = File(localPath)
+                if (existingLocal.exists() && AudioIntegrityValidator.isValidAudioFile(existingLocal, checkMetadata = false)) {
+                    Log.i(TAG, "Favorite track $trackId is already present on device.")
+                    return@withContext
                 }
             }
+
+            // Self-healing: if physical file already exists on disk, re-link immediately without downloading
+            if (physicalFile.exists() && AudioIntegrityValidator.isValidAudioFile(physicalFile, checkMetadata = false)) {
+                Log.i(TAG, "Physical file already exists for favorite track $trackId (${physicalFile.length()} bytes). Re-linking in DB...")
+                linkDownloadedTrack(
+                    trackId = trackId,
+                    targetFile = physicalFile,
+                    title = trackRow?.title,
+                    artistName = trackRow?.artistName,
+                    albumTitle = trackRow?.albumTitle,
+                    durationMs = trackRow?.durationMs,
+                    artistId = trackRow?.artistId,
+                    albumId = trackRow?.albumId,
+                    coverUri = trackRow?.coverUri
+                )
+                return@withContext
+            }
+
+            autoDownloadSemaphore.withPermit {
+                Log.i(TAG, "Auto-downloading favorite track $trackId...")
+                downloadTrack(
+                    trackId = trackId,
+                    title = trackRow?.title,
+                    artistName = trackRow?.artistName,
+                    albumTitle = trackRow?.albumTitle,
+                    durationMs = trackRow?.durationMs,
+                    artistId = trackRow?.artistId,
+                    albumId = trackRow?.albumId,
+                    coverUri = trackRow?.coverUri
+                ).collect { res ->
+                    res.onSuccess {
+                        Log.i(TAG, "Successfully auto-downloaded favorite track $trackId to ${it.absolutePath}")
+                    }.onFailure { err ->
+                        Log.w(TAG, "Failed auto-downloading favorite track $trackId: ${err.message}")
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Auto-download favorite track $trackId exception", e)
+        } finally {
+            inFlightAutoDownloads.remove(trackId)
+        }
+    }
+
+    suspend fun autoDownloadPlaylistTrack(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences("aura_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("auto_download_playlist_$playlistId", false)) return@withContext
+
+        if (!inFlightAutoDownloads.add(trackId)) {
+            Log.d(TAG, "Auto-download for $trackId already in-flight, skipping duplicate.")
+            return@withContext
+        }
+
+        try {
+            val trackRow = database.trackDao().getTrackById(trackId)
+            val downloadsDir = File(context.filesDir, "downloads")
+            val physicalFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+
+            // If track already has a valid existing contentUri
+            val contentUri = trackRow?.contentUri
+            if (!contentUri.isNullOrBlank()) {
+                val localPath = try {
+                    if (contentUri.startsWith("file:")) {
+                        java.net.URI.create(contentUri).path
+                    } else contentUri
+                } catch (e: Exception) {
+                    contentUri.removePrefix("file://")
+                }
+                val existingLocal = File(localPath)
+                if (existingLocal.exists() && AudioIntegrityValidator.isValidAudioFile(existingLocal, checkMetadata = false)) {
+                    Log.i(TAG, "Playlist track $trackId is already present on device.")
+                    return@withContext
+                }
+            }
+
+            // Self-healing: if physical file already exists on disk, re-link immediately without downloading
+            if (physicalFile.exists() && AudioIntegrityValidator.isValidAudioFile(physicalFile, checkMetadata = false)) {
+                Log.i(TAG, "Physical file already exists for playlist track $trackId (${physicalFile.length()} bytes). Re-linking in DB...")
+                linkDownloadedTrack(
+                    trackId = trackId,
+                    targetFile = physicalFile,
+                    title = trackRow?.title,
+                    artistName = trackRow?.artistName,
+                    albumTitle = trackRow?.albumTitle,
+                    durationMs = trackRow?.durationMs,
+                    artistId = trackRow?.artistId,
+                    albumId = trackRow?.albumId,
+                    coverUri = trackRow?.coverUri
+                )
+                return@withContext
+            }
+
+            autoDownloadSemaphore.withPermit {
+                Log.i(TAG, "Auto-downloading playlist track $trackId...")
+                downloadTrack(
+                    trackId = trackId,
+                    title = trackRow?.title,
+                    artistName = trackRow?.artistName,
+                    albumTitle = trackRow?.albumTitle,
+                    durationMs = trackRow?.durationMs,
+                    artistId = trackRow?.artistId,
+                    albumId = trackRow?.albumId,
+                    coverUri = trackRow?.coverUri
+                ).collect { res ->
+                    res.onSuccess {
+                        Log.i(TAG, "Successfully auto-downloaded playlist track $trackId to ${it.absolutePath}")
+                    }.onFailure { err ->
+                        Log.w(TAG, "Failed auto-downloading playlist track $trackId: ${err.message}")
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Auto-download playlist track $trackId exception", e)
+        } finally {
+            inFlightAutoDownloads.remove(trackId)
         }
     }
 
@@ -473,209 +608,349 @@ class CloudFileRepository(
         albumId: String? = null,
         coverUri: String? = null
     ): Flow<Result<File>> = flow {
-        try {
-            Log.i(TAG, "Downloading track $trackId from cloud...")
-            val response = apiService.downloadSyncFile(getAuthToken(), trackId)
-            
-            if (response.status.value !in 200..299) {
-                emit(Result.failure(Exception("Erreur serveur lors du téléchargement: HTTP ${response.status.value}")))
-                return@flow
-            }
-
-            val downloadsDir = File(context.filesDir, "downloads")
-            if (!downloadsDir.exists()) {
-                downloadsDir.mkdirs()
-            }
-
-            val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-
-            val channel = response.bodyAsChannel()
-            channel.toInputStream().use { inputStream ->
-                FileOutputStream(targetFile).use { outputStream ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                    }
+        val mutex = trackDownloadMutexes.computeIfAbsent(trackId) { Mutex() }
+        mutex.withLock {
+            try {
+                // Dynamic disk space check: require at least 50MB of usable storage
+                val usableSpace = context.filesDir.usableSpace
+                if (usableSpace < 50 * 1024 * 1024L) {
+                    Log.w(TAG, "Not enough disk space ($usableSpace bytes available, requires 50MB) to download track $trackId")
+                    emit(Result.failure(Exception("Espace disque insuffisant (minimum 50 Mo requis)")))
+                    return@withLock
                 }
-            }
 
-            Log.i(TAG, "Saved cloud file to ${targetFile.absolutePath} (${targetFile.length()} bytes)")
+                val downloadsDir = File(context.filesDir, "downloads")
+                if (!downloadsDir.exists()) {
+                    downloadsDir.mkdirs()
+                }
 
-            // 1. Resolve online cover if needed
-            var resolvedCoverUri = coverUri
-            if (resolvedCoverUri.isNullOrBlank() || !resolvedCoverUri.startsWith("http")) {
-                try {
-                    val query = "${title ?: ""} ${artistName ?: ""}".trim()
-                    if (query.isNotEmpty()) {
-                        val searchResult = apiService.search(query, limitTracks = 3)
-                        val resolved = searchResult.data?.tracks?.firstOrNull { it.coverUri?.startsWith("http") == true }?.coverUri
-                        if (resolved != null) {
-                            resolvedCoverUri = resolved
+                val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+                val tempFile = File(downloadsDir, "${trackId.replace(':', ';')}.tmp")
+
+                // If file already exists physically with valid size & magic bytes, self-heal DB link and return immediately
+                if (targetFile.exists()) {
+                    if (AudioIntegrityValidator.isValidAudioFile(targetFile, checkMetadata = false)) {
+                        val trackRow = database.trackDao().getTrackById(trackId)
+                        if (trackRow?.contentUri.isNullOrBlank()) {
+                            linkDownloadedTrack(
+                                trackId = trackId,
+                                targetFile = targetFile,
+                                title = title,
+                                artistName = artistName,
+                                albumTitle = albumTitle,
+                                durationMs = durationMs,
+                                artistId = artistId,
+                                albumId = albumId,
+                                coverUri = coverUri
+                            )
+                        }
+                        Log.i(TAG, "Track $trackId already exists on disk (${targetFile.length()} bytes), skipping download.")
+                        emit(Result.success(targetFile))
+                        return@withLock
+                    } else {
+                        Log.w(TAG, "Existing track file for $trackId is corrupt or 0-byte. Deleting to re-download...")
+                        try {
+                            targetFile.delete()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Could not delete corrupt file: ${targetFile.absolutePath}", e)
                         }
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to resolve cover online for cloud track $trackId", e)
                 }
-            }
 
-            // 2. Download cover to local covers cache for offline-first use
-            var localCoverUri: String? = null
-            if (resolvedCoverUri != null && resolvedCoverUri.startsWith("http")) {
-                val client = HttpClient()
-                try {
-                    val imageResponse = client.get(resolvedCoverUri)
-                    if (imageResponse.status.value in 200..299) {
-                        val imageBytes = imageResponse.body<ByteArray>()
-                        val coversDir = File(context.filesDir, "covers")
-                        if (!coversDir.exists()) {
-                            coversDir.mkdirs()
-                        }
-                        val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
-                        FileOutputStream(coverFile).use { fos ->
-                            fos.write(imageBytes)
-                        }
-                        localCoverUri = Uri.fromFile(coverFile).toString()
-                        Log.i(TAG, "Downloaded remote cover from $resolvedCoverUri for $trackId to $localCoverUri")
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+
+                Log.i(TAG, "Downloading track $trackId from cloud...")
+                var downloadedFromCloud = false
+                var cloudHttpStatus = 0
+
+                cloudDownloadSemaphore.withPermit {
+                    val response = try {
+                        apiService.downloadSyncFile(getAuthToken(), trackId)
+                    } catch (e: Exception) {
+                        null
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to download remote cover fallback for $trackId", e)
-                } finally {
-                    client.close()
+
+                    if (response != null && response.status.value in 200..299) {
+                        try {
+                            val channel = response.bodyAsChannel()
+                            channel.toInputStream().use { inputStream ->
+                                FileOutputStream(tempFile).use { outputStream ->
+                                    val buffer = ByteArray(32768)
+                                    var bytesRead: Int
+                                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                        outputStream.write(buffer, 0, bytesRead)
+                                    }
+                                }
+                            }
+
+                            if (AudioIntegrityValidator.isValidAudioFile(tempFile, checkMetadata = false)) {
+                                if (targetFile.exists()) {
+                                    targetFile.delete()
+                                }
+                                if (!tempFile.renameTo(targetFile)) {
+                                    tempFile.copyTo(targetFile, overwrite = true)
+                                    tempFile.delete()
+                                }
+                                downloadedFromCloud = true
+                            } else {
+                                Log.w(TAG, "Cloud sync file for track $trackId failed audio integrity check. Discarding temp file.")
+                                if (tempFile.exists()) tempFile.delete()
+                            }
+                        } catch (streamEx: Exception) {
+                            if (tempFile.exists()) {
+                                tempFile.delete()
+                            }
+                            throw streamEx
+                        }
+                    } else {
+                        cloudHttpStatus = response?.status?.value ?: 0
+                    }
                 }
-            }
 
-            // Link in local DB
-            val now = System.currentTimeMillis()
-            val fileUri = Uri.fromFile(targetFile).toString()
+                if (!downloadedFromCloud) {
+                    val downloadRepo = downloadRepositoryProvider?.invoke()
+                    if (downloadRepo != null) {
+                        val trackRow = database.trackDao().getTrackById(trackId)
+                        val resolvedTitle = title ?: trackRow?.title ?: "Piste ${trackId.takeLast(6)}"
+                        val resolvedArtist = artistName ?: trackRow?.artistName ?: "Artiste"
+                        val resolvedAlbum = albumTitle ?: trackRow?.albumTitle
+                        val resolvedCover = coverUri ?: trackRow?.coverUri
 
-            database.useWriterConnection { transactor ->
-                transactor.immediateTransaction {
-                    val mockMediaStoreId = System.currentTimeMillis()
-                    
-                    // Reconstruct parent TrackEntity if deleted/missing
-                    var rawTrack = database.trackDao().getRawTrackById(trackId)
-                    if (rawTrack == null) {
-                        var fileTitle = title ?: "Piste Cloud $trackId"
-                        var artist = artistName ?: "Artiste Inconnu"
-                        var album = albumTitle ?: "Album Inconnu"
-                        var duration = durationMs ?: 0L
+                        Log.i(TAG, "Track $trackId not found in cloud sync (HTTP $cloudHttpStatus). Falling back to DownloadRepository (VPS trigger)...")
+                        var triggerError: Throwable? = null
+                        downloadRepo.triggerDownload(
+                            trackId = trackId,
+                            title = resolvedTitle,
+                            artistName = resolvedArtist,
+                            albumTitle = resolvedAlbum,
+                            coverUri = resolvedCover,
+                            userToken = getAuthToken()
+                        ).collect { res ->
+                            res.onFailure { triggerError = it }
+                        }
 
-                        // Fallback to ID3 tags if metadata parameters are missing
-                        if (title == null || artistName == null || albumTitle == null || durationMs == null) {
-                            val retriever = android.media.MediaMetadataRetriever()
-                            try {
-                                retriever.setDataSource(targetFile.absolutePath)
-                                fileTitle = title ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: fileTitle
-                                artist = artistName ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artist
-                                album = albumTitle ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: album
-                                val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                duration = durationMs ?: durationStr?.toLongOrNull() ?: duration
-                            } catch (retrieverEx: Exception) {
-                                Log.w(TAG, "Could not extract ID3 metadata from $trackId", retrieverEx)
-                            } finally {
-                                try {
-                                    retriever.release()
-                                } catch (e: Exception) {}
+                        if (triggerError != null) {
+                            emit(Result.failure(triggerError ?: Exception("Échec de la soumission du téléchargement au serveur")))
+                            return@withLock
+                        }
+
+                        // Wait for completion via downloadSuccessFlow
+                        try {
+                            withTimeout(120_000L) {
+                                downloadRepo.downloadSuccessFlow.first { it == trackId }
+                            }
+                            if (targetFile.exists() && AudioIntegrityValidator.isValidAudioFile(targetFile, checkMetadata = false)) {
+                                Log.i(TAG, "Track $trackId successfully downloaded via VPS backend.")
+                                emit(Result.success(targetFile))
+                                return@withLock
+                            } else {
+                                emit(Result.failure(Exception("Le fichier téléchargé via le serveur n'a pas pu être validé.")))
+                                return@withLock
+                            }
+                        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                            emit(Result.failure(Exception("Délai d'attente du téléchargement serveur dépassé (120s).")))
+                            return@withLock
+                        }
+                    } else {
+                        emit(Result.failure(Exception("Erreur serveur lors du téléchargement: HTTP $cloudHttpStatus")))
+                        return@withLock
+                    }
+                }
+
+                Log.i(TAG, "Saved cloud file to ${targetFile.absolutePath} (${targetFile.length()} bytes)")
+
+                // 1. Resolve online cover if needed
+                var resolvedCoverUri = coverUri
+                if (resolvedCoverUri.isNullOrBlank() || !resolvedCoverUri.startsWith("http")) {
+                    try {
+                        val query = "${title ?: ""} ${artistName ?: ""}".trim()
+                        if (query.isNotEmpty()) {
+                            val searchResult = apiService.search(query, limitTracks = 3)
+                            val resolved = searchResult.data?.tracks?.firstOrNull { it.coverUri?.startsWith("http") == true }?.coverUri
+                            if (resolved != null) {
+                                resolvedCoverUri = resolved
                             }
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to resolve cover online for cloud track $trackId", e)
+                    }
+                }
 
-                        val newTrack = com.aura.music.data.local.TrackEntity(
-                            id = trackId,
-                            primaryArtistId = artistId,
-                            albumId = albumId,
-                            title = fileTitle,
-                            normalizedTitle = fileTitle.lowercase().trim(),
-                            displayArtistName = artist,
-                            displayAlbumTitle = album,
-                            durationMs = duration,
-                            coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri,
-                            canonicalAudioSourceType = "downloaded",
-                            isLiked = false,
-                            isDownloadedByAura = true,
-                            isExplicit = false,
-                            popularity = 0,
-                            genresJson = null,
+                // 2. Download cover to local covers cache for offline-first use
+                var localCoverUri: String? = null
+                if (resolvedCoverUri != null && resolvedCoverUri.startsWith("http")) {
+                    val client = HttpClient()
+                    try {
+                        val imageResponse = client.get(resolvedCoverUri)
+                        if (imageResponse.status.value in 200..299) {
+                            val imageBytes = imageResponse.body<ByteArray>()
+                            val coversDir = File(context.filesDir, "covers")
+                            if (!coversDir.exists()) {
+                                coversDir.mkdirs()
+                            }
+                            val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
+                            FileOutputStream(coverFile).use { fos ->
+                                fos.write(imageBytes)
+                            }
+                            localCoverUri = Uri.fromFile(coverFile).toString()
+                            Log.i(TAG, "Downloaded remote cover from $resolvedCoverUri for $trackId to $localCoverUri")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to download remote cover fallback for $trackId", e)
+                    } finally {
+                        client.close()
+                    }
+                }
+
+                // Link in local DB
+                linkDownloadedTrack(
+                    trackId = trackId,
+                    targetFile = targetFile,
+                    title = title,
+                    artistName = artistName,
+                    albumTitle = albumTitle,
+                    durationMs = durationMs,
+                    artistId = artistId,
+                    albumId = albumId,
+                    coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri
+                )
+
+                emit(Result.success(targetFile))
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to download track $trackId", e)
+                emit(Result.failure(e))
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private suspend fun linkDownloadedTrack(
+        trackId: String,
+        targetFile: File,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        artistId: String? = null,
+        albumId: String? = null,
+        coverUri: String? = null
+    ) {
+        val now = System.currentTimeMillis()
+        val fileUri = Uri.fromFile(targetFile).toString()
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val mockMediaStoreId = System.currentTimeMillis()
+
+                var rawTrack = database.trackDao().getRawTrackById(trackId)
+                if (rawTrack == null) {
+                    var fileTitle = title ?: "Piste Cloud $trackId"
+                    var artist = artistName ?: "Artiste Inconnu"
+                    var album = albumTitle ?: "Album Inconnu"
+                    var duration = durationMs ?: 0L
+
+                    if (title == null || artistName == null || albumTitle == null || durationMs == null) {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(targetFile.absolutePath)
+                            fileTitle = title ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: fileTitle
+                            artist = artistName ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artist
+                            album = albumTitle ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: album
+                            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            duration = durationMs ?: durationStr?.toLongOrNull() ?: duration
+                        } catch (retrieverEx: Exception) {
+                            Log.w(TAG, "Could not extract ID3 metadata from $trackId", retrieverEx)
+                        } finally {
+                            try {
+                                retriever.release()
+                            } catch (e: Exception) {}
+                        }
+                    }
+
+                    if (artistId != null) {
+                        val placeholderArtist = com.aura.music.data.local.ArtistEntity(
+                            id = artistId,
+                            name = artist,
+                            normalizedName = artist.lowercase().trim(),
+                            pictureUri = null,
+                            artworkOrigin = null,
+                            artworkLastResolvedAt = null,
+                            summary = null,
                             createdAt = now,
                             updatedAt = now
                         )
-
-                        // Ensure Artist exists to satisfy Foreign Key constraint
-                        if (artistId != null) {
-                            val placeholderArtist = com.aura.music.data.local.ArtistEntity(
-                                id = artistId,
-                                name = artist,
-                                normalizedName = artist.lowercase().trim(),
-                                pictureUri = null,
-                                artworkOrigin = null,
-                                artworkLastResolvedAt = null,
-                                summary = null,
-                                createdAt = now,
-                                updatedAt = now
-                            )
-                            database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
-                            Log.d(TAG, "Created placeholder ArtistEntity for constraint: $artistId")
-                        }
-
-                        // Ensure Album exists to satisfy Foreign Key constraint
-                        if (albumId != null) {
-                            val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
-                                id = albumId,
-                                primaryArtistId = artistId,
-                                title = album,
-                                normalizedTitle = album.lowercase().trim(),
-                                coverUri = localCoverUri ?: resolvedCoverUri ?: coverUri,
-                                artworkOrigin = null,
-                                artworkLastResolvedAt = null,
-                                releaseDate = null,
-                                trackCount = null,
-                                createdAt = now,
-                                updatedAt = now
-                            )
-                            database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
-                            Log.d(TAG, "Created placeholder AlbumEntity for constraint: $albumId")
-                        }
-
-                        database.trackDao().upsertTrack(newTrack)
-                        Log.d(TAG, "Dynamically reconstructed and saved TrackEntity for deleted/missing track $trackId")
-                        rawTrack = newTrack
-                    } else {
-                        // Update Track status to downloaded
-                        val updatedTrack = rawTrack.copy(
-                            canonicalAudioSourceType = "downloaded",
-                            isDownloadedByAura = true,
-                            coverUri = localCoverUri ?: resolvedCoverUri ?: rawTrack.coverUri,
-                            updatedAt = now
-                        )
-                        database.trackDao().upsertTrack(updatedTrack)
-                        Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
+                        database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
+                        Log.d(TAG, "Created placeholder ArtistEntity for constraint: $artistId")
                     }
 
-                    // Create media link
-                    val mediaLink = TrackMediaLinkEntity(
-                        id = "media-link:$mockMediaStoreId",
-                        trackId = trackId,
-                        mediaStoreId = mockMediaStoreId,
-                        contentUri = fileUri,
-                        fileSizeBytes = targetFile.length(),
-                        mimeType = "audio/mpeg",
-                        dateModifiedEpochMs = now,
-                        availabilityStatus = "present",
-                        lastScannedAt = now
-                    )
-                    database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
-                }
-            }
+                    if (albumId != null) {
+                        val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
+                            id = albumId,
+                            primaryArtistId = artistId,
+                            title = album,
+                            normalizedTitle = album.lowercase().trim(),
+                            coverUri = coverUri,
+                            artworkOrigin = null,
+                            artworkLastResolvedAt = null,
+                            releaseDate = null,
+                            trackCount = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                        database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
+                        Log.d(TAG, "Created placeholder AlbumEntity for constraint: $albumId")
+                    }
 
-            emit(Result.success(targetFile))
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to download track $trackId", e)
-            emit(Result.failure(e))
+                    val newTrack = com.aura.music.data.local.TrackEntity(
+                        id = trackId,
+                        primaryArtistId = artistId,
+                        albumId = albumId,
+                        title = fileTitle,
+                        normalizedTitle = fileTitle.lowercase().trim(),
+                        displayArtistName = artist,
+                        displayAlbumTitle = album,
+                        durationMs = duration,
+                        coverUri = coverUri,
+                        canonicalAudioSourceType = "downloaded",
+                        isLiked = false,
+                        isDownloadedByAura = true,
+                        isExplicit = false,
+                        popularity = 0,
+                        genresJson = null,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                    database.trackDao().upsertTrack(newTrack)
+                    Log.d(TAG, "Dynamically reconstructed and saved TrackEntity for deleted/missing track $trackId")
+                } else {
+                    val updatedTrack = rawTrack.copy(
+                        canonicalAudioSourceType = "downloaded",
+                        isDownloadedByAura = true,
+                        coverUri = coverUri ?: rawTrack.coverUri,
+                        updatedAt = now
+                    )
+                    database.trackDao().upsertTrack(updatedTrack)
+                    Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
+                }
+
+                database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+
+                val mediaLink = TrackMediaLinkEntity(
+                    id = "media-link:$mockMediaStoreId",
+                    trackId = trackId,
+                    mediaStoreId = mockMediaStoreId,
+                    contentUri = fileUri,
+                    fileSizeBytes = targetFile.length(),
+                    mimeType = "audio/mpeg",
+                    dateModifiedEpochMs = now,
+                    availabilityStatus = "present",
+                    lastScannedAt = now
+                )
+                database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
+            }
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     /**
      * Retrieves all files synchronized on the cloud server.

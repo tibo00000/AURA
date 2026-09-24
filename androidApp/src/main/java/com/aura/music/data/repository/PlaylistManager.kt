@@ -37,6 +37,8 @@ class PlaylistManager(
         coverUri: String?,
         contextType: String?
     ) -> Unit)? = null,
+    private val cloudFileRepositoryProvider: (() -> CloudFileRepository)? = null,
+    private val context: android.content.Context? = null,
 ) {
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
 
@@ -181,6 +183,21 @@ class PlaylistManager(
                 }
             }
             syncRepository.triggerManualSync()
+
+            // Trigger auto-download if the playlist has auto-download enabled
+            val ctx = context
+            val cloudProvider = cloudFileRepositoryProvider
+            if (ctx != null && cloudProvider != null) {
+                try {
+                    val prefs = ctx.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE)
+                    if (prefs.getBoolean("auto_download_playlist_$playlistId", false)) {
+                        cloudProvider.invoke().autoDownloadPlaylistTrack(playlistId, trackId)
+                    }
+                } catch (e: Exception) {
+                    Log.w("PlaylistManager", "Failed to trigger auto-download for playlist $playlistId track $trackId", e)
+                }
+            }
+
             AddToPlaylistResult.Success(playlistName)
         } catch (e: Exception) {
             Log.e("PlaylistManager", "Failed to add track $trackId to playlist $playlistId", e)

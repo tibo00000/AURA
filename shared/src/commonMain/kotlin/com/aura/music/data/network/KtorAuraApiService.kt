@@ -12,6 +12,8 @@ import io.ktor.client.request.put
 import io.ktor.client.request.delete
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -124,6 +126,10 @@ class KtorAuraApiService(
         header("Authorization", token)
     }
 
+    override suspend fun deleteDownloadJob(token: String, jobId: String): HttpResponse = client.delete("$cleanBaseUrl/downloads/$jobId") {
+        header("Authorization", token)
+    }
+
     override suspend fun bootstrap(token: String, request: BootstrapRequestDto): AuraResponse<BootstrapResponseDto> = client.post("$cleanBaseUrl/me/sync/bootstrap") {
         header("Authorization", token)
         contentType(ContentType.Application.Json)
@@ -134,12 +140,20 @@ class KtorAuraApiService(
         header("Authorization", token)
         contentType(ContentType.Application.Json)
         setBody(request)
+        timeout {
+            requestTimeoutMillis = 120_000L
+            socketTimeoutMillis = 60_000L
+        }
     }.body()
 
     override suspend fun pullBatch(token: String, request: PullBatchRequestDto): AuraResponse<PullBatchResponseDto> = client.post("$cleanBaseUrl/me/sync/pull-batch") {
         header("Authorization", token)
         contentType(ContentType.Application.Json)
         setBody(request)
+        timeout {
+            requestTimeoutMillis = 120_000L
+            socketTimeoutMillis = 60_000L
+        }
     }.body()
 
     override suspend fun getPlaylists(token: String): AuraResponse<List<PlaylistResponse>> = client.get("$cleanBaseUrl/me/playlists") {
@@ -252,6 +266,10 @@ class KtorAuraApiService(
 
     override suspend fun downloadSyncFile(token: String, trackId: String): HttpResponse = client.get("$cleanBaseUrl/me/sync/files/$trackId") {
         header("Authorization", token)
+        timeout {
+            requestTimeoutMillis = 600_000L // 10 minutes for large audio downloads
+            socketTimeoutMillis = 180_000L  // 3 minutes socket timeout
+        }
     }
 
     override suspend fun listSyncFiles(token: String): AuraResponse<SyncedFileListResponseData> = client.get("$cleanBaseUrl/me/sync/files") {
@@ -299,6 +317,11 @@ class KtorAuraApiService(
             val client = HttpClient {
                 install(ContentNegotiation) {
                     json(json)
+                }
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 300_000L // 5 minutes overall
+                    connectTimeoutMillis = 30_000L  // 30 seconds to connect
+                    socketTimeoutMillis = 120_000L  // 2 minutes socket timeout
                 }
             }
             return KtorAuraApiService(client, baseUrl)

@@ -105,7 +105,9 @@ class LocalLibraryRepository(
                     coverUri = coverUri,
                     contextType = contextType,
                 )
-            }
+            },
+            cloudFileRepositoryProvider = cloudFileRepositoryProvider,
+            context = context
         )
     }
 
@@ -141,6 +143,57 @@ class LocalLibraryRepository(
                     lastSyncAt = null,
                 ),
             )
+        }
+        sweepCorruptOrMissingMediaLinks()
+    }
+
+    /**
+     * Cold-start O(1) cleanup: sweeps track_media_links to detect missing or 0-byte stub files
+     * and atomically purges their media links in Room so they can fallback to cloud streaming.
+     */
+    suspend fun sweepCorruptOrMissingMediaLinks() = withContext(Dispatchers.IO) {
+        try {
+            val downloadedTracks = database.trackDao().getDownloadedTracks()
+            val deadTrackIds = mutableListOf<String>()
+
+            for (track in downloadedTracks) {
+                val uri = track.contentUri ?: continue
+                if (uri.startsWith("file:") || uri.startsWith("/")) {
+                    val path = if (uri.startsWith("file:")) {
+                        try {
+                            java.net.URI.create(uri).path
+                        } catch (e: Exception) {
+                            uri.removePrefix("file://")
+                        }
+                    } else {
+                        uri
+                    }
+                    val file = java.io.File(path)
+                    if (!file.exists() || file.length() == 0L) {
+                        deadTrackIds.add(track.id)
+                        if (file.exists() && file.length() == 0L) {
+                            try {
+                                file.delete()
+                            } catch (e: Exception) {
+                                Log.w("LocalLibraryRepository", "Could not delete 0-byte file: ${file.absolutePath}", e)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (deadTrackIds.isNotEmpty()) {
+                Log.i("LocalLibraryRepository", "Cold-start sweep: cleaning ${deadTrackIds.size} missing/0-byte media links")
+                database.useWriterConnection { transactor ->
+                    transactor.immediateTransaction {
+                        for (trackId in deadTrackIds) {
+                            database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("LocalLibraryRepository", "Failed sweeping corrupt media links on cold-start", e)
         }
     }
 

@@ -102,9 +102,12 @@ fun PlaylistDetailScreenNew(
     val playlists = playlistsState.value
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
+    var isAutoDownloadPlaylist by remember(playlistId) { mutableStateOf(sharedPrefs.getBoolean("auto_download_playlist_$playlistId", false)) }
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
     val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
+    val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
         cloudFileRepository.listCloudFiles().collect { res ->
@@ -176,6 +179,44 @@ fun PlaylistDetailScreenNew(
                         detail.tracks.isNotEmpty() && notDownloadedTracks.isEmpty()
                     }
                     var isBatchDownloading by remember { mutableStateOf(false) }
+                    val batchDownloadJob = remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+                    // Auto-téléchargement persistant dès que de nouvelles pistes manquent et que l'option est active
+                    androidx.compose.runtime.LaunchedEffect(isAutoDownloadPlaylist, detail.tracks, isOnline) {
+                        if (isAutoDownloadPlaylist && isOnline && !isBatchDownloading && detail.tracks.isNotEmpty()) {
+                            val toDownload = detail.tracks.filter { it.contentUri.isNullOrBlank() }
+                            if (toDownload.isNotEmpty()) {
+                                isBatchDownloading = true
+                                val job = launch {
+                                    try {
+                                        val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                                        kotlinx.coroutines.coroutineScope {
+                                            toDownload.forEach { track ->
+                                                launch {
+                                                    semaphore.withPermit {
+                                                        cloudFileRepository.downloadTrack(
+                                                            trackId = track.trackId,
+                                                            title = track.title,
+                                                            artistName = track.artistName,
+                                                            albumTitle = track.albumTitle,
+                                                            durationMs = track.durationMs,
+                                                            artistId = track.artistId,
+                                                            albumId = track.albumId,
+                                                            coverUri = track.coverUri,
+                                                        ).collect { }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } finally {
+                                        isBatchDownloading = false
+                                        refreshTick++
+                                    }
+                                }
+                                batchDownloadJob.value = job
+                            }
+                        }
+                    }
 
                     Row(
                         modifier = Modifier
@@ -238,8 +279,8 @@ fun PlaylistDetailScreenNew(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Switch(
-                                checked = isAllDownloaded,
-                                enabled = detail.tracks.isNotEmpty() && !isBatchDownloading,
+                                checked = isAutoDownloadPlaylist,
+                                enabled = detail.tracks.isNotEmpty(),
                                 thumbContent = if (isBatchDownloading) {
                                     {
                                         CircularProgressIndicator(
@@ -248,7 +289,7 @@ fun PlaylistDetailScreenNew(
                                             color = BlazeOrange
                                         )
                                     }
-                                } else if (isAllDownloaded) {
+                                } else if (isAutoDownloadPlaylist && isAllDownloaded) {
                                     {
                                         Icon(
                                             imageVector = Icons.Rounded.DownloadDone,
@@ -262,44 +303,32 @@ fun PlaylistDetailScreenNew(
                                         Icon(
                                             imageVector = Icons.Rounded.Download,
                                             contentDescription = "Télécharger la playlist",
-                                            tint = TextSecondary,
+                                            tint = if (isAutoDownloadPlaylist) BlazeOrange else TextSecondary,
                                             modifier = Modifier.size(14.dp)
                                         )
                                     }
                                 },
                                 onCheckedChange = { checked ->
+                                    isAutoDownloadPlaylist = checked
+                                    sharedPrefs.edit().putBoolean("auto_download_playlist_$playlistId", checked).apply()
                                     if (checked) {
                                         if (notDownloadedTracks.isNotEmpty()) {
                                             scope.launch {
-                                                isBatchDownloading = true
-                                                val total = notDownloadedTracks.size
-                                                snackbarHostState.showSnackbar("Téléchargement de $total morceau(x) pour l'écoute hors-ligne...")
-                                                val semaphore = kotlinx.coroutines.sync.Semaphore(2)
-                                                kotlinx.coroutines.coroutineScope {
-                                                    notDownloadedTracks.forEach { track ->
-                                                        launch {
-                                                            semaphore.withPermit {
-                                                                cloudFileRepository.downloadTrack(
-                                                                    trackId = track.trackId,
-                                                                    title = track.title,
-                                                                    artistName = track.artistName,
-                                                                    albumTitle = track.albumTitle,
-                                                                    durationMs = track.durationMs,
-                                                                    artistId = track.artistId,
-                                                                    albumId = track.albumId,
-                                                                    coverUri = track.coverUri,
-                                                                ).collect { }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                isBatchDownloading = false
-                                                refreshTick++
-                                                snackbarHostState.showSnackbar("Playlist disponible hors-ligne !")
+                                                snackbarHostState.showSnackbar("Téléchargement de ${notDownloadedTracks.size} morceau(x) pour l'écoute hors-ligne...")
                                             }
                                         }
                                     } else {
+                                        batchDownloadJob.value?.cancel()
+                                        batchDownloadJob.value = null
+                                        isBatchDownloading = false
                                         scope.launch {
+                                            val playlistTrackIds = detail.tracks.map { it.trackId }.toSet()
+                                            val userToken = appContainer.authSessionManager.getBearerHeader()
+                                            downloadJobs.filter { it.trackId in playlistTrackIds && it.status in setOf("queued", "running", "requires_resolution") }
+                                                .forEach { job ->
+                                                    appContainer.downloadRepository.deleteJob(job.id, userToken)
+                                                }
+
                                             val downloadedTracks = detail.tracks.filter { !it.contentUri.isNullOrBlank() }
                                             downloadedTracks.forEach { track ->
                                                 cloudFileRepository.removeLocalFile(track.trackId)

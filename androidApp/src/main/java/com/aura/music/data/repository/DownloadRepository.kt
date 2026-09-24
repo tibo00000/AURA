@@ -904,12 +904,19 @@ class DownloadRepository(
     }
 
     /**
-     * Delete a single download job by ID.
+     * Delete a single download job by ID, and optionally cancels it on the backend server.
      */
-    suspend fun deleteJob(jobId: String): Unit = withContext(Dispatchers.IO) {
+    suspend fun deleteJob(jobId: String, userToken: String? = null): Unit = withContext(Dispatchers.IO) {
         notifiedResolutionJobIds.remove(jobId)
         jobTrackTitles.remove(jobId)
         database.downloadJobDao().deleteJob(jobId)
+        if (!userToken.isNullOrBlank()) {
+            try {
+                apiService.deleteDownloadJob(userToken, jobId)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete/cancel job on backend: $jobId", e)
+            }
+        }
     }
 
     /**
