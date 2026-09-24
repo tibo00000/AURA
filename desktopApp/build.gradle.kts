@@ -11,7 +11,17 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(project(":shared"))
-                implementation(compose.desktop.currentOs)
+                val osName = System.getProperty("os.name").lowercase()
+                val arch = System.getProperty("os.arch").lowercase()
+
+                // Compose Desktop runtime : Compose 1.7.0 ne publiant pas d'artefact windows-arm64,
+                // toute machine Windows (x64 ou ARM64) cible l'artefact officiel windows_x64 (émulé nativement par Windows 11).
+                if (osName.contains("win")) {
+                    implementation(compose.desktop.windows_x64)
+                } else {
+                    implementation(compose.desktop.currentOs)
+                }
+
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
@@ -25,12 +35,10 @@ kotlin {
                 implementation("net.java.dev.jna:jna-platform:5.14.0")
                 
                 // JavaFX Media for native JNI audio playback
-                val osName = System.getProperty("os.name").lowercase()
                 val classifier = when {
                     osName.contains("win") -> "win"
                     osName.contains("mac") -> {
                         // Check if Apple Silicon or Intel
-                        val arch = System.getProperty("os.arch").lowercase()
                         if (arch.contains("aarch64") || arch.contains("arm64")) "mac-aarch64" else "mac"
                     }
                     osName.contains("nix") || osName.contains("nux") -> "linux"
