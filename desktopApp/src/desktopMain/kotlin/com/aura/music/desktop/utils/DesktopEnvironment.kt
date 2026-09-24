@@ -18,12 +18,18 @@ object DesktopEnvironment {
     }
 
     /**
-     * Répertoire racine de l'application (où réside l'exécutable ou le jar).
+     * Répertoire racine de l'application (où réside l'exécutable AURA.exe ou le jar).
      */
     val appDir: File by lazy {
         val resDir = System.getProperty("compose.application.resources.dir")
         if (resDir != null) {
-            File(resDir).parentFile ?: File(".")
+            val appSubdir = File(resDir).parentFile ?: File(".")
+            val rootDir = appSubdir.parentFile
+            if (rootDir != null && (File(rootDir, "AURA.exe").exists() || File(rootDir, "aura.exe").exists())) {
+                rootDir
+            } else {
+                appSubdir
+            }
         } else {
             File(System.getProperty("user.dir") ?: ".")
         }

@@ -302,7 +302,11 @@ class DesktopUpdateManager(
     fun triggerInstallationAndExit(installerFile: File, updateInfo: AppVersionResponseData) {
         val updatesDir = DesktopEnvironment.getUpdatesDir()
         val logFile = File(updatesDir, LOG_FILENAME)
-        val currentExe = File(DesktopEnvironment.appDir, "AURA.exe")
+        val currentExe = when {
+            File(DesktopEnvironment.appDir, "AURA.exe").exists() -> File(DesktopEnvironment.appDir, "AURA.exe")
+            File(DesktopEnvironment.appDir.parentFile, "AURA.exe").exists() -> File(DesktopEnvironment.appDir.parentFile, "AURA.exe")
+            else -> File(DesktopEnvironment.appDir, "AURA.exe")
+        }
         val markerFile = File(updatesDir, PENDING_MARKER_FILENAME)
         val currentPid = ProcessHandle.current().pid()
 
@@ -378,42 +382,42 @@ set WAIT_COUNT=0
 :WAIT_PID
 set /a WAIT_COUNT+=1
 if !WAIT_COUNT! gtr 30 (
-    echo [%date% %time%] ERREUR: Le processus parent (PID %PARENT_PID%) ne s'est pas termine dans le delai de 30s. >> "%LOG_PATH%"
+    echo [%date% %time%] ERREUR: Le processus parent PID !PARENT_PID! ne s est pas termine dans le delai de 30s. >> "%LOG_PATH%"
     echo {"status": "error", "code": -1, "reason": "parent_pid_timeout", "log": "%LOG_PATH%"} > "%PENDING_MARKER%.err"
     goto RELAUNCH
 )
 
-tasklist /fi "PID eq %PARENT_PID%" 2>nul | find "%PARENT_PID%" >nul
+tasklist /fi "PID eq !PARENT_PID!" 2>nul | find "!PARENT_PID!" >nul
 if !ERRORLEVEL! == 0 (
-    timeout /t 1 /nobreak >nul
+    ping 127.0.0.1 -n 2 >nul
     goto WAIT_PID
 )
 
-:: Libération des verrous Windows résiduels
-timeout /t 1 /nobreak >nul
+:: Liberation des verrous Windows residuels
+ping 127.0.0.1 -n 2 >nul
 
-:: 2. Exécution passive du MSI avec logs complets
+:: 2. Execution passive du MSI avec log dedie
 echo [%date% %time%] Lancement de Windows Installer... >> "%LOG_PATH%"
-msiexec.exe /i "%INSTALLER_PATH%" /passive /norestart /log "%LOG_PATH%"
+msiexec.exe /i "%INSTALLER_PATH%" /passive /norestart /log "%LOG_PATH%.msi.log"
 set MSI_RETURN=!ERRORLEVEL!
 
-:: 3. Tolérance au verrou temporaire (1603) : retry unique apres 2s
+:: 3. Reinstallation ou retry si code 1603 (meme version deja presente ou verrou temporaire)
 if !MSI_RETURN! == 1603 (
-    echo [%date% %time%] Code 1603 detecte. Nouvelle tentative dans 2 secondes... >> "%LOG_PATH%"
-    timeout /t 2 /nobreak >nul
-    msiexec.exe /i "%INSTALLER_PATH%" /passive /norestart /log "%LOG_PATH%"
+    echo [%date% %time%] Code 1603 detecte. Tentative de reinstallation... >> "%LOG_PATH%"
+    ping 127.0.0.1 -n 3 >nul
+    msiexec.exe /i "%INSTALLER_PATH%" REINSTALL=ALL REINSTALLMODE=vomus /passive /norestart /log "%LOG_PATH%.msi.log"
     set MSI_RETURN=!ERRORLEVEL!
 )
 
-:: Cas 1618 (Service Windows Installer occupe) : Jusqu'a 3 retries espaces de 5s
+:: Cas 1618 (Service Windows Installer occupe) : Jusqu a 3 retries espaces de 5s
 set RETRY_1618=0
 :LOOP_1618
 if !MSI_RETURN! == 1618 (
     set /a RETRY_1618+=1
     if !RETRY_1618! leq 3 (
-        echo [%date% %time%] Code 1618 (Installateur occupe). Tentative !RETRY_1618!/3 dans 5s... >> "%LOG_PATH%"
-        timeout /t 5 /nobreak >nul
-        msiexec.exe /i "%INSTALLER_PATH%" /passive /norestart /log "%LOG_PATH%"
+        echo [%date% %time%] Code 1618: Installateur occupe. Tentative !RETRY_1618! sur 3 dans 5s... >> "%LOG_PATH%"
+        ping 127.0.0.1 -n 6 >nul
+        msiexec.exe /i "%INSTALLER_PATH%" /passive /norestart /log "%LOG_PATH%.msi.log"
         set MSI_RETURN=!ERRORLEVEL!
         goto LOOP_1618
     )
@@ -421,17 +425,25 @@ if !MSI_RETURN! == 1618 (
 
 :: 4. Rapport de statut post-execution
 if !MSI_RETURN! neq 0 (
-    echo [%date% %time%] Echec d'installation avec le code !MSI_RETURN!. >> "%LOG_PATH%"
+    echo [%date% %time%] Echec d installation avec le code !MSI_RETURN!. >> "%LOG_PATH%"
     echo {"status": "error", "code": !MSI_RETURN!, "log": "%LOG_PATH%"} > "%PENDING_MARKER%.err"
 ) else (
-    echo [%date% %time%] Installation finalisee avec succes (code 0). >> "%LOG_PATH%"
+    echo [%date% %time%] Installation finalisee avec succes code 0. >> "%LOG_PATH%"
 )
 
-:: 5. Relance systematique de l'application AURA
+:: 5. Relance systematique de l application AURA
 :RELAUNCH
-if exist "%APP_EXE%" (
-    echo [%date% %time%] Relance d'AURA: "%APP_EXE%" >> "%LOG_PATH%"
-    start "" "%APP_EXE%"
+set "TARGET_EXE=%APP_EXE%"
+if not exist "!TARGET_EXE!" (
+    if exist "%~dp4AURA.exe" set "TARGET_EXE=%~dp4AURA.exe"
+    if exist "%~dp4..\AURA.exe" set "TARGET_EXE=%~dp4..\AURA.exe"
+)
+
+if exist "!TARGET_EXE!" (
+    echo [%date% %time%] Relance d AURA: "!TARGET_EXE!" >> "%LOG_PATH%"
+    start "" "!TARGET_EXE!"
+) else (
+    echo [%date% %time%] ERREUR: Impossible de trouver l executable a relancer: "%APP_EXE%" >> "%LOG_PATH%"
 )
 
 endlocal
