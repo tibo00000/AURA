@@ -34,6 +34,9 @@ kotlin {
                 implementation("net.java.dev.jna:jna:5.14.0")
                 implementation("net.java.dev.jna:jna-platform:5.14.0")
                 
+                // Driver SQLite JDBC pour support natif Windows ARM64 et multi-plateforme
+                implementation("org.xerial:sqlite-jdbc:3.47.1.0")
+                
                 // JavaFX Media for native JNI audio playback
                 val classifier = when {
                     osName.contains("win") -> "win"

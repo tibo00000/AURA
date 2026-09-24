@@ -26,12 +26,7 @@ kotlin {
     @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
     wasmJs {
         moduleName = "shared"
-        browser {
-            commonWebpackConfig {
-                outputFileName = "shared.js"
-            }
-        }
-        binaries.executable()
+        browser()
     }
 
     sourceSets {
@@ -47,9 +42,10 @@ kotlin {
                 // Coroutines
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
-                // Room & SQLite (Uniquement l'interface commune, sans le moteur C)
+                // Room & SQLite
                 api("androidx.room3:room3-runtime:3.0.0-alpha01")
-                api("androidx.sqlite:sqlite:2.5.0")
+                api("androidx.room3:room3-common:3.0.0-alpha01")
+                api("androidx.sqlite:sqlite:2.7.0-alpha01")
 
                 // Coil 3 KMP
                 api("io.coil-kt.coil3:coil-compose:3.0.0-rc01")
@@ -71,7 +67,7 @@ kotlin {
                 implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
 
                 // Moteur SQLite C embarqué pour Android
-                implementation("androidx.sqlite:sqlite-bundled:2.5.0")
+                implementation("androidx.sqlite:sqlite-bundled:2.7.0-alpha01")
 
                 // Ktor client OkHttp engine for Android
                 implementation("io.ktor:ktor-client-okhttp:3.0.0")
@@ -84,7 +80,10 @@ kotlin {
                 runtimeOnly("org.jetbrains.skiko:skiko-awt-runtime-windows-arm64:0.8.15")
 
                 // Moteur SQLite C embarqué pour le Bureau
-                implementation("androidx.sqlite:sqlite-bundled:2.5.0")
+                implementation("androidx.sqlite:sqlite-bundled:2.7.0-alpha01")
+
+                // Driver SQLite universel pour JVM Desktop (support natif complet de Windows ARM64 / Snapdragon)
+                api("org.xerial:sqlite-jdbc:3.47.1.0")
 
                 // Ktor client OkHttp engine for Desktop
                 implementation("io.ktor:ktor-client-okhttp:3.0.0")
@@ -111,8 +110,11 @@ kotlin {
 
         val wasmJsMain by getting {
             dependencies {
-                // Pilote SQLite OPFS spécifique au Web
-                implementation("androidx.sqlite:sqlite-web:2.5.0")
+                implementation("androidx.sqlite:sqlite:2.7.0-alpha01")
+                // Moteur HTTP Ktor pour WebAssembly / JS
+                implementation("io.ktor:ktor-client-js:3.0.0")
+                // APIs DOM et navigateur pour Kotlin 2.1
+                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
             }
         }
     }
