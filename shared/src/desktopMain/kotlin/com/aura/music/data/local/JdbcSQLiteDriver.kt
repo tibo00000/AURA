@@ -8,6 +8,7 @@ import androidx.sqlite.SQLITE_DATA_TEXT
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteStatement
+import androidx.sqlite.SQLiteException
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.PreparedStatement
@@ -21,6 +22,10 @@ import java.sql.Types
  * Résout le problème critique de l'absence de binaire natif dans androidx.sqlite:sqlite-bundled
  * pour l'architecture Windows ARM64 (aarch64 / Snapdragon / Surface Copilot+), tout en garantissant
  * une compatibilité native et éprouvée sur x86, x64, ARM64 (Linux, macOS, Windows).
+ *
+ * Toutes les SQLException levées par le driver JDBC sont encapsulées dans androidx.sqlite.SQLiteException
+ * afin que Room 3 (notamment EntityUpsertAdapter) intercepte correctement les violations de contraintes
+ * d'unicité et bascule en UPDATE de manière transparente.
  */
 class JdbcSQLiteDriver(private val urlPrefix: String = "jdbc:sqlite:") : SQLiteDriver {
 
@@ -35,8 +40,12 @@ class JdbcSQLiteDriver(private val urlPrefix: String = "jdbc:sqlite:") : SQLiteD
         } else {
             "$urlPrefix$fileName"
         }
-        val connection = DriverManager.getConnection(url)
-        return JdbcSQLiteConnection(connection)
+        return try {
+            val connection = DriverManager.getConnection(url)
+            JdbcSQLiteConnection(connection)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "Failed to open SQLite database at $url")
+        }
     }
 }
 
@@ -46,8 +55,12 @@ class JdbcSQLiteConnection(private val connection: Connection) : SQLiteConnectio
     override fun inTransaction(): Boolean = inTx
 
     override fun prepare(sql: String): SQLiteStatement {
-        val statement = connection.prepareStatement(sql)
-        return JdbcSQLiteStatement(this, statement, sql)
+        return try {
+            val statement = connection.prepareStatement(sql)
+            JdbcSQLiteStatement(this, statement, sql)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "Failed to prepare statement: $sql")
+        }
     }
 
     override fun close() {
@@ -99,53 +112,89 @@ class JdbcSQLiteStatement(
 
     // Indexation des bindings : 1-based dans l'API SQLite et JDBC
     override fun bindBlob(index: Int, value: ByteArray) {
-        preparedStatement.setBytes(index, value)
+        try {
+            preparedStatement.setBytes(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindBlob failed")
+        }
     }
 
     override fun bindDouble(index: Int, value: Double) {
-        preparedStatement.setDouble(index, value)
+        try {
+            preparedStatement.setDouble(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindDouble failed")
+        }
     }
 
     override fun bindFloat(index: Int, value: Float) {
-        preparedStatement.setFloat(index, value)
+        try {
+            preparedStatement.setFloat(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindFloat failed")
+        }
     }
 
     override fun bindLong(index: Int, value: Long) {
-        preparedStatement.setLong(index, value)
+        try {
+            preparedStatement.setLong(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindLong failed")
+        }
     }
 
     override fun bindInt(index: Int, value: Int) {
-        preparedStatement.setInt(index, value)
+        try {
+            preparedStatement.setInt(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindInt failed")
+        }
     }
 
     override fun bindBoolean(index: Int, value: Boolean) {
-        preparedStatement.setBoolean(index, value)
+        try {
+            preparedStatement.setBoolean(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindBoolean failed")
+        }
     }
 
     override fun bindText(index: Int, value: String) {
-        preparedStatement.setString(index, value)
+        try {
+            preparedStatement.setString(index, value)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindText failed")
+        }
     }
 
     override fun bindNull(index: Int) {
-        preparedStatement.setNull(index, Types.NULL)
+        try {
+            preparedStatement.setNull(index, Types.NULL)
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "bindNull failed")
+        }
     }
 
     override fun step(): Boolean {
-        if (!hasExecuted) {
-            hasExecuted = true
-            connection.updateTxState(sql)
-            val hasResultSet = preparedStatement.execute()
-            if (hasResultSet) {
-                val rs = preparedStatement.resultSet
-                resultSet = rs
-                if (rs != null) {
-                    cacheMetadata(rs)
+        try {
+            if (!hasExecuted) {
+                hasExecuted = true
+                connection.updateTxState(sql)
+                val hasResultSet = preparedStatement.execute()
+                if (hasResultSet) {
+                    val rs = preparedStatement.resultSet
+                    resultSet = rs
+                    if (rs != null) {
+                        cacheMetadata(rs)
+                    }
+                } else {
+                    return false
                 }
-            } else {
-                return false
             }
+            return resultSet?.next() ?: false
+        } catch (e: SQLException) {
+            throw SQLiteException(e.message ?: "SQLite step error")
         }
-        return resultSet?.next() ?: false
     }
 
     // Indexation des colonnes : 0-based dans l'API SQLite, 1-based dans JDBC

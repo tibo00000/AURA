@@ -162,15 +162,33 @@ class DesktopPlaybackOrchestrator(
 
     private fun playTrackItem(track: QueuedTrack) {
         val uri = track.contentUri
-        if (!uri.isNullOrBlank()) {
-            audioPlayer.play(uri)
+        val localFile = if (!uri.isNullOrBlank()) {
+            try {
+                if (uri.startsWith("file:")) {
+                    File(java.net.URI(uri))
+                } else {
+                    File(uri)
+                }
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+
+        if (localFile != null && localFile.exists() && localFile.length() > 0) {
+            audioPlayer.play(localFile.toURI().toString())
             scheduleDebouncedSnapshotSave()
             syncUiState(PlaybackState.Playing)
             prefetchNextCloudTrack()
         } else {
-            // Piste sur le cloud : streaming à la demande via cache temporaire
+            // Piste sur le cloud (ou fichier local déplacé/introuvable) : streaming à la demande via cache temporaire
             scope.launch(Dispatchers.IO) {
-                val token = apiToken ?: return@launch
+                val token = apiToken ?: run {
+                    System.err.println("Cannot stream cloud track ${track.trackId}: not authenticated")
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(playbackState = PlaybackState.Error, errorMessage = "Morceau non disponible localement. Connectez-vous pour streamer depuis le cloud.") }
+                    }
+                    return@launch
+                }
                 withContext(Dispatchers.Main) {
                     syncUiState(PlaybackState.Buffering)
                 }
@@ -695,9 +713,14 @@ class DesktopPlaybackOrchestrator(
         }
 
         if (contentUri != null) {
-            audioPlayer.play(contentUri)
-            audioPlayer.pause()
-            audioPlayer.seekTo(targetPositionMs)
+            val localExists = try {
+                if (contentUri.startsWith("file:")) File(java.net.URI(contentUri)).exists() else File(contentUri).exists()
+            } catch (_: Exception) { false }
+            if (localExists) {
+                audioPlayer.play(contentUri)
+                audioPlayer.pause()
+                audioPlayer.seekTo(targetPositionMs)
+            }
         }
     }
 

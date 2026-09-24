@@ -638,7 +638,8 @@ class DesktopCloudSyncManager(
                     )
                     database.trackDao().upsertTracks(listOf(trackEntity))
 
-                    // 4. Media Link
+                    // 4. Media Link : suppression préalable pour garantir l'unicité stricte sur track_id
+                    database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
                     val mockMediaStoreId = System.currentTimeMillis()
                     val mediaLink = TrackMediaLinkEntity(
                         id = "media-link:$trackId",
