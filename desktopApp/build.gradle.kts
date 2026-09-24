@@ -81,8 +81,11 @@ compose.desktop {
                 iconFile.set(project.file("src/desktopMain/resources/aura_icon.ico"))
             }
             
-            // Optimizations: Generational ZGC for low latency (JDK 21+)
-            jvmArgs += listOf("-XX:+UseZGC", "-XX:+ZGenerational")
+            // Modules JDK indispensables pour le driver JDBC SQLite et le runtime
+            modules("java.sql", "java.naming", "jdk.unsupported")
+            
+            // Optimizations: Generational ZGC for low latency (JDK 21+) + Software pipeline fallback pour JavaFX Media
+            jvmArgs += listOf("-XX:+UseZGC", "-XX:+ZGenerational", "-Dprism.order=sw")
         }
     }
 }

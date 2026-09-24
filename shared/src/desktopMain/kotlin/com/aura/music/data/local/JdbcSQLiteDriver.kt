@@ -75,6 +75,27 @@ class JdbcSQLiteStatement(
     private var hasExecuted = false
     private var resultSet: ResultSet? = null
     private var isClosed = false
+    private var columnCountCached = -1
+    private val columnNamesCache = mutableMapOf<Int, String>()
+    private val columnTypesCache = mutableMapOf<Int, Int>()
+
+    private fun cacheMetadata(rs: ResultSet) {
+        try {
+            val meta = rs.metaData ?: return
+            columnCountCached = meta.columnCount
+            for (i in 1..columnCountCached) {
+                val idx = i - 1
+                columnNamesCache[idx] = meta.getColumnLabel(i) ?: ""
+                columnTypesCache[idx] = when (meta.getColumnType(i)) {
+                    Types.INTEGER, Types.BIGINT, Types.SMALLINT, Types.TINYINT, Types.BIT -> SQLITE_DATA_INTEGER
+                    Types.FLOAT, Types.REAL, Types.DOUBLE, Types.DECIMAL, Types.NUMERIC -> SQLITE_DATA_FLOAT
+                    Types.BLOB, Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY -> SQLITE_DATA_BLOB
+                    Types.NULL -> SQLITE_DATA_NULL
+                    else -> SQLITE_DATA_TEXT
+                }
+            }
+        } catch (_: SQLException) {}
+    }
 
     // Indexation des bindings : 1-based dans l'API SQLite et JDBC
     override fun bindBlob(index: Int, value: ByteArray) {
@@ -115,7 +136,11 @@ class JdbcSQLiteStatement(
             connection.updateTxState(sql)
             val hasResultSet = preparedStatement.execute()
             if (hasResultSet) {
-                resultSet = preparedStatement.resultSet
+                val rs = preparedStatement.resultSet
+                resultSet = rs
+                if (rs != null) {
+                    cacheMetadata(rs)
+                }
             } else {
                 return false
             }
@@ -170,13 +195,21 @@ class JdbcSQLiteStatement(
     }
 
     override fun getColumnCount(): Int {
-        val meta = resultSet?.metaData ?: try { preparedStatement.metaData } catch (_: SQLException) { null }
-        return meta?.columnCount ?: 0
+        if (columnCountCached >= 0) return columnCountCached
+        return try {
+            preparedStatement.metaData?.columnCount ?: 0
+        } catch (_: SQLException) {
+            0
+        }
     }
 
     override fun getColumnName(index: Int): String {
-        val meta = resultSet?.metaData ?: try { preparedStatement.metaData } catch (_: SQLException) { null }
-        return meta?.getColumnLabel(index + 1) ?: ""
+        columnNamesCache[index]?.let { return it }
+        return try {
+            preparedStatement.metaData?.getColumnLabel(index + 1) ?: ""
+        } catch (_: SQLException) {
+            ""
+        }
     }
 
     override fun getColumnType(index: Int): Int {
@@ -189,24 +222,7 @@ class JdbcSQLiteStatement(
                 }
             } catch (_: SQLException) {}
         }
-        val meta = resultSet?.metaData ?: try { preparedStatement.metaData } catch (_: SQLException) { null }
-        if (meta == null) return SQLITE_DATA_NULL
-        return try {
-            when (meta.getColumnType(index + 1)) {
-                Types.INTEGER, Types.BIGINT, Types.SMALLINT, Types.TINYINT, Types.BIT ->
-                    SQLITE_DATA_INTEGER
-                Types.FLOAT, Types.REAL, Types.DOUBLE, Types.DECIMAL, Types.NUMERIC ->
-                    SQLITE_DATA_FLOAT
-                Types.BLOB, Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY ->
-                    SQLITE_DATA_BLOB
-                Types.NULL ->
-                    SQLITE_DATA_NULL
-                else ->
-                    SQLITE_DATA_TEXT
-            }
-        } catch (_: SQLException) {
-            SQLITE_DATA_TEXT
-        }
+        return columnTypesCache[index] ?: SQLITE_DATA_TEXT
     }
 
     override fun reset() {

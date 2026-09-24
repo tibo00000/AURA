@@ -641,7 +641,7 @@ class DesktopCloudSyncManager(
                     // 4. Media Link
                     val mockMediaStoreId = System.currentTimeMillis()
                     val mediaLink = TrackMediaLinkEntity(
-                        id = "media-link:$mockMediaStoreId",
+                        id = "media-link:$trackId",
                         trackId = trackId,
                         mediaStoreId = mockMediaStoreId,
                         contentUri = fileUri,
