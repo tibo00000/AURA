@@ -466,6 +466,74 @@ class TestGlobalTrackCache(unittest.TestCase):
         self.assertTrue((cache_dir / f"{deezer_key}.audio").exists())
         self.assertEqual((cache_dir / f"{deezer_key}.audio").read_bytes(), b"LUV_RESVAL_HADES_AUDIO_DATA")
 
+    def test_client_track_deezer_prefix_alias_resolution(self):
+        """Vérifie que le préfixe client Android 'track:deezer:12345' réconcilie avec deezer:12345 et le cache global."""
+        from app.core.aura_id_codec import get_track_id_aliases
+        from app.services.download_service import (
+            _auto_register_in_sync_files,
+            _find_globally_cached_track,
+        )
+
+        aliases = get_track_id_aliases("track:deezer:987654321")
+        self.assertIn("deezer:987654321", aliases)
+        self.assertIn("987654321", aliases)
+        self.assertIn("track:deezer:987654321", aliases)
+
+        # Enregistrer un fichier avec deezer:987654321
+        fake_audio = self.test_dir / "downloaded_track_deezer.mp3"
+        fake_audio.write_bytes(b"FAKE_AUDIO_DATA_FOR_DEEZER_ALIAS_TEST")
+
+        _auto_register_in_sync_files(
+            user_id="user_test_deezer_alias",
+            track_id="deezer:987654321",
+            audio_file=fake_audio,
+            title="Deezer Alias Track",
+            artist_name="Deezer Artist",
+        )
+
+        # La requête avec l'identifiant Android 'track:deezer:987654321' doit trouver le cache
+        cached = _find_globally_cached_track("track:deezer:987654321")
+        self.assertIsNotNone(cached)
+        cached_path, metadata = cached
+        self.assertTrue(cached_path.exists())
+        self.assertEqual(metadata.get("title"), "Deezer Alias Track")
+
+    def test_strict_isolation_for_track_local(self):
+        """Vérifie que les identifiants locaux track:local: restent strictement isolés sans aliasing de catalogue."""
+        from app.core.aura_id_codec import get_track_id_aliases
+
+        local_id = "track:local:user_private_recording_999"
+        aliases = get_track_id_aliases(local_id)
+        # Ne doit JAMAIS normaliser ou créer d'alias deezer, spotify ou ytm
+        self.assertEqual(aliases, [local_id])
+
+    def test_auto_eviction_of_corrupt_cached_file(self):
+        """Vérifie qu'un fichier maître corrompu (0 octet ou HTML) dans _global_cache est automatiquement purgé."""
+        from app.services.download_service import (
+            _find_globally_cached_track,
+            _get_track_key,
+            _get_global_cache_dir,
+        )
+
+        track_id = "trk_deezer_corrupt_test_555"
+        track_key = _get_track_key(track_id)
+        cache_dir = _get_global_cache_dir()
+
+        corrupt_audio = cache_dir / f"{track_key}.audio"
+        corrupt_json = cache_dir / f"{track_key}.json"
+
+        # Simuler un fichier maître corrompu (ex: page d'erreur HTML ou 0 octet)
+        corrupt_audio.write_bytes(b"<!DOCTYPE html><html><body>Error 502</body></html>")
+        corrupt_json.write_text(json.dumps({"track_id": track_id, "title": "Corrupt Song"}), encoding="utf-8")
+
+        self.assertTrue(corrupt_audio.exists())
+
+        # La recherche globale doit détecter l'invalidité, purger le fichier et renvoyer None (Cache MISS)
+        cached = _find_globally_cached_track(track_id)
+        self.assertIsNone(cached)
+        self.assertFalse(corrupt_audio.exists())
+        self.assertFalse(corrupt_json.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

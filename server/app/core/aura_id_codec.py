@@ -91,22 +91,35 @@ def get_track_id_aliases(track_id: str) -> list[str]:
 
     candidates: list[str] = [raw]
 
+    # Détection des préfixes client 'track:<provider>:' (ex: track:deezer:12345)
+    normalized_raw = raw
+    if raw.startswith("track:") and not raw.startswith("track:local:") and not raw.startswith("track:cloud:"):
+        stripped = raw[6:].strip() # retire "track:"
+        if stripped.startswith(("deezer:", "spotify:", "ytm:", "youtube:")):
+            candidates.append(stripped)
+            normalized_raw = stripped
+
     # 1. Identifiant opaque AURA (trk_...)
-    if raw.startswith("trk_"):
+    if normalized_raw.startswith("trk_"):
         try:
-            ref = parse_aura_id(raw, expected_kind="track")
+            ref = parse_aura_id(normalized_raw, expected_kind="track")
             p_name = ref.provider_name.lower()
             p_id = ref.provider_id
             candidates.append(f"{p_name}:{p_id}")
             candidates.append(p_id)
             if p_name == "deezer":
                 candidates.append(f"deezer:{p_id}")
+                candidates.append(f"track:deezer:{p_id}")
             elif p_name in ("youtube", "ytmusic", "ytm"):
                 candidates.append(f"ytm:{p_id}")
                 candidates.append(f"youtube:{p_id}")
+                candidates.append(f"track:ytm:{p_id}")
+            elif p_name == "spotify":
+                candidates.append(f"spotify:{p_id}")
+                candidates.append(f"track:spotify:{p_id}")
         except Exception:
             # Support des identifiants au format trk_deezer_12345
-            parts = raw.split("_", 2)
+            parts = normalized_raw.split("_", 2)
             if len(parts) >= 3:
                 p_name = parts[1].lower()
                 p_id = parts[2]
@@ -114,40 +127,48 @@ def get_track_id_aliases(track_id: str) -> list[str]:
                 candidates.append(p_id)
                 if p_name == "deezer":
                     candidates.append(f"deezer:{p_id}")
+                    candidates.append(f"track:deezer:{p_id}")
                 elif p_name in ("youtube", "ytmusic", "ytm"):
                     candidates.append(f"ytm:{p_id}")
                     candidates.append(f"youtube:{p_id}")
+                elif p_name == "spotify":
+                    candidates.append(f"spotify:{p_id}")
+                    candidates.append(f"track:spotify:{p_id}")
 
     # 2. Préfixe deezer:
-    elif raw.startswith("deezer:"):
-        num_id = raw.split(":", 1)[1].strip()
+    elif normalized_raw.startswith("deezer:"):
+        num_id = normalized_raw.split(":", 1)[1].strip()
         candidates.append(num_id)
+        candidates.append(f"track:deezer:{num_id}")
         try:
             candidates.append(build_aura_id("track", "deezer", num_id))
         except Exception:
             pass
 
     # 3. ID numérique pur (Deezer standard)
-    elif raw.isdigit():
-        candidates.append(f"deezer:{raw}")
+    elif normalized_raw.isdigit():
+        candidates.append(f"deezer:{normalized_raw}")
+        candidates.append(f"track:deezer:{normalized_raw}")
         try:
-            candidates.append(build_aura_id("track", "deezer", raw))
+            candidates.append(build_aura_id("track", "deezer", normalized_raw))
         except Exception:
             pass
 
     # 4. Préfixe ytm: ou youtube:
-    elif raw.startswith("ytm:") or raw.startswith("youtube:"):
-        yt_id = raw.split(":", 1)[1].strip()
+    elif normalized_raw.startswith("ytm:") or normalized_raw.startswith("youtube:"):
+        yt_id = normalized_raw.split(":", 1)[1].strip()
         candidates.append(f"ytm:{yt_id}")
         candidates.append(f"youtube:{yt_id}")
+        candidates.append(f"track:ytm:{yt_id}")
         try:
             candidates.append(build_aura_id("track", "youtube", yt_id))
         except Exception:
             pass
 
     # 5. Préfixe spotify:
-    elif raw.startswith("spotify:"):
-        sp_id = raw.split(":", 1)[1].strip()
+    elif normalized_raw.startswith("spotify:"):
+        sp_id = normalized_raw.split(":", 1)[1].strip()
+        candidates.append(f"track:spotify:{sp_id}")
         try:
             candidates.append(build_aura_id("track", "spotify", sp_id))
         except Exception:

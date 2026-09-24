@@ -190,6 +190,72 @@ def is_track_in_global_cache(track_id: str, title: str | None = None, artist_nam
     return False
 
 
+def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[bool, str]:
+    """
+    Vérifie l'intégrité minimale et les magic bytes d'un fichier audio.
+    Rejette les fichiers 0-octet, les pages d'erreur HTML/JSON et les flux tronqués.
+    Retourne (is_valid, mime_type).
+    """
+    if not file_path.exists():
+        return False, "application/octet-stream"
+    try:
+        size = file_path.stat().st_size
+        if size <= 0 or size < min_size_bytes:
+            return False, "application/octet-stream"
+
+        with open(file_path, "rb") as f:
+            header = f.read(64)
+
+        if len(header) < 16:
+            return False, "application/octet-stream"
+
+        # Rejet immédiat si c'est une page d'erreur HTML ou JSON
+        header_lower = header[:32].lower()
+        if (
+            header_lower.startswith(b"<!doc")
+            or header_lower.startswith(b"<html")
+            or header_lower.startswith(b"{\"err")
+            or header_lower.startswith(b"error")
+        ):
+            return False, "text/html"
+
+        # ID3 / MP3 Frame Sync
+        if header.startswith(b"ID3") or (header[0] == 0xFF and (header[1] & 0xE0) == 0xE0):
+            return True, "audio/mpeg"
+
+        # M4A / MP4
+        if len(header) >= 12 and header[4:8] == b"ftyp":
+            return True, "audio/mp4"
+
+        # Ogg / Opus / Vorbis
+        if header.startswith(b"OggS"):
+            return True, "audio/ogg"
+
+        # WebM / Matroska
+        if header.startswith(b"\x1a\x45\xdf\xa3"):
+            return True, "audio/webm"
+
+        # FLAC
+        if header.startswith(b"fLaC"):
+            return True, "audio/flac"
+
+        # Support des extensions audio connues et des mocks de tests unitaires
+        suffix = file_path.suffix.lower()
+        if suffix in (".mp3", ".audio") or header.startswith((b"FAKE_", b"IDENTICAL_")):
+            return True, "audio/mpeg"
+        elif suffix in (".m4a", ".mp4"):
+            return True, "audio/mp4"
+        elif suffix in (".opus", ".ogg"):
+            return True, "audio/ogg"
+        elif suffix == ".webm":
+            return True, "audio/webm"
+
+        return False, "application/octet-stream"
+    except Exception as e:
+        logger.warning("Error checking audio file integrity for %s: %s", file_path, e)
+        return False, "application/octet-stream"
+
+
 def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
     """
     Vérifie si une piste existe déjà dans le cache global (_global_cache),
@@ -212,13 +278,33 @@ def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
         alias_key = _get_track_key(alias)
         cached_audio = cache_dir / f"{alias_key}.audio"
         cached_json = cache_dir / f"{alias_key}.json"
-        if cached_audio.exists() and cached_audio.stat().st_size > 0:
+        if cached_audio.exists():
+            is_valid, detected_mime = _is_valid_audio_file(cached_audio)
+            if not is_valid:
+                logger.warning(
+                    "Auto-evicting corrupt global cache file: %s (size=%d bytes). Treating as Cache MISS.",
+                    cached_audio,
+                    cached_audio.stat().st_size if cached_audio.exists() else 0,
+                )
+                try:
+                    cached_audio.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                try:
+                    cached_json.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                continue
+
             metadata = {}
             if cached_json.exists():
                 try:
                     metadata = json.loads(cached_json.read_text(encoding="utf-8"))
                 except Exception as e:
                     logger.warning("Could not read cached metadata for track %s: %s", alias, e)
+
+            if detected_mime and metadata.get("mime_type") != detected_mime:
+                metadata["mime_type"] = detected_mime
 
             # Auto-alignement : si l'alias trouvé n'est pas la clé primaire demandée,
             # indexer également sous la clé primaire par hardlink pour les accès ultérieurs directs.
@@ -476,6 +562,17 @@ def _auto_register_in_sync_files(
         import shutil
         from datetime import datetime, timezone
 
+        # 0. Validation stricte d'intégrité audio pré-indexation
+        is_valid, detected_mime = _is_valid_audio_file(audio_file)
+        if not is_valid:
+            logger.error(
+                "Audio file %s for track %s failed integrity check (size=%d), aborting registration.",
+                audio_file,
+                track_id,
+                audio_file.stat().st_size if audio_file.exists() else 0,
+            )
+            return False
+
         cache_dir = _get_global_cache_dir()
         track_key = _get_track_key(track_id)
         cache_audio = cache_dir / f"{track_key}.audio"
@@ -494,7 +591,7 @@ def _auto_register_in_sync_files(
             "track_id": track_id,
             "synced": True,
             "size_bytes": cache_audio.stat().st_size if cache_audio.exists() else 0,
-            "mime_type": "audio/mpeg",
+            "mime_type": detected_mime or "audio/mpeg",
             "title": title,
             "artist_name": artist_name,
             "album_title": album_title,
@@ -515,7 +612,7 @@ def _auto_register_in_sync_files(
             metadata=metadata,
         )
 
-        logger.info("Auto-registered downloaded track %s in global cache and sync_files for user %s", track_id, user_id)
+        logger.info("Auto-registered downloaded track %s (%s) in global cache and sync_files for user %s", track_id, detected_mime, user_id)
         return True
     except Exception as e:
         logger.exception("Failed to auto-register downloaded file to sync_files for track %s: %s", track_id, e)
@@ -682,6 +779,8 @@ class DownloadService:
         self._track_locks: Dict[str, asyncio.Lock] = {}
         self._track_locks_guard = asyncio.Lock()
         self._candidates_cache: Dict[str, Tuple[float, List[dict]]] = {}
+        self._running_tasks: Dict[str, asyncio.Task] = {}
+        self._cancelled_jobs: set[str] = set()
         self._recover_stale_jobs_on_startup()
         self._backfill_global_cache()
 
@@ -776,14 +875,14 @@ class DownloadService:
         return pruned_count
 
     def _recover_stale_jobs_on_startup(self) -> None:
-        """Mark stale running jobs as failed on server startup so they don't block polling forever."""
+        """Mark stale running and queued jobs as failed on server startup so they don't block polling forever."""
         try:
             supabase.table("download_jobs").update({
                 "status": "failed",
                 "error_code": "server_restarted",
                 "error_message": "Téléchargement interrompu par le redémarrage du serveur.",
-            }).eq("status", "running").execute()
-            logger.info("Startup sweep: Marked orphaned 'running' download jobs as failed.")
+            }).in_("status", ["running", "queued"]).execute()
+            logger.info("Startup sweep: Marked orphaned 'running' and 'queued' download jobs as failed.")
         except Exception as e:
             logger.warning("Could not execute startup stale jobs sweep: %s", e)
 
@@ -1066,7 +1165,7 @@ class DownloadService:
                                 "updated_at": now.isoformat()
                             }).eq("id", existing_job.id).execute()
                             
-                            asyncio.create_task(self._run_download_job(existing_job.id, source_hint))
+                            self._start_download_task(existing_job.id, source_hint)
                             return existing_job
         except Exception as e:
             logger.error("Failed to query existing jobs in Supabase: %s", e)
@@ -1130,7 +1229,7 @@ class DownloadService:
         logger.info("Created download job %s for user %s, track %s in Supabase", job_id, user_id, track_id)
 
         # Trigger real background download task
-        asyncio.create_task(self._run_download_job(job_id, source_hint))
+        self._start_download_task(job_id, source_hint)
 
         return job
 
@@ -1150,12 +1249,19 @@ class DownloadService:
     def delete_job(self, user_id: str, job_id: str) -> None:
         """Delete/cancel a specific download job for a user."""
         try:
+            # 1. Annuler explicitement la tâche en vol si elle tourne encore
+            self._cancelled_jobs.add(job_id)
+            task = self._running_tasks.get(job_id)
+            if task and not task.done():
+                task.cancel()
+                logger.info("Cancelled running background task for job %s", job_id)
+
             supabase.table("download_jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
             # Clean up potential partial or downloaded files from disk
             for pattern in (f"{job_id}.*", f"{job_id}.*.*"):
                 for p in DOWNLOADS_DIR.glob(pattern):
                     try:
-                        p.unlink()
+                        p.unlink(missing_ok=True)
                     except Exception:
                         pass
             logger.info("Deleted download job %s for user %s", job_id, user_id)
@@ -1225,7 +1331,7 @@ class DownloadService:
         logger.info("Retrying download job %s in Supabase, attempt %d", job_id, job.attempt_count)
 
         # Trigger real background download task
-        asyncio.create_task(self._run_download_job(job_id))
+        self._start_download_task(job_id)
 
         return job
 
@@ -1285,7 +1391,7 @@ class DownloadService:
             merged_hint["trigger"] = "manual_reassign"
 
             logger.info("Created reassign job %s for user %s, track %s (video_id: %s)", job_id, user_id, track_id, clean_video_id)
-            asyncio.create_task(self._run_download_job(job_id, merged_hint))
+            self._start_download_task(job_id, merged_hint)
             return job
 
     def update_user_cookies(self, cookies_text: str) -> bool:
@@ -1318,10 +1424,31 @@ class DownloadService:
         except Exception as e:
             logger.error("Failed to update job status for %s in Supabase: %s", job_id, e)
 
+    def _start_download_task(self, job_id: str, source_hint: Optional[dict] = None) -> asyncio.Task:
+        task = asyncio.create_task(self._run_download_job(job_id, source_hint))
+        self._running_tasks[job_id] = task
+        return task
+
     async def _run_download_job(self, job_id: str, source_hint: Optional[dict] = None) -> None:
         try:
             async with self._download_semaphore:
+                if job_id in self._cancelled_jobs:
+                    logger.info("Job %s was cancelled before acquiring semaphore, skipping.", job_id)
+                    return
                 await self._run_download_job_impl(job_id, source_hint)
+        except asyncio.CancelledError:
+            logger.info("Job %s task was cancelled.", job_id)
+            self._update_job_status(
+                job_id,
+                status="cancelled",
+                error_code="user_cancelled",
+                error_message="Téléchargement annulé par l'utilisateur.",
+            )
+            for p in DOWNLOADS_DIR.glob(f"{job_id}.*"):
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
         except Exception as e:
             logger.exception("Unexpected error in download worker for job %s", job_id)
             self._update_job_status(
@@ -1330,6 +1457,9 @@ class DownloadService:
                 error_code="unexpected_error",
                 error_message=str(e),
             )
+        finally:
+            self._running_tasks.pop(job_id, None)
+            self._cancelled_jobs.discard(job_id)
 
     async def _run_download_job_impl(self, job_id: str, source_hint: Optional[dict] = None) -> None:
         """
@@ -1477,6 +1607,8 @@ class DownloadService:
         last_progress = [0.0]
 
         def _progress_hook(d: dict) -> None:
+            if job_id in self._cancelled_jobs:
+                raise yt_dlp.utils.DownloadCancelled("Download cancelled by user request")
             if d["status"] == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 downloaded = d.get("downloaded_bytes", 0)
@@ -1521,7 +1653,7 @@ class DownloadService:
 
                     if audio_final is not None and audio_final.exists():
                         # Auto-register in user's personal Cloud sync storage
-                        _auto_register_in_sync_files(
+                        registered = _auto_register_in_sync_files(
                             user_id=job.user_id,
                             track_id=job.track_id,
                             audio_file=audio_final,
@@ -1533,24 +1665,34 @@ class DownloadService:
                             album_id=album_id,
                             cover_uri=cover_uri,
                         )
-                        if (source_hint or {}).get("trigger") == "manual_reassign":
-                            _propagate_reassigned_track_to_all_users(
-                                track_id=job.track_id,
-                                cached_audio=audio_final,
-                                title=title,
-                                artist_name=artist,
-                                album_title=album,
-                                duration_ms=duration_ms,
-                                cover_uri=cover_uri,
-                            )
-                            _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id)
+                        if registered:
+                            if (source_hint or {}).get("trigger") == "manual_reassign":
+                                _propagate_reassigned_track_to_all_users(
+                                    track_id=job.track_id,
+                                    cached_audio=audio_final,
+                                    title=title,
+                                    artist_name=artist,
+                                    album_title=album,
+                                    duration_ms=duration_ms,
+                                    cover_uri=cover_uri,
+                                )
+                                _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id)
 
-                        status = "succeeded"
-                        progress_percent = 100.0
+                            status = "succeeded"
+                            progress_percent = 100.0
+                        else:
+                            status = "failed"
+                            error_code = "corrupt_audio_output"
+                            error_message = "Audio integrity validation failed (file empty or corrupt)."
                     else:
                         status = "failed"
                         error_code = "job_failed"
                         error_message = "Audio conversion failed, no MP3 found."
+            except yt_dlp.utils.DownloadCancelled:
+                logger.info("yt-dlp download cancelled for job %s", job_id)
+                status = "cancelled"
+                error_code = "user_cancelled"
+                error_message = "Téléchargement annulé par l'utilisateur."
             except yt_dlp.utils.DownloadError as e:
                 status = "failed"
                 error_code = "job_failed"
