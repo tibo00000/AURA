@@ -17,8 +17,8 @@ class DesktopAudioPlayer : AudioPlayer {
         try {
             // Initialize JavaFX Platform in headless mode or if not already started
             Platform.startup {}
-        } catch (e: Exception) {
-            // Already initialized, ignore
+        } catch (e: Throwable) {
+            // Already initialized, or caught Error/Exception
         }
     }
 
@@ -30,12 +30,12 @@ class DesktopAudioPlayer : AudioPlayer {
                 Platform.runLater {
                     try {
                         action()
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                         onErrorListener?.invoke(e.message ?: "JavaFX error")
                     }
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             onErrorListener?.invoke(e.message ?: "JavaFX Platform error")
         }
     }

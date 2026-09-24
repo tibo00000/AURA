@@ -62,6 +62,23 @@ compose.desktop {
     application {
         mainClass = "com.aura.music.desktop.MainKt"
         
+        // Sur Windows, JavaFX Media ne dispose pas de binaires natifs ARM64 sur Maven Central (x64 uniquement).
+        // Toute l'application Desktop cible l'architecture x64 (émulée nativement par Windows 11 ARM64).
+        // On configure javaHome vers le JDK x64 afin que jlink et jpackage packagent un runtime 100% x64 cohérent.
+        val osName = System.getProperty("os.name").lowercase()
+        if (osName.contains("win")) {
+            val x64JdkCandidates = listOf(
+                "C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot",
+                "C:/Program Files/Eclipse Adoptium/jdk-25.0.3.9-hotspot",
+                "C:/Program Files/Java/jdk-24",
+                "C:/Program Files/Java/jdk-21"
+            )
+            val detectedJdk = x64JdkCandidates.map { file(it) }.firstOrNull { it.exists() }
+            if (detectedJdk != null) {
+                javaHome = detectedJdk.absolutePath
+            }
+        }
+        
         nativeDistributions {
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
