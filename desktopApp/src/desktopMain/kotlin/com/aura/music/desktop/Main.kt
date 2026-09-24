@@ -166,40 +166,47 @@ fun main() = application {
         }
     }
 
-    // Intégration System Tray
-    val trayFallbackIcon = rememberVectorPainter(Icons.Rounded.MusicNote)
+    // Intégration System Tray & Mini-Player Flyout moderne (Thème sombre AURA)
     val appIcon = runCatching { painterResource("aura_logo.png") }.getOrNull()
-    Tray(
-        icon = appIcon ?: trayFallbackIcon,
+    var isTrayFlyoutVisible by remember { mutableStateOf(false) }
+
+    AuraTrayIcon(
         tooltip = "AURA Music Player",
-        onAction = {
-            isVisible = true
-            orchestrator.isWindowVisible = true
+        onToggleFlyout = {
+            isTrayFlyoutVisible = !isTrayFlyoutVisible
+            orchestrator.isWindowVisible = isVisible || isTrayFlyoutVisible
         },
-        menu = {
-            Item("Afficher AURA", onClick = {
-                isVisible = true
-                orchestrator.isWindowVisible = true
-            })
-            Separator()
-            Item(if (orchestrator.audioPlayer.isPlaying()) "Mettre en pause" else "Lecture", onClick = {
-                orchestrator.togglePlayPause()
-            })
-            Item("Piste suivante", onClick = { orchestrator.next() })
-            Item("Piste précédente", onClick = { orchestrator.previous() })
-            Separator()
-            Item("Quitter", onClick = {
-                orchestrator.disconnect()
-                exitApplication()
-            })
+        onOpenApp = {
+            isVisible = true
+            isTrayFlyoutVisible = false
+            orchestrator.isWindowVisible = true
         }
     )
+
+    if (isTrayFlyoutVisible) {
+        DesktopTrayFlyout(
+            orchestrator = orchestrator,
+            onOpenApp = {
+                isVisible = true
+                isTrayFlyoutVisible = false
+                orchestrator.isWindowVisible = true
+            },
+            onQuit = {
+                orchestrator.disconnect()
+                exitApplication()
+            },
+            onClose = {
+                isTrayFlyoutVisible = false
+                orchestrator.isWindowVisible = isVisible
+            }
+        )
+    }
 
     if (isVisible) {
         Window(
             onCloseRequest = {
                 isVisible = false
-                orchestrator.isWindowVisible = false
+                orchestrator.isWindowVisible = isTrayFlyoutVisible
             },
             state = windowState,
             title = "AURA",
@@ -277,7 +284,7 @@ fun main() = application {
                             // Ctrl + Q : Masquer dans le Tray
                             keyEvent.key == Key.Q && isCtrl && !isShift -> {
                                 isVisible = false
-                                orchestrator.isWindowVisible = false
+                                orchestrator.isWindowVisible = isTrayFlyoutVisible
                                 true
                             }
                             else -> false
@@ -315,7 +322,7 @@ fun main() = application {
                             windowState = windowState,
                             onClose = {
                                 isVisible = false
-                                orchestrator.isWindowVisible = false
+                                orchestrator.isWindowVisible = isTrayFlyoutVisible
                             }
                         )
 
