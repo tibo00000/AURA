@@ -135,6 +135,6 @@ interface AuraApiService {
 
     suspend fun deleteSyncFile(token: String, trackId: String): AuraResponse<SyncedFileDeleteResponse>
  
-     suspend fun getAppVersion(): AuraResponse<AppVersionResponseData>
+    suspend fun getAppVersion(platform: String = "android"): AuraResponse<AppVersionResponseData>
 }
 

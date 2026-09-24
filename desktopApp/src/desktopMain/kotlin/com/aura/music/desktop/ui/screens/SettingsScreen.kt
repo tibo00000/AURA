@@ -39,6 +39,7 @@ fun SettingsScreen(
     appState: DesktopAppState,
     secureStorage: DesktopSecureStorage,
     authSessionManager: DesktopAuthSessionManager? = null,
+    updateManager: com.aura.music.desktop.domain.DesktopUpdateManager? = null,
     onReloadData: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -539,6 +540,81 @@ fun SettingsScreen(
                                 shortcutsRight.forEach { (key, action) ->
                                     ShortcutItem(key = key, action = action)
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. À propos & Mises à jour du Logiciel
+            item {
+                val updateState by updateManager?.state?.collectAsState() ?: remember { mutableStateOf(com.aura.music.desktop.domain.DesktopUpdateState.Idle) }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
+                    colors = CardDefaults.cardColors(containerColor = OffBlack),
+                    border = BorderStroke(1.dp, HairlineDark)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(imageVector = Icons.Rounded.SystemUpdate, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(22.dp))
+                            Text(text = "À propos & Mises à jour", color = PureWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(DarkGraphite, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "AURA Desktop v${com.aura.music.desktop.utils.DesktopBuildConfig.VERSION_NAME}",
+                                    color = PureWhite,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Build ${com.aura.music.desktop.utils.DesktopBuildConfig.VERSION_CODE} • ${if (com.aura.music.desktop.utils.DesktopEnvironment.installMode == com.aura.music.desktop.utils.DesktopInstallMode.INSTALLED) "Version Installée (MSI)" else "Version Portable"}",
+                                    color = PureWhite.copy(alpha = 0.5f),
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Button(
+                                onClick = { updateManager?.checkForUpdate(isManual = true) },
+                                colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = updateState !is com.aura.music.desktop.domain.DesktopUpdateState.Checking
+                            ) {
+                                if (updateState is com.aura.music.desktop.domain.DesktopUpdateState.Checking) {
+                                    CircularProgressIndicator(color = PureWhite, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Vérification...", fontSize = 12.sp)
+                                } else {
+                                    Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Rechercher des mises à jour", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+
+                        if (updateState is com.aura.music.desktop.domain.DesktopUpdateState.UpToDate) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(imageVector = Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                Text(text = "Votre application AURA est à jour.", color = Color(0xFF4CAF50), fontSize = 12.sp)
+                            }
+                        } else if (updateState is com.aura.music.desktop.domain.DesktopUpdateState.Error) {
+                            val err = (updateState as com.aura.music.desktop.domain.DesktopUpdateState.Error).message
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(imageVector = Icons.Rounded.ErrorOutline, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(16.dp))
+                                Text(text = err, color = Color(0xFFFF5252), fontSize = 12.sp)
                             }
                         }
                     }

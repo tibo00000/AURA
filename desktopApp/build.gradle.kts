@@ -59,6 +59,16 @@ compose.desktop {
             )
             packageName = "AURA"
             packageVersion = "1.0.0"
+
+            windows {
+                menu = true
+                shortcut = true
+                // GUID immuable garantissant la détection et les Major Upgrades WiX
+                upgradeUuid = "6C3B140B-22DF-4899-B943-2313EA8C1977"
+                perUserInstall = true // Déploiement dans %LOCALAPPDATA% sans élévation UAC
+                dirChooser = false
+                iconFile.set(project.file("src/desktopMain/resources/aura_icon.ico"))
+            }
             
             // Optimizations: Generational ZGC for low latency (JDK 21+)
             jvmArgs += listOf("-XX:+UseZGC", "-XX:+ZGenerational")

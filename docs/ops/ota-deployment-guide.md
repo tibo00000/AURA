@@ -113,11 +113,62 @@ Vous devez recevoir :
 
 ---
 
-## 3. Distribution & Cycle Utilisateurs
+## 3. Distribution & Cycle Utilisateurs Mobile
 
-1. **Pour les nouveaux utilisateurs (ex: votre ami)** :
+1. **Pour les nouveaux utilisateurs** :
    - Envoyez-lui directement l'APK généré à l'Étape 3 (`AURA-v0.2.0.apk`).
    - Comme cet APK a `versionCode = 2`, dès son installation, l'application constatera qu'elle est déjà sur la version `2` du serveur $\rightarrow$ **aucun dialogue de mise à jour ne lui sera affiché**.
 2. **Pour les utilisateurs déjà installés (sur la version 1)** :
    - Dès qu'ils ouvrent l'application (ou cliquent sur "Vérifier les mises à jour" dans les Paramètres), l'application détecte que `versionCode (1) < remote (2)`.
    - Le pop-up s'ouvre, télécharge l'APK, vérifie le SHA-256, et lance l'installateur natif Android automatiquement.
+
+---
+
+## 4. Déploiement et Mises à Jour OTA AURA Desktop (Windows)
+
+Le client Bureau (Compose Multiplatform) dispose de sa propre branche de mise à jour isolée sur le serveur via `GET /app/version?platform=desktop`.
+
+### Étape 1 : Builder l'installateur MSI ou le binaire portable
+Dans votre terminal local (PowerShell) :
+```powershell
+# Format Installateur Windows MSI (recommandé)
+./gradlew :desktopApp:packageMsi
+
+# Format Dossier Portable autonome
+./gradlew :desktopApp:createDistributable
+```
+Le fichier MSI est produit sous :  
+`desktopApp\build\compose\binaries\main\msi\AURA-1.0.0.msi`
+
+### Étape 2 : Déposer le MSI sur le VPS
+Depuis votre terminal local :
+```powershell
+scp "c:\Users\thiba\Desktop\AURA-workspace\desktopApp\build\compose\binaries\main\msi\AURA-1.0.1.msi" root@212.90.121.80:/tmp/AURA-1.0.1.msi
+```
+
+Sur le VPS, créer le sous-dossier `desktop` dans le conteneur s'il n'existe pas et y copier l'installateur :
+```bash
+docker exec -i aura-api mkdir -p /app/downloads/updates/desktop
+docker cp /tmp/AURA-1.0.1.msi aura-api:/app/downloads/updates/desktop/AURA-1.0.1.msi
+```
+
+### Étape 3 : Configurer `desktop/version.json` sur le VPS
+```bash
+docker exec -i aura-api bash -c 'cat << "EOF" > /app/downloads/updates/desktop/version.json
+{
+  "version_code": 2,
+  "version_name": "1.0.1",
+  "download_url": "/app/updates/desktop/AURA-1.0.1.msi",
+  "sha256": "auto",
+  "release_notes": "Amélioration du moteur audio, synchronisation cloud et fluidité de la recherche.",
+  "min_supported_version": 1
+}
+EOF'
+```
+
+### Étape 4 : Vérifier le déploiement Desktop
+```bash
+curl "https://aura-prod.duckdns.org/app/version?platform=desktop"
+```
+Le serveur renvoie le manifeste Desktop avec le hash SHA-256 calculé automatiquement et mis en cache mémoire.
+

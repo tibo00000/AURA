@@ -113,6 +113,60 @@ class TestAppUpdates(unittest.TestCase):
         response = self.client.get("/app/updates/../../etc/passwd")
         self.assertIn(response.status_code, (404, 400))
 
+    def test_get_version_desktop_default(self):
+        """Retourne la version par défaut pour desktop quand aucun fichier n'existe."""
+        response = self.client.get("/app/version?platform=desktop")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["version_code"], 1)
+        self.assertEqual(data["version_name"], "1.0.0")
+        self.assertEqual(data["download_url"], "/app/updates/desktop/latest.msi")
+
+    def test_get_version_desktop_nominal_with_auto_sha256_and_cache(self):
+        """Vérifie le chargement de desktop/version.json et le cache SHA-256 pour un MSI."""
+        desktop_dir = TEST_TEMP_UPDATES / "desktop"
+        desktop_dir.mkdir(parents=True, exist_ok=True)
+
+        msi_content = b"Fake Windows MSI binary content 12345"
+        expected_sha = hashlib.sha256(msi_content).hexdigest()
+        (desktop_dir / "AURA-1.0.1.msi").write_bytes(msi_content)
+
+        desktop_data = {
+            "version_code": 2,
+            "version_name": "1.0.1",
+            "download_url": "/app/updates/desktop/AURA-1.0.1.msi",
+            "sha256": "auto",
+            "release_notes": "Version Desktop 1.0.1 optimisée.",
+            "min_supported_version": 1,
+        }
+        (desktop_dir / "version.json").write_text(json.dumps(desktop_data), encoding="utf-8")
+
+        # 1er appel : calcul du hash
+        response = self.client.get("/app/version?platform=desktop")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["version_code"], 2)
+        self.assertEqual(data["version_name"], "1.0.1")
+        self.assertEqual(data["sha256"], expected_sha)
+
+        # 2ème appel : hit de cache (doit retourner le même hash instantanément)
+        response2 = self.client.get("/app/version?platform=desktop")
+        self.assertEqual(response2.status_code, 200)
+        self.assertEqual(response2.json()["data"]["sha256"], expected_sha)
+
+    def test_download_msi_nominal(self):
+        """Télécharge un fichier MSI avec le content-type application/x-msi."""
+        desktop_dir = TEST_TEMP_UPDATES / "desktop"
+        desktop_dir.mkdir(parents=True, exist_ok=True)
+        msi_content = b"Windows Installer binary stream"
+        (desktop_dir / "AURA-1.0.1.msi").write_bytes(msi_content)
+
+        response = self.client.get("/app/updates/desktop/AURA-1.0.1.msi")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/x-msi")
+        self.assertEqual(response.content, msi_content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

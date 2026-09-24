@@ -23,6 +23,7 @@ import com.aura.music.data.player.QueueManager
 import com.aura.music.desktop.domain.DesktopCloudSyncManager
 import com.aura.music.desktop.domain.DesktopDownloadManager
 import com.aura.music.desktop.domain.DesktopPlaylistManager
+import com.aura.music.desktop.domain.DesktopUpdateManager
 import com.aura.music.desktop.security.DesktopAuthSessionManager
 import com.aura.music.desktop.security.DesktopAuthState
 import com.aura.music.desktop.security.DesktopSecureStorage
@@ -69,6 +70,15 @@ fun main() = application {
             apiToken = authSessionManager.getBearerToken()
         }
     }
+
+    val updateManager = remember { DesktopUpdateManager(apiService, coroutineScope) }
+
+    LaunchedEffect(Unit) {
+        updateManager.checkPostUpdateStatus()
+        updateManager.checkForUpdate(isManual = false)
+    }
+
+    val updateState by updateManager.state.collectAsState()
 
     val appState = remember { DesktopAppState() }
 
@@ -416,6 +426,7 @@ fun main() = application {
                                         appState = appState,
                                         secureStorage = secureStorage,
                                         authSessionManager = authSessionManager,
+                                        updateManager = updateManager,
                                         onReloadData = { }
                                     )
                                 }
@@ -468,6 +479,11 @@ fun main() = application {
                     DesktopReassignAudioDialog(
                         appState = appState,
                         orchestrator = orchestrator
+                    )
+
+                    DesktopUpdateDialog(
+                        state = updateState,
+                        updateManager = updateManager
                     )
                 }
             }
