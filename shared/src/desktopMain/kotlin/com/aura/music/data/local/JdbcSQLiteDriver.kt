@@ -1,6 +1,10 @@
 package com.aura.music.data.local
 
-import androidx.sqlite.SQLite
+import androidx.sqlite.SQLITE_DATA_BLOB
+import androidx.sqlite.SQLITE_DATA_FLOAT
+import androidx.sqlite.SQLITE_DATA_INTEGER
+import androidx.sqlite.SQLITE_DATA_NULL
+import androidx.sqlite.SQLITE_DATA_TEXT
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteStatement
@@ -24,8 +28,6 @@ class JdbcSQLiteDriver(private val urlPrefix: String = "jdbc:sqlite:") : SQLiteD
         // Enregistrement explicite du driver JDBC SQLite
         Class.forName("org.sqlite.JDBC")
     }
-
-    override fun hasConnectionPool(): Boolean = false
 
     override fun open(fileName: String): SQLiteConnection {
         val url = if (fileName.isEmpty() || fileName == ":memory:") {
@@ -183,27 +185,27 @@ class JdbcSQLiteStatement(
             try {
                 rs.getObject(index + 1)
                 if (rs.wasNull()) {
-                    return SQLite.SQLITE_DATA_NULL
+                    return SQLITE_DATA_NULL
                 }
             } catch (_: SQLException) {}
         }
         val meta = resultSet?.metaData ?: try { preparedStatement.metaData } catch (_: SQLException) { null }
-        if (meta == null) return SQLite.SQLITE_DATA_NULL
+        if (meta == null) return SQLITE_DATA_NULL
         return try {
             when (meta.getColumnType(index + 1)) {
                 Types.INTEGER, Types.BIGINT, Types.SMALLINT, Types.TINYINT, Types.BIT ->
-                    SQLite.SQLITE_DATA_INTEGER
+                    SQLITE_DATA_INTEGER
                 Types.FLOAT, Types.REAL, Types.DOUBLE, Types.DECIMAL, Types.NUMERIC ->
-                    SQLite.SQLITE_DATA_FLOAT
+                    SQLITE_DATA_FLOAT
                 Types.BLOB, Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY ->
-                    SQLite.SQLITE_DATA_BLOB
+                    SQLITE_DATA_BLOB
                 Types.NULL ->
-                    SQLite.SQLITE_DATA_NULL
+                    SQLITE_DATA_NULL
                 else ->
-                    SQLite.SQLITE_DATA_TEXT
+                    SQLITE_DATA_TEXT
             }
         } catch (_: SQLException) {
-            SQLite.SQLITE_DATA_TEXT
+            SQLITE_DATA_TEXT
         }
     }
 
