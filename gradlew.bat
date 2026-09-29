@@ -17,6 +17,13 @@
 @if "%DEBUG%"=="" @echo off
 if "%OS%"=="Windows_NT" setlocal
 
+@rem Workaround KT-48420: Kotlin Gradle Plugin calls 'uname -m' for Node.js
+@rem platform detection, which fails on Windows ARM64. Inject Git's usr/bin
+@rem (contains uname.exe) into PATH so Java ProcessBuilder can find it.
+if exist "C:\Program Files\Git\usr\bin\uname.exe" (
+    set "PATH=C:\Program Files\Git\usr\bin;%PATH%"
+)
+
 set DIRNAME=%~dp0
 if "%DIRNAME%"=="" set DIRNAME=.
 set APP_BASE_NAME=%~n0
