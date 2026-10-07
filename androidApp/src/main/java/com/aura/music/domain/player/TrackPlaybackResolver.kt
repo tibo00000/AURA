@@ -1,8 +1,6 @@
 package com.aura.music.domain.player
 
 import android.content.Context
-import android.util.Log
-import com.aura.music.data.network.BuildConfig
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.media.AudioIntegrityValidator
 import com.aura.music.data.media.UriPathParser
@@ -41,9 +39,9 @@ class TrackPlaybackResolver(
     private fun logWarn(message: String, throwable: Throwable? = null) {
         try {
             if (throwable != null) {
-                Log.w(TAG, message, throwable)
+                android.util.Log.w(TAG, message, throwable)
             } else {
-                Log.w(TAG, message)
+                android.util.Log.w(TAG, message)
             }
         } catch (_: Throwable) {
             // Test environment fallback
@@ -122,7 +120,7 @@ class TrackPlaybackResolver(
         }
 
         if (track.trackId.isNotBlank()) {
-            val streamUrl = "${BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
+            val streamUrl = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
             return PlayableResolution.CloudStream(streamUrl)
         }
 

@@ -19,6 +19,7 @@ android {
     val spotifyClientId = localProperties.getProperty("SPOTIFY_CLIENT_ID", "")
     val supabaseUrl = localProperties.getProperty("SUPABASE_URL", "")
     val supabaseAnonKey = localProperties.getProperty("SUPABASE_ANON_KEY", "")
+    val apiBaseUrl = localProperties.getProperty("API_BASE_URL", "http://localhost:8000")
 
     defaultConfig {
         applicationId = "com.aura.music"
@@ -30,6 +31,7 @@ android {
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClientId\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

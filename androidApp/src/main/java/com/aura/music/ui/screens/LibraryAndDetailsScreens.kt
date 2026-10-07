@@ -1,7 +1,6 @@
 package com.aura.music.ui.screens
 
 import java.io.File
-import android.util.Log
 import com.aura.music.ui.utils.TrackLookupIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -740,7 +739,7 @@ fun FavoritesScreen(
                                 } catch (e: kotlinx.coroutines.CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    Log.e("FavoritesScreen", "Erreur lors du téléchargement auto du favori ${track.id}", e)
+                                    android.util.Log.e("FavoritesScreen", "Erreur lors du téléchargement auto du favori ${track.id}", e)
                                 }
                             }
                         } finally {
@@ -907,7 +906,7 @@ fun FavoritesScreen(
                                                     } catch (e: kotlinx.coroutines.CancellationException) {
                                                         throw e
                                                     } catch (e: Exception) {
-                                                        Log.e("FavoritesScreen", "Erreur auto-téléchargement favori ${track.id}: ${e.message}", e)
+                                                        android.util.Log.e("FavoritesScreen", "Erreur auto-téléchargement favori ${track.id}: ${e.message}", e)
                                                     }
                                                 }
                                             } finally {
