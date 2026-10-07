@@ -62,9 +62,6 @@ class DesktopAppState {
     }
 
     // Navigation methods
-    val canNavigateBack: Boolean
-        get() = screenStack.size > 1
-
     fun navigateTo(screen: String) {
         screenStack = screenStack + screen
     }
