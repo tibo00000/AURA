@@ -25,6 +25,7 @@ class LocalMediaScanner(
     private val mediaStoreAudioDataSource: MediaStoreAudioDataSource,
     private val context: Context,
     private val onInvalidateSearchIndex: () -> Unit,
+    private val inFlightCloudTrackIdsProvider: (() -> Set<String>)? = null,
 ) {
     suspend fun syncLocalMedia(): Int = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
@@ -178,16 +179,13 @@ class LocalMediaScanner(
                     }
 
                     scannedMediaLinks.add(
-                        TrackMediaLinkEntity(
-                            id = "media-link:${file.nameWithoutExtension.hashCode()}",
+                        MediaLinkResolver.resolveOrCreateMediaLink(
+                            database = database,
                             trackId = trackId,
-                            mediaStoreId = file.nameWithoutExtension.hashCode().toLong(),
                             contentUri = fileUri,
                             fileSizeBytes = file.length(),
                             mimeType = mimeType,
-                            dateModifiedEpochMs = file.lastModified(),
-                            availabilityStatus = "present",
-                            lastScannedAt = now,
+                            now = now
                         )
                     )
                 } catch (e: Exception) {
@@ -316,8 +314,9 @@ class LocalMediaScanner(
                 } catch (e: Exception) {
                     emptySet()
                 }
+                val inFlightCloudTrackIds = inFlightCloudTrackIdsProvider?.invoke() ?: emptySet()
                 for (id in existingDownloadedIds) {
-                    if (id !in downloadedFilesByTrackId.keys && id !in activeJobTrackIds) {
+                    if (id !in downloadedFilesByTrackId.keys && id !in activeJobTrackIds && id !in inFlightCloudTrackIds) {
                         obsoleteIds.add(id)
                     }
                 }

@@ -335,6 +335,12 @@ interface TrackDao {
     @Query("SELECT content_uri FROM track_media_links WHERE track_id = :trackId LIMIT 1")
     suspend fun getTrackContentUri(trackId: String): String?
 
+    @Query("SELECT * FROM track_media_links WHERE track_id = :trackId LIMIT 1")
+    suspend fun getMediaLinkByTrackId(trackId: String): TrackMediaLinkEntity?
+
+    @Query("SELECT media_store_id FROM track_media_links WHERE media_store_id = :mediaStoreId LIMIT 1")
+    suspend fun isMediaStoreIdTaken(mediaStoreId: Long): Long?
+
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun getTrackCount(): Int
 

@@ -898,6 +898,7 @@ class PlaybackOrchestrator(
         val resolution = playbackResolver.resolve(track)
         val uri = when (resolution) {
             is PlayableResolution.LocalFile -> resolution.uri
+            is PlayableResolution.ScopedContent -> resolution.contentUri
             is PlayableResolution.CloudStream -> resolution.streamUrl
             is PlayableResolution.NotAvailable -> return null
         }

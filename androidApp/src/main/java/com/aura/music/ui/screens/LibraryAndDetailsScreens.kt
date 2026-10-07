@@ -1,6 +1,7 @@
 package com.aura.music.ui.screens
 
 import java.io.File
+import android.util.Log
 import com.aura.music.ui.utils.TrackLookupIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -726,34 +727,27 @@ fun FavoritesScreen(
             }
             var isBatchDownloading by remember { mutableStateOf(false) }
 
-            // Auto-téléchargement persistant dès que de nouvelles pistes manquent et que l'option est active
-            LaunchedEffect(isAutoDownloadFavorites, tracks, isOnline) {
-                if (isAutoDownloadFavorites && isOnline && !isBatchDownloading && tracks != null) {
+            // Auto-téléchargement persistant dès que l'option est active et que la connectivité est disponible
+            LaunchedEffect(isAutoDownloadFavorites, isOnline) {
+                if (isAutoDownloadFavorites && isOnline) {
                     val toDownload = tracks.filter { it.contentUri.isNullOrBlank() }
-                    if (toDownload.isNotEmpty()) {
+                    if (toDownload.isNotEmpty() && !isBatchDownloading) {
                         isBatchDownloading = true
-                        val semaphore = kotlinx.coroutines.sync.Semaphore(2)
-                        kotlinx.coroutines.coroutineScope {
+                        try {
                             toDownload.forEach { track ->
-                                launch {
-                                    semaphore.withPermit {
-                                        cloudFileRepository.downloadTrack(
-                                            trackId = track.id,
-                                            title = track.title,
-                                            artistName = track.artistName,
-                                            albumTitle = track.albumTitle,
-                                            durationMs = track.durationMs,
-                                            artistId = track.artistId,
-                                            albumId = track.albumId,
-                                            coverUri = track.coverUri
-                                        ).collect { }
-                                    }
+                                try {
+                                    cloudFileRepository.autoDownloadFavoriteTrack(track.id)
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    Log.e("FavoritesScreen", "Erreur lors du téléchargement auto du favori ${track.id}", e)
                                 }
                             }
+                        } finally {
+                            isBatchDownloading = false
+                            repository.refreshLocalMediaIndex()
+                            refreshTick++
                         }
-                        isBatchDownloading = false
-                        repository.refreshLocalMediaIndex()
-                        refreshTick++
                     }
                 }
             }
@@ -906,29 +900,22 @@ fun FavoritesScreen(
                                         if (toDownload.isNotEmpty()) {
                                             isBatchDownloading = true
                                             snackbarHostState.showSnackbar("Téléchargement automatique des favoris activé (${toDownload.size} pistes)...")
-                                            val semaphore = kotlinx.coroutines.sync.Semaphore(2)
-                                            kotlinx.coroutines.coroutineScope {
+                                            try {
                                                 toDownload.forEach { track ->
-                                                    launch {
-                                                        semaphore.withPermit {
-                                                            cloudFileRepository.downloadTrack(
-                                                                trackId = track.id,
-                                                                title = track.title,
-                                                                artistName = track.artistName,
-                                                                albumTitle = track.albumTitle,
-                                                                durationMs = track.durationMs,
-                                                                artistId = track.artistId,
-                                                                albumId = track.albumId,
-                                                                coverUri = track.coverUri
-                                                            ).collect { }
-                                                        }
+                                                    try {
+                                                        cloudFileRepository.autoDownloadFavoriteTrack(track.id)
+                                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                                        throw e
+                                                    } catch (e: Exception) {
+                                                        Log.e("FavoritesScreen", "Erreur auto-téléchargement favori ${track.id}: ${e.message}", e)
                                                     }
                                                 }
+                                            } finally {
+                                                isBatchDownloading = false
+                                                repository.refreshLocalMediaIndex()
+                                                refreshTick++
+                                                snackbarHostState.showSnackbar("Favoris synchronisés sur l'appareil !")
                                             }
-                                            isBatchDownloading = false
-                                            repository.refreshLocalMediaIndex()
-                                            refreshTick++
-                                            snackbarHostState.showSnackbar("Favoris synchronisés sur l'appareil !")
                                         } else {
                                             snackbarHostState.showSnackbar("Téléchargement automatique des favoris activé !")
                                         }

@@ -20,6 +20,7 @@ import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.local.UserSettingsEntity
 import com.aura.music.data.media.MediaStoreAudioDataSource
+import com.aura.music.data.media.UriPathParser
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.NetworkPolicyChecker
 import android.util.Log
@@ -79,7 +80,8 @@ class LocalLibraryRepository(
             database = database,
             mediaStoreAudioDataSource = mediaStoreAudioDataSource,
             context = context,
-            onInvalidateSearchIndex = { invalidateSearchIndex() }
+            onInvalidateSearchIndex = { invalidateSearchIndex() },
+            inFlightCloudTrackIdsProvider = { cloudFileRepositoryProvider?.invoke()?.inFlightTrackIds ?: emptySet() }
         )
     }
 
@@ -150,44 +152,63 @@ class LocalLibraryRepository(
     /**
      * Cold-start O(1) cleanup: sweeps track_media_links to detect missing or 0-byte stub files
      * and atomically purges their media links in Room so they can fallback to cloud streaming.
+     * Includes strict guards against unmounted or temporarily inaccessible storage to prevent false positive data loss.
      */
     suspend fun sweepCorruptOrMissingMediaLinks() = withContext(Dispatchers.IO) {
         try {
+            val downloadsDir = java.io.File(context.filesDir, "downloads")
+            if (!downloadsDir.exists() || !downloadsDir.isDirectory) {
+                Log.w("LocalLibraryRepository", "Downloads directory is not accessible yet. Aborting sweep to prevent false-positive data loss.")
+                return@withContext
+            }
+
             val downloadedTracks = database.trackDao().getDownloadedTracks()
             val deadTrackIds = mutableListOf<String>()
 
             for (track in downloadedTracks) {
                 val uri = track.contentUri ?: continue
-                if (uri.startsWith("file:") || uri.startsWith("/")) {
-                    val path = if (uri.startsWith("file:")) {
+                if (UriPathParser.isContentUri(uri)) {
+                    // Skip MediaStore Scoped Storage tracks (handled by MediaStore scanner)
+                    continue
+                }
+
+                val file = UriPathParser.parseLocalFile(uri)
+                if (file == null) continue
+
+                val parentDir = file.parentFile
+                if (parentDir == null || !parentDir.exists()) {
+                    Log.w("LocalLibraryRepository", "Parent directory missing/inaccessible for ${track.id} (${file.path}). Skipping sweep for this item.")
+                    continue
+                }
+
+                if (!file.exists() || file.length() == 0L) {
+                    deadTrackIds.add(track.id)
+                    if (file.exists() && file.length() == 0L) {
                         try {
-                            java.net.URI.create(uri).path
+                            file.delete()
                         } catch (e: Exception) {
-                            uri.removePrefix("file://")
-                        }
-                    } else {
-                        uri
-                    }
-                    val file = java.io.File(path)
-                    if (!file.exists() || file.length() == 0L) {
-                        deadTrackIds.add(track.id)
-                        if (file.exists() && file.length() == 0L) {
-                            try {
-                                file.delete()
-                            } catch (e: Exception) {
-                                Log.w("LocalLibraryRepository", "Could not delete 0-byte file: ${file.absolutePath}", e)
-                            }
+                            Log.w("LocalLibraryRepository", "Could not delete 0-byte file: ${file.absolutePath}", e)
                         }
                     }
                 }
             }
 
             if (deadTrackIds.isNotEmpty()) {
-                Log.i("LocalLibraryRepository", "Cold-start sweep: cleaning ${deadTrackIds.size} missing/0-byte media links")
+                Log.i("LocalLibraryRepository", "Cold-start sweep: cleaning ${deadTrackIds.size} missing/0-byte media links: $deadTrackIds")
                 database.useWriterConnection { transactor ->
                     transactor.immediateTransaction {
                         for (trackId in deadTrackIds) {
                             database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+                            val rawTrack = database.trackDao().getRawTrackById(trackId)
+                            if (rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded") {
+                                database.trackDao().upsertTrack(
+                                    rawTrack.copy(
+                                        canonicalAudioSourceType = "cloud",
+                                        isDownloadedByAura = false,
+                                        updatedAt = System.currentTimeMillis()
+                                    )
+                                )
+                            }
                         }
                     }
                 }

@@ -189,8 +189,8 @@ class TrackPlaybackResolverTest {
         val track = createQueuedTrack("local:audio:999", contentUri = contentUri)
         val resolution = resolver.resolve(track)
 
-        assertTrue(resolution is PlayableResolution.LocalFile)
-        val local = resolution as PlayableResolution.LocalFile
-        assertEquals(contentUri, local.uri)
+        assertTrue(resolution is PlayableResolution.ScopedContent)
+        val local = resolution as PlayableResolution.ScopedContent
+        assertEquals(contentUri, local.contentUri)
     }
 }

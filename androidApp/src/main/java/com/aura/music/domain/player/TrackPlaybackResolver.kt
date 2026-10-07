@@ -1,11 +1,11 @@
 package com.aura.music.domain.player
 
 import android.content.Context
-import android.net.Uri
 import android.util.Log
 import com.aura.music.data.network.BuildConfig
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.media.AudioIntegrityValidator
+import com.aura.music.data.media.UriPathParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +14,7 @@ import java.io.File
 
 sealed interface PlayableResolution {
     data class LocalFile(val uri: String, val file: File) : PlayableResolution
+    data class ScopedContent(val contentUri: String) : PlayableResolution
     data class CloudStream(val streamUrl: String) : PlayableResolution
     data class NotAvailable(val reason: String) : PlayableResolution
 }
@@ -52,35 +53,28 @@ class TrackPlaybackResolver(
     /**
      * Synchronously resolves the playable audio source for a given QueuedTrack.
      * 1. If contentUri is present and points to a valid, non-corrupt local file -> LocalFile.
-     * 2. If contentUri points to a corrupted or dead file link -> purges it asynchronously and falls back.
-     * 3. Checks private downloads cache on disk.
-     * 4. If not local -> CloudStream via authenticated proxy URL.
-     * 5. If trackId is blank -> NotAvailable.
+     * 2. If contentUri is a Scoped Storage MediaStore content URI -> ScopedContent.
+     * 3. If contentUri points to a corrupted or dead file link -> purges it asynchronously and falls back.
+     * 4. Checks private downloads cache on disk.
+     * 5. If not local -> CloudStream via authenticated proxy URL.
+     * 6. If trackId is blank -> NotAvailable.
      */
     fun resolve(track: QueuedTrack): PlayableResolution {
         val contentUri = track.contentUri
 
         if (!contentUri.isNullOrBlank()) {
-            if (contentUri.startsWith("content://")) {
+            if (UriPathParser.isContentUri(contentUri)) {
                 // MediaStore Content URI (Scoped Storage)
-                return PlayableResolution.LocalFile(contentUri, File(""))
+                return PlayableResolution.ScopedContent(contentUri)
             }
 
-            val localFile = try {
-                if (contentUri.startsWith("file:")) {
-                    File(java.net.URI.create(contentUri))
-                } else {
-                    File(contentUri)
-                }
-            } catch (_: Exception) {
-                File(contentUri.removePrefix("file://"))
-            }
+            val localFile = UriPathParser.parseLocalFile(contentUri)
 
-            if (localFile.exists()) {
+            if (localFile != null && localFile.exists()) {
                 if (AudioIntegrityValidator.isValidAudioFile(localFile, checkMetadata = false)) {
                     return PlayableResolution.LocalFile(contentUri, localFile)
                 } else {
-                    logWarn("Local file for track ${track.trackId} is corrupt or 0-byte. Purging and falling back to cloud...")
+                    logWarn("Local file for track ${track.trackId} is corrupt or 0-byte (${localFile.path}). Purging and falling back to cloud...")
                     try {
                         localFile.delete()
                     } catch (e: Exception) {
@@ -98,7 +92,7 @@ class TrackPlaybackResolver(
                 }
             } else {
                 // File does not exist anymore (dead link)
-                logWarn("Local file for track ${track.trackId} does not exist (${localFile.path}). Purging dead link in DB...")
+                logWarn("Local file for track ${track.trackId} does not exist (${localFile?.path ?: contentUri}). Purging dead link in DB...")
                 if (onPurgeTrack != null) {
                     scope.launch {
                         try {

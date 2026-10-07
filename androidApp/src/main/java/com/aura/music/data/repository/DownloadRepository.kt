@@ -10,6 +10,7 @@ import com.aura.music.data.local.TrackEntity
 import com.aura.music.data.local.DownloadJobEntity
 import com.aura.music.data.local.DownloadJobRowModel
 import com.aura.music.data.local.TrackMediaLinkEntity
+import com.aura.music.data.media.MediaLinkResolver
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.DownloadRequestDto
@@ -666,20 +667,17 @@ class DownloadRepository(
 
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
-                    // 1. Create media link
-                    val mockMediaStoreId = System.currentTimeMillis() // High unique ID for downloaded tracks
-                    val mediaLink = TrackMediaLinkEntity(
-                        id = "media-link:$mockMediaStoreId",
+                    // 1. Create or reuse media link deterministically
+                    val mediaLink = MediaLinkResolver.resolveOrCreateMediaLink(
+                        database = database,
                         trackId = trackId,
-                        mediaStoreId = mockMediaStoreId,
                         contentUri = fileUri,
                         fileSizeBytes = targetFile.length(),
                         mimeType = "audio/mpeg",
-                        dateModifiedEpochMs = now,
-                        availabilityStatus = "present",
-                        lastScannedAt = now
+                        now = now
                     )
                     database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
+                    Log.d(TAG, "Persisted media link for track $trackId (id=${mediaLink.id}, mediaStoreId=${mediaLink.mediaStoreId})")
 
                     // 2. Update TrackEntity source type to "downloaded" and denormalized flag
                     val rawTrack = database.trackDao().getRawTrackById(trackId)

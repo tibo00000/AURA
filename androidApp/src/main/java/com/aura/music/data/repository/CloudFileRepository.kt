@@ -8,6 +8,8 @@ import androidx.room3.useWriterConnection
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.TrackMediaLinkEntity
 import com.aura.music.data.media.AudioIntegrityValidator
+import com.aura.music.data.media.MediaLinkResolver
+import com.aura.music.data.media.UriPathParser
 import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.SyncedFileResponseData
 import io.ktor.client.statement.bodyAsChannel
@@ -53,6 +55,7 @@ class CloudFileRepository(
     private val refreshLock = Any()
 
     private val inFlightAutoDownloads = ConcurrentHashMap.newKeySet<String>()
+    val inFlightTrackIds: Set<String> get() = inFlightAutoDownloads
     private val autoDownloadSemaphore = Semaphore(1)
     private val trackDownloadMutexes = ConcurrentHashMap<String, Mutex>()
     private val cloudDownloadSemaphore = Semaphore(1)
@@ -321,15 +324,8 @@ class CloudFileRepository(
             // If track already has a valid existing contentUri
             val contentUri = trackRow?.contentUri
             if (!contentUri.isNullOrBlank()) {
-                val localPath = try {
-                    if (contentUri.startsWith("file:")) {
-                        java.net.URI.create(contentUri).path
-                    } else contentUri
-                } catch (e: Exception) {
-                    contentUri.removePrefix("file://")
-                }
-                val existingLocal = File(localPath)
-                if (existingLocal.exists() && AudioIntegrityValidator.isValidAudioFile(existingLocal, checkMetadata = false)) {
+                val existingLocal = UriPathParser.parseLocalFile(contentUri)
+                if (existingLocal != null && existingLocal.exists() && AudioIntegrityValidator.isValidAudioFile(existingLocal, checkMetadata = false)) {
                     Log.i(TAG, "Favorite track $trackId is already present on device.")
                     return@withContext
                 }
@@ -397,15 +393,8 @@ class CloudFileRepository(
             // If track already has a valid existing contentUri
             val contentUri = trackRow?.contentUri
             if (!contentUri.isNullOrBlank()) {
-                val localPath = try {
-                    if (contentUri.startsWith("file:")) {
-                        java.net.URI.create(contentUri).path
-                    } else contentUri
-                } catch (e: Exception) {
-                    contentUri.removePrefix("file://")
-                }
-                val existingLocal = File(localPath)
-                if (existingLocal.exists() && AudioIntegrityValidator.isValidAudioFile(existingLocal, checkMetadata = false)) {
+                val existingLocal = UriPathParser.parseLocalFile(contentUri)
+                if (existingLocal != null && existingLocal.exists() && AudioIntegrityValidator.isValidAudioFile(existingLocal, checkMetadata = false)) {
                     Log.i(TAG, "Playlist track $trackId is already present on device.")
                     return@withContext
                 }
@@ -841,8 +830,6 @@ class CloudFileRepository(
 
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
-                val mockMediaStoreId = System.currentTimeMillis()
-
                 var rawTrack = database.trackDao().getRawTrackById(trackId)
                 if (rawTrack == null) {
                     var fileTitle = title ?: "Piste Cloud $trackId"
@@ -934,20 +921,16 @@ class CloudFileRepository(
                     Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
                 }
 
-                database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
-
-                val mediaLink = TrackMediaLinkEntity(
-                    id = "media-link:$mockMediaStoreId",
+                val mediaLink = MediaLinkResolver.resolveOrCreateMediaLink(
+                    database = database,
                     trackId = trackId,
-                    mediaStoreId = mockMediaStoreId,
                     contentUri = fileUri,
                     fileSizeBytes = targetFile.length(),
                     mimeType = "audio/mpeg",
-                    dateModifiedEpochMs = now,
-                    availabilityStatus = "present",
-                    lastScannedAt = now
+                    now = now
                 )
                 database.trackDao().upsertTrackMediaLinks(listOf(mediaLink))
+                Log.d(TAG, "Persisted media link for track $trackId (id=${mediaLink.id}, mediaStoreId=${mediaLink.mediaStoreId})")
             }
         }
     }
