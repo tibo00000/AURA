@@ -109,6 +109,15 @@ fun main() = application {
         database.downloadJobDao().getAllJobsWithTrackFlow()
     }.collectAsState(initial = emptyList())
 
+    val activeDownloadsCount = remember(downloadJobs) {
+        downloadJobs.count {
+            it.status.equals("running", ignoreCase = true) ||
+            it.status.equals("queued", ignoreCase = true) ||
+            it.status.equals("pending", ignoreCase = true) ||
+            it.status.equals("downloading", ignoreCase = true)
+        }
+    }
+
     var isRoomInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(database) {
         try {
@@ -336,6 +345,7 @@ fun main() = application {
                             DesktopSidebar(
                                 appState = appState,
                                 playlists = playlists,
+                                activeDownloadsCount = activeDownloadsCount,
                                 onPlaylistSelected = { plId ->
                                     appState.navigateTo("playlist_detail")
                                     appState.selectedPlaylistId = plId
@@ -467,6 +477,18 @@ fun main() = application {
                         appState = appState,
                         orchestrator = orchestrator,
                         onPlaylistRenamed = { }
+                    )
+
+                    DesktopDeletePlaylistDialog(
+                        appState = appState,
+                        orchestrator = orchestrator,
+                        onPlaylistDeleted = {
+                            if (appState.currentScreen == "playlist_detail") {
+                                if (!appState.navigateBack()) {
+                                    appState.navigateToRoot("library")
+                                }
+                            }
+                        }
                     )
 
                     DesktopAddToPlaylistDialog(

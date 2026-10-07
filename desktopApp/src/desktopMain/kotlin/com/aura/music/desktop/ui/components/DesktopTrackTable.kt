@@ -91,14 +91,13 @@ fun DesktopTrackTable(
                         onDismissRequest = { trackForContextMenu = null },
                         track = track,
                         onPlayNext = {
-                            orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                            orchestrator.playNext(orchestrator.toQueuedTrack(track))
                         },
                         onAddToQueue = {
                             orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
                         },
                         onAddToPlaylist = {
-                            appState.trackIdToAddToPlaylist = track.id
-                            appState.showAddToPlaylistDialog = true
+                            appState.trackForPlaylistPicker = track
                         },
                         onOpenArtist = {
                             appState.navigateTo("artist_detail")

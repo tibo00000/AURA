@@ -111,6 +111,13 @@ fun DesktopSidebar(
                 onClick = { appState.navigateToRoot("favorites") }
             )
             SidebarNavItem(
+                icon = Icons.Rounded.Download,
+                label = "Téléchargements",
+                isSelected = appState.currentScreen == "downloads",
+                badgeCount = activeDownloadsCount,
+                onClick = { appState.navigateToRoot("downloads") }
+            )
+            SidebarNavItem(
                 icon = Icons.Rounded.Settings,
                 label = "Paramètres",
                 isSelected = appState.currentScreen == "settings",
@@ -137,16 +144,30 @@ fun DesktopSidebar(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
-            IconButton(
-                onClick = { appState.showCreatePlaylistDialog = true },
-                modifier = Modifier.size(24.dp).handCursor()
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "Créer une playlist",
-                    tint = PureWhite.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { appState.showImportPlaylistDialog = true },
+                    modifier = Modifier.size(24.dp).handCursor()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FileUpload,
+                        contentDescription = "Importer une playlist",
+                        tint = PureWhite.copy(alpha = 0.7f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = { appState.showCreatePlaylistDialog = true },
+                    modifier = Modifier.size(24.dp).handCursor()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Créer une playlist",
+                        tint = PureWhite.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
 

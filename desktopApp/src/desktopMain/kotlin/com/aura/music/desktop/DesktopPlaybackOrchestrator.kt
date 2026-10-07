@@ -352,6 +352,11 @@ class DesktopPlaybackOrchestrator(
         cycleRepeatMode()
     }
 
+    fun playNext(track: QueuedTrack) {
+        queueManager.playNext(track)
+        syncUiState(if (audioPlayer.isPlaying()) PlaybackState.Playing else PlaybackState.Paused)
+    }
+
     fun addToQueue(track: QueuedTrack) {
         queueManager.addToQueue(track)
         syncUiState(if (audioPlayer.isPlaying()) PlaybackState.Playing else PlaybackState.Paused)

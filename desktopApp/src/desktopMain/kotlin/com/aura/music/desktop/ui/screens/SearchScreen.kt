@@ -940,14 +940,13 @@ fun SearchScreen(
                                                                     onDismissRequest = { trackForContextMenu = null },
                                                                     track = track,
                                                                     onPlayNext = {
-                                                                        orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                                                                        orchestrator.playNext(orchestrator.toQueuedTrack(track))
                                                                     },
                                                                     onAddToQueue = {
                                                                         orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
                                                                     },
                                                                     onAddToPlaylist = {
-                                                                        appState.trackIdToAddToPlaylist = track.id
-                                                                        appState.showAddToPlaylistDialog = true
+                                                                        appState.trackForPlaylistPicker = track
                                                                     },
                                                                     onOpenArtist = {
                                                                         appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
@@ -1045,14 +1044,13 @@ fun SearchScreen(
                                             onDismissRequest = { trackForContextMenu = null },
                                             track = track,
                                             onPlayNext = {
-                                                orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
+                                                orchestrator.playNext(orchestrator.toQueuedTrack(track))
                                             },
                                             onAddToQueue = {
                                                 orchestrator.addToQueue(orchestrator.toQueuedTrack(track))
                                             },
                                             onAddToPlaylist = {
-                                                appState.trackIdToAddToPlaylist = track.id
-                                                appState.showAddToPlaylistDialog = true
+                                                appState.trackForPlaylistPicker = track
                                             },
                                             onOpenArtist = {
                                                 appState.selectedArtistId = track.artistId ?: "artist:${track.artistName}"
@@ -2001,7 +1999,7 @@ private fun DesktopOnlineTrackRow(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Download,
-                        contentDescription = "Télécharger sur cet ordi",
+                        contentDescription = "Télécharger sur cet ordinateur",
                         tint = BlazeOrange,
                         modifier = Modifier.size(20.dp)
                     )
@@ -2015,8 +2013,8 @@ private fun DesktopOnlineTrackRow(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.CloudDownload,
-                        contentDescription = "Ajouter au Cloud",
+                        imageVector = Icons.Rounded.Download,
+                        contentDescription = "Télécharger sur cet ordinateur",
                         tint = BlazeOrange,
                         modifier = Modifier.size(20.dp)
                     )

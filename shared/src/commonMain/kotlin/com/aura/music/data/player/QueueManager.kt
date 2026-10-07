@@ -203,6 +203,22 @@ class QueueManager {
     }
 
     /**
+     * Insère une piste en tête de la priority queue ("Lire ensuite").
+     * La piste sera jouée immédiatement après la piste active.
+     */
+    fun playNext(track: QueuedTrack) {
+        _state.update { current ->
+            val newTrack = track.copy(
+                source = TrackSource.PRIORITY,
+                internalId = generateUuid()
+            )
+            current.copy(
+                priorityQueue = listOf(newTrack) + current.priorityQueue,
+            )
+        }
+    }
+
+    /**
      * Ajoute une piste a la priority queue.
      * Les doublons sont autorises si voulus par l'utilisateur (cf. queue-rules.md).
      */

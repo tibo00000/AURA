@@ -48,8 +48,6 @@ class DesktopAppState {
     // Dialogues
     var showCreatePlaylistDialog by mutableStateOf(false)
     var showImportPlaylistDialog by mutableStateOf(false)
-    var showAddToPlaylistDialog by mutableStateOf(false)
-    var trackIdToAddToPlaylist by mutableStateOf<String?>(null)
     var trackForPlaylistPicker by mutableStateOf<TrackListRow?>(null)
     var playlistToRename by mutableStateOf<Pair<String, String>?>(null) // id, currentName
     var playlistToDelete by mutableStateOf<Pair<String, String>?>(null) // id, name
@@ -64,6 +62,9 @@ class DesktopAppState {
     }
 
     // Navigation methods
+    val canNavigateBack: Boolean
+        get() = screenStack.size > 1
+
     fun navigateTo(screen: String) {
         screenStack = screenStack + screen
     }

@@ -54,6 +54,28 @@ fun ArtistDetailScreen(
         allLocalTracks.filter { it.artistId == artistId || it.artistName.equals(artistId.removePrefix("artist:"), ignoreCase = true) }
     }
 
+    val tracksToShow = remember(artistData, localArtistTracks, resolvedCoverUri) {
+        if (localArtistTracks.isNotEmpty()) localArtistTracks
+        else {
+            artistData?.topTracks?.map { tt ->
+                TrackListRow(
+                    id = tt.id,
+                    artistId = tt.artistId ?: (if (artistId.startsWith("art_")) artistId else "artist:${tt.displayArtistName}"),
+                    albumId = tt.albumId,
+                    title = tt.title,
+                    artistName = tt.displayArtistName,
+                    albumTitle = tt.displayAlbumTitle,
+                    contentUri = null,
+                    durationMs = tt.durationMs.toLong(),
+                    coverUri = tt.coverUri ?: resolvedCoverUri ?: artistData?.pictureUri,
+                    isLiked = tt.isLiked,
+                    createdAt = 0L,
+                    updatedAt = 0L
+                )
+            } ?: emptyList()
+        }
+    }
+
     val artistName = remember(artistData, localArtistTracks, artistId) {
         artistData?.name ?: localArtistTracks.firstOrNull()?.artistName ?: artistId.removePrefix("artist:")
     }
@@ -112,17 +134,22 @@ fun ArtistDetailScreen(
         DesktopHeroHeader(
             tag = "ARTISTE",
             title = artistName,
-            subtitle = if (artistData != null) "${artistData!!.topTracks.size} titres populaires" else "${localArtistTracks.size} morceaux dans votre bibliothèque",
-            coverUri = resolvedCoverUri ?: artistData?.pictureUri ?: localArtistTracks.firstOrNull()?.coverUri,
+            subtitle = when {
+                localArtistTracks.isNotEmpty() -> "${localArtistTracks.size} morceaux dans votre bibliothèque"
+                artistData != null -> "${tracksToShow.size} titres populaires"
+                isLoading -> "Chargement..."
+                else -> "0 morceau"
+            },
+            coverUri = resolvedCoverUri ?: artistData?.pictureUri ?: localArtistTracks.firstOrNull()?.coverUri ?: tracksToShow.firstOrNull()?.coverUri,
             onBack = { appState.navigateBack() },
             onPlayAll = {
-                if (localArtistTracks.isNotEmpty()) {
+                if (tracksToShow.isNotEmpty()) {
                     coroutineScope.launch {
                         val ctx = withContext(Dispatchers.Default) {
-                            localArtistTracks.map { orchestrator.toQueuedTrack(it) }
+                            tracksToShow.map { orchestrator.toQueuedTrack(it) }
                         }
                         orchestrator.playTrack(
-                            trackId = localArtistTracks.first().id,
+                            trackId = tracksToShow.first().id,
                             contextType = "artist",
                             contextId = artistId,
                             contextTracks = ctx,
@@ -132,13 +159,13 @@ fun ArtistDetailScreen(
                 }
             },
             onShuffleAll = {
-                if (localArtistTracks.isNotEmpty()) {
+                if (tracksToShow.isNotEmpty()) {
                     coroutineScope.launch {
                         val ctx = withContext(Dispatchers.Default) {
-                            localArtistTracks.map { orchestrator.toQueuedTrack(it) }
+                            tracksToShow.map { orchestrator.toQueuedTrack(it) }
                         }
                         orchestrator.playTrack(
-                            trackId = localArtistTracks.first().id,
+                            trackId = tracksToShow.first().id,
                             contextType = "artist",
                             contextId = artistId,
                             contextTracks = ctx,
@@ -186,26 +213,26 @@ fun ArtistDetailScreen(
             // Morceaux
             item {
                 Text(
-                    text = if (artistData != null) "Titres populaires" else "Morceaux locaux",
+                    text = if (localArtistTracks.isNotEmpty()) "Morceaux locaux" else if (artistData != null) "Titres populaires" else "Morceaux",
                     color = PureWhite,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(14.dp))
 
-                if (localArtistTracks.isNotEmpty()) {
+                if (tracksToShow.isNotEmpty()) {
                     DesktopTrackTable(
-                        tracks = localArtistTracks,
+                        tracks = tracksToShow,
                         currentPlayingTrackId = uiState.currentTrack?.trackId,
                         isPlaying = uiState.isPlaying,
                         orchestrator = orchestrator,
                         database = orchestrator.database,
                         appState = appState,
                         onTrackClick = { clickedTrack ->
-                            val index = localArtistTracks.indexOf(clickedTrack).coerceAtLeast(0)
+                            val index = tracksToShow.indexOf(clickedTrack).coerceAtLeast(0)
                             coroutineScope.launch {
                                 val ctx = withContext(Dispatchers.Default) {
-                                    localArtistTracks.map { orchestrator.toQueuedTrack(it) }
+                                    tracksToShow.map { orchestrator.toQueuedTrack(it) }
                                 }
                                 orchestrator.playTrack(
                                     trackId = clickedTrack.id,

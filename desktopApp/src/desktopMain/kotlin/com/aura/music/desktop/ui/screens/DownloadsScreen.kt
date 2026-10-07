@@ -47,18 +47,34 @@ fun DownloadsScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "Téléchargements",
-                    color = PureWhite,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "${downloadJobs.size} tâches au total (moteur de téléchargement : yt-dlp / deezer)",
-                    color = PureWhite.copy(alpha = 0.5f),
-                    fontSize = 14.sp
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (appState.canNavigateBack) {
+                    IconButton(
+                        onClick = { appState.navigateBack() },
+                        modifier = Modifier.size(36.dp).handCursor()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowBack,
+                            contentDescription = "Retour",
+                            tint = PureWhite,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                }
+                Column {
+                    Text(
+                        text = "Téléchargements",
+                        color = PureWhite,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${downloadJobs.size} tâches au total (moteur de téléchargement : yt-dlp / deezer)",
+                        color = PureWhite.copy(alpha = 0.5f),
+                        fontSize = 14.sp
+                    )
+                }
             }
 
             if (downloadJobs.isNotEmpty()) {

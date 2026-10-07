@@ -163,6 +163,63 @@ fun DesktopRenamePlaylistDialog(
 }
 
 @Composable
+fun DesktopDeletePlaylistDialog(
+    appState: DesktopAppState,
+    orchestrator: DesktopPlaybackOrchestrator,
+    onPlaylistDeleted: () -> Unit
+) {
+    val target = appState.playlistToDelete ?: return
+    val coroutineScope = rememberCoroutineScope()
+
+    Dialog(onDismissRequest = { appState.playlistToDelete = null }) {
+        Card(
+            modifier = Modifier.width(420.dp).clip(RoundedCornerShape(16.dp)),
+            colors = CardDefaults.cardColors(containerColor = OffBlack)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = "Supprimer la playlist",
+                    color = PureWhite,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Êtes-vous sûr de vouloir supprimer la playlist « ${target.second} » ? Cette action est irréversible.",
+                    color = PureWhite.copy(alpha = 0.7f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { appState.playlistToDelete = null }) {
+                        Text("Annuler", color = PureWhite.copy(alpha = 0.6f))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                orchestrator.deletePlaylist(target.first)
+                                onPlaylistDeleted()
+                                appState.playlistToDelete = null
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF453A))
+                    ) {
+                        Text("Supprimer", color = PureWhite)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun DesktopAddToPlaylistDialog(
     appState: DesktopAppState,
     playlists: List<PlaylistListRow>,
