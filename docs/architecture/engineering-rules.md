@@ -135,3 +135,10 @@ Ce document constitue la référence normative absolue pour toutes les implémen
   - En cas de discordance, le fichier est détruit immédiatement.
   - L'installation native utilise obligatoirement `FileProvider` avec `FLAG_GRANT_READ_URI_PERMISSION`.
 
+---
+
+## 11. Livraison et Impact de Déploiement
+- **Actions externes explicites** : Après chaque changement livré, l’agent DOIT indiquer clairement les actions nécessaires pour le rendre effectif : redéploiement du backend, application d’une migration de base de données, modification de configuration, build ou installation d’un client.
+- **Référence actionnable** : Lorsqu’une action est requise, citer l’artefact ou la cible exacte (migration SQL, service backend, application Android), sans exposer de secret. Lorsqu’aucune action n’est requise, écrire explicitement `Aucune action externe requise`.
+- **Pas d’exécution implicite** : Informer d’un besoin de déploiement n’autorise pas son exécution. Toute migration distante, installation ou publication reste soumise à une demande explicite de l’utilisateur.
+

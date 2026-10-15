@@ -69,6 +69,11 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Utilise des messages de commit clairs et descriptifs.
 - Demande toujours l'autorisation avant un `git push`.
 
+## Delivery And Deployment Impact
+- A la fin de chaque changement, indiquer explicitement les actions externes requises avant que le changement soit effectif : redéploiement backend, migration de base de données, mise à jour de configuration, build ou installation client.
+- Nommer les artefacts précis à appliquer (par exemple une migration SQL) sans jamais afficher de secret. Si aucune action externe n'est requise, l'indiquer explicitement.
+- Ne pas effectuer un déploiement, une migration distante ou une installation sans demande explicite de l'utilisateur.
+
 ## Checklist operationnelle (agent)
 - Lire d'abord `BUILD.md` et identifier les items impactes (ID, dependances, docs canoniques).
 - Consulter et respecter [`docs/architecture/engineering-rules.md`](file:///c:/Users/thiba/Desktop/AURA-workspace/docs/architecture/engineering-rules.md).
@@ -82,3 +87,4 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Lors d'une livraison ou déploiement (Release), consulter la dernière balise `[RELEASE vX.Y.Z]` dans `BUILD.md`, synthétiser le changelog centré sur l'expérience utilisateur depuis cette balise, incrémenter `versionCode`/`versionName` et synchroniser `version.json`.
 - Verifier la coherence code <-> docs avant de marquer un item `completed`.
 - Ne committer qu'apres verification concluante, avec un message clair, puis demander l'autorisation avant tout `git push`.
+- Dans la livraison finale, inclure une section courte `Actions requises` indiquant clairement si un redéploiement backend, une migration, une modification de configuration ou une mise à jour client est nécessaire ; écrire `Aucune` lorsque rien n'est requis.
