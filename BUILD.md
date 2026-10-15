@@ -144,17 +144,9 @@ Resultat attendu :
 - suivi des downloads cote app
 - contrat download generique branche de bout en bout
 
-### Phase 6 - Recherche vectorielle et enrichissements
-Objectif :
-- brancher les capacites de recommandation et d'enrichissement avance
-
-Priorite :
-- `SRV-005`
-
-Resultat attendu :
-- `Qdrant` interrogeable
-- mappings piste et payload vectoriel exploitables
-- socle pret pour des recommandations futures
+### Phase 6 - Recherche vectorielle et enrichissements abandonnee
+Statut :
+- abandonnee hors perimetre produit
 
 ### Phase 7 - Client Bureau & Web (Compose Multiplatform)
 Objectif :
@@ -172,7 +164,6 @@ Resultat attendu :
 
 ### Ce qu'il ne faut pas faire trop tot
 - ne pas commencer par la sync cloud avant le coeur local
-- ne pas commencer par `Qdrant` avant la recherche online et le modele cloud
 - ne pas figer le telechargement autour d'une source reelle tant que la strategie produit n'est pas arretee
 - ne pas ajouter d'etat UI ephemere dans les schemas de persistance
 - ne pas reutiliser un ID local derive de `MediaStore` comme identifiant canonique backend sans mapping explicite
@@ -211,12 +202,12 @@ Resultat attendu :
 ### Backend
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
-| SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | completed | none | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | base HTTP, config et `/health` poses |
+| SRV-001 | backend | Initialiser le projet FastAPI avec structure applicative minimale | completed | none | `docs/adrs/003-backend-fastapi-supabase.md`, `docs/server/architecture.md` | base HTTP, config et `/health` poses |
 | SRV-002 | backend | Implementer les endpoints online publics `health`, `search`, `artist`, `album` | completed | SRV-001, DOC-007 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md`, `docs/server/database-postgres.md` | enveloppe JSON canonique, IDs backend opaques resolus cote serveur, routes detail chainables depuis `Search`, adapter Deezer et structure catalogue/mappings poses ; persistance catalogue durable laissee a `SRV-004` |
 | SRV-003 | backend | Implementer les endpoints de sync cloud optionnelle `/me/...` | completed | SRV-001 | `docs/server/api-contract.md`, `docs/server/database-postgres.md` | sync user-scoped REST, reglages, favoris, playlists et snapshot de lecture en ligne |
 | SRV-007 | backend | Implementer les endpoints batch `bootstrap`, `push-batch`, `pull-batch` pour la sync | completed | SRV-001, SRV-004 | `docs/server/sync-conflict-resolution.md`, `docs/server/sync-batch-api.md` | moteur de synchronisation en lot, idempotence et resolution des conflits complete |
 | SRV-004 | backend | Implementer les tables et acces `Supabase / Postgres` | completed | SRV-001, DOC-007 | `docs/server/database-postgres.md`, `docs/server/postgres-relationships.md` | Integration et persistance client privilegee pour download_jobs terminee |
-| SRV-005 | backend | Integrer `Qdrant` pour la recherche vectorielle et les mappings piste | not_started | SRV-001 | `docs/server/vector-search-qdrant.md`, `docs/server/api-sync-flows.md` | vecteurs plus payload |
+| SRV-005 | backend | Integrer un moteur vectoriel pour la recherche par similarite et les mappings piste | cancelled | SRV-001 | none | abandonne hors perimetre produit |
 | SRV-006 | backend | Implementer le systeme de jobs et l'API downloads generique | completed | SRV-001, SRV-004 | `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/api-sync-flows.md` | Faisabilite yt-dlp validee sur VPS et persistance PostgreSQL/Supabase OK |
 | SRV-008 | backend | Exposer la resolution metadata pour entites locales et completer les payloads detail `artist` / `album` | completed | SRV-002 | `docs/server/api-contract.md`, `docs/server/providers/deezer.md` | `GET /resolve/artist` et `GET /resolve/album` implementes via `resolve_service.py` + `routes/resolve.py`, score textuel [0,1], ID AURA opaque retourne |
 | SRV-009 | backend | Implémenter les routes d'upload/download direct de fichiers audio physiques | completed | SRV-004 | `docs/server/api-contract.md` | Stockage sur disque local VPS ou Supabase Storage |
@@ -253,7 +244,7 @@ Resultat attendu :
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
 | INF-001 | infra | Definir les variables d'environnement et fichiers d'exemple | completed | SRV-001 | `docs/ops/env-vars.md`, `docs/server/security-and-secrets.md` | `.env.example` backend et exemple Android ajoutes |
-| INF-002 | infra | Definir Docker et l'environnement local de dev backend | completed | SRV-001 | `docs/adrs/003-backend-fastapi-supabase-qdrant.md`, `docs/server/architecture.md` | Dockerfile, compose local et blueprint Render racine ajoutes |
+| INF-002 | infra | Definir Docker et l'environnement local de dev backend | completed | SRV-001 | `docs/adrs/003-backend-fastapi-supabase.md`, `docs/server/architecture.md` | Dockerfile, compose local et blueprint Render racine ajoutes |
 | INF-003 | infra | Fixer une cible backend always-on avant la recherche online produit | completed | INF-002 | `docs/ops/hosting-strategy.md`, `docs/server/architecture.md`, `docs/server/api-contract.md` | Contabo VPS 10 choisi et backend deploye avec variables posees |
 | GOV-001 | docs | Maintenir la coherence entre code, specs et index machine-friendly | in_progress | none | `docs/README.md`, `docs/documentation/style-guide.md`, `llms.txt`, `llms-full.txt` | activite continue |
 
@@ -325,6 +316,8 @@ Resultat attendu :
 - Résolution des crashs SQLite sur les likes/playlists et fiabilisation de la synchronisation des données distantes.
 
 ## Journal des changements
+
+- 2026-10-15T23:11:58+02:00 | docs, infra, decision | `AGENTS.md`, `BUILD.md`, `docs/adrs/003-backend-fastapi-supabase.md`, `docs/domain/data-relationships.md`, `docs/product/vision.md`, `docs/server/*`, `docs/ops/env-vars.md`, `docs/mcp/resources.md`, `infra/vps/README.md`, `render.yaml`, `server/.env.example`, `server/app/config.py`, `docs/README.md`, `llms.txt`, `llms-full.txt` | Formalisation du protocole de travail : validation Gradle ciblee autorisee avant commit, interdiction de committer sans verification concluante, et retrait de Qdrant du perimetre produit, de la configuration et de la documentation canonique ; SRV-005 passe a `cancelled`.
 - 2026-10-07T23:13:00+02:00 | fix, desktop, build, code | `desktopApp/src/desktopMain/kotlin/com/aura/music/desktop/state/DesktopAppState.kt`, `BUILD.md` | DSK-037 : Suppression de la propriété dupliquée canNavigateBack dans DesktopAppState résolvant l'erreur de compilation 'Conflicting declarations' et l'ambiguïté de résolution d'appel dans DownloadsScreen.
 - 2026-10-07T23:05:00+02:00 | fix, android, build, code | `androidApp/src/main/java/com/aura/music/domain/player/TrackPlaybackResolver.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `androidApp/build.gradle.kts`, `BUILD.md` | AND-037 : Résolution des erreurs de compilation Android (références Log et API_BASE_URL) : (1) Qualification systématique android.util.Log dans TrackPlaybackResolver et LibraryAndDetailsScreens, évitant tout échec de résolution de symbole ou masquage de portée, (2) Qualification de com.aura.music.data.network.BuildConfig.API_BASE_URL dans TrackPlaybackResolver éliminant la confusion avec le BuildConfig racine com.aura.music généré par AGP, (3) Déclaration de buildConfigField("String", "API_BASE_URL", ...) dans androidApp/build.gradle.kts pour assurer la cohérence transversale des deux BuildConfig.
 - 2026-10-07T22:01:00+02:00 | fix, media, storage, sweep, ui, room, android | `androidApp/src/main/java/com/aura/music/data/media/UriPathParser.kt`, `androidApp/src/main/java/com/aura/music/data/media/MediaLinkResolver.kt`, `androidApp/src/main/java/com/aura/music/domain/player/TrackPlaybackResolver.kt`, `androidApp/src/main/java/com/aura/music/domain/player/PlaybackOrchestrator.kt`, `shared/src/commonMain/kotlin/com/aura/music/data/local/AuraDaos.kt`, `androidApp/src/main/java/com/aura/music/data/repository/CloudFileRepository.kt`, `androidApp/src/main/java/com/aura/music/data/repository/DownloadRepository.kt`, `androidApp/src/main/java/com/aura/music/data/media/LocalMediaScanner.kt`, `androidApp/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt`, `androidApp/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt`, `BUILD.md` | AND-036 : Élimination définitive de la boucle de re-téléchargement des favoris cloud et fiabilisation de la persistance locale : (1) UriPathParser : utilitaire pur Kotlin/JVM de parsing de chemin avec décodage pourcent strict (%XX) préservant intact le caractère '+' dans les noms de fichiers et détection Scoped Storage content:// sans dépendance Android SDK, (2) MediaLinkResolver : réutilisation systématique de l'ID primaire et du mediaStoreId des entités existantes lors des upserts Room, éliminant les violations de contrainte UNIQUE(track_id) et les rollbacks de transaction, et génération déterministe d'ID négatif 64-bit immunisée contre le bug abs(Long.MIN_VALUE), (3) PlayableResolution.ScopedContent : typage dédié pour les URI content:// dans TrackPlaybackResolver et PlaybackOrchestrator sans objet File("") factice, (4) LocalLibraryRepository : renforcement de sweepCorruptOrMissingMediaLinks avec contrôle préalable d'accessibilité du dossier downloads/, vérification de l'existence du dossier parent pour ne jamais purger lors d'indisponibilités temporaires du stockage, et bascule cohérente vers canonicalAudioSourceType = 'cloud' en cas de suppression avérée, (5) LocalMediaScanner : exclusion des téléchargements en vol de CloudFileRepository lors du calcul des fichiers obsolètes pour éviter le détachement prématuré des pistes en cours, (6) FavoritesScreen : rupture de la boucle infinie de recomposition par l'emploi d'une clé stable LaunchedEffect(isAutoDownloadFavorites, isOnline), délégation exclusive à autoDownloadFavoriteTrack (thread-safe, sémaphoré et protégé contre les doublons), suppression des refreshTick++ intra-boucle et relance explicite des CancellationException.

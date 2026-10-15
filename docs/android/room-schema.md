@@ -98,7 +98,7 @@ Indexes:
 | `is_liked` | `INTEGER` | no |  | booleen denormalise |
 | `is_downloaded_by_aura` | `INTEGER` | no |  | booleen denormalise |
 | `is_explicit` | `INTEGER` | yes |  | booleen |
-| `popularity` | `INTEGER` | yes |  | metadata provider ou qdrant |
+| `popularity` | `INTEGER` | yes |  | metadata provider |
 | `genres_json` | `TEXT` | yes |  | liste json si connue |
 | `created_at` | `INTEGER` | no |  | epoch ms |
 | `updated_at` | `INTEGER` | no |  | epoch ms |

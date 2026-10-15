@@ -8,7 +8,6 @@
 ## Variables a prevoir
 - URL et cle publique Supabase
 - secrets serveur Supabase
-- URL Qdrant et jeton associe
 - cles provider externes si necessaires
 - configuration des workers et jobs
 

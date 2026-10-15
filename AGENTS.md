@@ -33,9 +33,10 @@ Le fichier canonique [`docs/architecture/engineering-rules.md`](file:///c:/Users
 
 ## Build And Compilation Rules
 
-- L'utilisateur gere les builds et la compilation manuellement.
-- Ne lance jamais de commandes Gradle de ta propre initiative.
-- Si une erreur de compilation survient, attends que l'utilisateur fournisse le message exact ou une capture avant de proposer un correctif.
+- L'agent peut lancer Gradle pour valider une modification qu'il a realisee, exclusivement via le wrapper du depot et une tache ciblee au module impacte.
+- Commencer par la compilation ou les tests les plus restreints utiles. Ne pas lancer de build global, packaging, installation, publication ou deploiement sans demande explicite.
+- Capturer la sortie texte exploitable. En cas d'echec, corriger puis relancer au plus deux fois. Si l'echec persiste, transmettre le log pertinent, le diagnostic et les options de suite.
+- Un build lance manuellement hors de la session n'est pas visible automatiquement : l'utilisateur fournit alors sa sortie ou demande a l'agent d'executer la tache ciblee.
 
 ## Secrets And Environment Rules
 - N'ecris jamais de cles d'API, tokens ou mots de passe en dur.
@@ -62,7 +63,9 @@ val state = _state.asStateFlow()
 Prefere `val` et des data classes immuables pour les modeles UI.
 
 ## Commit Policy
-- Fais un commit apres chaque fonctionnalite ou bug resolu.
+- Ne committer qu'apres une verification concluante, proportionnee au changement : compilation ou test cible pour le code, controle de coherence pour la documentation et la configuration.
+- Si la verification est bloquee ou echoue, ne pas committer. Rapporter le blocage avec les elements necessaires a sa resolution.
+- Ne pas inclure de modifications preexistantes ou non liees dans le commit.
 - Utilise des messages de commit clairs et descriptifs.
 - Demande toujours l'autorisation avant un `git push`.
 
@@ -70,7 +73,7 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Lire d'abord `BUILD.md` et identifier les items impactes (ID, dependances, docs canoniques).
 - Consulter et respecter [`docs/architecture/engineering-rules.md`](file:///c:/Users/thiba/Desktop/AURA-workspace/docs/architecture/engineering-rules.md).
 - Implementer une tranche verticale testable sans ouvrir trop de fronts en parallele.
-- Ne pas lancer Gradle; laisser l'utilisateur compiler et fournir les erreurs exactes si besoin.
+- Definir puis executer la verification ciblee adaptee au changement avant de declarer le travail termine.
 - Respecter les conventions Kotlin/Compose (null safety API externe, StateFlow immuable en public, cles stables, `derivedStateOf` si utile).
 - Ne jamais exposer de secret en dur; maintenir `local.properties`/`.env` et synchroniser `.env_example` si variable modifiee.
 - Si une regle, un contrat ou un schema evolue, mettre a jour d'abord la doc canonique dans `docs/`.
@@ -78,4 +81,4 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Mettre a jour le statut des items (`not_started`, `in_progress`, `blocked`, `completed`, `cancelled`) sans supprimer d'historique.
 - Lors d'une livraison ou déploiement (Release), consulter la dernière balise `[RELEASE vX.Y.Z]` dans `BUILD.md`, synthétiser le changelog centré sur l'expérience utilisateur depuis cette balise, incrémenter `versionCode`/`versionName` et synchroniser `version.json`.
 - Verifier la coherence code <-> docs avant de marquer un item `completed`.
-- Committer avec un message clair, puis demander l'autorisation avant tout `git push`.
+- Ne committer qu'apres verification concluante, avec un message clair, puis demander l'autorisation avant tout `git push`.

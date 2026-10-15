@@ -4,7 +4,6 @@
 - `logs/app/latest`
 - `logs/jobs/latest`
 - `db/schema/postgres`
-- `db/schema/qdrant`
 - `jobs/active`
 - `jobs/history/{id}`
 

@@ -22,8 +22,6 @@ Fournir un chemin de deploiement simple pour un VPS always-on, avec une premiere
 - `SUPABASE_URL=...`
 - `SUPABASE_ANON_KEY=...`
 - `SUPABASE_SERVICE_ROLE_KEY=...`
-- `QDRANT_URL=...`
-- `QDRANT_API_KEY=...`
 - `LOG_LEVEL=INFO`
 
 ## Bootstrap Ubuntu

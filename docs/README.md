@@ -15,7 +15,7 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 2. `BUILD.md`
 3. `docs/adrs/001-machine-friendly-docs.md`
 4. `docs/adrs/002-android-native-client.md`
-5. `docs/adrs/003-backend-fastapi-supabase-qdrant.md`
+5. `docs/adrs/003-backend-fastapi-supabase.md`
 6. `docs/adrs/004-provider-adapter-strategy.md`
 7. `docs/adrs/005-mcp-bridge.md`
 8. `docs/adrs/006-online-search-backend-only.md`
@@ -73,17 +73,16 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 59. `docs/server/jobs.md`
 60. `docs/server/database-postgres.md`
 61. `docs/server/postgres-relationships.md`
-62. `docs/server/vector-search-qdrant.md`
-63. `docs/server/storage.md`
-64. `docs/server/providers/deezer.md`
-65. `docs/server/providers/streaming-bridge.md`
-66. `docs/server/security-and-secrets.md`
-67. `docs/mcp/overview.md`
-68. `docs/mcp/resources.md`
-69. `docs/mcp/use-cases.md`
-70. `docs/ops/logging-observability.md`
-71. `docs/ops/env-vars.md`
-72. `docs/ops/hosting-strategy.md`
+62. `docs/server/storage.md`
+63. `docs/server/providers/deezer.md`
+64. `docs/server/providers/streaming-bridge.md`
+65. `docs/server/security-and-secrets.md`
+66. `docs/mcp/overview.md`
+67. `docs/mcp/resources.md`
+68. `docs/mcp/use-cases.md`
+69. `docs/ops/logging-observability.md`
+70. `docs/ops/env-vars.md`
+71. `docs/ops/hosting-strategy.md`
 
 ## Rythme de mise a jour
 - Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
