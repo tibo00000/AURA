@@ -142,6 +142,7 @@ class DownloadJob:
     track_id: str                               # AURA track ID (trk_{ulid})
     provider_name: str                          # e.g., "backend", "youtube"
     status: str                                 # "queued", "running", "succeeded", "failed", "cancelled"
+    operation_type: str = "download"           # "download" or "manual_reassign"
     progress_percent: float = 0.0
     error_code: Optional[str] = None
     error_message: Optional[str] = None
@@ -157,6 +158,7 @@ class DownloadJob:
             "user_id": self.user_id,
             "track_id": self.track_id,
             "provider_name": self.provider_name,
+            "operation_type": self.operation_type,
             "status": self.status,
             "progress_percent": self.progress_percent,
             "error_code": self.error_code,
@@ -188,6 +190,7 @@ class DownloadJob:
             user_id=str(d["user_id"]),
             track_id=d["track_id"],
             provider_name=d["provider_name"],
+            operation_type=d.get("operation_type") or "download",
             status=d["status"],
             progress_percent=float(d.get("progress_percent") or 0.0),
             error_code=d.get("error_code"),

@@ -114,9 +114,25 @@ class TestReassignAudio(unittest.TestCase):
             self.assertEqual(job.status, "queued")
             self.assertEqual(job.track_id, track_id)
             self.assertEqual(job.user_id, user_id)
+            self.assertEqual(job.operation_type, "manual_reassign")
 
             # Vérifie que les anciens jobs ont été passés à superseded
             mock_supabase.table("download_jobs").update.assert_called()
+
+    def test_download_job_defaults_operation_type_for_legacy_rows(self):
+        """Les jobs antérieurs à la migration restent des téléchargements standard."""
+        legacy_row = {
+            "id": "job_legacy_1",
+            "user_id": "user_legacy",
+            "track_id": "trk_legacy_1",
+            "provider_name": "youtube",
+            "status": "succeeded",
+        }
+
+        job = DownloadJob.from_dict(legacy_row)
+
+        self.assertEqual(job.operation_type, "download")
+        self.assertEqual(job.to_dict()["operation_type"], "download")
 
     def test_run_download_job_impl_bypasses_cache_on_manual_reassign(self):
         """Vérifie que _run_download_job_impl ignore le cache global quand trigger='manual_reassign'."""

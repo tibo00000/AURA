@@ -794,6 +794,7 @@ Les routes suivantes permettent aux utilisateurs de pousser (upload) et tirer (d
       "id": "job_1",
       "track_id": "trk_aura_123",
       "provider_name": "backend",
+      "operation_type": "download",
       "status": "running",
       "progress_percent": 42.0,
       "error_code": null,
@@ -813,6 +814,11 @@ Les routes suivantes permettent aux utilisateurs de pousser (upload) et tirer (d
 ```
 - Erreurs attendues :
   - `unauthorized`
+
+Le champ `operation_type` vaut `download` pour le flux standard et `manual_reassign` lorsqu'une
+réassignation explicite de la source audio a été demandée. Seule cette dernière autorise le client
+à invalider son cache de streaming ; elle ne constitue jamais une instruction de supprimer un
+fichier hors-ligne privé.
 
 ### `POST /downloads`
 - Usage : demander au backend de preparer ou lancer un telechargement pour une piste AURA.

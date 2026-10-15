@@ -99,6 +99,7 @@ async def list_downloads(
             id=job.id,
             track_id=job.track_id,
             provider_name=job.provider_name,
+            operation_type=job.operation_type,
             status=job.status,
             progress_percent=job.progress_percent,
             error_code=job.error_code,

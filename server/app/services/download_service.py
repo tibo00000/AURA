@@ -1373,6 +1373,7 @@ class DownloadService:
                 user_id=user_id,
                 track_id=track_id,
                 provider_name="youtube",
+                operation_type="manual_reassign",
                 status="queued",
                 progress_percent=0.0,
                 attempt_count=1,

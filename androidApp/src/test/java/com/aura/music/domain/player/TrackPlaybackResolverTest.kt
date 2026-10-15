@@ -1,6 +1,5 @@
 package com.aura.music.domain.player
 
-import com.aura.music.domain.model.QueuedTrack
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope

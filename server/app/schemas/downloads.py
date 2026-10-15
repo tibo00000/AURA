@@ -53,6 +53,7 @@ class DownloadJobResponse(BaseModel):
     id: str
     track_id: str
     provider_name: str
+    operation_type: Literal["download", "manual_reassign"] = "download"
     status: Literal["queued", "running", "succeeded", "failed", "cancelled", "requires_resolution", "superseded"]
     progress_percent: float = 0.0
     error_code: Optional[str] = None

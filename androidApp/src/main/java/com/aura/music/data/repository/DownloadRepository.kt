@@ -78,6 +78,7 @@ class DownloadRepository(
     val resolutionAlertFlow = _resolutionAlertFlow.asSharedFlow()
 
     private val notifiedResolutionJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val manualReassignmentJobIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var isFirstPollingSnapshot = true
     private val jobTrackTitles = java.util.concurrent.ConcurrentHashMap<String, String>()
 
@@ -315,7 +316,11 @@ class DownloadRepository(
                             updatedEntities.add(entity)
 
                             if (item.status == "succeeded" && (existing == null || existing.status != "succeeded")) {
-                                markJobAsCloudReady(item.trackId)
+                                markJobAsCloudReady(
+                                    trackId = item.trackId,
+                                    invalidateStreamingCache = item.operationType == "manual_reassign" ||
+                                        manualReassignmentJobIds.remove(item.id)
+                                )
                             }
                         }
 
@@ -400,7 +405,10 @@ class DownloadRepository(
                 )
                 database.downloadJobDao().upsert(updatedJob)
                 if (jobData.status == "succeeded") {
-                    markJobAsCloudReady(job.trackId)
+                    markJobAsCloudReady(
+                        trackId = job.trackId,
+                        invalidateStreamingCache = manualReassignmentJobIds.remove(job.id)
+                    )
                 } else if (jobData.status == "requires_resolution") {
                     if (notifiedResolutionJobIds.add(job.id)) {
                         val resolvedTitle = jobTrackTitles[job.id]
@@ -427,7 +435,10 @@ class DownloadRepository(
         }
     }
 
-    private suspend fun markJobAsCloudReady(trackId: String) = withContext(Dispatchers.IO) {
+    private suspend fun markJobAsCloudReady(
+        trackId: String,
+        invalidateStreamingCache: Boolean = false
+    ) = withContext(Dispatchers.IO) {
         try {
             val now = System.currentTimeMillis()
             database.useWriterConnection { transactor ->
@@ -445,7 +456,9 @@ class DownloadRepository(
                 }
             }
             _downloadSuccessFlow.tryEmit(trackId)
-            _audioVersionReassignedFlow.tryEmit(trackId)
+            if (invalidateStreamingCache) {
+                _audioVersionReassignedFlow.tryEmit(trackId)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to mark track $trackId as cloud-ready", e)
         }
@@ -544,7 +557,11 @@ class DownloadRepository(
 
             for (item in items) {
                 if (item.status == "succeeded") {
-                    markJobAsCloudReady(item.trackId)
+                    markJobAsCloudReady(
+                        trackId = item.trackId,
+                        invalidateStreamingCache = item.operationType == "manual_reassign" ||
+                            manualReassignmentJobIds.remove(item.id)
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -691,7 +708,6 @@ class DownloadRepository(
                         database.trackDao().upsertTrack(updatedTrack)
                         Log.d(TAG, "Updated local TrackEntity $trackId to downloaded state")
                         _downloadSuccessFlow.tryEmit(trackId)
-                        _audioVersionReassignedFlow.tryEmit(trackId)
                     }
                 }
             }
@@ -1032,6 +1048,7 @@ class DownloadRepository(
             if (title != null) {
                 jobTrackTitles[createData.jobId] = title
             }
+            manualReassignmentJobIds.add(createData.jobId)
 
             // 3. Mark any existing local jobs for this track as superseded, and insert new job
             val jobEntity = DownloadJobEntity(

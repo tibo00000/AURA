@@ -42,12 +42,6 @@ object MediaCacheManager {
                     }
                 }
             }
-            // Also clean any downloaded mp3 in context.filesDir/downloads/
-            val downloadsDir = File(context.applicationContext.filesDir, "downloads")
-            val localMp3 = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            if (localMp3.exists()) {
-                localMp3.delete()
-            }
         } catch (e: Exception) {
             android.util.Log.w("MediaCacheManager", "Error evicting track $trackId from cache", e)
         }

@@ -245,7 +245,8 @@ data class DownloadJobResponseData(
     @SerialName("error_message") val errorMessage: String? = null,
     @SerialName("attempt_count") val attemptCount: Int = 1,
     @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("operation_type") val operationType: String = "download"
 )
 
 @Serializable

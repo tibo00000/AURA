@@ -10,6 +10,13 @@ Isoler la logique de lecture et de queue pour la rendre testable, persistante et
 - `PlaybackStateStore` : persiste le minimum necessaire pour reprendre une session.
 - `PlayerViewModel` : transforme l'etat metier en etat ecran.
 
+## Cache de streaming et fichiers hors-ligne
+
+`MediaCacheManager` ne gère que le cache Media3 temporaire sous `cacheDir`. Lors d'une
+réassignation audio explicite, ce cache peut être invalidé pour la piste concernée. Les fichiers
+hors-ligne sous `filesDir/downloads` et leurs liens Room sont durables et ne doivent jamais être
+supprimés par une éviction de cache.
+
 ## Responsabilites
 - Media3 lit la source audio et expose les callbacks bruts.
 - L'orchestrateur decide quelle piste doit etre jouee ensuite.

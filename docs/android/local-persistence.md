@@ -361,6 +361,10 @@ Pour les fichiers stockés physiquement en local (audios MP3 et pochettes d'albu
   3. Insertion ou mise à jour de `track_media_links` avec le chemin du fichier local.
   4. Modification du type de source `canonicalAudioSourceType` en `downloaded`.
 
+Une éviction du cache de streaming Media3 ne peut jamais effacer ce fichier privé. La suppression
+d'un téléchargement hors-ligne suit exclusivement un flux explicite de gestion du stockage, puis
+met à jour son lien Room de façon cohérente.
+
 ## Édition des Métadonnées & Protection Anti-Écrasement
 
 - **Continuité 3 Couches** : Toute modification de métadonnées (`updateTrackMetadata`) met à jour simultanément la base Room (`TrackEntity`, `ArtistEntity`, `AlbumEntity`), le fichier MP3 physique via `AudioTagWriter` (frames ID3v2.3 `TIT2`, `TPE1`, `TALB`, `TRCK`, `TYER`, `APIC`) et notifie `MediaScannerConnection` pour actualiser l'OS.
