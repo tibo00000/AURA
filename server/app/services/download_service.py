@@ -27,7 +27,20 @@ from app.db.supabase import supabase
 
 logger = logging.getLogger(__name__)
 
-DOWNLOADS_DIR = Path(os.getenv("DOWNLOADS_DIR", "/app/downloads"))
+def _resolve_downloads_dir() -> Path:
+    env_dir = os.getenv("DOWNLOADS_DIR")
+    if env_dir:
+        return Path(env_dir)
+    default_dir = Path("/app/downloads")
+    try:
+        if default_dir.exists() or Path("/app").exists():
+            return default_dir
+    except Exception:
+        pass
+    return Path.cwd() / "downloads"
+
+
+DOWNLOADS_DIR = _resolve_downloads_dir()
 
 from ytmusicapi import YTMusic
 from rapidfuzz import fuzz
@@ -776,7 +789,10 @@ class DownloadService:
         auto_recover_stale_jobs: bool = False,
         auto_backfill_cache: bool = False,
     ):
-        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.debug("Could not create DOWNLOADS_DIR %s: %s", DOWNLOADS_DIR, e)
         self.settings = get_settings()
         self._supabase = supabase_client
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
