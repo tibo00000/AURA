@@ -25,8 +25,15 @@ class DesktopPlaylistManagerTest {
 
     @After
     fun tearDown() {
+        try {
+            if (::database.isInitialized) {
+                database.close()
+            }
+        } catch (_: Throwable) {}
         if (::tempDbFile.isInitialized && tempDbFile.exists()) {
             tempDbFile.delete()
+            File("${tempDbFile.absolutePath}-wal").delete()
+            File("${tempDbFile.absolutePath}-shm").delete()
         }
     }
 

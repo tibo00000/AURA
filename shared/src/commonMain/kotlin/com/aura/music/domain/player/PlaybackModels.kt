@@ -45,7 +45,7 @@ data class QueuedTrack(
     val durationMs: Long? = null,
     val coverUri: String? = null,
     val source: TrackSource = TrackSource.CONTEXT,
-    val internalId: String = java.util.UUID.randomUUID().toString()
+    val internalId: String = generateUuid()
 )
 
 /**

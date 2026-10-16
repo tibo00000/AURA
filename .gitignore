@@ -34,4 +34,5 @@ shared/src/commonMain/kotlin/com/aura/music/data/network/BuildConfig.kt
 
 # Scratch and temporary agent files
 scratch/
+org/
 

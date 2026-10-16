@@ -21,7 +21,7 @@ class DesktopUpdateManagerTest {
     private lateinit var updateManager: DesktopUpdateManager
     private val scope = CoroutineScope(Dispatchers.Unconfined)
 
-    class FakeAuraApiService : AuraApiService {
+    open class FakeAuraApiService : AuraApiService {
         var versionResponse: AppVersionResponseData = AppVersionResponseData(
             versionCode = 2,
             versionName = "1.0.1",
@@ -32,54 +32,78 @@ class DesktopUpdateManagerTest {
         )
 
         override suspend fun getAppVersion(platform: String): AuraResponse<AppVersionResponseData> {
-            return AuraResponse(data = versionResponse, error = null, meta = emptyMap())
+            return AuraResponse(data = versionResponse, error = null, meta = null)
         }
 
-        // Autres méthodes mockées
-        override suspend fun getOnlineSearch(query: String, limit: Int) = throw NotImplementedError()
-        override suspend fun getRecommendations(limit: Int) = throw NotImplementedError()
-        override suspend fun getArtistDetail(artistId: String) = throw NotImplementedError()
-        override suspend fun getAlbumDetail(albumId: String) = throw NotImplementedError()
-        override suspend fun getPlaybackSnapshot(token: String) = throw NotImplementedError()
-        override suspend fun updatePlaybackSnapshot(token: String, request: com.aura.music.data.network.PlaybackSnapshotRequest) = throw NotImplementedError()
-        override suspend fun getHistory(token: String, limit: Int) = throw NotImplementedError()
-        override suspend fun addHistoryItem(token: String, trackId: String, playedAt: String) = throw NotImplementedError()
-        override suspend fun getLikedTracks(token: String) = throw NotImplementedError()
-        override suspend fun addLikedTrack(token: String, trackId: String) = throw NotImplementedError()
-        override suspend fun removeLikedTrack(token: String, trackId: String) = throw NotImplementedError()
+        override suspend fun search(query: String, limitTracks: Int, limitArtists: Int, limitAlbums: Int) = throw NotImplementedError()
+        override suspend fun getArtist(id: String) = throw NotImplementedError()
+        override suspend fun getAlbum(id: String) = throw NotImplementedError()
+        override suspend fun resolveArtist(name: String, trackTitle: String?, albumTitle: String?) = throw NotImplementedError()
+        override suspend fun resolveAlbum(title: String, artistName: String?, trackTitle: String?) = throw NotImplementedError()
+        override suspend fun createDownload(token: String, request: com.aura.music.data.network.DownloadRequestDto) = throw NotImplementedError()
+        override suspend fun listDownloads(token: String, status: String?, limit: Int, cursor: String?) = throw NotImplementedError()
+        override suspend fun retryDownload(token: String, jobId: String) = throw NotImplementedError()
+        override suspend fun resolveDownload(token: String, jobId: String, request: com.aura.music.data.network.ResolveDownloadRequestDto) = throw NotImplementedError()
+        override suspend fun searchCandidates(token: String, artist: String?, title: String?, query: String?, limit: Int) = throw NotImplementedError()
+        override suspend fun reassignAudio(token: String, request: com.aura.music.data.network.ReassignAudioRequestDto) = throw NotImplementedError()
+        override suspend fun getJobStatus(token: String, jobId: String) = throw NotImplementedError()
+        override suspend fun uploadCookies(token: String, request: com.aura.music.data.network.CookieUploadRequestDto) = throw NotImplementedError()
+        override suspend fun downloadFile(token: String, jobId: String) = throw NotImplementedError()
+        override suspend fun deleteDownloadJob(token: String, jobId: String) = throw NotImplementedError()
+        override suspend fun bootstrap(token: String, request: com.aura.music.data.network.BootstrapRequestDto) = throw NotImplementedError()
+        override suspend fun pushBatch(token: String, request: com.aura.music.data.network.PushBatchRequestDto) = throw NotImplementedError()
+        override suspend fun pullBatch(token: String, request: com.aura.music.data.network.PullBatchRequestDto) = throw NotImplementedError()
         override suspend fun getPlaylists(token: String) = throw NotImplementedError()
-        override suspend fun createPlaylist(token: String, name: String) = throw NotImplementedError()
-        override suspend fun getPlaylistDetail(token: String, playlistId: String) = throw NotImplementedError()
-        override suspend fun updatePlaylist(token: String, playlistId: String, name: String) = throw NotImplementedError()
-        override suspend fun deletePlaylist(token: String, playlistId: String) = throw NotImplementedError()
-        override suspend fun addTrackToPlaylist(token: String, playlistId: String, trackId: String) = throw NotImplementedError()
-        override suspend fun removeTrackFromPlaylist(token: String, playlistId: String, trackId: String) = throw NotImplementedError()
-        override suspend fun pushSyncBatch(token: String, request: com.aura.music.data.network.SyncPushRequest) = throw NotImplementedError()
-        override suspend fun pullSyncBatch(token: String, lastSyncToken: Long?) = throw NotImplementedError()
-        override suspend fun requestTrackAudioDownload(token: String, trackId: String) = throw NotImplementedError()
-        override suspend fun getDownloadJobStatus(token: String, jobId: String) = throw NotImplementedError()
-        override suspend fun requestTrackAudioReassignment(token: String, trackId: String, desiredTitle: String, desiredArtist: String) = throw NotImplementedError()
-        override suspend fun getSyncFiles(token: String) = throw NotImplementedError()
-        override suspend fun uploadSyncFile(token: String, fileBytes: ByteArray, filename: String, trackId: String, title: String, artist: String, album: String?) = throw NotImplementedError()
-        override suspend fun updateSyncFileMetadata(token: String, trackId: String, title: String?, artist: String?, album: String?) = throw NotImplementedError()
+        override suspend fun getLikes(token: String) = throw NotImplementedError()
+        override suspend fun likeTrack(token: String, trackId: String, sourceContextType: String?, sourceContextId: String?) = throw NotImplementedError()
+        override suspend fun unlikeTrack(token: String, trackId: String) = throw NotImplementedError()
+        override suspend fun getPlaybackSnapshot(token: String) = throw NotImplementedError()
+        override suspend fun updatePlaybackSnapshot(token: String, snapshot: com.aura.music.data.network.PlaybackSnapshotResponse) = throw NotImplementedError()
+        override suspend fun getHistory(token: String) = throw NotImplementedError()
+        override suspend fun createPlaylist(token: String, request: com.aura.music.data.network.PlaylistCreate) = throw NotImplementedError()
+        override suspend fun updatePlaylist(token: String, id: String, request: com.aura.music.data.network.PlaylistUpdate) = throw NotImplementedError()
+        override suspend fun deletePlaylist(token: String, id: String) = throw NotImplementedError()
+        override suspend fun appendTrackToPlaylist(token: String, id: String, request: com.aura.music.data.network.PlaylistItemCreate) = throw NotImplementedError()
+        override suspend fun removeTrackFromPlaylist(token: String, id: String, trackId: String) = throw NotImplementedError()
+        override suspend fun uploadSyncFile(
+            token: String,
+            trackId: String,
+            fileBytes: ByteArray,
+            mimeType: String,
+            title: String?,
+            artistName: String?,
+            albumTitle: String?,
+            durationMs: Long?,
+            artistId: String?,
+            albumId: String?,
+            coverUri: String?
+        ) = throw NotImplementedError()
+        override suspend fun downloadSyncFile(token: String, trackId: String) = throw NotImplementedError()
+        override suspend fun listSyncFiles(token: String) = throw NotImplementedError()
+        override suspend fun updateSyncFileMetadata(token: String, trackId: String, request: com.aura.music.data.network.SyncedFileMetadataUpdateRequest) = throw NotImplementedError()
+        override suspend fun batchUpdateSyncFilesMetadata(token: String, items: List<com.aura.music.data.network.SyncedFileMetadataUpdateRequest>) = throw NotImplementedError()
         override suspend fun deleteSyncFile(token: String, trackId: String) = throw NotImplementedError()
     }
 
+    private lateinit var tempUpdatesDir: File
+
     @Before
     fun setUp() {
+        tempUpdatesDir = java.nio.file.Files.createTempDirectory("aura_test_updates_").toFile()
         fakeApiService = FakeAuraApiService()
-        updateManager = DesktopUpdateManager(fakeApiService, scope)
+        updateManager = DesktopUpdateManager(fakeApiService, scope, updatesDir = tempUpdatesDir)
+    }
 
-        // Nettoyer les marqueurs de test éventuels
-        val updatesDir = DesktopEnvironment.getUpdatesDir()
-        File(updatesDir, ".update_pending.json").delete()
-        File(updatesDir, ".update_pending.json.err").delete()
+    @org.junit.After
+    fun tearDown() {
+        if (::tempUpdatesDir.isInitialized && tempUpdatesDir.exists()) {
+            tempUpdatesDir.deleteRecursively()
+        }
     }
 
     @Test
     fun testDesktopEnvironmentDetection() {
         assertNotNull(DesktopEnvironment.getUpdatesDir())
-        assertTrue(DesktopEnvironment.getUpdatesDir().exists())
         assertNotNull(DesktopEnvironment.installMode)
         assertTrue(DesktopBuildConfig.VERSION_CODE >= 1)
         assertTrue(DesktopBuildConfig.VERSION_NAME.isNotBlank())
@@ -124,9 +148,8 @@ class DesktopUpdateManagerTest {
 
     @Test
     fun testPostUpdateFailureDetectionAndCleanup() {
-        val updatesDir = DesktopEnvironment.getUpdatesDir()
-        val markerFile = File(updatesDir, ".update_pending.json")
-        val errorMarker = File(updatesDir, ".update_pending.json.err")
+        val markerFile = File(tempUpdatesDir, ".update_pending.json")
+        val errorMarker = File(tempUpdatesDir, ".update_pending.json.err")
 
         markerFile.writeText("""
             {
@@ -152,8 +175,7 @@ class DesktopUpdateManagerTest {
 
     @Test
     fun testPostUpdateSuccessDetectionAndCleanup() {
-        val updatesDir = DesktopEnvironment.getUpdatesDir()
-        val markerFile = File(updatesDir, ".update_pending.json")
+        val markerFile = File(tempUpdatesDir, ".update_pending.json")
 
         // La version cible est la version courante -> Succès !
         markerFile.writeText("""

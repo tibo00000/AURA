@@ -70,7 +70,6 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = false
-        warning += setOf("MissingIntentFilterForMediaSearch", "WrongConstant")
     }
 
     packaging {

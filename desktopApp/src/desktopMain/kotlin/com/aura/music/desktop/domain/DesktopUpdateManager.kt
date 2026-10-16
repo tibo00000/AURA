@@ -57,7 +57,8 @@ sealed interface DesktopUpdateState {
 class DesktopUpdateManager(
     private val apiService: AuraApiService,
     private val scope: CoroutineScope,
-    private val apiBaseUrl: String = BuildConfig.API_BASE_URL
+    private val apiBaseUrl: String = BuildConfig.API_BASE_URL,
+    private val updatesDir: File = DesktopEnvironment.getUpdatesDir()
 ) {
     companion object {
         private const val PENDING_MARKER_FILENAME = ".update_pending.json"
@@ -74,7 +75,7 @@ class DesktopUpdateManager(
      * Détecte si une mise à jour précédente a réussi ou échoué, nettoie les artefacts et notifie.
      */
     fun checkPostUpdateStatus() {
-        val updatesDir = DesktopEnvironment.getUpdatesDir()
+        val updatesDir = this.updatesDir
         val markerFile = File(updatesDir, PENDING_MARKER_FILENAME)
         val errorMarker = File(updatesDir, ERROR_MARKER_FILENAME)
         val logFile = File(updatesDir, LOG_FILENAME)
@@ -187,7 +188,7 @@ class DesktopUpdateManager(
             )
 
             withContext(Dispatchers.IO) {
-                val updatesDir = DesktopEnvironment.getUpdatesDir()
+                val updatesDir = this@DesktopUpdateManager.updatesDir
                 val filename = File(updateInfo.downloadUrl).name.ifBlank { "AURA-${updateInfo.versionName}.msi" }
                 val targetFile = File(updatesDir, filename)
                 val partFile = File(updatesDir, "$filename.part")
@@ -300,7 +301,7 @@ class DesktopUpdateManager(
      * Déclenche l'installation sous Windows via le script watchdog et ferme AURA si le démarrage système réussit.
      */
     fun triggerInstallationAndExit(installerFile: File, updateInfo: AppVersionResponseData) {
-        val updatesDir = DesktopEnvironment.getUpdatesDir()
+        val updatesDir = this.updatesDir
         val logFile = File(updatesDir, LOG_FILENAME)
         val currentExe = when {
             File(DesktopEnvironment.appDir, "AURA.exe").exists() -> File(DesktopEnvironment.appDir, "AURA.exe")

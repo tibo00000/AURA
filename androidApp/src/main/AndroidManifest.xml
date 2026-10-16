@@ -44,6 +44,11 @@
                     android:scheme="aura"
                     android:host="spotify-callback" />
             </intent-filter>
+            <!-- Media search voice query support (Android Auto & Google Assistant) -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <service

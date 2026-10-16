@@ -11,6 +11,9 @@ kotlin {
         browser {
             commonWebpackConfig {
                 outputFileName = "webApp.js"
+                devServer = (devServer ?: org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig.DevServer()).apply {
+                    port = 8080
+                }
             }
         }
         binaries.executable()
@@ -25,6 +28,8 @@ kotlin {
                 implementation(compose.material3)
                 implementation(compose.ui)
                 implementation(compose.components.resources)
+                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
             }
         }
     }

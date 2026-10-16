@@ -329,3 +329,30 @@ fun WindowScope.InstallWindowsTaskbarFix() {
     }
 }
 
+/**
+ * Ramène la fenêtre principale au premier plan (même si Windows applique une restriction
+ * de focus en arrière-plan lors d'une réouverture depuis la barre des tâches ou le System Tray).
+ */
+fun WindowScope.bringWindowToFront() {
+    try {
+        (window as? java.awt.Frame)?.let { frame ->
+            frame.extendedState = frame.extendedState and java.awt.Frame.ICONIFIED.inv()
+        }
+        window.isVisible = true
+        window.toFront()
+        window.requestFocus()
+
+        val os = System.getProperty("os.name", "").lowercase()
+        if (os.contains("win")) {
+            val hwndPointer = Native.getWindowPointer(window)
+            if (hwndPointer != null && Pointer.nativeValue(hwndPointer) != 0L) {
+                val hwnd = HWND(hwndPointer)
+                val user32 = User32.INSTANCE
+                user32.ShowWindow(hwnd, WinUser.SW_RESTORE)
+                user32.SetForegroundWindow(hwnd)
+            }
+        }
+    } catch (_: Throwable) {}
+}
+
+

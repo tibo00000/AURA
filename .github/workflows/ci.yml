@@ -24,8 +24,11 @@ jobs:
     timeout-minutes: 10
     env:
       SUPABASE_URL: "https://ci-placeholder.supabase.co"
+      SUPABASE_ANON_KEY: "ci-placeholder-anon-key"
+      SUPABASE_SERVICE_ROLE_KEY: "ci-placeholder-service-role-key"
       SUPABASE_KEY: "ci-placeholder-anon-key"
       SUPABASE_JWT_SECRET: "ci-placeholder-jwt-secret"
+      TESTING: "1"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,6 +80,7 @@ jobs:
         run: |
           ./gradlew :shared:desktopTest :desktopApp:desktopTest :desktopApp:compileKotlinDesktop \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dos.arch=amd64" \
+            -Djava.awt.headless=true \
             --no-daemon --console=plain
 
       - name: Upload Shared & Desktop test reports
@@ -112,6 +116,7 @@ jobs:
         run: |
           ./gradlew :shared:testDebugUnitTest :androidApp:testDebugUnitTest :androidApp:compileDebugKotlin :androidApp:lintDebug \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dos.arch=amd64" \
+            -Djava.awt.headless=true \
             --no-daemon --console=plain
 
       - name: Upload Android test & Lint reports

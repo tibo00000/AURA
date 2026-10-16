@@ -11,27 +11,44 @@ class WasmAudioPlayer : AudioPlayer {
     override var onErrorListener: ((String) -> Unit)? = null
 
     init {
+        audio.crossOrigin = "anonymous"
         audio.onended = {
             isPlaying = false
             onCompletionListener?.invoke()
         }
-        audio.onerror = { _, _, _, _, _ ->
+        audio.addEventListener("error", { _ ->
             isPlaying = false
-            onErrorListener?.invoke("HTML5 Audio playback error")
-            null
-        }
+            val errorDetails = audio.error?.let { "Code d'erreur HTML5: ${it.code}" } ?: "HTML5 Audio playback error"
+            onErrorListener?.invoke(errorDetails)
+        })
     }
 
     override fun play(uri: String) {
         try {
-            audio.src = uri
-            audio.play()
+            if (audio.src != uri) {
+                audio.src = uri
+            }
             isPlaying = true
+            playAudioSafely(audio)
         } catch (e: Exception) {
             isPlaying = false
             onErrorListener?.invoke(e.message ?: "Failed to play on Web")
         }
     }
+
+    override fun resume() {
+        try {
+            if (audio.src.isNotBlank()) {
+                isPlaying = true
+                playAudioSafely(audio)
+            }
+        } catch (e: Exception) {
+            isPlaying = false
+            onErrorListener?.invoke(e.message ?: "Failed to resume on Web")
+        }
+    }
+
+    override fun hasLoadedMedia(): Boolean = audio.src.isNotBlank()
 
     override fun pause() {
         audio.pause()
@@ -68,4 +85,18 @@ class WasmAudioPlayer : AudioPlayer {
         return audio.volume.toFloat()
     }
 }
+
+private fun playAudioSafely(audio: HTMLAudioElement): Unit = js("""
+    try {
+        var p = audio.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch(function(err) {
+                console.warn("Autoplay / audio playback restriction:", err);
+            });
+        }
+    } catch(e) {
+        console.warn("Audio play exception:", e);
+    }
+""")
+
 private fun Double.isInfinite(): Boolean = this == Double.POSITIVE_INFINITY || this == Double.NEGATIVE_INFINITY
