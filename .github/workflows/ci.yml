@@ -80,6 +80,9 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
+      - name: Create local.properties if missing
+        run: touch local.properties
+
       - name: Compile & run KMP Shared and Desktop unit/integration tests
         run: |
           ./gradlew :shared:desktopTest :desktopApp:desktopTest :desktopApp:compileKotlinDesktop \
@@ -118,6 +121,9 @@ jobs:
 
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
+
+      - name: Create local.properties if missing
+        run: touch local.properties
 
       - name: Compile Android Debug, run unit tests & Lint
         run: |

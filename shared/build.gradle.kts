@@ -153,7 +153,7 @@ dependencies {
 
 val generateBuildConfig by tasks.registering {
     val outputFile = file("src/commonMain/kotlin/com/aura/music/data/network/BuildConfig.kt")
-    inputs.file(rootProject.file("local.properties")).optional()
+    inputs.file(provider { rootProject.file("local.properties").takeIf { it.exists() } }).optional()
     outputs.file(outputFile)
     
     doLast {
