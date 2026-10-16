@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Exposes filesDir/covers/ and cacheDir/covers/ -->
+    <files-path name="covers" path="covers/" />
+    <cache-path name="covers" path="covers/" />
+    <!-- Fallbacks in case external or general app directories are referenced -->
+    <files-path name="root" path="." />
+    <cache-path name="root" path="." />
+</paths>

@@ -1,14 +1,13 @@
 # Domain Data Relationships
 
 ## Objectif
-Donner une vue d'ensemble des entites metier AURA et de leur repartition entre `MediaStore`, `Room`, `Postgres` et `Qdrant`.
+Donner une vue d'ensemble des entites metier AURA et de leur repartition entre `MediaStore`, `Room` et `Postgres`.
 
 ## Principes de lecture
 - Le domaine AURA est defini par des entites metier stables, puis projete vers plusieurs systemes de persistance.
 - `Room` porte l'etat applicatif local durable.
 - `Postgres` porte l'etat cloud synchronisable quand la sync est active.
 - `MediaStore` decrit les fichiers locaux reels presents sur le telephone.
-- `Qdrant` stocke des vecteurs et un payload de metadonnees, mais n'est jamais une base transactionnelle.
 
 ```mermaid
 flowchart TB
@@ -29,7 +28,6 @@ flowchart TB
 
   subgraph Cloud["Persistance cloud optionnelle"]
     Postgres["Supabase / Postgres"]
-    Qdrant["Qdrant"]
   end
 
   Artist --> Album
@@ -58,7 +56,6 @@ flowchart TB
   PlaybackEvent --> Postgres
   UserTrackStats --> Postgres
 
-  Track --> Qdrant
 ```
 
 ## Cardinalites importantes
@@ -72,7 +69,6 @@ flowchart TB
 - `MediaStore` ne porte ni playlists, ni likes, ni historique, ni snapshot de lecture.
 - `Room` est la source de verite locale pour playlists, likes, snapshots, historique, stats et mappings provider.
 - `Postgres` ne replique pas `MediaStore`, la navigation UI, le scroll ni la `priority queue`.
-- `Qdrant` conserve un vecteur par piste documentee ainsi qu'un payload de metadonnees, dont l'identifiant AURA de piste.
 
 ## Donnees explicitement non persistees comme donnees metier
 - la `priority queue` du player

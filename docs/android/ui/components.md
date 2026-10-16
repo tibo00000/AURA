@@ -32,29 +32,46 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - les controles de transport restent secondaires par rapport a l'ouverture du Player
 
 ## TrackRow
-- Role : affichage standard d'une piste dans bibliotheque, playlists, historique, recherche locale et queue compacte.
+- Role : affichage standard d'une piste dans bibliotheque, playlists, historique, recherche locale, recherche en ligne et queue compacte.
 - Structure :
   - gauche : cover
   - centre : titre, artiste, album/context secondaire
-  - droite : `Like` visible si pertinent, puis menu `...`
+  - droite : bouton `FavoriteHeartButton` (cœur avec retour visuel optimiste 0 ms, rebond d'échelle et transition de couleur), indicateur de statut téléchargement/cloud si pertinent, puis menu `...`
 - Variantes :
-  - standard
+  - standard (`SharedTrackRowItem`)
   - compact
   - currently playing
-  - search-result online
+  - search-result online (`SearchOnlineTrackRowItem`)
+  - hybrid-detail online (`InteractiveOnlineTrackRow`)
 - Regles :
   - le titre a toujours la priorite visuelle
   - les metadonnees restent sur une seule ligne si possible
-  - les actions visibles restent limitees pour ne pas encombrer
-- Menu contextuel canonique :
-  - `Lire maintenant`
-  - `Ajouter a la file d'attente`
-  - `Ajouter a une playlist`
-  - `Voir l'artiste`
-  - `Voir l'album`
-  - `Telecharger` uniquement si la piste n'est pas disponible localement
-  - `Supprimer le telechargement` uniquement si la piste est deja disponible localement
-  - `Supprimer` uniquement dans les contextes ou la suppression a un sens metier
+  - le clic direct sur la rangée lance la lecture (`Lire maintenant` n'est pas présent dans le menu `...` pour éviter la redondance)
+  - le bouton favori (cœur) est présent directement sur la rangée et réagit instantanément (0 ms) en DB locale Room (la synchronisation REST et le téléchargement audio s'exécutent en tâche de fond asynchrone non-bloquante)
+- Menu contextuel hiérarchique épuré :
+  - **Niveau 1 — Actions musicales principales (4-5 items max)** :
+    - `Ajouter à la file d'attente` (`Icons.Rounded.QueueMusic`)
+    - `Ajouter à une playlist` (`Icons.Rounded.PlaylistAdd`)
+    - `Voir l'artiste` (`Icons.Rounded.Person`) (si l'artiste est résolu)
+    - `Voir l'album` (`Icons.Rounded.Album`) (si l'album est résolu)
+    - `Plus d'options  ›` (`Icons.Rounded.ChevronRight`) (si des actions avancées existent)
+  - **Niveau 2 — Fichiers, Cloud & Gestion avancée** :
+    - `‹ Retour` (`Icons.AutoMirrored.Rounded.ArrowBack`)
+    - `Retirer de la playlist` (contexte playlist)
+    - `Télécharger sur l'appareil` / `Ajouter au Cloud personnel` (si non disponible localement)
+    - `Supprimer du téléphone` (si disponible localement)
+    - `Ajouter au Cloud` (si fichier local éligible)
+    - `Récupérer depuis le Cloud` (si présent dans le cloud mais absent localement)
+    - `Supprimer du Cloud` (si présent dans le cloud)
+    - `Modifier les informations` (pour les fichiers locaux, ouvre `EditTrackMetadataBottomSheet`)
+
+## FavoriteHeartButton
+- Role : Bouton d'action rapide Favori/Like présent sur toutes les rangées de piste et le lecteur plein écran.
+- Caractéristiques :
+  - Animation de rebond d'échelle dynamique (`scale` spring bouncy) lors du basculement
+  - Transition de couleur animée (`BlazeOrange` lorsque actif, `TextSecondary`/`onSurfaceVariant` inactif)
+  - Optimistic UI immédiat à 0 ms côté composant
+  - Écriture locale instantanée en base Room sans blocage réseau/téléchargement
 
 ## PlayerQueueRow
 - Role : ligne dediee a la `priority queue` dans le Player.
@@ -158,11 +175,35 @@ Definir les composants visuels et interactifs reutilisables qui doivent porter l
   - l'action principale reste explicite
 - Mapping code : `EmptyStateSurface`.
 
+## CloudRecoveryBanner
+- Role : Avertir l'utilisateur au lancement si des fichiers cloud sont disponibles pour récupération manuelle.
+- Structure :
+  - Icône d'avertissement / CloudDownload stylisée BlazeOrange
+  - Texte indiquant le nombre de pistes prêtes pour la récupération
+  - Bouton "Gérer" menant directement à la page de gestion des fichiers cloud
+- Règles :
+  - S'affiche uniquement sur l'écran d'accueil (`HomeScreen`) si plus de 5 titres sont en mode `cloud_only` et présents sur le cloud.
+
+## EditTrackMetadataBottomSheet
+- Role : ModalBottomSheet d'édition des tags et métadonnées d'un morceau physique local.
+- Structure :
+  - Header avec titre et bouton de fermeture
+  - Bannière optionnelle d'autorisation d'accès complet au stockage (`StoragePermissionHelper`)
+  - Sélecteur de pochette (aperçu 140x140 dp avec PhotoPicker pour l'édition manuelle)
+  - Section 1 : Suggestions Deezer automatiques avec cartes 1-clic pour appliquer les métadonnées officielles
+  - Section 2 : Formulaire d'édition manuelle (titre, artiste, album, numéro de piste, année)
+  - Bouton d'action "Enregistrer les modifications"
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/ui/AuraApp.kt` : `MiniPlayer`, `TrackRow` shell
 - `android/app/src/main/java/com/aura/music/ui/player/PlayerViewModel.kt` : etats pilotant `MiniPlayer`, `PlayerHero` et `PlayerQueueRow`
-- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`
+- `android/app/src/main/java/com/aura/music/ui/screens/HomeScreen.kt` : `HeroResumeCard`, `PlaylistCard`, `CloudRecoveryBanner`
 - `android/app/src/main/java/com/aura/music/ui/screens/SearchScreen.kt` : `SearchBar`, `SegmentedTabs`, variantes `TrackRow` Search
 - `android/app/src/main/java/com/aura/music/ui/screens/ScreenSharedComponents.kt` : `HeroIdentityCard`, `EmptyStateSurface`, `DownloadStateCard`, `FilterRow`, `SectionTitle`, `BrowseAlbumRail`, `BrowseArtistRail`
 - `android/app/src/main/java/com/aura/music/ui/screens/SettingsScreen.kt` : composition de `SettingsCard` et usage de `HeroIdentityCard` + `EmptyStateSurface`
 - `android/app/src/main/java/com/aura/music/ui/screens/LibraryAndDetailsScreens.kt` : `PlaylistCard`, `PlayerHero`, `PlayerQueueRow`, surfaces detail secondaires
+- `android/app/src/main/java/com/aura/music/ui/screens/EditTrackMetadataBottomSheet.kt` : `EditTrackMetadataBottomSheet` modal d'édition
+- `android/app/src/main/java/com/aura/music/core/StoragePermissionHelper.kt` : vérification et activation `MANAGE_EXTERNAL_STORAGE`
+- `android/app/src/main/java/com/aura/music/data/metadata/AudioTagWriter.kt` : moteur natif ID3v2.3 atomique
+- `android/app/src/main/java/com/aura/music/core/ImageCompressionUtils.kt` : compression 500x500 JPEG 80%
+

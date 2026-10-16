@@ -39,6 +39,6 @@ Suivre l'etat des traitements lies a la disponibilite locale des pistes.
 - progression en temps reel
 - erreur par job
 - succes avec acces direct a la piste
-- choix de version YTM requis
+- choix de version YTM requis avec alerte Snackbar globale ("Choisir" pour 1 titre ou redirection vers Téléchargements pour un lot)
 - erreur reseau non bloquante
 - stockage des fichiers physiques sous `context.filesDir/downloads/{trackId}.mp3`

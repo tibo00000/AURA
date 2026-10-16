@@ -1,0 +1,1936 @@
+package com.aura.music.ui.screens
+
+import com.aura.music.ui.utils.TrackLookupIndex
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Downloading
+import com.aura.music.ui.theme.TextPrimary
+import com.aura.music.ui.theme.TextSecondary
+import com.aura.music.ui.components.ShimmerTrackList
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.produceState
+import com.aura.music.data.local.PlaylistListRow
+import com.aura.music.ui.screens.SelectPlaylistDialog
+import com.aura.music.ui.screens.DuplicateTrackInPlaylistDialog
+import com.aura.music.data.repository.AddToPlaylistResult
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
+import com.aura.music.ui.theme.BlazeOrange
+import coil3.compose.AsyncImage
+import com.aura.music.AuraApplication
+import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.network.ArtistSummary
+import com.aura.music.data.network.AlbumSummary
+import com.aura.music.data.network.TrackSummary
+import com.aura.music.data.repository.BestMatchResult
+import com.aura.music.data.repository.LocalLibraryRepository
+import com.aura.music.ui.RouteScaffold
+import com.aura.music.ui.search.SearchViewModel
+import com.aura.music.ui.search.SearchViewModelFactory
+import com.aura.music.ui.theme.ElevatedGraphite
+import com.aura.music.ui.theme.HairlineDark
+import com.aura.music.ui.player.PlayerViewModel
+import com.aura.music.domain.player.PlayerEvent
+import com.aura.music.ui.toQueuedTrack
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchScreen(
+    repository: LocalLibraryRepository,
+    refreshToken: Int,
+    onRequestAudioPermission: () -> Unit,
+    onPlayTrackInList: (TrackListRow, List<TrackListRow>, String) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+    onOpenDownloads: () -> Unit,
+    playerViewModel: PlayerViewModel,
+    onRequestJobResolution: (String) -> Unit = {},
+) {
+    val focusManager = LocalFocusManager.current
+    val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as AuraApplication
+    val searchRepository = application.container.searchRepository
+    val enrichmentRepository = application.container.enrichmentRepository
+    val downloadRepository = application.container.downloadRepository
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val cloudFileRepository = application.container.cloudFileRepository
+    val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
+    
+    val allDownloadJobs by downloadRepository.getAllJobsWithTrack().collectAsState(initial = emptyList())
+    val trackDownloadStatusMap = remember(allDownloadJobs) {
+        allDownloadJobs.associate { job ->
+            val status: TrackDownloadStatus = when (job.status) {
+                "succeeded" -> TrackDownloadStatus.Downloaded
+                "running" -> TrackDownloadStatus.Downloading((job.progressPercent ?: 0f) / 100f)
+                "requires_resolution" -> TrackDownloadStatus.RequiresResolution(job.jobId)
+                "queued" -> TrackDownloadStatus.Queued
+                "failed" -> TrackDownloadStatus.Failed(job.errorCode, job.errorMessage)
+                else -> TrackDownloadStatus.Idle
+            }
+            job.trackId to status
+        }
+    }
+
+    val viewModel: SearchViewModel = viewModel(
+        factory = SearchViewModelFactory(searchRepository, enrichmentRepository, application)
+    )
+    
+    val uiState by viewModel.uiState.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDuplicatePrompt by remember { mutableStateOf<AddToPlaylistResult.AlreadyExists?>(null) }
+    var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
+    var trackToDelete by remember { mutableStateOf<TrackListRow?>(null) }
+    var pendingDeleteTrackId by remember { mutableStateOf<String?>(null) }
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            pendingDeleteTrackId?.let { trackId ->
+                scope.launch {
+                    repository.removeTrackFromDatabase(trackId)
+                    pendingDeleteTrackId = null
+                    viewModel.refreshDisplayedLocalResults()
+                }
+            }
+        } else {
+            pendingDeleteTrackId = null
+        }
+    }
+    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
+        value = repository.getPlaylists()
+    }
+    val playlists = playlistsState.value
+
+    val localTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
+        value = repository.getAllTracks()
+    }
+    val localTracks = localTracksState.value
+
+    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshToken) {
+        cloudFileRepository.listCloudFiles().collect { res ->
+            res.onSuccess { value = it }
+        }
+    }
+    val cloudFiles = cloudFilesState.value
+    val lookupIndex = remember(localTracks, cloudFiles, syncedCloudTrackIds) {
+        TrackLookupIndex.build(localTracks, cloudFiles, syncedCloudTrackIds)
+    }
+
+    LaunchedEffect(refreshToken) {
+        viewModel.refreshDisplayedLocalResults()
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshDisplayedLocalResults()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    RouteScaffold(
+        title = null,
+        snackbarHostState = snackbarHostState,
+    ) {
+        com.aura.music.ui.components.AuraLazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Compact Top Search Bar + Downloads Button
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SearchBarInput(
+                        query = uiState.query,
+                        onQueryChange = viewModel::updateQuery,
+                        onSubmit = {
+                            focusManager.clearFocus()
+                            viewModel.submitSearch()
+                        },
+                        onClear = viewModel::clearQuery,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onOpenDownloads,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(ElevatedGraphite, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Downloading,
+                            contentDescription = "Téléchargements",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+
+            // Local and Online suggestions dropdown (only during typing with 3+ chars)
+            if (uiState.shouldShowSuggestions) {
+                item {
+                    LocalSuggestionsSection(
+                        result = uiState.localSuggestions,
+                        onSelectTrack = { track ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(track.title)
+                        },
+                        onSelectArtist = { artist ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(artist.name)
+                        },
+                        onSelectAlbum = { album ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(album.title)
+                        },
+                        onSelectOnlineTrack = { track ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(track.title, targetTab = 1)
+                        },
+                        onSelectOnlineArtist = { artist ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(artist.name, targetTab = 1)
+                        },
+                        onSelectOnlineAlbum = { album ->
+                            focusManager.clearFocus()
+                            viewModel.selectSuggestion(album.title, targetTab = 1)
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            // Recent searches (shown when no search is active and no suggestions)
+            if (!uiState.isLoadingFullSearch && !uiState.isSearchComplete && !uiState.shouldShowSuggestions && uiState.recentQueries.isNotEmpty()) {
+                item {
+                    RecentSearchesSection(
+                        queries = uiState.recentQueries,
+                        onSelectQuery = { query ->
+                            focusManager.clearFocus()
+                            viewModel.selectRecentQuery(query)
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            // Loading indicator with Shimmer skeleton
+            if (uiState.isLoadingFullSearch) {
+                // Tab navigation displayed during loading
+                item {
+                    TabRow(
+                        selectedTabIndex = uiState.selectedTab,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        androidx.compose.material3.Tab(
+                            selected = uiState.selectedTab == 0,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(0)
+                            },
+                            text = { Text("Bibliothèque") }
+                        )
+                        androidx.compose.material3.Tab(
+                            selected = uiState.selectedTab == 1,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(1)
+                            },
+                            text = { Text("En ligne") }
+                        )
+                    }
+                }
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = BlazeOrange,
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = if (uiState.selectedTab == 1) "Recherche en ligne (Deezer & YouTube)..." else "Recherche en cours...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary
+                            )
+                        }
+                        ShimmerTrackList(count = 7)
+                    }
+                }
+            }
+
+            // Error banner
+            if (uiState.errorMessage != null) {
+                item {
+                    ErrorBanner(
+                        message = uiState.errorMessage!!,
+                        onDismiss = viewModel::dismissError,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            // Search results with tab navigation
+            if (!uiState.isLoadingFullSearch && uiState.isSearchComplete && uiState.displayResult != null) {
+                val result = uiState.displayResult!!
+
+                // Tab navigation
+                item {
+                    TabRow(
+                        selectedTabIndex = uiState.selectedTab,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        androidx.compose.material3.Tab(
+                            selected = uiState.selectedTab == 0,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(0)
+                            },
+                            text = { Text("Bibliothèque") }
+                        )
+                        androidx.compose.material3.Tab(
+                            selected = uiState.selectedTab == 1,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.selectTab(1)
+                            },
+                            text = { Text("En ligne") }
+                        )
+                    }
+                }
+
+                // Local library tab content
+                if (uiState.selectedTab == 0) {
+                    if (result.localTracks.isNotEmpty() || result.localArtists.isNotEmpty() || result.localAlbums.isNotEmpty()) {
+                        item {
+                            LocalLibrarySearchTab(
+                                tracks = result.localTracks,
+                                artists = result.localArtists,
+                                albums = result.localAlbums,
+                                onPlayTrack = { track, allTracks ->
+                                    focusManager.clearFocus()
+                                    onPlayTrackInList(track, allTracks, "search_local")
+                                },
+                                onLikeTrack = { trackId, isLiked ->
+                                    viewModel.likeLocalTrack(trackId, isLiked)
+                                },
+                                onAddToPlaylist = { track -> activeTrackForPlaylist = track },
+                                onOpenArtist = { artistId ->
+                                    focusManager.clearFocus()
+                                    onOpenArtist(artistId)
+                                },
+                                onOpenAlbum = { albumId ->
+                                    focusManager.clearFocus()
+                                    onOpenAlbum(albumId)
+                                },
+                                onDeleteTrack = { track ->
+                                    trackToDelete = track
+                                },
+                                onAddToQueue = { track ->
+                                    playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack()))
+                                },
+                                cloudFileRepository = cloudFileRepository,
+                                syncedCloudTrackIds = syncedCloudTrackIds,
+                                cloudFiles = cloudFiles,
+                                snackbarHostState = snackbarHostState,
+                                scope = scope,
+                                localLibraryRepository = repository,
+                                onRefresh = { viewModel.refreshDisplayedLocalResults() },
+                                onEditMetadata = { track -> trackToEditMetadata = track },
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    } else {
+                        item {
+                            EmptyStateSurface(
+                                title = "Aucun résultat local",
+                                message = "Essayez une autre recherche",
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Online tab content
+                if (uiState.selectedTab == 1) {
+                    if (result.onlineTracks.isNotEmpty() || result.onlineArtists.isNotEmpty() || result.onlineAlbums.isNotEmpty()) {
+                        item {
+                            OnlineSearchTab(
+                                tracks = result.onlineTracks,
+                                artists = result.onlineArtists,
+                                albums = result.onlineAlbums,
+                                bestMatch = result.bestMatch,
+                                downloadStatusMap = trackDownloadStatusMap,
+                                localTracks = localTracks,
+                                cloudFiles = cloudFiles,
+                                syncedCloudTrackIds = syncedCloudTrackIds,
+                                onLikeTrack = { track -> viewModel.likeOnlineTrack(track) },
+                                onPlayTrack = { track ->
+                                    focusManager.clearFocus()
+                                    val matchedLocal = localTracks.firstOrNull { local ->
+                                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                        !local.contentUri.isNullOrBlank()
+                                    }
+                                    val isOnCloud = track.isAvailableInCloud ||
+                                        syncedCloudTrackIds.contains(track.id) ||
+                                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                                        cloudFiles.any { cloud ->
+                                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                                        }
+
+                                    if (matchedLocal != null || isOnCloud) {
+                                        val trackRow = TrackListRow(
+                                            id = track.id,
+                                            artistId = null,
+                                            albumId = null,
+                                            title = track.title,
+                                            artistName = track.displayArtistName,
+                                            albumTitle = track.displayAlbumTitle,
+                                            contentUri = matchedLocal?.contentUri,
+                                            durationMs = track.durationMs.toLong(),
+                                            coverUri = track.coverUri,
+                                            isLiked = track.isLiked
+                                        )
+                                        onPlayTrackInList(
+                                            trackRow,
+                                            listOf(trackRow),
+                                            "search_online_tracks"
+                                        )
+                                    } else {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Ce morceau n'est pas sur votre Cloud. Cliquez sur le nuage pour l'ajouter.")
+                                        }
+                                    }
+                                },
+                                onAddToQueue = { track ->
+                                    val matchedLocal = localTracks.firstOrNull { local ->
+                                        (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                         (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                          local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                          (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                        !local.contentUri.isNullOrBlank()
+                                    }
+                                    val isOnCloud = track.isAvailableInCloud ||
+                                        syncedCloudTrackIds.contains(track.id) ||
+                                        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+                                        cloudFiles.any { cloud ->
+                                            isDeezerTrackMatch(cloud.trackId, track.id) ||
+                                            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                             cloud.artistName?.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                             (cloud.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || cloud.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))
+                                        }
+                                    if (matchedLocal != null || isOnCloud) {
+                                        val queued = com.aura.music.domain.player.QueuedTrack(
+                                            trackId = track.id,
+                                            title = track.title,
+                                            artistName = track.displayArtistName,
+                                            albumTitle = track.displayAlbumTitle,
+                                            contentUri = matchedLocal?.contentUri,
+                                            durationMs = track.durationMs.toLong(),
+                                            coverUri = track.coverUri,
+                                            source = com.aura.music.domain.player.TrackSource.PRIORITY
+                                        )
+                                        playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(queued))
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Ajouté à la file : ${track.title}")
+                                        }
+                                    } else {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Ce morceau n'est pas sur votre Cloud. Cliquez sur le nuage pour l'ajouter.")
+                                        }
+                                    }
+                                },
+                                onDownloadTrack = { track ->
+                                    val currentStatus = trackDownloadStatusMap[track.id] ?: TrackDownloadStatus.Idle
+                                    when (currentStatus) {
+                                        is TrackDownloadStatus.Downloaded -> {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    message = "${track.title} est déjà disponible hors-ligne.",
+                                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                                )
+                                            }
+                                        }
+                                        is TrackDownloadStatus.RequiresResolution -> {
+                                            onRequestJobResolution(currentStatus.jobId)
+                                        }
+                                        is TrackDownloadStatus.Downloading, TrackDownloadStatus.Queued -> {
+                                            onOpenDownloads()
+                                        }
+                                        else -> {
+                                            if (!application.container.authSessionManager.isLoggedIn.value) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        message = "Connexion requise pour télécharger depuis le Cloud.",
+                                                        duration = androidx.compose.material3.SnackbarDuration.Short
+                                                    )
+                                                }
+                                            } else {
+                                                scope.launch {
+                                                    downloadRepository.triggerDownload(
+                                                        trackId = track.id,
+                                                        title = track.title,
+                                                        artistName = track.displayArtistName,
+                                                        albumTitle = track.displayAlbumTitle,
+                                                        coverUri = track.coverUri,
+                                                        userToken = application.container.authSessionManager.getBearerHeader()
+                                                    ).collect { result ->
+                                                        if (result.isSuccess) {
+                                                            scope.launch {
+                                                                val snackbarResult = snackbarHostState.showSnackbar(
+                                                                    message = "Téléchargement lancé : ${track.title}",
+                                                                    actionLabel = "Voir",
+                                                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                                                )
+                                                                if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                                                    onOpenDownloads()
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onUploadToCloud = { track ->
+                                    if (!application.container.authSessionManager.isLoggedIn.value) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Connexion requise pour sauvegarder sur le Cloud.")
+                                        }
+                                    } else {
+                                        val matchedLocal = localTracks.firstOrNull { local ->
+                                            (isDeezerTrackMatch(local.id, track.id) || local.id == track.id ||
+                                             (local.title.trim().equals(track.title.trim(), ignoreCase = true) &&
+                                              local.artistName.trim().equals(track.displayArtistName.trim(), ignoreCase = true) &&
+                                              (local.albumTitle?.trim().equals(track.displayAlbumTitle?.trim(), ignoreCase = true) || local.albumTitle.isNullOrBlank() || track.displayAlbumTitle.isNullOrBlank()))) &&
+                                             !local.contentUri.isNullOrBlank()
+                                        }
+                                        val trackIdToUpload = matchedLocal?.id ?: track.id
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Envoi vers le Cloud lancé : ${track.title}")
+                                            cloudFileRepository.uploadTrack(trackIdToUpload).collect { res ->
+                                                res.onSuccess {
+                                                    snackbarHostState.showSnackbar("Sauvegardé sur le Cloud : ${track.title}")
+                                                    cloudFileRepository.refreshSyncedTrackIds()
+                                                }.onFailure { err ->
+                                                    snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onDeleteDownload = { trackId ->
+                                    trackToDelete = localTracks.firstOrNull { it.id == trackId }
+                                },
+                                onAddToPlaylist = { track ->
+                                    activeTrackForPlaylist = TrackListRow(
+                                        id = track.id,
+                                        artistId = null,
+                                        albumId = null,
+                                        title = track.title,
+                                        artistName = track.displayArtistName,
+                                        albumTitle = track.displayAlbumTitle,
+                                        contentUri = null,
+                                        durationMs = track.durationMs.toLong(),
+                                        coverUri = track.coverUri,
+                                        isLiked = track.isLiked
+                                    )
+                                },
+                                onOpenArtist = { artistId ->
+                                    focusManager.clearFocus()
+                                    onOpenArtist(artistId)
+                                },
+                                onOpenAlbum = { albumId ->
+                                    focusManager.clearFocus()
+                                    onOpenAlbum(albumId)
+                                },
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    } else {
+                        item {
+                            EmptyStateSurface(
+                                title = "Aucun résultat en ligne",
+                                message = "Vérifiez votre connexion",
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+
+    if (activeTrackForPlaylist != null) {
+        SelectPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { activeTrackForPlaylist = null },
+            onPlaylistSelected = { playlist ->
+                val track = activeTrackForPlaylist!!
+                activeTrackForPlaylist = null
+                scope.launch {
+                    val result = repository.addTrackToPlaylist(
+                        playlistId = playlist.id,
+                        trackId = track.id,
+                        contextType = "search",
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumTitle = track.albumTitle,
+                        durationMs = track.durationMs,
+                        coverUri = track.coverUri
+                    )
+                    if (result is AddToPlaylistResult.AlreadyExists) {
+                        pendingDuplicatePrompt = result
+                    }
+                }
+            }
+        )
+    }
+
+    pendingDuplicatePrompt?.let { prompt ->
+        DuplicateTrackInPlaylistDialog(
+            playlistName = prompt.playlistName,
+            onConfirm = {
+                scope.launch {
+                    repository.addTrackToPlaylist(
+                        playlistId = prompt.playlistId,
+                        trackId = prompt.trackId,
+                        contextType = "search",
+                        allowDuplicate = true
+                    )
+                    pendingDuplicatePrompt = null
+                }
+            },
+            onDismiss = { pendingDuplicatePrompt = null }
+        )
+    }
+
+    if (trackToDelete != null) {
+        val isPresentInCloud = lookupIndex.isCloudSynced(trackToDelete!!.id, trackToDelete!!.title, trackToDelete!!.artistName, trackToDelete!!.albumTitle)
+        ConfirmDialog(
+            title = if (isPresentInCloud) "Supprimer le téléchargement ?" else "Supprimer de l'appareil ?",
+            message = if (isPresentInCloud) {
+                "Voulez-vous supprimer le fichier local de « ${trackToDelete!!.title} » pour libérer de l'espace ? Le titre restera disponible en streaming sur votre Cloud."
+            } else {
+                "Voulez-vous vraiment supprimer « ${trackToDelete!!.title} » de votre appareil ? Cette action supprimera définitivement le fichier physique."
+            },
+            confirmLabel = if (isPresentInCloud) "Supprimer le fichier local" else "Supprimer",
+            onDismiss = { trackToDelete = null },
+            onConfirm = {
+                val t = trackToDelete!!
+                trackToDelete = null
+                if (isPresentInCloud) {
+                    scope.launch {
+                        cloudFileRepository.removeLocalFile(t.id)
+                        repository.refreshLocalMediaIndex()
+                        viewModel.refreshDisplayedLocalResults()
+                        snackbarHostState.showSnackbar("Téléchargement local supprimé. Titre conservé sur le Cloud.")
+                    }
+                } else {
+                    val trackId = t.id
+                    pendingDeleteTrackId = trackId
+                    scope.launch {
+                        val pendingIntent = repository.deleteTrack(trackId)
+                        if (pendingIntent != null) {
+                            try {
+                                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                intentSenderLauncher.launch(intentSenderRequest)
+                            } catch (e: Exception) {
+                                android.util.Log.e("SearchScreen", "Failed to launch intent sender for delete", e)
+                                pendingDeleteTrackId = null
+                            }
+                        } else {
+                            pendingDeleteTrackId = null
+                            viewModel.refreshDisplayedLocalResults()
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (trackToEditMetadata != null) {
+        EditTrackMetadataBottomSheet(
+            track = trackToEditMetadata!!,
+            apiService = application.container.auraApiService,
+            localLibraryRepository = repository,
+            onDismiss = { trackToEditMetadata = null },
+            onTrackUpdated = {
+                trackToEditMetadata = null
+                viewModel.refreshDisplayedLocalResults()
+            }
+        )
+    }
+}
+
+/**
+ * Local library search results tab content.
+ */
+@Composable
+private fun LocalLibrarySearchTab(
+    tracks: List<TrackListRow>,
+    artists: List<com.aura.music.data.local.ArtistBrowseRow>,
+    albums: List<com.aura.music.data.local.AlbumBrowseRow>,
+    onPlayTrack: (TrackListRow, List<TrackListRow>) -> Unit,
+    onLikeTrack: (String, Boolean) -> Unit,
+    onAddToPlaylist: (TrackListRow) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+    onDeleteTrack: (TrackListRow) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
+    modifier: Modifier = Modifier,
+    cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
+    syncedCloudTrackIds: Set<String>,
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
+    snackbarHostState: androidx.compose.material3.SnackbarHostState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
+    onRefresh: () -> Unit,
+    onEditMetadata: ((TrackListRow) -> Unit)? = null,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (tracks.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Titres",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                tracks.take(5).forEach { track ->
+                    SearchTrackRowItem(
+                        track = track,
+                        tracks = tracks,
+                        onPlayTrack = onPlayTrack,
+                        onAddToQueue = onAddToQueue,
+                        onLikeTrack = onLikeTrack,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onOpenArtist = onOpenArtist,
+                        onOpenAlbum = onOpenAlbum,
+                        onDeleteTrack = onDeleteTrack,
+                        cloudFileRepository = cloudFileRepository,
+                        syncedCloudTrackIds = syncedCloudTrackIds,
+                        cloudFiles = cloudFiles,
+                        snackbarHostState = snackbarHostState,
+                        scope = scope,
+                        localLibraryRepository = localLibraryRepository,
+                        onRefresh = onRefresh,
+                        onEditMetadata = onEditMetadata
+                    )
+                }
+            }
+        }
+
+        if (artists.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Artistes",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                BrowseArtistRail(artists, onOpenArtist)
+            }
+        }
+
+        if (albums.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Albums",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                BrowseAlbumRail(albums, onOpenAlbum)
+            }
+        }
+    }
+}
+
+/**
+ * Online search results tab content.
+ */
+@Composable
+private fun OnlineSearchTab(
+    tracks: List<TrackSummary>,
+    artists: List<ArtistSummary>,
+    albums: List<AlbumSummary>,
+    bestMatch: BestMatchResult? = null,
+    downloadStatusMap: Map<String, TrackDownloadStatus> = emptyMap(),
+    localTracks: List<TrackListRow> = emptyList(),
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
+    syncedCloudTrackIds: Set<String> = emptySet(),
+    onLikeTrack: (TrackSummary) -> Unit,
+    onPlayTrack: (TrackSummary) -> Unit,
+    onAddToQueue: (TrackSummary) -> Unit,
+    onDownloadTrack: (TrackSummary) -> Unit,
+    onUploadToCloud: (TrackSummary) -> Unit,
+    onDeleteDownload: (String) -> Unit,
+    onAddToPlaylist: (TrackSummary) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showAllTracks by remember { mutableStateOf(false) }
+
+    val lookupIndex = remember(localTracks, cloudFiles, syncedCloudTrackIds) {
+        TrackLookupIndex.build(localTracks, cloudFiles, syncedCloudTrackIds)
+    }
+
+    val sectionOrder = remember(bestMatch) {
+        when (bestMatch) {
+            is BestMatchResult.LocalArtist, is BestMatchResult.OnlineArtist -> listOf("artists", "tracks", "albums")
+            is BestMatchResult.LocalAlbum, is BestMatchResult.OnlineAlbum -> listOf("albums", "tracks", "artists")
+            else -> listOf("tracks", "artists", "albums")
+        }
+    }
+
+    @Composable
+    fun RenderTracks() {
+        if (tracks.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Titres",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                val displayedTracks = if (showAllTracks) tracks else tracks.take(10)
+                displayedTracks.forEach { track ->
+                    val matchedLocal = lookupIndex.findLocalMatch(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                    val isDownloadedLocally = matchedLocal != null && !matchedLocal.contentUri.isNullOrBlank()
+                    val isOnCloud = track.isAvailableInCloud || lookupIndex.isCloudSynced(track.id, track.title, track.displayArtistName, track.displayAlbumTitle)
+                    val isCloudOnly = isOnCloud && !isDownloadedLocally
+                    val effectiveDlStatus = lookupIndex.resolveDownloadStatus(track.id, downloadStatusMap)
+
+                    SearchOnlineTrackRowItem(
+                        track = track,
+                        artists = artists,
+                        albums = albums,
+                        downloadStatus = effectiveDlStatus,
+                        isDownloadedLocally = isDownloadedLocally,
+                        isCloudOnly = isCloudOnly,
+                        onLikeTrack = onLikeTrack,
+                        onPlayTrack = onPlayTrack,
+                        onAddToQueue = onAddToQueue,
+                        onDownloadTrack = onDownloadTrack,
+                        onUploadToCloud = onUploadToCloud,
+                        onDeleteDownload = onDeleteDownload,
+                        onOpenArtist = onOpenArtist,
+                        onOpenAlbum = onOpenAlbum
+                    )
+                }
+
+                if (!showAllTracks && tracks.size > 10) {
+                    androidx.compose.material3.TextButton(
+                        onClick = { showAllTracks = true },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                    ) {
+                        Text("Afficher tous les résultats (${tracks.size})", color = BlazeOrange, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun RenderArtists() {
+        if (artists.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Artistes",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    items(artists.take(6), key = { it.id }) { artist ->
+                        SharedRailCard(
+                            title = artist.name,
+                            subtitle = "Artiste en ligne",
+                            imageUri = artist.pictureUri,
+                            gradientStartColor = Color(0xFF792BEE),
+                            imageShape = CircleShape,
+                            onClick = { onOpenArtist(artist.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun RenderAlbums() {
+        if (albums.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Albums",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    items(albums.take(6), key = { it.id }) { album ->
+                        SharedRailCard(
+                            title = album.title,
+                            subtitle = album.primaryArtistName,
+                            imageUri = album.coverUri,
+                            gradientStartColor = Color(0xFFFF9E00),
+                            imageShape = RoundedCornerShape(20.dp),
+                            onClick = { onOpenAlbum(album.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        sectionOrder.forEach { section ->
+            when (section) {
+                "artists" -> RenderArtists()
+                "albums" -> RenderAlbums()
+                "tracks" -> RenderTracks()
+            }
+        }
+    }
+}
+
+/**
+ * Search input bar with clear button and submit.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchBarInput(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var textFieldValue by remember(query) {
+        mutableStateOf(TextFieldValue(text = query, selection = androidx.compose.ui.text.TextRange(query.length)))
+    }
+
+    OutlinedTextField(
+        value = textFieldValue,
+        onValueChange = { newValue ->
+            textFieldValue = newValue
+            onQueryChange(newValue.text)
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        placeholder = { Text("Rechercher...") },
+        leadingIcon = {
+            Icon(
+                Icons.Rounded.Search,
+                contentDescription = "Rechercher",
+                modifier = Modifier.size(20.dp)
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = "Effacer",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
+        singleLine = true,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+        colors = OutlinedTextFieldDefaults.colors(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Text,
+            imeAction = ImeAction.Search
+        ),
+        keyboardActions = KeyboardActions(
+            onSearch = {
+                onSubmit()
+                keyboardController?.hide()
+            }
+        )
+    )
+}
+
+
+/**
+ * Local suggestions dropdown (shown during typing with 3+ chars).
+ */
+@Composable
+private fun LocalSuggestionsSection(
+    result: com.aura.music.data.repository.HybridSearchResult?,
+    onSelectTrack: (TrackListRow) -> Unit,
+    onSelectArtist: (com.aura.music.data.local.ArtistBrowseRow) -> Unit,
+    onSelectAlbum: (com.aura.music.data.local.AlbumBrowseRow) -> Unit,
+    onSelectOnlineTrack: (TrackSummary) -> Unit,
+    onSelectOnlineArtist: (ArtistSummary) -> Unit,
+    onSelectOnlineAlbum: (AlbumSummary) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (result == null) return
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+    ) {
+        // Tracks
+        if (result.localTracks.isNotEmpty()) {
+            result.localTracks.take(3).forEach { track ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectTrack(track)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                track.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                track.artistName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Online Tracks (Suggestions)
+        if (result.onlineTracks.isNotEmpty()) {
+            result.onlineTracks.take(3).forEach { track ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectOnlineTrack(track)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BlazeOrange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                track.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "Titre • ${track.displayArtistName} (En ligne)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Artists
+        if (result.localArtists.isNotEmpty()) {
+            result.localArtists.take(2).forEach { artist ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectArtist(artist)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(
+                            artist.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Online Artists (Suggestions)
+        if (result.onlineArtists.isNotEmpty()) {
+            result.onlineArtists.take(2).forEach { artist ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectOnlineArtist(artist)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BlazeOrange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                artist.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "Artiste en ligne",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Albums
+        if (result.localAlbums.isNotEmpty()) {
+            result.localAlbums.take(2).forEach { album ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectAlbum(album)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                album.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                album.artistName ?: "Artiste inconnu",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Online Albums (Suggestions)
+        if (result.onlineAlbums.isNotEmpty()) {
+            result.onlineAlbums.take(2).forEach { album ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onSelectOnlineAlbum(album)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BlazeOrange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                album.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "Album • ${album.primaryArtistName} (En ligne)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+
+/**
+ * Online tracks section.
+ */
+@Composable
+private fun OnlineTracksSection(
+    tracks: List<TrackSummary>,
+    onPlayTrack: (TrackSummary) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle(
+            "En ligne - Titres",
+            "Résultats du backend AURA"
+        )
+
+        tracks.take(5).forEach { track ->
+            androidx.compose.material3.Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .clickable { onPlayTrack(track) },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E1E1E))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val cover = track.coverUri
+                    if (cover != null) {
+                        AsyncImage(
+                            model = cover,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(6.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        PlaceholderCover(modifier = Modifier.size(40.dp))
+                    }
+
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            track.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            track.displayArtistName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Online artists section.
+ */
+@Composable
+private fun OnlineArtistsSection(
+    artists: List<ArtistSummary>,
+    onOpenArtist: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle(
+            "En ligne - Artistes",
+            "Résultats du backend AURA"
+        )
+
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(start = 0.dp)
+        ) {
+            items(artists.take(6), key = { it.id }) { artist ->
+                com.aura.music.ui.screens.SharedRailCard(
+                    title = artist.name,
+                    subtitle = "Artiste",
+                    imageUri = artist.pictureUri,
+                    gradientStartColor = Color(0xFF792BEE),
+                    imageShape = CircleShape,
+                    onClick = { onOpenArtist(artist.id) }
+                )
+            }
+            item { Spacer(modifier = Modifier.size(16.dp)) }
+        }
+    }
+}
+
+/**
+ * Online albums section.
+ */
+@Composable
+private fun OnlineAlbumsSection(
+    albums: List<AlbumSummary>,
+    onOpenAlbum: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle(
+            "En ligne - Albums",
+            "Résultats du backend AURA"
+        )
+
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(start = 0.dp)
+        ) {
+            items(albums.take(6), key = { it.id }) { album ->
+                com.aura.music.ui.screens.SharedRailCard(
+                    title = album.title,
+                    subtitle = album.primaryArtistName,
+                    imageUri = album.coverUri,
+                    gradientStartColor = Color(0xFFFF9E00),
+                    imageShape = RoundedCornerShape(20.dp),
+                    onClick = { onOpenAlbum(album.id) }
+                )
+            }
+            item { Spacer(modifier = Modifier.size(16.dp)) }
+        }
+    }
+}
+
+
+@Composable
+private fun HeroLocalTrackCard(track: TrackListRow, onPlay: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Brush.linearGradient(listOf(ElevatedGraphite, HairlineDark)))
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val cover = track.coverUri
+            if (cover != null) {
+                AsyncImage(
+                    model = cover,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                PlaceholderCover(modifier = Modifier.size(80.dp))
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    track.artistName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+
+
+/**
+ * Recent searches section.
+ */
+@Composable
+private fun RecentSearchesSection(
+    queries: List<String>,
+    onSelectQuery: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            "Recherches récentes",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        queries.forEach { query ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectQuery(query) }
+                    .padding(vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text(query, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Error banner.
+ */
+@Composable
+private fun ErrorBanner(
+    message: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.material3.Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF4A2A2A))
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Erreur de recherche",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "Fermer",
+                    modifier = Modifier.size(18.dp),
+                    tint = Color.White
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Placeholder cover for missing images.
+ */
+@Composable
+private fun PlaceholderCover(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .background(Color.Gray)
+            .clip(RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Rounded.Search, contentDescription = null, tint = Color.White)
+    }
+}
+
+/**
+ * Section title.
+ */
+@Composable
+private fun SectionTitle(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun normalize(value: String): String {
+    val slug = value
+        .trim()
+        .lowercase()
+        .replace(Regex("[^\\p{L}\\p{N}]+"), "-")
+        .trim('-')
+    if (slug.isNotBlank()) return slug
+    val bytes = value.trim().lowercase().toByteArray(Charsets.UTF_8)
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+    val hex = digest.joinToString("") { "%02x".format(it) }
+    return hex.take(16).ifBlank { "unknown" }
+}
+
+@Composable
+private fun SearchTrackRowItem(
+    track: TrackListRow,
+    tracks: List<TrackListRow>,
+    onPlayTrack: (TrackListRow, List<TrackListRow>) -> Unit,
+    onAddToQueue: (TrackListRow) -> Unit,
+    onLikeTrack: ((String, Boolean) -> Unit)? = null,
+    onAddToPlaylist: ((TrackListRow) -> Unit)? = null,
+    onOpenArtist: ((String) -> Unit)? = null,
+    onOpenAlbum: ((String) -> Unit)? = null,
+    onDeleteTrack: ((TrackListRow) -> Unit)? = null,
+    cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
+    syncedCloudTrackIds: Set<String>,
+    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
+    snackbarHostState: androidx.compose.material3.SnackbarHostState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    localLibraryRepository: com.aura.music.data.repository.LocalLibraryRepository,
+    onRefresh: () -> Unit,
+    onEditMetadata: ((TrackListRow) -> Unit)? = null,
+) {
+    val currentOnPlay = rememberUpdatedState(onPlayTrack)
+    val currentOnQueue = rememberUpdatedState(onAddToQueue)
+    val currentOnLike = rememberUpdatedState(onLikeTrack)
+    val currentOnPlaylist = rememberUpdatedState(onAddToPlaylist)
+    val currentOnArtist = rememberUpdatedState(onOpenArtist)
+    val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
+    val currentOnDelete = rememberUpdatedState(onDeleteTrack)
+    val currentOnEditMetadata = rememberUpdatedState(onEditMetadata)
+
+    val onClick = remember(track.id, tracks) { { currentOnPlay.value(track, tracks) } }
+    val onAddToQueueClick = remember(track.id) { { currentOnQueue.value(track) } }
+    
+    val onLikeClick = remember(track.id, track.isLiked, currentOnLike.value != null) {
+        val cb = currentOnLike.value
+        if (cb != null) {
+            { cb(track.id, track.isLiked) }
+        } else null
+    }
+    
+    val onAddToPlaylistClick = remember(track.id, currentOnPlaylist.value != null) {
+        val cb = currentOnPlaylist.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
+
+    val artistId = track.artistId
+    val hasArtist = !artistId.isNullOrBlank() && currentOnArtist.value != null
+    val onViewArtistClick = remember(track.id, artistId, hasArtist) {
+        val cb = currentOnArtist.value
+        if (hasArtist && cb != null) {
+            { cb(artistId!!) }
+        } else null
+    }
+
+    val albumId = track.albumId
+    val hasAlbum = !albumId.isNullOrBlank() && currentOnAlbum.value != null
+    val onViewAlbumClick = remember(track.id, albumId, hasAlbum) {
+        val cb = currentOnAlbum.value
+        if (hasAlbum && cb != null) {
+            { cb(albumId!!) }
+        } else null
+    }
+
+    val onDeleteClick = remember(track.id, currentOnDelete.value != null) {
+        val cb = currentOnDelete.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
+
+    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+    val isDownloadedLocally = !track.contentUri.isNullOrBlank()
+    val isPresentInCloud = syncedCloudTrackIds.contains(track.id) ||
+        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.id) } ||
+        cloudFiles.any { cloud ->
+            isDeezerTrackMatch(cloud.trackId, track.id) ||
+            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
+             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
+             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
+        }
+    val isAlreadySynced = isPresentInCloud
+    val onUploadToCloudLambda = remember(track.id, isLocalScanned, isAlreadySynced) {
+        if (isLocalScanned && !isAlreadySynced) {
+            {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
+                    cloudFileRepository.uploadTrack(track.id).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                            cloudFileRepository.refreshSyncedTrackIds()
+                            onRefresh()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
+                        }
+                    }
+                }
+                Unit
+            }
+        } else null
+    }
+
+    val isCloudOnly = !isDownloadedLocally
+    val onDownloadFromCloudLambda = remember(track.id, isCloudOnly, isPresentInCloud) {
+        if (isCloudOnly && isPresentInCloud) {
+            {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                    cloudFileRepository.downloadTrack(
+                        trackId = track.id,
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumTitle = track.albumTitle,
+                        durationMs = track.durationMs,
+                        artistId = track.artistId,
+                        albumId = track.albumId,
+                        coverUri = track.coverUri
+                    ).collect { res ->
+                        res.onSuccess {
+                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                            localLibraryRepository.refreshLocalMediaIndex()
+                            onRefresh()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("Échec du téléchargement : ${err.message}")
+                        }
+                    }
+                }
+                Unit
+            }
+        } else null
+    }
+
+    val reassignAudioLocalCallback = com.aura.music.ui.components.LocalReassignAudio.current
+    val onLocalChangeAudioVersionLambda = remember(track.id, reassignAudioLocalCallback != null) {
+        if (reassignAudioLocalCallback != null) {
+            {
+                reassignAudioLocalCallback(
+                    com.aura.music.ui.components.ReassignAudioTarget(
+                        trackId = track.id,
+                        title = track.title,
+                        artist = track.artistName ?: "",
+                        album = track.albumTitle,
+                        coverUri = track.coverUri
+                    )
+                )
+            }
+        } else null
+    }
+
+    SharedTrackRowItem(
+        title = track.title,
+        subtitle = track.artistName ?: "",
+        coverUri = track.coverUri,
+        onClick = onClick,
+        showCover = true,
+        contextType = "standard",
+        isLiked = track.isLiked,
+        downloadStatus = if (isDownloadedLocally) TrackDownloadStatus.Downloaded else TrackDownloadStatus.Idle,
+        isCloudOnly = isCloudOnly,
+        onLike = onLikeClick,
+        onUnlike = onLikeClick,
+        onAddToQueue = onAddToQueueClick,
+        onAddToPlaylist = onAddToPlaylistClick,
+        onViewArtist = onViewArtistClick,
+        onViewAlbum = onViewAlbumClick,
+        onDeleteDownload = if (isDownloadedLocally) onDeleteClick else null,
+        onUploadToCloud = onUploadToCloudLambda,
+        onDownloadFromCloud = onDownloadFromCloudLambda,
+        onEditMetadata = if (currentOnEditMetadata.value != null) { { currentOnEditMetadata.value?.invoke(track) } } else null,
+        onChangeAudioVersion = onLocalChangeAudioVersionLambda
+    )
+}
+
+@Composable
+private fun SearchOnlineTrackRowItem(
+    track: TrackSummary,
+    artists: List<ArtistSummary>,
+    albums: List<AlbumSummary>,
+    downloadStatus: TrackDownloadStatus = TrackDownloadStatus.Idle,
+    isDownloadedLocally: Boolean = false,
+    isCloudOnly: Boolean = false,
+    onLikeTrack: ((TrackSummary) -> Unit)? = null,
+    onPlayTrack: (TrackSummary) -> Unit,
+    onAddToQueue: ((TrackSummary) -> Unit)? = null,
+    onDownloadTrack: (TrackSummary) -> Unit,
+    onUploadToCloud: ((TrackSummary) -> Unit)? = null,
+    onDeleteDownload: ((String) -> Unit)? = null,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+) {
+    val currentOnPlay = rememberUpdatedState(onPlayTrack)
+    val currentOnQueue = rememberUpdatedState(onAddToQueue)
+    val currentOnDownload = rememberUpdatedState(onDownloadTrack)
+    val currentOnUploadToCloud = rememberUpdatedState(onUploadToCloud)
+    val currentOnDeleteDownload = rememberUpdatedState(onDeleteDownload)
+    val currentOnArtist = rememberUpdatedState(onOpenArtist)
+    val currentOnAlbum = rememberUpdatedState(onOpenAlbum)
+    val currentOnLike = rememberUpdatedState(onLikeTrack)
+
+    val onClick = remember(track.id) { { currentOnPlay.value(track) } }
+    val onAddToQueueClick = remember(track.id, currentOnQueue.value != null) {
+        val cb = currentOnQueue.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
+    val onDownload = remember(track.id) { { currentOnDownload.value(track) } }
+    val onUpload = remember(track.id, currentOnUploadToCloud.value != null) {
+        val cb = currentOnUploadToCloud.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
+    val onDelete = remember(track.id, currentOnDeleteDownload.value != null) {
+        val cb = currentOnDeleteDownload.value
+        if (cb != null) {
+            { cb(track.id) }
+        } else null
+    }
+    val onLikeClick = remember(track.id, currentOnLike.value != null) {
+        val cb = currentOnLike.value
+        if (cb != null) {
+            { cb(track) }
+        } else null
+    }
+
+    val effectiveDownloadStatus = when {
+        isDownloadedLocally -> TrackDownloadStatus.Downloaded
+        downloadStatus is TrackDownloadStatus.Downloading -> downloadStatus
+        downloadStatus is TrackDownloadStatus.RequiresResolution -> downloadStatus
+        downloadStatus is TrackDownloadStatus.Queued -> downloadStatus
+        downloadStatus is TrackDownloadStatus.Failed -> downloadStatus
+        isCloudOnly -> TrackDownloadStatus.Idle
+        else -> TrackDownloadStatus.NotDownloaded
+    }
+
+    val onViewArtist = remember(track.id, track.artistId, track.displayArtistName, artists) {
+        {
+            val artistIdToOpen = track.artistId ?: artists.firstOrNull { it.name.trim().equals(track.displayArtistName.trim(), ignoreCase = true) }?.id ?: "artist:${normalize(track.displayArtistName)}"
+            currentOnArtist.value(artistIdToOpen)
+        }
+    }
+    val onViewAlbum = remember(track.id, track.albumId, track.displayArtistName, track.displayAlbumTitle, albums) {
+        track.displayAlbumTitle?.let { albumTitle ->
+            {
+                val albumIdToOpen = track.albumId ?: albums.firstOrNull { it.title.trim().equals(albumTitle.trim(), ignoreCase = true) }?.id ?: "album:${normalize(track.displayArtistName)}:${normalize(albumTitle)}"
+                currentOnAlbum.value(albumIdToOpen)
+            }
+        }
+    }
+
+    val reassignAudioOnlineCallback = com.aura.music.ui.components.LocalReassignAudio.current
+    val onOnlineChangeAudioVersionLambda = remember(track.id, reassignAudioOnlineCallback != null) {
+        if (reassignAudioOnlineCallback != null) {
+            {
+                reassignAudioOnlineCallback(
+                    com.aura.music.ui.components.ReassignAudioTarget(
+                        trackId = track.id,
+                        title = track.title,
+                        artist = track.displayArtistName,
+                        album = track.displayAlbumTitle,
+                        coverUri = track.coverUri
+                    )
+                )
+            }
+        } else null
+    }
+
+    SharedTrackRowItem(
+        title = track.title,
+        subtitle = track.displayArtistName,
+        coverUri = track.coverUri,
+        onClick = onClick,
+        showCover = true,
+        contextType = "search_online",
+        isLiked = track.isLiked,
+        downloadStatus = effectiveDownloadStatus,
+        isCloudOnly = isCloudOnly,
+        onLike = if (isDownloadedLocally || isCloudOnly) onLikeClick else null,
+        onUnlike = if (isDownloadedLocally || isCloudOnly) onLikeClick else null,
+        onAddToQueue = onAddToQueueClick,
+        onDownload = onDownload,
+        onUploadToCloud = if (isDownloadedLocally && !isCloudOnly) onUpload else null,
+        onDeleteDownload = if (isDownloadedLocally) onDelete else null,
+        onViewArtist = onViewArtist,
+        onViewAlbum = onViewAlbum,
+        onChangeAudioVersion = if (isDownloadedLocally || isCloudOnly) onOnlineChangeAudioVersionLambda else null
+    )
+}

@@ -10,15 +10,21 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from collections import defaultdict
+import time
+
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.schemas.downloads import (
+    CandidatesQueryResponse,
     CookieUploadRequest,
     DownloadCreateResponse,
     DownloadJobListResponse,
     DownloadJobResponse,
     DownloadRequest,
     PaginationMeta,
+    ReassignAudioRequest,
     ResolveDownloadRequest,
+    YtmCandidate,
 )
 from app.schemas.responses import ErrorDetails, ResponseEnvelope
 from app.services.download_service import DownloadService, DOWNLOADS_DIR
@@ -93,6 +99,7 @@ async def list_downloads(
             id=job.id,
             track_id=job.track_id,
             provider_name=job.provider_name,
+            operation_type=job.operation_type,
             status=job.status,
             progress_percent=job.progress_percent,
             error_code=job.error_code,
@@ -159,18 +166,21 @@ async def resolve_download(
     """
     try:
         job = download_service.get_job(user_id=current_user.id, job_id=job_id)
-        if job.status != "requires_resolution":
-            raise BadRequest(f"Job is not in requires_resolution state: status={job.status}")
+        if job.status not in ("requires_resolution", "failed", "queued"):
+            raise BadRequest(f"Job is not in a resolvable state: status={job.status}")
             
         import asyncio
         from datetime import datetime, timezone
         
-        job.status = "queued"
-        job.progress_percent = 0.0
-        job.error_code = None
-        job.error_message = None
-        job.candidates = []
-        job.updated_at = datetime.now(timezone.utc)
+        # Persist reset status to Supabase so polling clients see the transition
+        download_service._update_job_status(
+            job_id=job_id,
+            status="queued",
+            progress_percent=0.0,
+            error_code=None,
+            error_message=None,
+            candidates=[]
+        )
         
         # Trigger background download task with the selected video_id injected in source_hint
         asyncio.create_task(
@@ -183,10 +193,146 @@ async def resolve_download(
         data = DownloadCreateResponse(
             job_id=job.id,
             track_id=job.track_id,
-            status=job.status,
+            status="queued",
         )
         return ResponseEnvelope(data=data)
         
+    except NotFound as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.delete(
+    "/downloads/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_download_job(
+    job_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cancel and delete a download job."""
+    try:
+        download_service.delete_job(user_id=current_user.id, job_id=job_id)
+        return None
+    except NotFound as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+_candidates_rate_limits: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_candidates_rate_limit(user_id: str, limit: int = 15, window_seconds: float = 60.0) -> bool:
+    now = time.time()
+    timestamps = [t for t in _candidates_rate_limits[user_id] if now - t < window_seconds]
+    if len(timestamps) >= limit:
+        _candidates_rate_limits[user_id] = timestamps
+        return False
+    timestamps.append(now)
+    _candidates_rate_limits[user_id] = timestamps
+    return True
+
+
+@router.get(
+    "/downloads/candidates",
+    response_model=ResponseEnvelope[CandidatesQueryResponse],
+)
+async def get_audio_candidates(
+    artist: Optional[str] = Query(None),
+    title: Optional[str] = Query(None),
+    query: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=20),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Search YouTube Music candidates for manual audio version selection.
+    Rate limited to 15 requests per minute per user.
+    """
+    if not _check_candidates_rate_limit(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded for audio candidates search (max 15/min).",
+        )
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    candidates = await loop.run_in_executor(
+        None,
+        lambda: download_service.search_candidates(
+            artist=artist or "",
+            title=title or "",
+            query=query,
+            limit=limit,
+        ),
+    )
+
+    items = [YtmCandidate(**c) for c in candidates]
+    return ResponseEnvelope(data=CandidatesQueryResponse(items=items))
+
+
+@router.post(
+    "/downloads/reassign",
+    response_model=ResponseEnvelope[DownloadCreateResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def reassign_audio(
+    request: ReassignAudioRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Manually reassign the audio stream of a track to a specific YouTube video_id.
+    """
+    try:
+        job = await download_service.reassign_track_audio(
+            user_id=current_user.id,
+            track_id=request.track_id,
+            video_id=request.video_id,
+            source_hint=request.source_hint.model_dump() if request.source_hint else None,
+        )
+
+        data = DownloadCreateResponse(
+            job_id=job.id,
+            track_id=job.track_id,
+            status=job.status,
+        )
+        return ResponseEnvelope(data=data)
+
+    except BadRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.delete(
+
+    "/downloads/{job_id}",
+    response_model=ResponseEnvelope[dict],
+)
+async def delete_download(
+    job_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Cancel and delete a download job.
+    """
+    try:
+        download_service.delete_job(user_id=current_user.id, job_id=job_id)
+        return ResponseEnvelope(data={"success": True})
     except NotFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -249,17 +395,34 @@ async def serve_downloaded_file(
             )
             
         expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
-        if not expected_file.exists():
-            # Fallback checks
+        if not expected_file.exists() or expected_file.stat().st_size == 0:
+            # 1. Fallback checks at root of DOWNLOADS_DIR
             matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
-            non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
+            non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp") and m.stat().st_size > 0]
             if non_thumb:
                 expected_file = non_thumb[0]
             else:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Audio file not found on disk",
-                )
+                # 2. Fallback check in quarantine _legacy_trash
+                trash_matches = list((DOWNLOADS_DIR / "_legacy_trash").glob(f"*/{job_id}.*"))
+                valid_trash = [m for m in trash_matches if m.suffix not in (".jpg", ".png", ".webp") and m.stat().st_size > 0]
+                if valid_trash:
+                    expected_file = valid_trash[0]
+                elif job.track_id:
+                    # 3. Fallback to _global_cache via job.track_id
+                    from app.services.download_service import _find_globally_cached_track
+                    cached = _find_globally_cached_track(job.track_id)
+                    if cached and cached[0].exists() and cached[0].stat().st_size > 0:
+                        expected_file = cached[0]
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Audio file not found on disk or in global cache",
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Audio file not found on disk",
+                    )
                 
         return FileResponse(
             path=str(expected_file),

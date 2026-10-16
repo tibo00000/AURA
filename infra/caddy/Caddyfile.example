@@ -2,3 +2,8 @@ your-api-domain.example.com {
     encode gzip zstd
     reverse_proxy aura-api:8000
 }
+
+your-dev-domain.example.com {
+    encode gzip zstd
+    reverse_proxy aura-api-dev:8000
+}

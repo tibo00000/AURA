@@ -1,13 +1,13 @@
 # Vision Produit
 
 ## Mission
-AURA est une application Android de lecture musicale orientee bibliotheque personnelle, ecoute hors-ligne, recherche enrichie et decouverte assistee par un moteur vectoriel.
+AURA est une application Android de lecture musicale orientee bibliotheque personnelle, ecoute hors-ligne et recherche enrichie.
 
 ## Promesse utilisateur
 - Ecouter une bibliotheque locale sans dependre du reseau.
 - Retrouver des artistes, albums et titres en ligne quand Internet est disponible.
 - Construire des playlists personnelles et une file d'attente souple.
-- Beneficier plus tard de recommandations et de telechargements integres.
+- Beneficier de telechargements integres.
 
 ## Perimetre v1
 - Lecture locale fiable.
@@ -19,4 +19,4 @@ AURA est une application Android de lecture musicale orientee bibliotheque perso
 ## Hors perimetre v1
 - Collaboration en temps reel sur playlists.
 - Streaming universel complet.
-- Moteur de recommandation finement personnalise par session.
+- Moteur de recommandation base sur la recherche vectorielle.

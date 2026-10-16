@@ -1,7 +1,7 @@
 # API Sync Flows
 
 ## Objectif
-Donner une vue des principaux flux entre l'application Android, l'API FastAPI, `Supabase / Postgres`, `Qdrant` et les workers de jobs.
+Donner une vue des principaux flux entre l'application Android, l'API FastAPI, `Supabase / Postgres` et les workers de jobs.
 
 ## Principes de lecture
 - Les flux ci-dessous decrivent uniquement les echanges online et sync.
@@ -115,22 +115,6 @@ sequenceDiagram
     API-->>Android: queued, running, succeeded or failed
 
     Note over API,Worker: The download contract stays generic. The backend chooses the internal strategy.
-```
-
-## Flux 5 - Recommandation et recherche vectorielle
-```mermaid
-sequenceDiagram
-    participant API as FastAPI
-    participant Q as Qdrant
-    participant PG as Supabase/Postgres
-
-    API->>Q: Vector similarity query
-    Q-->>API: track_id list + payload metadata
-    API->>PG: Read canonical track entities
-    PG-->>API: Track rows and mappings
-    API-->>API: Build AURA response objects
-
-    Note over Q: Qdrant stores vectors and payload metadata, not transactional truth.
 ```
 
 ## Limites explicites

@@ -9,12 +9,14 @@ Root
 Architecture Decision Records
 - `docs/adrs/001-machine-friendly-docs.md`: standard machine-friendly avec `llms.txt` et `llms-full.txt`.
 - `docs/adrs/002-android-native-client.md`: client officiel Android natif.
-- `docs/adrs/003-backend-fastapi-supabase-qdrant.md`: backend FastAPI, Supabase, Qdrant et jobs.
+- `docs/adrs/003-backend-fastapi-supabase.md`: backend FastAPI, Supabase et jobs.
 - `docs/adrs/004-provider-adapter-strategy.md`: adaptateurs providers, Deezer v1 et evolution future.
 - `docs/adrs/005-mcp-bridge.md`: bridge MCP pour logs, schemas et jobs.
 - `docs/adrs/006-online-search-backend-only.md`: decision de garder la recherche online v1 exclusivement derriere le backend AURA.
+- `docs/adrs/007-desktop-client-cmp.md`: decision d'utiliser Compose Multiplatform pour le client Bureau et Web avec optimisations de ressources.
 
-Documentation Governance
+Documentation Governance & Engineering Rules
+- `docs/architecture/engineering-rules.md`: regles canoniques d'ingenierie, zero-jank, OSA, atomicite Outbox, Scoped Storage, RLS, QueueManager, cycle des releases et changelog utilisateur.
 - `docs/documentation/style-guide.md`: normes d'ecriture intemporelles et regles de mise a jour.
 
 Product
@@ -32,6 +34,7 @@ Domain
 Android
 - `docs/android/app-architecture.md`: couches Android, MVVM, Room, MediaStore et player.
 - `docs/android/local-persistence.md`: repartition des donnees entre MediaStore et Room, tables locales candidates.
+- `docs/android/metadata-editor.md`: editeur de metadonnees ID3v2.3, continuite 3 couches, compression d'images et Scoped Storage.
 - `docs/android/room-schema.md`: schema detaille Room avec colonnes, cles et contraintes.
 - `docs/android/room-relationships.md`: diagramme relationnel du schema Room.
 - `docs/android/navigation.md`: graphe de navigation Android.
@@ -61,17 +64,22 @@ Android
 - `docs/android/screens/downloads.md`: suivi des jobs de telechargement.
 - `docs/android/screens/downloads-layout.md`: layout canonique de Downloads, filtres, jobs et resolution YTM.
 - `docs/android/screens/settings.md`: reglages, sync et diagnostics.
+- `docs/android/screens/cloud-sync.md`: gestion du stockage cloud VPS.
+- `docs/android/screens/cloud-sync-layout.md`: layout mobile de la gestion du cloud.
+
+Desktop & Web
+- `docs/desktop/app-architecture.md`: couches, dependances et principes de performance de l'application Bureau et Web Compose Multiplatform.
+- `docs/desktop/screens-layout.md`: specifications et zoning des ecrans sur Desktop.
 
 Server
 - `docs/server/architecture.md`: architecture du backend.
 - `docs/server/api-contract.md`: contrat HTTP detaille pour l'online, la sync cloud optionnelle et les jobs.
 - `docs/server/sync-conflict-resolution.md`: strategie canonique de sync, payloads exacts et regles de resolution des conflits.
 - `docs/server/sync-batch-api.md`: contrats HTTP batch concrets pour bootstrap, push et pull de sync.
-- `docs/server/api-sync-flows.md`: diagrammes des flux entre Android, API, Supabase, Qdrant et jobs.
+- `docs/server/api-sync-flows.md`: diagrammes des flux entre Android, API, Supabase et jobs.
 - `docs/server/jobs.md`: cycle de vie des jobs.
 - `docs/server/database-postgres.md`: schema logique Postgres/Supabase et tables cloud candidates.
 - `docs/server/postgres-relationships.md`: diagramme relationnel du schema Postgres synchronisable.
-- `docs/server/vector-search-qdrant.md`: moteur vectoriel et Qdrant.
 - `docs/server/storage.md`: strategie de stockage.
 - `docs/server/providers/deezer.md`: provider de recherche online v1.
 - `docs/server/providers/streaming-bridge.md`: extension future pour streaming/Hi-Fi.
@@ -84,3 +92,5 @@ MCP And Operations
 - `docs/ops/logging-observability.md`: logs et correlation.
 - `docs/ops/env-vars.md`: inventaire des variables d'environnement.
 - `docs/ops/hosting-strategy.md`: strategie d'hebergement always-on avant la recherche online produit.
+- `docs/ops/ota-deployment-guide.md`: procedure pas-a-pas pour publier une mise a jour OTA et synchroniser l'APK et version.json sur le VPS.
+

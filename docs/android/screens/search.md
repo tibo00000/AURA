@@ -169,3 +169,24 @@ Permettre une recherche unique orientee intention utilisateur, avec evaluation c
 - `Search` ne distingue pas explicitement recherche locale et recherche online dans l'intention utilisateur
 - l'application privilegie local dans `Meilleur resultat` si la correspondance est forte
 - `Library` reste la surface de possession locale, `Search` reste la surface de recherche globale
+
+## Moteur de Recherche Locale Résilient (Zero-Jank Local Search Engine)
+- **Normalisation & Leetspeak musical (`SearchNormalizer`)** :
+  - Décomposition Unicode NFKD & ASCII folding (suppression totale des diacritiques : `é, ø, ö -> e, o, o`).
+  - Translittération leetspeak protégée (`$ -> s`, `@ -> a`, `! -> i`, `3 -> e` sur tokens mixtes).
+  - Préservation stricte des tokens 100% numériques (`2024`, `1999`, `24`).
+  - Traitement propre des acronymes (`R&B -> rnb`) et suppression des tokens isolés de longueur <= 1.
+  - Atténuation des stopwords (`the`, `a`, `feat`, `de`, `du` pondérés à x0.25).
+- **Index inversé en mémoire (`LocalSearchIndex`)** :
+  - Documents normalisés précalculés (`IndexedTrack`, `IndexedArtist`, `IndexedAlbum`).
+  - Index inversé de préfixes de 2 à 4 lettres (`Map<String, IntArray>`) plafonné à 300 candidats par bucket.
+  - Vocabulaire unique de tokens pour recherche floue sélective.
+  - Mis en cache dans un `AtomicReference<LocalSearchIndex>` reconstruit uniquement sur mutation DB.
+- **Réduction de Candidats & Scoring Multi-Tokens (`LocalSearchEngine`)** :
+  - Étape 1 : Intersection AND prioritaire ($S_{AND}$), avec bascule automatique sur l'union OR si $|S_{AND}| < 15$ (« jamais 0 résultat »).
+  - Étape 2 : Scoring biphasique borné $[0.0, 1000.0]$ avec seuil de coupure minimal (50.0).
+  - Tolérance aux coquilles Damerau-Levenshtein adaptative (len < 4 : dist 0, len 4..6 : dist 1, len >= 7 : dist 2).
+  - Injection dynamique de l'affinité (+30 favoris, +20 téléchargés) sans rebuild d'index.
+- **Threading & Performance** :
+  - Exécution exclusive sur `Dispatchers.Default` (CPU bound, < 2ms sur 50 000 morceaux).
+  - Debounce de 150 ms sur la saisie en direct dans `SearchViewModel`.

@@ -17,6 +17,7 @@
 - contenu de la priority queue
 - information du contexte source
 - message d'erreur eventuel
+- temps restant du minuteur de veille (`sleepTimerRemainingSeconds`) et mode fin de morceau (`isSleepTimerEndOfTrack`)
 
 ## Evenements utilisateur
 - `Play`
@@ -31,6 +32,9 @@
 - `ToggleShuffle`
 - `CycleRepeatMode`
 - `ToggleLike`
+- `SetSleepTimer`
+- `ExtendSleepTimer`
+- `CancelSleepTimer`
 
 ## Evenements systeme
 - `AudioFocusLost`
