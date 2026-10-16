@@ -22,6 +22,13 @@ Definir le schema detaille de `Supabase/Postgres` pour les donnees transactionne
 - La correspondance local <-> online passe par les tables de mapping et par le matching de metadonnees, pas par un partage force de PK.
 - Les entites user-scoped synchronisables (`playlists`, `playlist_items`, `history_items`, `listening_sessions`, `playback_events`, `download_jobs`) peuvent conserver un ID texte opaque deja genere cote client ou cote serveur.
 
+## Acces au catalogue server-authoritative
+
+- `artists`, `albums`, `tracks` et `track_source_links` ont RLS active.
+- Aucun role client (`anon`, `authenticated`) ne recoit de privilege direct sur ces tables et aucune politique RLS publique n'est definie.
+- Le catalogue reste accessible aux clients uniquement par les endpoints FastAPI. Le backend utilise sa cle `service_role` exclusivement cote serveur pour les traitements de catalogue.
+- Toute evolution du schema Supabase est ajoutee dans `supabase/migrations/` sous forme de fichier SQL horodate. Son application distante est soumise a une autorisation explicite puis a une requete de controle.
+
 ## Tables
 
 ### `profiles`

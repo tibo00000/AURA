@@ -90,30 +90,33 @@ UNIQUE(track_id, usage_type, provider_name, provider_track_id) WHERE is_active_f
 
 ### File Structure
 ```
-server/app/db/
+supabase/
 ├── migrations/
-│   ├── 001_create_catalog_tables.sql
-│   ├── 002_create_mapping_tables.sql
+│   ├── 20260418_create_catalog_tables.sql
+│   ├── 20260418_create_mapping_tables.sql
 │   └── ...
+├── package.json
 └── README.md
 ```
 
 ### Running Migrations
 
-**Option A: Raw SQL (psql)**
+The CLI is a local development dependency. From `supabase/`:
 ```bash
-psql $DATABASE_URL -f server/app/db/migrations/001_create_catalog_tables.sql
-psql $DATABASE_URL -f server/app/db/migrations/002_create_mapping_tables.sql
+npx supabase --version
+npx supabase migration list
 ```
 
-**Option B: SQLAlchemy + Alembic (recommended for production)**
-- Initialize Alembic in `server/app/db/alembic/`
-- Link each migration `.sql` file as Alembic revision
-- Enables rollback, audit trail, and multi-environment consistency
+Do not apply a remote migration implicitly. First name the exact migration and
+target environment, obtain explicit approval, then apply only that approved
+migration through the configured channel and verify it with a read-only query.
+The historical `server/app/db/migrations/` directory remains available for
+legacy backend migrations; new Supabase schema work belongs in
+`supabase/migrations/`.
 
 ### Best Practices
 
-1. **Naming**: Use sequential numbering with descriptive names (`001_create_catalog_tables.sql`)
+1. **Naming**: Use a timestamp and descriptive name (`20261016214500_enable_catalog_rls.sql`)
 2. **Idempotency**: Use `IF NOT EXISTS` for table/index creation; use `IF EXISTS` for drops
 3. **Timestamps**: All tables include `created_at` and `updated_at` (UTC)
 4. **Constraints**: Foreign keys use `ON DELETE RESTRICT` to prevent orphaned records (e.g., can't delete artist with albums)

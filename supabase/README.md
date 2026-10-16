@@ -9,27 +9,38 @@ supabase/
 ├── migrations/
 │   ├── 20260418_create_catalog_tables.sql
 │   └── 20260418_create_mapping_tables.sql
+├── package.json
 └── config.toml
 ```
 
 ## Usage
 
+The Supabase CLI is installed locally in this directory. Use `npx supabase`
+from `supabase/`; do not install it globally.
+
+```bash
+cd supabase
+npx supabase --version
+```
+
 ### Link project
 ```bash
-supabase link --project-ref YOUR_PROJECT_REF
+npx supabase link --project-ref YOUR_PROJECT_REF
 ```
 
 ### Push migrations
 ```bash
-supabase db push
+npx supabase db push
 ```
 
 ### Pull remote schema
 ```bash
-supabase db pull
+npx supabase db pull
 ```
 
 ## Migrations
 
-All migrations are timestamped SQL files in `migrations/` directory.
-Supabase CLI automatically applies them in order.
+All new Supabase schema migrations are timestamped SQL files in `migrations/`.
+Before a remote migration, inspect the target with `npx supabase migration list`
+and obtain the explicit approval required by `docs/architecture/engineering-rules.md`.
+Supabase CLI automatically applies recorded migrations in order.
