@@ -61,6 +61,12 @@ kotlin {
             }
         }
 
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
+
         val androidMain by getting {
             dependencies {
                 implementation("androidx.core:core-ktx:1.13.1")
@@ -76,7 +82,12 @@ kotlin {
 
         val desktopMain by getting {
             dependencies {
-                implementation(compose.desktop.windows_x64)
+                val osName = System.getProperty("os.name").lowercase()
+                if (osName.contains("win")) {
+                    implementation(compose.desktop.windows_x64)
+                } else {
+                    implementation(compose.desktop.currentOs)
+                }
 
                 // Moteur SQLite C embarqué pour le Bureau
                 implementation("androidx.sqlite:sqlite-bundled:2.7.0-alpha01")
@@ -88,7 +99,6 @@ kotlin {
                 implementation("io.ktor:ktor-client-okhttp:3.0.0")
 
                 // JavaFX Media for native JNI audio playback
-                val osName = System.getProperty("os.name").lowercase()
                 val classifier = when {
                     osName.contains("win") -> "win"
                     osName.contains("mac") -> {
@@ -143,7 +153,7 @@ dependencies {
 
 val generateBuildConfig by tasks.registering {
     val outputFile = file("src/commonMain/kotlin/com/aura/music/data/network/BuildConfig.kt")
-    inputs.file(rootProject.file("local.properties")).optional()
+    inputs.file(provider { rootProject.file("local.properties").takeIf { it.exists() } }).optional()
     outputs.file(outputFile)
     
     doLast {

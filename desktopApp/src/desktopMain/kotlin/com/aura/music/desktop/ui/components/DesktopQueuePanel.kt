@@ -213,7 +213,7 @@ fun DesktopQueuePanel(
                             draggedIndex = -1
                             dragAccumulatedY = 0f
                         },
-                        onPlayNow = { orchestrator.playTrackDirectly(track) },
+                        onPlayNow = { orchestrator.jumpToPriorityTrack(index) },
                         onMoveUp = if (index > 0) { { orchestrator.queueManager.reorderQueue(index, index - 1) } } else null,
                         onMoveDown = if (index < queueState.priorityQueue.size - 1) { { orchestrator.queueManager.reorderQueue(index, index + 1) } } else null,
                         onRemove = { orchestrator.queueManager.removeFromQueue(index) }
@@ -269,17 +269,7 @@ fun DesktopQueuePanel(
                             dragAccumulatedY = 0f
                         },
                         onPlayNow = {
-                            val ctx = queueState.context
-                            if (ctx != null) {
-                                val idx = ctx.tracks.indexOfFirst { it.internalId == track.internalId }.coerceAtLeast(0)
-                                orchestrator.playTrack(
-                                    trackId = track.trackId,
-                                    contextType = ctx.type,
-                                    contextId = ctx.id,
-                                    contextTracks = ctx.tracks,
-                                    startIndex = idx
-                                )
-                            }
+                            orchestrator.jumpToUpcomingContextTrack(track.internalId)
                         },
                         onRemove = {
                             orchestrator.queueManager.removeUpcomingContextTrack(track.internalId)

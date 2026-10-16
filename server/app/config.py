@@ -1,5 +1,7 @@
+import os
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +20,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     sync_files_dir: str = "sync_files"
     updates_dir: str = "updates"
+    cors_allowed_origins: str = "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000"
+    enable_startup_recovery: bool = Field(
+        default_factory=lambda: os.getenv("TESTING") != "1"
+    )
+    enable_cache_backfill: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

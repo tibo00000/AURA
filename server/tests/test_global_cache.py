@@ -27,9 +27,14 @@ import sys
 from unittest.mock import MagicMock
 
 # Mock external optional audio libraries if not present in local test venv
-for mod in ("yt_dlp", "ytmusicapi", "rapidfuzz", "rapidfuzz.fuzz"):
+for mod in ("yt_dlp", "ytmusicapi"):
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
+try:
+    import rapidfuzz  # noqa: F401
+except ImportError:
+    sys.modules["rapidfuzz"] = MagicMock()
+    sys.modules["rapidfuzz.fuzz"] = MagicMock()
 
 
 
@@ -534,8 +539,13 @@ class TestGlobalTrackCache(unittest.TestCase):
         self.assertFalse(corrupt_audio.exists())
         self.assertFalse(corrupt_json.exists())
 
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(TEST_TEMP_DIR, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

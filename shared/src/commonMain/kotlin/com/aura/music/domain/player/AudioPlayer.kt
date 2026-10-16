@@ -2,6 +2,8 @@ package com.aura.music.domain.player
 
 interface AudioPlayer {
     fun play(uri: String)
+    fun resume() {}
+    fun hasLoadedMedia(): Boolean = false
     fun pause()
     fun stop()
     fun seekTo(positionMs: Long)

@@ -161,18 +161,8 @@ abstract class AuraDatabase : RoomDatabase() {
             }
         }
 
-        @Volatile
-        private var INSTANCE: AuraDatabase? = null
-
-        fun getInstance(context: Any?): AuraDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = createDatabaseBuilder(context)
-                    .setDriver(androidx.sqlite.driver.bundled.BundledSQLiteDriver())
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                    .build()
-                INSTANCE = instance
-                instance
-            }
+        fun getInstance(context: Any? = null): AuraDatabase {
+            return getAuraDatabase(context)
         }
     }
 }

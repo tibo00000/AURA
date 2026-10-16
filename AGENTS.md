@@ -73,6 +73,8 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - A la fin de chaque changement, indiquer explicitement les actions externes requises avant que le changement soit effectif : redéploiement backend, migration de base de données, mise à jour de configuration, build ou installation client.
 - Nommer les artefacts précis à appliquer (par exemple une migration SQL) sans jamais afficher de secret. Si aucune action externe n'est requise, l'indiquer explicitement.
 - Ne pas effectuer un déploiement, une migration distante ou une installation sans demande explicite de l'utilisateur.
+- Lorsqu'une migration distante est nécessaire, l'agent DOIT demander explicitement : `La migration <nom> doit être appliquée à <environnement>. Veux-tu que je l'exécute ?` L'autorisation ou le refus de l'utilisateur est consigné dans la livraison.
+- Après autorisation, l'agent applique uniquement la ou les migrations nommées via le canal configuré, vérifie leur effet par une requête de contrôle, puis rapporte le résultat. Sans autorisation, il fournit l'artefact et les étapes manuelles sans effectuer d'écriture distante.
 
 ## Checklist operationnelle (agent)
 - Lire d'abord `BUILD.md` et identifier les items impactes (ID, dependances, docs canoniques).
@@ -88,3 +90,4 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Verifier la coherence code <-> docs avant de marquer un item `completed`.
 - Ne committer qu'apres verification concluante, avec un message clair, puis demander l'autorisation avant tout `git push`.
 - Dans la livraison finale, inclure une section courte `Actions requises` indiquant clairement si un redéploiement backend, une migration, une modification de configuration ou une mise à jour client est nécessaire ; écrire `Aucune` lorsque rien n'est requis.
+- Si une migration distante est requise, demander l'autorisation explicite de l'exécuter, puis consigner dans la livraison la décision utilisateur, les migrations appliquées et la vérification effectuée.

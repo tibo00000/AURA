@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.LibraryResult
+import androidx.media3.session.SessionError
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
@@ -85,7 +86,7 @@ class PlaybackService : MediaLibraryService() {
                 browser.packageName == packageName
 
             if (!isTrusted) {
-                return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED))
+                return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
             }
 
             val rootItem = MediaItem.Builder()
@@ -228,7 +229,7 @@ class PlaybackService : MediaLibraryService() {
                     if (item != null) {
                         future.set(LibraryResult.ofItem(item, null))
                     } else {
-                        future.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+                        future.set(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
                     }
                 } catch (e: Exception) {
                     future.setException(e)

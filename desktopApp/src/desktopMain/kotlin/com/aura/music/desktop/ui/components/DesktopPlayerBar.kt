@@ -38,13 +38,12 @@ fun DesktopPlayerBar(
 ) {
     val uiState by orchestrator.uiState.collectAsState()
     val queueState by orchestrator.queueManager.state.collectAsState()
+    val volume by orchestrator.volume.collectAsState()
+    val isMuted by orchestrator.isMuted.collectAsState()
     val currentTrack = uiState.currentTrack
 
     var isSeeking by remember { mutableStateOf(false) }
     var seekPosition by remember { mutableStateOf(0f) }
-    var volume by remember { mutableStateOf(1f) }
-    var isMuted by remember { mutableStateOf(false) }
-    var previousVolume by remember { mutableStateOf(1f) }
 
     Surface(
         modifier = modifier
@@ -294,18 +293,7 @@ fun DesktopPlayerBar(
 
                     // Contrôle du volume
                     IconButton(
-                        onClick = {
-                            if (isMuted) {
-                                isMuted = false
-                                volume = previousVolume
-                                orchestrator.setVolume(previousVolume)
-                            } else {
-                                previousVolume = volume
-                                isMuted = true
-                                volume = 0f
-                                orchestrator.setVolume(0f)
-                            }
-                        },
+                        onClick = { orchestrator.toggleMute() },
                         modifier = Modifier.size(32.dp).handCursor()
                     ) {
                         val volIcon = when {
@@ -326,8 +314,6 @@ fun DesktopPlayerBar(
                     SleekSlider(
                         value = volume,
                         onValueChange = {
-                            volume = it
-                            isMuted = it == 0f
                             orchestrator.setVolume(it)
                         },
                         modifier = Modifier.width(90.dp).handCursor(),

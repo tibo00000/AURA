@@ -28,13 +28,20 @@ import java.util.UUID
  */
 class DesktopPlaybackOrchestrator(
     val database: AuraDatabase,
-    val audioPlayer: DesktopAudioPlayer,
+    val audioPlayer: AudioPlayer,
     val queueManager: QueueManager,
     val apiService: AuraApiService,
     var playlistManager: DesktopPlaylistManager? = null,
     var cloudSyncManager: DesktopCloudSyncManager? = null,
-    var downloadManager: DesktopDownloadManager? = null
+    var downloadManager: DesktopDownloadManager? = null,
+    val secureStorage: com.aura.music.desktop.security.DesktopSecureStorage? = null
 ) {
+    companion object {
+        private const val KEY_VOLUME = "desktop_player_volume"
+        private const val KEY_MUTED = "desktop_player_muted"
+        private const val KEY_PREV_VOLUME = "desktop_player_prev_volume"
+    }
+
     var apiToken: String?
         get() = cloudSyncManager?.apiToken
         set(value) {
@@ -57,8 +64,48 @@ class DesktopPlaybackOrchestrator(
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    private val _volume = MutableStateFlow(1.0f)
+    val volume: StateFlow<Float> = _volume.asStateFlow()
+
+    private val _isMuted = MutableStateFlow(false)
+    val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
+
+    private var previousVolumeBeforeMute: Float = 1.0f
+
     private var progressJob: Job? = null
     private var snapshotDebounceJob: Job? = null
+    private var volumeSaveDebounceJob: Job? = null
+
+    init {
+        restorePersistedVolume()
+    }
+
+    private fun restorePersistedVolume() {
+        val storage = secureStorage ?: return
+        try {
+            val savedVol = storage.getSecret(KEY_VOLUME)?.toFloatOrNull()?.coerceIn(0f, 1f) ?: 1.0f
+            val savedMuted = storage.getSecret(KEY_MUTED)?.toBooleanStrictOrNull() ?: false
+            val savedPrev = storage.getSecret(KEY_PREV_VOLUME)?.toFloatOrNull()?.coerceIn(0.05f, 1f) ?: 1.0f
+            previousVolumeBeforeMute = savedPrev
+            _isMuted.value = savedMuted
+            val effectiveVol = if (savedMuted) 0f else savedVol
+            _volume.value = effectiveVol
+            audioPlayer.setVolume(effectiveVol)
+        } catch (_: Exception) {}
+    }
+
+    private fun scheduleVolumePersistence() {
+        val storage = secureStorage ?: return
+        volumeSaveDebounceJob?.cancel()
+        volumeSaveDebounceJob = scope.launch(Dispatchers.IO) {
+            delay(300)
+            try {
+                storage.saveSecret(KEY_VOLUME, _volume.value.toString())
+                storage.saveSecret(KEY_MUTED, _isMuted.value.toString())
+                storage.saveSecret(KEY_PREV_VOLUME, previousVolumeBeforeMute.toString())
+            } catch (_: Exception) {}
+        }
+    }
 
     fun connect(onDataChanged: (() -> Unit)? = null) {
         audioPlayer.onCompletionListener = {
@@ -77,7 +124,12 @@ class DesktopPlaybackOrchestrator(
                 if (isWindowVisible && audioPlayer.isPlaying()) {
                     val pos = audioPlayer.getCurrentPosition()
                     val dur = audioPlayer.getDuration()
-                    _uiState.update { it.copy(positionMs = pos, durationMs = dur) }
+                    _uiState.update { current ->
+                        current.copy(
+                            positionMs = pos,
+                            durationMs = if (dur > 0L) dur else current.durationMs
+                        )
+                    }
                 }
                 delay(250)
             }
@@ -119,8 +171,16 @@ class DesktopPlaybackOrchestrator(
     fun disconnect() {
         progressJob?.cancel()
         snapshotDebounceJob?.cancel()
+        volumeSaveDebounceJob?.cancel()
         try {
             runBlocking(NonCancellable + Dispatchers.IO) {
+                secureStorage?.let { storage ->
+                    try {
+                        storage.saveSecret(KEY_VOLUME, _volume.value.toString())
+                        storage.saveSecret(KEY_MUTED, _isMuted.value.toString())
+                        storage.saveSecret(KEY_PREV_VOLUME, previousVolumeBeforeMute.toString())
+                    } catch (_: Exception) {}
+                }
                 val result = withTimeoutOrNull(800L) {
                     saveSnapshotDirect()
                 }
@@ -160,7 +220,7 @@ class DesktopPlaybackOrchestrator(
         }
     }
 
-    private fun playTrackItem(track: QueuedTrack) {
+    private fun playTrackItem(track: QueuedTrack, initialPositionMs: Long = 0L) {
         val uri = track.contentUri
         val localFile = if (!uri.isNullOrBlank()) {
             try {
@@ -176,6 +236,9 @@ class DesktopPlaybackOrchestrator(
 
         if (localFile != null && localFile.exists() && localFile.length() > 0) {
             audioPlayer.play(localFile.toURI().toString())
+            if (initialPositionMs > 0L) {
+                audioPlayer.seekTo(initialPositionMs)
+            }
             scheduleDebouncedSnapshotSave()
             syncUiState(PlaybackState.Playing)
             prefetchNextCloudTrack()
@@ -204,6 +267,9 @@ class DesktopPlaybackOrchestrator(
                     )
                     if (cachedFile != null && cachedFile.exists()) {
                         audioPlayer.play(cachedFile.toURI().toString())
+                        if (initialPositionMs > 0L) {
+                            audioPlayer.seekTo(initialPositionMs)
+                        }
                         scheduleDebouncedSnapshotSave()
                         withContext(Dispatchers.Main) {
                             syncUiState(PlaybackState.Playing)
@@ -245,6 +311,16 @@ class DesktopPlaybackOrchestrator(
         playTrackItem(track)
     }
 
+    fun jumpToPriorityTrack(index: Int) {
+        val target = queueManager.jumpToPriorityTrack(index) ?: return
+        playTrackItem(target)
+    }
+
+    fun jumpToUpcomingContextTrack(internalId: String) {
+        val target = queueManager.jumpToUpcomingContextTrack(internalId) ?: return
+        playTrackItem(target)
+    }
+
     fun playOnlineTrack(
         track: TrackSummary,
         contextTracks: List<TrackSummary>
@@ -278,21 +354,32 @@ class DesktopPlaybackOrchestrator(
     fun togglePlayPause() {
         val currentTrack = queueManager.state.value.currentTrack ?: return
         if (audioPlayer.isPlaying()) {
+            val posBeforePause = audioPlayer.getCurrentPosition()
             audioPlayer.pause()
+            if (posBeforePause > 0L) {
+                _uiState.update { it.copy(positionMs = posBeforePause) }
+            }
             syncUiState(PlaybackState.Paused)
             scheduleDebouncedSnapshotSave()
         } else {
-            val currentPos = _uiState.value.positionMs
-            playTrackItem(currentTrack)
-            if (currentPos > 0) {
-                audioPlayer.seekTo(currentPos)
+            val currentPos = _uiState.value.positionMs.coerceAtLeast(audioPlayer.getCurrentPosition())
+            if (audioPlayer.hasLoadedMedia()) {
+                audioPlayer.resume()
+                syncUiState(PlaybackState.Playing)
+                scheduleDebouncedSnapshotSave()
+            } else {
+                playTrackItem(currentTrack, initialPositionMs = currentPos)
             }
         }
     }
 
     fun pause() {
         if (audioPlayer.isPlaying()) {
+            val posBeforePause = audioPlayer.getCurrentPosition()
             audioPlayer.pause()
+            if (posBeforePause > 0L) {
+                _uiState.update { it.copy(positionMs = posBeforePause) }
+            }
             syncUiState(PlaybackState.Paused)
             scheduleDebouncedSnapshotSave()
         }
@@ -305,7 +392,31 @@ class DesktopPlaybackOrchestrator(
     }
 
     fun setVolume(volume: Float) {
-        audioPlayer.setVolume(volume)
+        val clamped = volume.coerceIn(0f, 1f)
+        _volume.value = clamped
+        if (clamped > 0f) {
+            _isMuted.value = false
+            previousVolumeBeforeMute = clamped
+        } else {
+            _isMuted.value = true
+        }
+        audioPlayer.setVolume(clamped)
+        scheduleVolumePersistence()
+    }
+
+    fun toggleMute() {
+        if (_isMuted.value || _volume.value == 0f) {
+            val restored = if (previousVolumeBeforeMute > 0.01f) previousVolumeBeforeMute else 0.5f
+            _isMuted.value = false
+            _volume.value = restored
+            audioPlayer.setVolume(restored)
+        } else {
+            previousVolumeBeforeMute = _volume.value
+            _isMuted.value = true
+            _volume.value = 0f
+            audioPlayer.setVolume(0f)
+        }
+        scheduleVolumePersistence()
     }
 
     fun next() {
@@ -776,34 +887,46 @@ class DesktopPlaybackOrchestrator(
                 }
             }
             track.trackId != previousTrackId -> {
-                // Changement de piste : 1 requête DB ciblée, une seule fois
+                // Mise à jour immédiate de l'état UI pour éviter toute latence ou écrasement concurrent de playbackState/positionMs
+                val playerPos = audioPlayer.getCurrentPosition()
+                val playerDur = audioPlayer.getDuration()
+                _uiState.update { current ->
+                    current.copy(
+                        playbackState = state,
+                        currentTrack = track,
+                        positionMs = playerPos,
+                        durationMs = if (playerDur > 0L) playerDur else (track.durationMs ?: 0L),
+                        shuffleEnabled = queueState.shuffleEnabled,
+                        repeatMode = queueState.repeatMode,
+                        priorityQueue = queueState.priorityQueue,
+                        mainQueueTracks = queueManager.getUpcomingContextTracks(),
+                        contextType = queueState.context?.type,
+                        contextId = queueState.context?.id,
+                        isCurrentTrackLiked = false
+                    )
+                }
+                // Changement de piste : 1 requête DB ciblée en arrière-plan uniquement pour isCurrentTrackLiked
                 scope.launch(Dispatchers.IO) {
                     val isLiked = database.trackDao().getTrackById(track.trackId)?.isLiked ?: false
                     _uiState.update { current ->
-                        current.copy(
-                            playbackState = state,
-                            currentTrack = track,
-                            positionMs = audioPlayer.getCurrentPosition(),
-                            durationMs = audioPlayer.getDuration(),
-                            shuffleEnabled = queueState.shuffleEnabled,
-                            repeatMode = queueState.repeatMode,
-                            priorityQueue = queueState.priorityQueue,
-                            mainQueueTracks = queueManager.getUpcomingContextTracks(),
-                            contextType = queueState.context?.type,
-                            contextId = queueState.context?.id,
-                            isCurrentTrackLiked = isLiked
-                        )
+                        if (current.currentTrack?.trackId == track.trackId) {
+                            current.copy(isCurrentTrackLiked = isLiked)
+                        } else {
+                            current
+                        }
                     }
                 }
             }
             else -> {
                 // Même piste (pause, buffer, shuffle, repeat, progressJob) : 0 requête DB
+                val playerPos = audioPlayer.getCurrentPosition()
+                val playerDur = audioPlayer.getDuration()
                 _uiState.update { current ->
                     current.copy(
                         playbackState = state,
                         currentTrack = track,
-                        positionMs = audioPlayer.getCurrentPosition(),
-                        durationMs = audioPlayer.getDuration(),
+                        positionMs = if (playerPos > 0L || state == PlaybackState.Idle) playerPos else current.positionMs,
+                        durationMs = if (playerDur > 0L) playerDur else if (current.durationMs > 0L) current.durationMs else (track.durationMs ?: 0L),
                         shuffleEnabled = queueState.shuffleEnabled,
                         repeatMode = queueState.repeatMode,
                         priorityQueue = queueState.priorityQueue,

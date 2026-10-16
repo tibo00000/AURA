@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +27,20 @@ from app.db.supabase import supabase
 
 logger = logging.getLogger(__name__)
 
-DOWNLOADS_DIR = Path(os.getenv("DOWNLOADS_DIR", "/app/downloads"))
+def _resolve_downloads_dir() -> Path:
+    env_dir = os.getenv("DOWNLOADS_DIR")
+    if env_dir:
+        return Path(env_dir)
+    default_dir = Path("/app/downloads")
+    try:
+        if default_dir.exists() or Path("/app").exists():
+            return default_dir
+    except Exception:
+        pass
+    return Path.cwd() / "downloads"
+
+
+DOWNLOADS_DIR = _resolve_downloads_dir()
 
 from ytmusicapi import YTMusic
 from rapidfuzz import fuzz
@@ -676,13 +690,14 @@ def _propagate_reassigned_track_to_all_users(
         logger.warning("Error propagating reassigned track %s: %s", track_id, e)
 
 
-def _cleanup_orphaned_job_files(track_id: str, keep_job_id: str) -> None:
+def _cleanup_orphaned_job_files(track_id: str, keep_job_id: str, supabase_client: Optional[object] = None) -> None:
     """
     Supprime les fichiers physiques de travail job_{old_id}.mp3 résiduels dans DOWNLOADS_DIR
     pour le track_id donné (sauf keep_job_id).
     """
     try:
-        res = supabase.table("download_jobs").select("id").eq("track_id", track_id).execute()
+        client = supabase_client or supabase
+        res = client.table("download_jobs").select("id").eq("track_id", track_id).execute()
         if res.data:
             for row in res.data:
                 jid = row.get("id")
@@ -768,9 +783,18 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
 class DownloadService:
     """Service to handle download jobs and user settings."""
 
-    def __init__(self):
-        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        supabase_client: Optional[object] = None,
+        auto_recover_stale_jobs: bool = False,
+        auto_backfill_cache: bool = False,
+    ):
+        try:
+            DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.debug("Could not create DOWNLOADS_DIR %s: %s", DOWNLOADS_DIR, e)
         self.settings = get_settings()
+        self._supabase = supabase_client
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
         self._download_semaphore = asyncio.Semaphore(2)
         # Verrouillage de concurrence par piste pour déploiement mono-processus Uvicorn.
@@ -781,8 +805,16 @@ class DownloadService:
         self._candidates_cache: Dict[str, Tuple[float, List[dict]]] = {}
         self._running_tasks: Dict[str, asyncio.Task] = {}
         self._cancelled_jobs: set[str] = set()
-        self._recover_stale_jobs_on_startup()
-        self._backfill_global_cache()
+        if auto_recover_stale_jobs and self.settings.enable_startup_recovery and self.settings.app_env != "test":
+            self._recover_stale_jobs_on_startup()
+        if auto_backfill_cache and self.settings.enable_cache_backfill and self.settings.app_env != "test":
+            self._backfill_global_cache()
+
+    @property
+    def supabase(self):
+        if self._supabase is not None:
+            return self._supabase
+        return supabase
 
     async def _get_track_lock(self, track_id: str) -> asyncio.Lock:
         """Obtient ou crée un verrou asyncio pour le track_id donné (thread-safe mono-processus)."""
@@ -803,6 +835,8 @@ class DownloadService:
         Recense au démarrage les fichiers audio existants dans sync_files/*/*.audio
         pour peupler automatiquement _global_cache avec tous les titres existants du propriétaire.
         """
+        if not self.settings.enable_cache_backfill or self.settings.app_env == "test":
+            return 0
         backfilled = 0
         try:
             sync_base = _get_sync_base()
@@ -876,8 +910,11 @@ class DownloadService:
 
     def _recover_stale_jobs_on_startup(self) -> None:
         """Mark stale running and queued jobs as failed on server startup so they don't block polling forever."""
+        if not self.settings.enable_startup_recovery or self.settings.app_env == "test":
+            logger.info("Startup recovery disabled via settings: skipping _recover_stale_jobs_on_startup")
+            return
         try:
-            supabase.table("download_jobs").update({
+            self.supabase.table("download_jobs").update({
                 "status": "failed",
                 "error_code": "server_restarted",
                 "error_message": "Téléchargement interrompu par le redémarrage du serveur.",
@@ -1130,7 +1167,7 @@ class DownloadService:
 
         # Check if a download job already exists for this track and user
         try:
-            existing = supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
+            existing = self.supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
             if existing.data:
                 # Find the most recent active or successful job
                 sorted_jobs = sorted(existing.data, key=lambda x: x.get("created_at", ""), reverse=True)
@@ -1157,7 +1194,7 @@ class DownloadService:
                             existing_job.error_code = None
                             existing_job.error_message = None
                             existing_job.updated_at = now
-                            supabase.table("download_jobs").update({
+                            self.supabase.table("download_jobs").update({
                                 "status": "queued",
                                 "progress_percent": 0.0,
                                 "error_code": None,
@@ -1198,7 +1235,7 @@ class DownloadService:
                 updated_at=now,
             )
             try:
-                supabase.table("download_jobs").insert(job.to_dict()).execute()
+                self.supabase.table("download_jobs").insert(job.to_dict()).execute()
             except Exception as e:
                 logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
                 raise BadRequest(f"Failed to create job in database: {str(e)}")
@@ -1221,7 +1258,7 @@ class DownloadService:
         )
 
         try:
-            supabase.table("download_jobs").insert(job.to_dict()).execute()
+            self.supabase.table("download_jobs").insert(job.to_dict()).execute()
         except Exception as e:
             logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
             raise BadRequest(f"Failed to create job in database: {str(e)}")
@@ -1236,7 +1273,7 @@ class DownloadService:
     def get_job(self, user_id: str, job_id: str) -> DownloadJob:
         """Retrieve a specific job for a user from Supabase."""
         try:
-            response = supabase.table("download_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
+            response = self.supabase.table("download_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
             if not response.data:
                 raise NotFound(f"Download job {job_id} not found for this user")
             return DownloadJob.from_dict(response.data[0])
@@ -1256,7 +1293,7 @@ class DownloadService:
                 task.cancel()
                 logger.info("Cancelled running background task for job %s", job_id)
 
-            supabase.table("download_jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
+            self.supabase.table("download_jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
             # Clean up potential partial or downloaded files from disk
             for pattern in (f"{job_id}.*", f"{job_id}.*.*"):
                 for p in DOWNLOADS_DIR.glob(pattern):
@@ -1274,13 +1311,13 @@ class DownloadService:
     ) -> Tuple[List[DownloadJob], Optional[str]]:
         """List download jobs for a user from Supabase."""
         try:
-            query = supabase.table("download_jobs").select("*").eq("user_id", user_id)
+            query = self.supabase.table("download_jobs").select("*").eq("user_id", user_id)
             if status:
                 query = query.eq("status", status)
 
             # Cursor-based pagination: created_at < cursor's created_at
             if cursor:
-                cursor_response = supabase.table("download_jobs").select("created_at").eq("id", cursor).execute()
+                cursor_response = self.supabase.table("download_jobs").select("created_at").eq("id", cursor).execute()
                 if cursor_response.data:
                     cursor_time = cursor_response.data[0]["created_at"]
                     query = query.lt("created_at", cursor_time)
@@ -1316,7 +1353,7 @@ class DownloadService:
         job.updated_at = now
 
         try:
-            supabase.table("download_jobs").update({
+            self.supabase.table("download_jobs").update({
                 "status": "queued",
                 "progress_percent": 0.0,
                 "error_code": None,
@@ -1357,7 +1394,7 @@ class DownloadService:
         async with lock:
             # 1. Supersede any active download jobs for this track in Supabase
             try:
-                supabase.table("download_jobs").update({
+                self.supabase.table("download_jobs").update({
                     "status": "superseded",
                     "error_message": "Remplacé par une réassignation manuelle",
                     "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1382,7 +1419,7 @@ class DownloadService:
             )
 
             try:
-                supabase.table("download_jobs").insert(job.to_dict()).execute()
+                self.supabase.table("download_jobs").insert(job.to_dict()).execute()
             except Exception as e:
                 logger.error("Failed to insert reassign job %s in Supabase: %s", job_id, e)
                 raise BadRequest(f"Failed to create job in database: {str(e)}")
@@ -1421,7 +1458,7 @@ class DownloadService:
         """Helper to quickly update specific job fields in Supabase in real-time."""
         try:
             kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
-            supabase.table("download_jobs").update(kwargs).eq("id", job_id).execute()
+            self.supabase.table("download_jobs").update(kwargs).eq("id", job_id).execute()
         except Exception as e:
             logger.error("Failed to update job status for %s in Supabase: %s", job_id, e)
 
@@ -1472,7 +1509,7 @@ class DownloadService:
         4. Updates status to succeeded or failed with diagnostic messages.
         """
         try:
-            response = supabase.table("download_jobs").select("*").eq("id", job_id).execute()
+            response = self.supabase.table("download_jobs").select("*").eq("id", job_id).execute()
             if not response.data:
                 logger.error("Job %s not found in Supabase", job_id)
                 return
@@ -1677,7 +1714,7 @@ class DownloadService:
                                     duration_ms=duration_ms,
                                     cover_uri=cover_uri,
                                 )
-                                _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id)
+                                _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id, supabase_client=self.supabase)
 
                             status = "succeeded"
                             progress_percent = 100.0

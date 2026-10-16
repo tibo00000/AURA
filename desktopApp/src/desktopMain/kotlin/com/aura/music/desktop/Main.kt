@@ -31,14 +31,31 @@ import com.aura.music.desktop.state.DesktopAppState
 import com.aura.music.desktop.ui.components.*
 import com.aura.music.desktop.ui.screens.*
 import com.aura.music.desktop.ui.*
+import com.aura.music.desktop.utils.DesktopSingleInstanceLock
 import com.aura.music.ui.theme.*
 import com.aura.music.domain.player.DesktopAudioPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import javax.swing.SwingUtilities
+import kotlin.system.exitProcess
 
-fun main() = application {
+private val externalActivationTrigger = mutableStateOf(0L)
+
+fun main() {
+    val isPrimaryInstance = DesktopSingleInstanceLock.acquireOrNotifyExisting {
+        SwingUtilities.invokeLater {
+            externalActivationTrigger.value = System.currentTimeMillis()
+        }
+    }
+    if (!isPrimaryInstance) {
+        // Une instance d'AURA tourne déjà en arrière-plan et vient de recevoir l'ordre d'afficher sa fenêtre
+        exitProcess(0)
+    }
+
+    application {
     var isVisible by remember { mutableStateOf(true) }
+    var focusRequestTrigger by remember { mutableStateOf(0L) }
     val windowState = rememberWindowState(
         position = WindowPosition(Alignment.Center),
         size = DpSize(1360.dp, 840.dp)
@@ -65,7 +82,8 @@ fun main() = application {
             apiService = apiService,
             playlistManager = playlistManager,
             cloudSyncManager = cloudSyncManager,
-            downloadManager = downloadManager
+            downloadManager = downloadManager,
+            secureStorage = secureStorage
         ).apply {
             apiToken = authSessionManager.getBearerToken()
         }
@@ -179,6 +197,17 @@ fun main() = application {
     val appIcon = runCatching { painterResource("aura_logo.png") }.getOrNull()
     var isTrayFlyoutVisible by remember { mutableStateOf(false) }
 
+    val activationSignal by externalActivationTrigger
+    LaunchedEffect(activationSignal) {
+        if (activationSignal > 0L) {
+            isVisible = true
+            isTrayFlyoutVisible = false
+            windowState.isMinimized = false
+            orchestrator.isWindowVisible = true
+            focusRequestTrigger = activationSignal
+        }
+    }
+
     AuraTrayIcon(
         tooltip = "AURA Music Player",
         onToggleFlyout = {
@@ -188,7 +217,9 @@ fun main() = application {
         onOpenApp = {
             isVisible = true
             isTrayFlyoutVisible = false
+            windowState.isMinimized = false
             orchestrator.isWindowVisible = true
+            focusRequestTrigger = System.currentTimeMillis()
         }
     )
 
@@ -198,7 +229,9 @@ fun main() = application {
             onOpenApp = {
                 isVisible = true
                 isTrayFlyoutVisible = false
+                windowState.isMinimized = false
                 orchestrator.isWindowVisible = true
+                focusRequestTrigger = System.currentTimeMillis()
             },
             onQuit = {
                 orchestrator.disconnect()
@@ -308,6 +341,11 @@ fun main() = application {
         ) {
             InstallUndecoratedResizer(windowState)
             InstallWindowsTaskbarFix()
+            LaunchedEffect(focusRequestTrigger) {
+                if (focusRequestTrigger > 0L) {
+                    bringWindowToFront()
+                }
+            }
 
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -517,5 +555,6 @@ fun main() = application {
                 }
             }
         }
+    }
     }
 }

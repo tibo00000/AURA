@@ -14,9 +14,15 @@ internal fun createDesktopSQLiteDriver(): SQLiteDriver {
 }
 
 actual fun createAuraDatabase(context: Any?): AuraDatabase {
-    val dbFile = File(System.getProperty("user.home"), ".aura/aura.db")
-    if (!dbFile.parentFile.exists()) {
-        dbFile.parentFile.mkdirs()
+    val dbFile = when (context) {
+        is File -> context
+        is String -> if (context.isNotBlank()) File(context) else File(System.getProperty("user.home"), ".aura/aura.db")
+        else -> File(System.getProperty("user.home"), ".aura/aura.db")
+    }
+    dbFile.parentFile?.let { parent ->
+        if (!parent.exists()) {
+            parent.mkdirs()
+        }
     }
     return Room.databaseBuilder<AuraDatabase>(
         name = dbFile.absolutePath,
@@ -36,7 +42,10 @@ actual fun createAuraDatabase(context: Any?): AuraDatabase {
 private var INSTANCE: AuraDatabase? = null
 
 actual fun getAuraDatabase(context: Any?): AuraDatabase {
+    if (context is File || (context is String && context.isNotBlank())) {
+        return createAuraDatabase(context)
+    }
     return INSTANCE ?: synchronized(AuraDatabase::class.java) {
-        INSTANCE ?: createAuraDatabase(context).also { INSTANCE = it }
+        INSTANCE ?: createAuraDatabase(null).also { INSTANCE = it }
     }
 }

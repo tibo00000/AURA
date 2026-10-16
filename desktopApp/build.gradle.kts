@@ -55,6 +55,12 @@ kotlin {
                 implementation("org.openjfx:javafx-media:21.0.1:$classifier")
             }
         }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test-junit"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+            }
+        }
     }
 }
 

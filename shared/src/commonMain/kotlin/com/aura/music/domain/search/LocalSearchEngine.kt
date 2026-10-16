@@ -332,6 +332,10 @@ object LocalSearchEngine {
             score += 350.0f
         }
 
+        // Plafonner la composante textuelle à 950.0f avant l'injection de l'affinité dynamique (+30/+20)
+        // afin que les bonus favoris/téléchargements départagent toujours des pistes à score textuel égal.
+        score = min(950.0f, score)
+
         // 5. Affinité dynamique (favoris & téléchargés)
         if (isLiked) score += 30.0f
         if (isDownloaded) score += 20.0f

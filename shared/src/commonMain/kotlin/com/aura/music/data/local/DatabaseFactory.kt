@@ -1,5 +1,5 @@
 package com.aura.music.data.local
 
-import androidx.room3.RoomDatabase
+expect fun createAuraDatabase(context: Any? = null): AuraDatabase
 
-expect fun createDatabaseBuilder(context: Any? = null): RoomDatabase.Builder<AuraDatabase>
+expect fun getAuraDatabase(context: Any? = null): AuraDatabase

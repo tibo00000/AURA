@@ -258,6 +258,76 @@ class QueueManager {
     }
 
     /**
+     * Saute directement à une piste de la priority queue par son index.
+     * Préserve le contexte source et l'ordre de shuffle existant.
+     */
+    fun jumpToPriorityTrack(index: Int): QueuedTrack? {
+        var result: QueuedTrack? = null
+        _state.update { current ->
+            if (index !in current.priorityQueue.indices) return@update current
+            val targetTrack = current.priorityQueue[index]
+            result = targetTrack
+            val updatedHistory = if (current.currentTrack != null) {
+                current.history + current.currentTrack
+            } else {
+                current.history
+            }
+            val remainingPriority = current.priorityQueue.toMutableList().apply { removeAt(index) }
+            current.copy(
+                currentTrack = targetTrack,
+                priorityQueue = remainingPriority,
+                history = updatedHistory,
+            )
+        }
+        return result
+    }
+
+    /**
+     * Saute directement à une piste à venir du contexte ("Suite de la lecture") par son internalId.
+     * En mode Shuffle, déplace la piste ciblée à la position active dans shuffledContextIndices
+     * sans recalculer ni remélanger le reste de la file d'attente (Règle #4).
+     */
+    fun jumpToUpcomingContextTrack(internalId: String): QueuedTrack? {
+        var result: QueuedTrack? = null
+        _state.update { current ->
+            val ctx = current.context ?: return@update current
+            val targetIndex = ctx.tracks.indexOfFirst { it.internalId == internalId }
+            if (targetIndex == -1) return@update current
+
+            val updatedContext = ctx.copy(currentIndex = targetIndex)
+            val targetTrack = updatedContext.currentTrack
+            result = targetTrack
+
+            val updatedHistory = if (current.currentTrack != null) {
+                current.history + current.currentTrack
+            } else {
+                current.history
+            }
+
+            val updatedShuffled = current.shuffledContextIndices?.let { shuffled ->
+                val currentShufflePos = shuffled.indexOf(ctx.currentIndex)
+                val targetShufflePos = shuffled.indexOf(targetIndex)
+                if (currentShufflePos != -1 && targetShufflePos != -1 && targetShufflePos > currentShufflePos) {
+                    val mutable = shuffled.toMutableList()
+                    val moved = mutable.removeAt(targetShufflePos)
+                    mutable.add(currentShufflePos + 1, moved)
+                    mutable
+                } else {
+                    shuffled
+                }
+            }
+
+            current.copy(
+                context = updatedContext,
+                currentTrack = targetTrack,
+                history = updatedHistory,
+                shuffledContextIndices = updatedShuffled,
+            )
+        }
+        return result
+    }
+
+    /**
      * Reordonne la priority queue.
      * N'affecte pas le contexte source (cf. queue-rules.md).
      */

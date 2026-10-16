@@ -2,6 +2,7 @@ package com.aura.music.desktop.domain
 
 import com.aura.music.data.local.AuraDatabase
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -20,6 +21,20 @@ class DesktopPlaylistManagerTest {
         tempDbFile = File.createTempFile("aura_test_db_", ".db")
         database = AuraDatabase.getInstance(tempDbFile.absolutePath)
         playlistManager = DesktopPlaylistManager(database, cloudSyncManager = null)
+    }
+
+    @After
+    fun tearDown() {
+        try {
+            if (::database.isInitialized) {
+                database.close()
+            }
+        } catch (_: Throwable) {}
+        if (::tempDbFile.isInitialized && tempDbFile.exists()) {
+            tempDbFile.delete()
+            File("${tempDbFile.absolutePath}-wal").delete()
+            File("${tempDbFile.absolutePath}-shm").delete()
+        }
     }
 
     @Test
