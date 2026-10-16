@@ -18,9 +18,14 @@ os.environ["SYNC_FILES_DIR"] = str(TEST_TEMP_DIR / "sync_files")
 os.environ["DOWNLOADS_DIR"] = str(TEST_TEMP_DIR / "downloads")
 
 import sys
-for mod in ("yt_dlp", "ytmusicapi", "rapidfuzz", "rapidfuzz.fuzz"):
+for mod in ("yt_dlp", "ytmusicapi"):
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
+try:
+    import rapidfuzz  # noqa: F401
+except ImportError:
+    sys.modules["rapidfuzz"] = MagicMock()
+    sys.modules["rapidfuzz.fuzz"] = MagicMock()
 
 from app.domain.models import DownloadJob
 from app.services.download_service import (
@@ -47,10 +52,17 @@ class TestReassignAudio(unittest.TestCase):
         get_settings.cache_clear()
         _get_global_cache_dir().mkdir(parents=True, exist_ok=True)
         (self.test_dir / "downloads").mkdir(parents=True, exist_ok=True)
+        self._sweep_patcher = patch.object(DownloadService, "_recover_stale_jobs_on_startup")
+        self._sweep_patcher.start()
 
     def tearDown(self):
+        self._sweep_patcher.stop()
         if self.test_dir.exists():
             shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(TEST_TEMP_DIR, ignore_errors=True)
 
     def test_search_candidates_cached(self):
         """Vérifie que la recherche de candidats YTM met en cache les résultats."""
@@ -96,7 +108,8 @@ class TestReassignAudio(unittest.TestCase):
         track_id = "trk_test_12345"
 
         with patch("app.services.download_service.supabase") as mock_supabase, \
-             patch.object(service, "_run_download_job") as mock_run_job:
+             patch("app.services.download_service.asyncio.create_task") as mock_create_task, \
+             patch.object(service, "_run_download_job", new=MagicMock()) as mock_run_job:
 
             mock_supabase.table().update().eq().in_().execute.return_value = MagicMock(data=[])
             mock_supabase.table().insert().execute.return_value = MagicMock(data=[])
@@ -115,6 +128,8 @@ class TestReassignAudio(unittest.TestCase):
             self.assertEqual(job.track_id, track_id)
             self.assertEqual(job.user_id, user_id)
             self.assertEqual(job.operation_type, "manual_reassign")
+            mock_create_task.assert_called_once()
+            mock_run_job.assert_called_once()
 
             # Vérifie que les anciens jobs ont été passés à superseded
             mock_supabase.table("download_jobs").update.assert_called()

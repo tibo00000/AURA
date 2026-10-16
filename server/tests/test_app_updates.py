@@ -13,9 +13,14 @@ os.environ["UPDATES_DIR"] = str(TEST_TEMP_UPDATES)
 import sys
 from unittest.mock import MagicMock
 
-for mod in ("yt_dlp", "ytmusicapi", "rapidfuzz", "rapidfuzz.fuzz"):
+for mod in ("yt_dlp", "ytmusicapi"):
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
+try:
+    import rapidfuzz  # noqa: F401
+except ImportError:
+    sys.modules["rapidfuzz"] = MagicMock()
+    sys.modules["rapidfuzz.fuzz"] = MagicMock()
 
 from fastapi.testclient import TestClient
 from app.main import app

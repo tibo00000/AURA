@@ -20,7 +20,7 @@ object SearchNormalizer {
 
     // Expressions régulières pré-compilées pour performance optimale
     private val PARENTHESIS_NOISE_REGEX = Regex("(?i)\\s*[\\[(](feat|ft|featuring|prod|remix|version|edit|official|clip|video|audio).*?[\\])]")
-    private val DECORATIVE_PUNCTUATION_REGEX = Regex("[\\p{Punct}&&[^'\\$]]+")
+    private val DECORATIVE_PUNCTUATION_REGEX = Regex("[\\p{Punct}&&[^'\\$@!]]+")
     private val MULTI_WHITESPACE_REGEX = Regex("\\s+")
 
     /**
@@ -45,7 +45,12 @@ object SearchNormalizer {
         cleaned = cleaned.replace(Regex("(?i)\\br\\s*&\\s*b\\b"), "rnb")
         cleaned = cleaned.replace("&", " and ")
 
-        // 4. Tokenisation intermédiaire pour appliquer le leetspeak de façon sélective
+        // 4. Suppression des apostrophes et séparation de la ponctuation décorative (ex: "Blink-182" -> "Blink 182")
+        // avant le traitement leetspeak pour préserver les nombres purs derrière un tiret.
+        cleaned = cleaned.replace("'", "")
+        cleaned = DECORATIVE_PUNCTUATION_REGEX.replace(cleaned, " ")
+
+        // 5. Tokenisation intermédiaire pour appliquer le leetspeak de façon sélective
         val rawTokens = cleaned.split(MULTI_WHITESPACE_REGEX).filter { it.isNotBlank() }
         val transformedTokens = rawTokens.map { token ->
             transformLeetspeakToken(token)
@@ -54,7 +59,6 @@ object SearchNormalizer {
         val result = transformedTokens.joinToString(" ")
             .lowercase()
             .replace(DECORATIVE_PUNCTUATION_REGEX, " ")
-            .replace("'", "")
             .replace(MULTI_WHITESPACE_REGEX, " ")
             .trim()
 
@@ -112,6 +116,7 @@ object SearchNormalizer {
                     '1' -> 'i'
                     '4' -> 'a'
                     '5' -> 's'
+                    '6' -> 'b'
                     '7' -> 't'
                     else -> ch
                 }

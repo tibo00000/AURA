@@ -1,10 +1,11 @@
 package com.aura.music.data.playlist
 
 import com.aura.music.data.local.TrackListRow
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class PlaylistImportExportEngineTest {
 
@@ -39,6 +40,21 @@ class PlaylistImportExportEngineTest {
     }
 
     @Test
+    fun testParseM3uWithoutArtistSeparatorOrDuration() {
+        val m3uContent = """
+            #EXTM3U
+            #EXTINF:invalid_duration,Intro Instrumental
+            /home/user/music/intro_file.ogg
+        """.trimIndent()
+
+        val parsed = PlaylistImportExportEngine.parseM3u(m3uContent)
+        assertEquals(1, parsed.size)
+        assertEquals("Intro Instrumental", parsed[0].rawTitle)
+        assertNull(parsed[0].rawArtist)
+        assertNull(parsed[0].durationSeconds)
+    }
+
+    @Test
     fun testReconciliationMatching() {
         val parsed = listOf(
             ParsedPlaylistItem("Get Lucky", "Daft Punk", 230),
@@ -63,6 +79,7 @@ class PlaylistImportExportEngineTest {
         )
 
         val result = PlaylistImportExportEngine.reconcile("Test Playlist", parsed, localTracks)
+        assertEquals(2, result.totalEntries)
         assertEquals(1, result.matchedTracks.size)
         assertEquals("trk_1", result.matchedTracks[0].id)
         assertEquals(1, result.unmatchedEntries.size)
@@ -92,5 +109,45 @@ class PlaylistImportExportEngineTest {
         assertTrue(m3u8.contains("#EXTM3U"))
         assertTrue(m3u8.contains("#EXTINF:230,Daft Punk - Get Lucky"))
         assertTrue(m3u8.contains("file:///music/get_lucky.mp3"))
+
+        val reParsed = PlaylistImportExportEngine.parseM3u(m3u8)
+        assertEquals(1, reParsed.size)
+        assertEquals("Get Lucky", reParsed[0].rawTitle)
+        assertEquals("Daft Punk", reParsed[0].rawArtist)
+        assertEquals(230, reParsed[0].durationSeconds)
+    }
+
+    @Test
+    fun testExportAndParseJsonRoundTripAndErrorHandling() {
+        val tracks = listOf(
+            TrackListRow(
+                id = "trk_1",
+                artistId = "art_1",
+                albumId = "alb_1",
+                title = "Veridis Quo",
+                artistName = "Daft Punk",
+                albumTitle = "Discovery",
+                contentUri = "file:///music/veridis_quo.flac",
+                durationMs = 345000L,
+                coverUri = null,
+                isLiked = true,
+                createdAt = 100L,
+                updatedAt = 200L
+            )
+        )
+
+        val jsonStr = PlaylistImportExportEngine.exportToJson("Synth Classics", tracks)
+        val decoded = PlaylistImportExportEngine.parseJson(jsonStr)
+        assertNotNull(decoded)
+        assertEquals(1, decoded.version)
+        assertEquals("Synth Classics", decoded.name)
+        assertEquals(1, decoded.tracks.size)
+        assertEquals("Veridis Quo", decoded.tracks[0].title)
+        assertEquals("Daft Punk", decoded.tracks[0].artist)
+        assertEquals("Discovery", decoded.tracks[0].album)
+        assertEquals(345000L, decoded.tracks[0].durationMs)
+
+        // Malformed JSON should safely return null without throwing
+        assertNull(PlaylistImportExportEngine.parseJson("{not_valid_json"))
     }
 }

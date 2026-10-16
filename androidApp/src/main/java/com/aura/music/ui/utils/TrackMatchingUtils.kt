@@ -1,24 +1,29 @@
 package com.aura.music.ui.utils
 
-import android.util.Base64
-import android.util.LruCache
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.SyncedFileResponseData
 import com.aura.music.ui.screens.TrackDownloadStatus
+import java.util.Base64
+import kotlin.math.round
 
 /**
  * Moteur de mémoïsation thread-safe pour le décodage d'identifiants Deezer (Base64 / token URL safe).
  */
 object DeezerIdMemoizer {
-    private val cache = LruCache<String, String>(1000)
+    private const val MAX_CACHE_SIZE = 1000
+    private val cache = object : LinkedHashMap<String, String>(MAX_CACHE_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
+            return size > MAX_CACHE_SIZE
+        }
+    }
 
     fun extractDeezerId(id: String?): String? {
         if (id.isNullOrBlank()) return null
-        val cached = cache.get(id)
+        val cached = synchronized(cache) { cache[id] }
         if (cached != null) return if (cached.isEmpty()) null else cached
 
         val resolved = computeDeezerId(id)
-        cache.put(id, resolved ?: "")
+        synchronized(cache) { cache[id] = resolved ?: "" }
         return resolved
     }
 
@@ -32,7 +37,7 @@ object DeezerIdMemoizer {
                     else -> ""
                 }
                 val paddedToken = token + padding
-                val bytes = Base64.decode(paddedToken, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+                val bytes = Base64.getUrlDecoder().decode(paddedToken)
                 val decoded = String(bytes, Charsets.UTF_8)
                 val parts = decoded.split(":")
                 if (parts.size >= 4 && parts[2].equals("deezer", ignoreCase = true)) parts[3].trim() else null
@@ -333,8 +338,9 @@ object FastTimeFormatter {
     fun formatFileSize(bytes: Long): String {
         if (bytes <= 0) return "0.0 MB"
         val mb = bytes.toDouble() / (1024.0 * 1024.0)
-        val intPart = mb.toLong()
-        val decPart = ((mb - intPart) * 10).toLong().coerceIn(0, 9)
+        val roundedTenths = round(mb * 10.0).toLong()
+        val intPart = roundedTenths / 10
+        val decPart = (roundedTenths % 10).coerceIn(0, 9)
         return "$intPart.$decPart MB"
     }
 }

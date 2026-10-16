@@ -29,9 +29,14 @@ if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
 # Mock external optional audio libraries if not present in test venv
-for mod in ("yt_dlp", "ytmusicapi", "rapidfuzz", "rapidfuzz.fuzz"):
+for mod in ("yt_dlp", "ytmusicapi"):
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
+try:
+    import rapidfuzz  # noqa: F401
+except ImportError:
+    sys.modules["rapidfuzz"] = MagicMock()
+    sys.modules["rapidfuzz.fuzz"] = MagicMock()
 
 # Import the script module
 import scripts.consolidate_storage as cs

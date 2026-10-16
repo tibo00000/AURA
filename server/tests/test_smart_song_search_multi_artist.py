@@ -3,6 +3,7 @@ Unit tests for multi-artist collaboration matching and retry in download_service
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -29,7 +30,12 @@ class TestSmartSongSearchMultiArtist(unittest.TestCase):
     def setUp(self):
         from app.config import get_settings
         get_settings.cache_clear()
-        self.service = DownloadService()
+        with patch.object(DownloadService, "_recover_stale_jobs_on_startup"):
+            self.service = DownloadService()
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(TEST_TEMP_DIR, ignore_errors=True)
 
     @patch("app.services.download_service.ytmusic.search")
     def test_vegedream_merci_les_bleus_collaboration(self, mock_search):
@@ -119,6 +125,7 @@ class TestSmartSongSearchMultiArtist(unittest.TestCase):
         )
         mock_get_job.return_value = mock_job
         mock_supabase.table().update().eq().execute.return_value = MagicMock()
+        mock_create_task.side_effect = lambda coro: coro.close()
 
         retried_job = self.service.retry_job(user_id="user_abc", job_id="job_test_resolution_123")
 
