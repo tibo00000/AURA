@@ -1,0 +1,146 @@
+name: AURA Continuous Integration
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    name: Backend FastAPI (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: "https://ci-placeholder.supabase.co"
+      SUPABASE_ANON_KEY: "ci-placeholder-anon-key"
+      SUPABASE_SERVICE_ROLE_KEY: "ci-placeholder-service-role-key"
+      SUPABASE_KEY: "ci-placeholder-anon-key"
+      SUPABASE_JWT_SECRET: "ci-placeholder-jwt-secret"
+      TESTING: "1"
+      DOWNLOADS_DIR: "downloads"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "server/pyproject.toml"
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Execute backend unit & API route tests
+        working-directory: server
+        run: |
+          pytest tests --junitxml=test-results/junit.xml -v
+
+      - name: Upload backend JUnit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: server/test-results/junit.xml
+          if-no-files-found: warn
+
+  shared-and-desktop-tests:
+    name: KMP Shared & Desktop JVM Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Set up Gradle with caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Create local.properties if missing
+        run: touch local.properties
+
+      - name: Compile & run KMP Shared and Desktop unit/integration tests
+        run: |
+          ./gradlew :shared:desktopTest :desktopApp:desktopTest :desktopApp:compileKotlinDesktop \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dos.arch=amd64" \
+            -Djava.awt.headless=true \
+            --no-daemon --console=plain
+
+      - name: Upload Shared & Desktop test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-and-desktop-test-reports
+          path: |
+            shared/build/reports/tests/desktopTest/
+            shared/build/test-results/desktopTest/*.xml
+            desktopApp/build/reports/tests/desktopTest/
+            desktopApp/build/test-results/desktopTest/*.xml
+          if-no-files-found: warn
+
+  android-tests-and-lint:
+    name: Android Unit Tests, Compilation & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Set up Gradle with caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Create local.properties if missing
+        run: touch local.properties
+
+      - name: Compile Android Debug, run unit tests & Lint
+        run: |
+          ./gradlew :shared:testDebugUnitTest :androidApp:testDebugUnitTest :androidApp:compileDebugKotlin :androidApp:lintDebug \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dos.arch=amd64" \
+            -Djava.awt.headless=true \
+            --no-daemon --console=plain
+
+      - name: Upload Android test & Lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-and-lint-reports
+          path: |
+            shared/build/reports/tests/testDebugUnitTest/
+            shared/build/test-results/testDebugUnitTest/*.xml
+            androidApp/build/reports/tests/testDebugUnitTest/
+            androidApp/build/test-results/testDebugUnitTest/*.xml
+            androidApp/build/reports/lint-results-debug.*
+          if-no-files-found: warn

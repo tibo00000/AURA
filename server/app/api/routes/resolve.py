@@ -36,6 +36,8 @@ def _get_resolve_service() -> ResolveService:
 @router.get("/artist", response_model=ResponseEnvelope[ResolveArtistResponseData])
 async def resolve_artist(
     name: str = Query(..., description="Artist name to resolve"),
+    track_title: Optional[str] = Query(None, description="Track title hint for disambiguating homonyms"),
+    album_title: Optional[str] = Query(None, description="Album title hint for disambiguating homonyms"),
 ) -> ResponseEnvelope[ResolveArtistResponseData] | JSONResponse:
     """
     Resolve a local artist name to an opaque AURA backend ID + enrichment metadata.
@@ -55,7 +57,7 @@ async def resolve_artist(
         )
     try:
         service = _get_resolve_service()
-        result = await service.resolve_artist(name.strip())
+        result = await service.resolve_artist(name.strip(), track_title=track_title, album_title=album_title)
         return ResponseEnvelope(data=result)
     except ProviderUnavailable as exc:
         return JSONResponse(
@@ -70,6 +72,7 @@ async def resolve_artist(
 async def resolve_album(
     title: str = Query(..., description="Album title to resolve"),
     artist_name: Optional[str] = Query(None, description="Artist name hint (strongly recommended)"),
+    track_title: Optional[str] = Query(None, description="Track title hint for disambiguating homonyms"),
 ) -> ResponseEnvelope[ResolveAlbumResponseData] | JSONResponse:
     """
     Resolve a local album title to an opaque AURA backend ID + enrichment metadata.
@@ -89,7 +92,7 @@ async def resolve_album(
         )
     try:
         service = _get_resolve_service()
-        result = await service.resolve_album(title.strip(), artist_name)
+        result = await service.resolve_album(title.strip(), artist_name=artist_name, track_title=track_title)
         return ResponseEnvelope(data=result)
     except ProviderUnavailable as exc:
         return JSONResponse(

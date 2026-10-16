@@ -325,9 +325,49 @@ La query MediaStore applique deux filtres :
 
 Aucune limite arbitraire n'est appliquee au nombre de fichiers retournes.
 
+## Sanitisation des Noms de Fichiers Locaux (Colon-to-Semicolon)
+
+Pour les fichiers stockés physiquement en local (audios MP3 et pochettes d'albums JPG), un schéma de sanitisation strict est appliqué pour résoudre deux limitations techniques :
+1. **Contraintes de Systèmes de Fichiers (ex: Windows)** : Les deux-points (`:`) sont des caractères interdits sous Windows pour les noms de fichiers.
+2. **Bug de Résolution de Protocole URI sur Android** : L'analyseur `MediaMetadataRetriever` d'Android interprète le caractère `:` dans un chemin de fichier comme le préfixe d'un schéma de protocole réseau, causant des échecs d'analyse de métadonnées locales.
+
+### Règle de Transformation
+- Lors de l'écriture physique d'un fichier audio ou d'une couverture, les deux-points (`:`) présents dans l'identifiant unique (ex: ID Deezer ou YTM) sont remplacés par des points-virgules (`;`).
+- *Exemple* : L'ID de piste `track:deezer:12345` est écrit localement sous le nom `track;deezer;12345.mp3`.
+- Lors du scan local ou de l'indexation de la bibliothèque, le scanner effectue la conversion inverse (`replace(';', ':')`) afin de reconstruire l'ID Room exact et de maintenir la cohérence référentielle avec les identifiants distants.
+
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room pour toutes les tables (tracks, artists, albums, playlists, snapshots, settings, etc.)
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les operations de base
 - `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : singleton Room database, version 1
 - `android/app/src/main/java/com/aura/music/data/media/MediaStoreAudioDataSource.kt` : lecture des medias locaux via MediaStore, filtre duree >= 30s
 - `android/app/src/main/java/com/aura/music/data/repository/LocalLibraryRepository.kt` : orchestration locale Room + MediaStore, import, recherche, playlists, snapshot, generation d'ID
+
+## Synchronisation Fichiers Cloud
+
+- Les fichiers personnels uploadés par l'utilisateur sont indexés sur le serveur cloud.
+- `CloudFileRepository` est le point d'entrée pour interroger cet index (`/me/sync/files`) et gérer l'upload/téléchargement.
+- **État cloud_only** : Une piste est considérée comme présente uniquement sur le cloud si :
+  - Elle est présente dans la liste des fichiers cloud synchronisés (`syncedTrackIds`).
+  - Son `contentUri` local dans `track_media_links` (ou la table locale) est nul ou vide.
+- **Processus d'Upload** :
+  1. Récupération du `contentUri` local (ex: `content://media/external/audio/media/...`).
+  2. Ouverture du flux via `ContentResolver`.
+  3. Envoi multipart via Ktor client à `POST /me/sync/files/{track_id}`.
+  4. Mise à jour de l'index des fichiers synchronisés localement.
+- **Processus de Récupération (Download)** :
+  1. Téléchargement du flux binaire via `GET /me/sync/files/{track_id}`.
+  2. Écriture du fichier dans le répertoire privé de l'application : `context.filesDir/downloads/{trackId}.mp3`.
+  3. Insertion ou mise à jour de `track_media_links` avec le chemin du fichier local.
+  4. Modification du type de source `canonicalAudioSourceType` en `downloaded`.
+
+Une éviction du cache de streaming Media3 ne peut jamais effacer ce fichier privé. La suppression
+d'un téléchargement hors-ligne suit exclusivement un flux explicite de gestion du stockage, puis
+met à jour son lien Room de façon cohérente.
+
+## Édition des Métadonnées & Protection Anti-Écrasement
+
+- **Continuité 3 Couches** : Toute modification de métadonnées (`updateTrackMetadata`) met à jour simultanément la base Room (`TrackEntity`, `ArtistEntity`, `AlbumEntity`), le fichier MP3 physique via `AudioTagWriter` (frames ID3v2.3 `TIT2`, `TPE1`, `TALB`, `TRCK`, `TYER`, `APIC`) et notifie `MediaScannerConnection` pour actualiser l'OS.
+- **Règle Anti-Écrasement lors des Scans** : Lors de l'exécution de `refreshLocalMediaIndex()`, si une piste locale existe déjà dans Room (`existingTrack != null`), les métadonnées personnalisées par l'utilisateur (titre, nom d'artiste, titre d'album, pochette, relations) ont la priorité absolue et ne sont jamais écrasées par les anciennes métadonnées brutes de `MediaStore`.
+- **Accès au Stockage Android 11+** : L'accès direct en écriture aux fichiers audio physiques nécessite la permission `MANAGE_EXTERNAL_STORAGE` gérée via `StoragePermissionHelper`.
+

@@ -1,0 +1,114 @@
+plugins {
+    kotlin("multiplatform")
+    id("org.jetbrains.compose")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+kotlin {
+    jvm("desktop")
+    
+    sourceSets {
+        val desktopMain by getting {
+            dependencies {
+                implementation(project(":shared"))
+                val osName = System.getProperty("os.name").lowercase()
+                val arch = System.getProperty("os.arch").lowercase()
+
+                // Compose Desktop runtime : Compose 1.7.0 ne publiant pas d'artefact windows-arm64,
+                // toute machine Windows (x64 ou ARM64) cible l'artefact officiel windows_x64 (émulé nativement par Windows 11).
+                if (osName.contains("win")) {
+                    implementation(compose.desktop.windows_x64)
+                } else {
+                    implementation(compose.desktop.currentOs)
+                }
+
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
+                implementation(compose.materialIconsExtended)
+                implementation(compose.ui)
+                implementation(compose.components.resources)
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
+                
+                // Native platform integration (DPAPI on Windows)
+                implementation("net.java.dev.jna:jna:5.14.0")
+                implementation("net.java.dev.jna:jna-platform:5.14.0")
+                
+                // Driver SQLite JDBC pour support natif Windows ARM64 et multi-plateforme
+                implementation("org.xerial:sqlite-jdbc:3.47.1.0")
+                
+                // JavaFX Media for native JNI audio playback
+                val classifier = when {
+                    osName.contains("win") -> "win"
+                    osName.contains("mac") -> {
+                        // Check if Apple Silicon or Intel
+                        if (arch.contains("aarch64") || arch.contains("arm64")) "mac-aarch64" else "mac"
+                    }
+                    osName.contains("nix") || osName.contains("nux") -> "linux"
+                    else -> "win"
+                }
+                implementation("org.openjfx:javafx-base:21.0.1")
+                implementation("org.openjfx:javafx-base:21.0.1:$classifier")
+                implementation("org.openjfx:javafx-graphics:21.0.1")
+                implementation("org.openjfx:javafx-graphics:21.0.1:$classifier")
+                implementation("org.openjfx:javafx-media:21.0.1")
+                implementation("org.openjfx:javafx-media:21.0.1:$classifier")
+            }
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test-junit"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+            }
+        }
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.aura.music.desktop.MainKt"
+        
+        // Sur Windows, JavaFX Media ne dispose pas de binaires natifs ARM64 sur Maven Central (x64 uniquement).
+        // Toute l'application Desktop cible l'architecture x64 (émulée nativement par Windows 11 ARM64).
+        // On configure javaHome vers le JDK x64 afin que jlink et jpackage packagent un runtime 100% x64 cohérent.
+        val osName = System.getProperty("os.name").lowercase()
+        if (osName.contains("win")) {
+            val x64JdkCandidates = listOf(
+                "C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot",
+                "C:/Program Files/Eclipse Adoptium/jdk-25.0.3.9-hotspot",
+                "C:/Program Files/Java/jdk-24",
+                "C:/Program Files/Java/jdk-21"
+            )
+            val detectedJdk = x64JdkCandidates.map { file(it) }.firstOrNull { it.exists() }
+            if (detectedJdk != null) {
+                javaHome = detectedJdk.absolutePath
+            }
+        }
+        
+        nativeDistributions {
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
+            )
+            packageName = "AURA"
+            packageVersion = "1.0.0"
+
+            windows {
+                menu = true
+                shortcut = true
+                // GUID immuable garantissant la détection et les Major Upgrades WiX
+                upgradeUuid = "6C3B140B-22DF-4899-B943-2313EA8C1977"
+                perUserInstall = true // Déploiement dans %LOCALAPPDATA% sans élévation UAC
+                dirChooser = false
+                iconFile.set(project.file("src/desktopMain/resources/aura_icon.ico"))
+            }
+            
+            // Modules JDK indispensables pour le driver JDBC SQLite et le runtime (détectés via jdeps)
+            modules("java.sql", "java.naming", "java.management", "java.instrument", "java.net.http", "jdk.unsupported")
+            
+            // Optimizations: Generational ZGC for low latency (JDK 21+) + Software pipeline fallback pour JavaFX Media
+            jvmArgs += listOf("-XX:+UseZGC", "-XX:+ZGenerational", "-Dprism.order=sw")
+        }
+    }
+}

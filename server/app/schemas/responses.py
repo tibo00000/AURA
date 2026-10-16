@@ -90,10 +90,13 @@ class TrackSummaryResponse(BaseModel):
     display_album_title: Optional[str] = None
     duration_ms: Optional[int] = None
     cover_uri: Optional[str] = None
+    artist_id: Optional[str] = None
+    album_id: Optional[str] = None
     is_explicit: Optional[bool] = None
     is_liked: bool = False
     is_local_available: bool = False
     is_downloaded_by_aura: bool = False
+    is_available_in_cloud: bool = False
 
 
 class SearchBestMatchResponse(BaseModel):
@@ -161,3 +164,13 @@ class ResolveAlbumResponseData(BaseModel):
     resolved: bool
     match_confidence: float
     album: Optional[ResolvedAlbumData] = None
+
+
+class AppVersionResponse(BaseModel):
+    version_code: int
+    version_name: str
+    download_url: str
+    sha256: str
+    release_notes: Optional[str] = None
+    min_supported_version: int = 1
+

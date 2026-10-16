@@ -1,0 +1,1202 @@
+package com.aura.music.domain.player
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.aura.music.data.player.PlaybackStateStore
+import com.aura.music.data.player.QueueManager
+import com.aura.music.data.repository.LocalLibraryRepository
+import com.aura.music.data.repository.PlaylistDetail
+import com.aura.music.data.repository.AlbumDetail
+import com.aura.music.data.repository.ArtistDetail
+import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.local.AuraDatabase
+import com.aura.music.service.PlaybackService
+import com.aura.music.data.network.BuildConfig
+import com.aura.music.core.MediaCacheManager
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/**
+ * Orchestre la lecture en appliquant les regles play, pause, next, prev, seek.
+ *
+ * Gouverne par :
+ * - docs/android/player/architecture.md
+ * - docs/domain/playback-user-flows.md
+ *
+ * Responsabilites :
+ * - Recoit les PlayerEvent de la couche UI
+ * - Utilise QueueManager pour la resolution de la prochaine piste
+ * - Pilote le MediaController (lien vers le PlaybackService/ExoPlayer)
+ * - Sauvegarde l'etat via PlaybackStateStore
+ * - Expose un StateFlow<PlayerUiState> agrege
+ */
+class PlaybackOrchestrator(
+    private val context: Context,
+    private val queueManager: QueueManager,
+    private val stateStore: PlaybackStateStore,
+    private val repository: LocalLibraryRepository,
+    private val playbackResolver: TrackPlaybackResolver = TrackPlaybackResolver(context, AuraDatabase.getInstance(context)),
+) {
+    companion object {
+        private const val SLEEP_TIMER_REQUEST_CODE = 10099
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private val _uiState = MutableStateFlow(PlayerUiState())
+    val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var controller: MediaController? = null
+
+    // Sticky error state to prevent controller.pause() from wiping the error out
+    private var lastPlayerErrorMessage: String? = null
+
+    // Sleep Timer state
+    private var sleepTimerJob: Job? = null
+    private var sleepTimerTargetEpochMs: Long? = null
+    private var sleepTimerIsEndOfTrack: Boolean = false
+    private var sleepTimerOriginalVolume: Float? = null
+
+    private val playerListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            val stateStr = playbackStateToString(playbackState)
+            android.util.Log.d("PlaybackOrchestrator", "onPlaybackStateChanged: state=$stateStr, isPlaying=${controller?.isPlaying}, playWhenReady=${controller?.playWhenReady}")
+            syncUiState()
+            if (playbackState == Player.STATE_ENDED) {
+                android.util.Log.d("PlaybackOrchestrator", "onPlaybackStateChanged: track ended, triggering handleTrackEnded()")
+                handleTrackEnded()
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            android.util.Log.d("PlaybackOrchestrator", "onIsPlayingChanged: isPlaying=$isPlaying")
+            syncUiState()
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            lastPlayerErrorMessage = null
+            val transitionedTrackId = mediaItem?.mediaId
+            val reasonStr = transitionReasonToString(reason)
+            android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: transitionedTrackId=$transitionedTrackId, reason=$reasonStr")
+            
+            val ctrl = controller
+            if (ctrl != null) {
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: Player status - currentMediaItemIndex=${ctrl.currentMediaItemIndex}, mediaItemCount=${ctrl.mediaItemCount}")
+                for (i in 0 until ctrl.mediaItemCount) {
+                    android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: ExoPlayer item[$i] = ${ctrl.getMediaItemAt(i).mediaId}")
+                }
+            }
+            
+            syncUiState()
+            val trackId = mediaItem?.mediaId
+            if (trackId != null) {
+                scope.launch {
+                    val fresh = repository.getTrackById(trackId)
+                    updateLikedState(fresh?.isLiked ?: false)
+                    
+                    // Log to sync outbox for incremental history synchronization
+                    val activeContext = queueManager.state.value.context
+                    repository.recordHistoryItem(
+                        trackId = trackId,
+                        contextType = activeContext?.type,
+                        contextId = activeContext?.id
+                    )
+                }
+            } else {
+                updateLikedState(false)
+            }
+
+            if (ctrl == null) {
+                android.util.Log.e("PlaybackOrchestrator", "onMediaItemTransition: controller is null!")
+                return
+            }
+
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                if (ctrl.mediaItemCount >= 3) {
+                    android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: IGNORED stabilized queue.")
+                    return
+                }
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: ALLOWED external playlist change, resolving grid...")
+            }
+
+            val transitionedTrackIdResolved = mediaItem?.mediaId ?: return
+            
+            val currentTrack = queueManager.state.value.currentTrack
+            android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: queueManager currentTrack=${currentTrack?.trackId}")
+            
+            if (transitionedTrackIdResolved != currentTrack?.trackId) {
+                val targetNextTrack = queueManager.state.value.priorityQueue.firstOrNull()
+                    ?: queueManager.getUpcomingContextTracks().firstOrNull()
+                val targetPrevTrack = queueManager.state.value.history.lastOrNull()
+                
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: mismatch! transitioned=$transitionedTrackIdResolved, targetNext=${targetNextTrack?.trackId}, targetPrev=${targetPrevTrack?.trackId}")
+                
+                if (transitionedTrackIdResolved == targetNextTrack?.trackId) {
+                    android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: matches targetNextTrack. Shifting context to next...")
+                    queueManager.next()
+                    syncExoPlayerPlaylist()
+                    saveSnapshot()
+                    syncUiState()
+                } else if (transitionedTrackIdResolved == targetPrevTrack?.trackId) {
+                    android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: matches targetPrevTrack. Shifting context to previous...")
+                    queueManager.previous(0L)
+                    syncExoPlayerPlaylist()
+                    saveSnapshot()
+                    syncUiState()
+                } else {
+                    android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: external client transition detected to=$transitionedTrackIdResolved. Handling external transition...")
+                    scope.launch {
+                        handleExternalTrackTransition(transitionedTrackIdResolved)
+                    }
+                }
+            } else {
+                android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: matches currentTrack (${currentTrack?.trackId}). Syncing playlist...")
+                syncExoPlayerPlaylist()
+            }
+
+            // Interception du minuteur de veille après résolution de la nouvelle piste
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                if (sleepTimerIsEndOfTrack) {
+                    android.util.Log.i("PlaybackOrchestrator", "Auto transition occurred with sleepTimerIsEndOfTrack=true. Pausing at start of next track.")
+                    handlePause()
+                    cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+                    _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+                    syncUiState()
+                    return
+                }
+                val remainingMs = sleepTimerTargetEpochMs?.let { it - System.currentTimeMillis() }
+                if (remainingMs != null && remainingMs in 0L..10_000L) {
+                    android.util.Log.i("PlaybackOrchestrator", "Auto transition occurred during fade-out window ($remainingMs ms). Pausing at start of next track.")
+                    handlePause()
+                    cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+                    _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+                    syncUiState()
+                    return
+                }
+            }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            android.util.Log.e("PlaybackOrchestrator", "onPlayerError: error=${error.localizedMessage}", error)
+
+            // Walk the exception cause chain (up to depth 10, with cycle detection)
+            val seenCauses = mutableSetOf<Throwable>()
+            var currentCause: Throwable? = error
+            var httpStatusCode: Int? = null
+            var isNotFound = false
+            var isAuthError = false
+            var isNetworkError = false
+            var isParserError = false
+            var isFileNotFound = false
+            var depth = 0
+
+            while (currentCause != null && depth < 10 && seenCauses.add(currentCause)) {
+                val msg = currentCause.message?.lowercase() ?: ""
+                val className = currentCause::class.java.simpleName
+
+                if (currentCause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    httpStatusCode = currentCause.responseCode
+                } else if (msg.contains("response code: 404") || msg.contains("404 not found") || msg.contains("http 404")) {
+                    httpStatusCode = 404
+                } else if (msg.contains("response code: 401") || msg.contains("response code: 403")) {
+                    httpStatusCode = 401
+                }
+
+                if (httpStatusCode == 404 || msg.contains("404") ||
+                    (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && (httpStatusCode == 404 || msg.contains("not found")))) {
+                    isNotFound = true
+                }
+                if (httpStatusCode == 401 || httpStatusCode == 403 || msg.contains("401") || msg.contains("403") || msg.contains("unauthorized")) {
+                    isAuthError = true
+                }
+                if (currentCause is java.io.FileNotFoundException || msg.contains("filenotfound") || msg.contains("no such file")) {
+                    isFileNotFound = true
+                }
+                if (currentCause is androidx.media3.common.ParserException || className.contains("ParserException") || className.contains("Extractor")) {
+                    isParserError = true
+                }
+                if (currentCause is java.net.UnknownHostException ||
+                    currentCause is java.net.SocketTimeoutException ||
+                    currentCause is java.net.ConnectException ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT) {
+                    isNetworkError = true
+                }
+
+                currentCause = currentCause.cause
+                depth++
+            }
+
+            val friendlyMsg = when {
+                isNotFound || httpStatusCode == 404 ->
+                    "Morceau non disponible sur le Cloud AURA (non synchronisé ou en attente)."
+                isAuthError || httpStatusCode in listOf(401, 403) ->
+                    "Session expirée ou accès non autorisé au serveur AURA."
+                isNetworkError ->
+                    "Impossible de joindre le serveur AURA. Vérifiez votre connexion Internet."
+                isFileNotFound ->
+                    "Fichier local introuvable ou déplacé."
+                isParserError ->
+                    "Fichier audio corrompu ou format non supporté."
+                else -> {
+                    val rawMsg = error.localizedMessage
+                    if (rawMsg == null || rawMsg.contains("Source error", ignoreCase = true)) {
+                        "Erreur lors de la lecture du flux audio."
+                    } else {
+                        "Impossible de lire le morceau : $rawMsg"
+                    }
+                }
+            }
+            lastPlayerErrorMessage = friendlyMsg
+            _uiState.update { current ->
+                current.copy(
+                    playbackState = PlaybackState.Error,
+                    errorMessage = friendlyMsg,
+                )
+            }
+            controller?.pause()
+        }
+    }
+
+
+    /**
+     * Connecte le MediaController au PlaybackService.
+     * Doit etre appele au demarrage de l'app.
+     */
+    fun connect() {
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        controllerFuture = MediaController.Builder(context, token).buildAsync().also { future ->
+            future.addListener(
+                {
+                    controller = future.get()
+                    controller?.addListener(playerListener)
+                    scope.launch { restoreSnapshot() }
+                },
+                MoreExecutors.directExecutor(),
+            )
+        }
+    }
+
+    /**
+     * Deconnecte le MediaController. Appele lors de la destruction de l'app.
+     */
+    fun disconnect() {
+        scope.launch { stateStore.flushPendingPlaybackSnapshot() }
+        controller?.removeListener(playerListener)
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controller = null
+        controllerFuture = null
+    }
+
+    /**
+     * Synchronise la file d'attente d'ExoPlayer après un changement de contexte externe (par exemple, Android Auto).
+     */
+    fun syncPlaylistAfterExternalChange() {
+        android.util.Log.d("PlaybackOrchestrator", "syncPlaylistAfterExternalChange: triggering playlist sync")
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    /**
+     * Appelé lorsqu'une version audio a été réassignée avec succès.
+     * Évince le cache de flux de la piste et rafraîchit immédiatement ExoPlayer si la piste est en cours de lecture.
+     */
+    fun onAudioVersionReassigned(trackId: String) {
+        val ctrl = controller ?: return
+        val current = _uiState.value.currentTrack
+        MediaCacheManager.evictTrack(context, trackId)
+        if (current?.trackId == trackId) {
+            val currentPos = ctrl.currentPosition
+            val isPlaying = ctrl.isPlaying
+            ctrl.clearMediaItems()
+            syncExoPlayerPlaylist(currentPos)
+            if (isPlaying) {
+                ctrl.play()
+            }
+        }
+    }
+
+    init {
+        restorePersistedSleepTimerIfAny()
+    }
+
+    /**
+     * Traite un evenement utilisateur.
+     */
+    fun onEvent(event: PlayerEvent) {
+        when (event) {
+            is PlayerEvent.PlayTrack,
+            is PlayerEvent.Pause,
+            is PlayerEvent.TogglePlayPause,
+            is PlayerEvent.Next,
+            is PlayerEvent.Previous,
+            is PlayerEvent.SeekTo -> {
+                lastPlayerErrorMessage = null
+            }
+            else -> Unit
+        }
+        when (event) {
+            is PlayerEvent.PlayTrack -> handlePlay(event)
+            is PlayerEvent.Pause -> handlePause()
+            is PlayerEvent.TogglePlayPause -> handleTogglePlayPause()
+            is PlayerEvent.Next -> handleNext()
+            is PlayerEvent.Previous -> handlePrevious()
+            is PlayerEvent.SeekTo -> handleSeek(event.positionMs)
+            is PlayerEvent.AddToQueue -> handleAddToQueue(event.track)
+            is PlayerEvent.RemoveFromQueue -> handleRemoveFromQueue(event.index)
+            is PlayerEvent.ClearPriorityQueue -> handleClearPriorityQueue()
+            is PlayerEvent.ReorderQueue -> handleReorderQueue(event.fromIndex, event.toIndex)
+            is PlayerEvent.RemoveFromMainQueue -> handleRemoveFromMainQueue(event.internalId)
+            is PlayerEvent.ReorderMainQueue -> handleReorderMainQueue(event.fromInternalId, event.toInternalId)
+            is PlayerEvent.ToggleShuffle -> handleToggleShuffle()
+            is PlayerEvent.CycleRepeatMode -> handleCycleRepeatMode()
+            // Sleep Timer events
+            is PlayerEvent.SetSleepTimer -> setSleepTimer(event.durationMinutes, event.endOfTrack)
+            is PlayerEvent.ExtendSleepTimer -> extendSleepTimer(event.additionalMinutes)
+            is PlayerEvent.CancelSleepTimer -> cancelSleepTimer()
+            // ToggleLike est traite dans PlayerViewModel (persistance Room, pas ExoPlayer)
+            is PlayerEvent.ToggleLike -> Unit
+        }
+    }
+
+    /**
+     * Met a jour uniquement l'etat du like dans le uiState.
+     * Appele par PlayerViewModel apres relecture Room.
+     */
+    fun updateLikedState(liked: Boolean) {
+        _uiState.update { it.copy(isCurrentTrackLiked = liked) }
+    }
+
+    /**
+     * Retourne la position courante du player en ms.
+     */
+    fun currentPositionMs(): Long = controller?.currentPosition ?: 0L
+
+    /**
+     * Met a jour uniquement la position dans le uiState sans toucher au controller.
+     * Appele periodiquement par le ViewModel pour rafraichir la barre de progression.
+     */
+    fun refreshPosition() {
+        val ctrl = controller ?: return
+        val pos = ctrl.currentPosition
+        val dur = ctrl.duration.coerceAtLeast(0L)
+        _uiState.update { it.copy(positionMs = pos, durationMs = dur) }
+    }
+
+    /**
+     * Sauvegarde le snapshot actuel de facon explicite.
+     * Utile pour sauvegarder periodiquement depuis le ViewModel.
+     */
+    fun saveSnapshot() {
+        scope.launch {
+            val state = queueManager.state.value
+            stateStore.save(
+                currentTrackId = state.currentTrack?.trackId,
+                contextType = state.context?.type,
+                contextId = state.context?.id,
+                contextIndex = state.context?.currentIndex,
+                positionMs = controller?.currentPosition ?: 0L,
+                shuffleEnabled = state.shuffleEnabled,
+                repeatMode = state.repeatMode,
+            )
+        }
+    }
+
+    private fun handlePlay(event: PlayerEvent.PlayTrack) {
+        queueManager.setContext(
+            type = event.contextType,
+            id = event.contextId,
+            tracks = event.contextTracks,
+            startIndex = event.startIndex,
+        )
+        val track = queueManager.state.value.currentTrack ?: return
+        playTrackOnController(track)
+        saveSnapshot()
+    }
+
+    private fun handlePause() {
+        controller?.pause()
+        saveSnapshot()
+        scope.launch { stateStore.flushPendingPlaybackSnapshot() }
+    }
+
+    private fun handleTogglePlayPause() {
+        val ctrl = controller ?: return
+        if (ctrl.isPlaying) {
+            ctrl.pause()
+        } else {
+            ctrl.play()
+        }
+        saveSnapshot()
+    }
+
+    private fun handleNext() {
+        val state = queueManager.state.value
+        android.util.Log.d("PlaybackOrchestrator", "handleNext: currentTrack=${state.currentTrack?.trackId}, repeatMode=${state.repeatMode}")
+        
+        if (state.repeatMode == RepeatMode.One) {
+            android.util.Log.d("PlaybackOrchestrator", "handleNext: RepeatOne active, seeking to 0")
+            controller?.seekTo(0)
+            return
+        }
+
+        val hasNext = state.priorityQueue.isNotEmpty() || 
+            queueManager.getUpcomingContextTracks().isNotEmpty() ||
+            (state.repeatMode == RepeatMode.All && state.context?.tracks?.isNotEmpty() == true)
+
+        if (!hasNext) {
+            android.util.Log.d("PlaybackOrchestrator", "handleNext: no next track, stopping player")
+            controller?.stop()
+            queueManager.next() // Update queueState (currentTrack = null, add current to history)
+            _uiState.update { it.copy(playbackState = PlaybackState.Idle, currentTrack = null) }
+            saveSnapshot()
+            return
+        }
+
+        android.util.Log.d("PlaybackOrchestrator", "handleNext: delegating transition to ExoPlayer seekToNextMediaItem()")
+        controller?.seekToNextMediaItem()
+    }
+
+    private fun handlePrevious() {
+        val ctrl = controller ?: return
+        val positionMs = ctrl.currentPosition
+        val state = queueManager.state.value
+        val historyEmpty = state.history.isEmpty()
+        android.util.Log.d("PlaybackOrchestrator", "handlePrevious: positionMs=$positionMs, historyEmpty=$historyEmpty")
+        
+        if (positionMs > 3000L || historyEmpty) {
+            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: restarting current track (seek to 0)")
+            ctrl.seekTo(0)
+        } else {
+            android.util.Log.d("PlaybackOrchestrator", "handlePrevious: delegating transition to ExoPlayer seekToPreviousMediaItem()")
+            ctrl.seekToPreviousMediaItem()
+        }
+    }
+
+    private fun handleSeek(positionMs: Long) {
+        controller?.seekTo(positionMs)
+        saveSnapshot()
+    }
+
+    private fun handleAddToQueue(track: QueuedTrack) {
+        queueManager.addToQueue(track)
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleRemoveFromQueue(index: Int) {
+        queueManager.removeFromQueue(index)
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleClearPriorityQueue() {
+        queueManager.clearPriorityQueue()
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleReorderQueue(fromIndex: Int, toIndex: Int) {
+        queueManager.reorderQueue(fromIndex, toIndex)
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleRemoveFromMainQueue(internalId: String) {
+        queueManager.removeUpcomingContextTrack(internalId)
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleReorderMainQueue(fromInternalId: String, toInternalId: String) {
+        queueManager.reorderUpcomingContextTrack(fromInternalId, toInternalId)
+        syncExoPlayerPlaylist()
+        syncUiState()
+    }
+
+    private fun handleToggleShuffle() {
+        queueManager.toggleShuffle()
+        syncExoPlayerPlaylist()
+        syncUiState()
+        saveSnapshot()
+    }
+
+    private fun handleCycleRepeatMode() {
+        queueManager.cycleRepeatMode()
+        syncExoPlayerPlaylist()
+        syncUiState()
+        saveSnapshot()
+    }
+
+    private fun handleTrackEnded() {
+        val remainingMs = sleepTimerTargetEpochMs?.let { it - System.currentTimeMillis() }
+        if (sleepTimerIsEndOfTrack || (remainingMs != null && remainingMs in 0L..10_000L)) {
+            android.util.Log.i("PlaybackOrchestrator", "Track ended with sleep timer active (endOfTrack=$sleepTimerIsEndOfTrack, remainingMs=$remainingMs). Pausing without advancing.")
+            handlePause()
+            cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+            _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+            return
+        }
+        handleNext()
+    }
+
+    private fun playTrackOnController(track: QueuedTrack) {
+        lastPlayerErrorMessage = null
+        val ctrl = controller ?: run {
+            android.util.Log.e("PlaybackOrchestrator", "playTrackOnController: controller is null!")
+            return
+        }
+        android.util.Log.d("PlaybackOrchestrator", "playTrackOnController: trackId=${track.trackId}")
+        syncExoPlayerPlaylist()
+        ctrl.play()
+        syncUiState()
+    }
+
+    private fun syncUiState() {
+        val ctrl = controller
+        val queueState = queueManager.state.value
+
+        val playbackState = when {
+            lastPlayerErrorMessage != null -> PlaybackState.Error
+            ctrl == null -> PlaybackState.Idle
+            ctrl.playerError != null -> PlaybackState.Error
+            ctrl.playbackState == Player.STATE_BUFFERING -> PlaybackState.Buffering
+            ctrl.playbackState == Player.STATE_ENDED -> PlaybackState.Completed
+            ctrl.playbackState == Player.STATE_IDLE -> PlaybackState.Idle
+            ctrl.isPlaying -> PlaybackState.Playing
+            ctrl.playbackState == Player.STATE_READY -> PlaybackState.Paused
+            else -> PlaybackState.Preparing
+        }
+
+        val effectiveErrorMessage = lastPlayerErrorMessage ?: ctrl?.playerError?.localizedMessage
+
+        _uiState.update { current ->
+            current.copy(
+                playbackState = playbackState,
+                currentTrack = queueState.currentTrack,
+                positionMs = ctrl?.currentPosition ?: 0L,
+                durationMs = ctrl?.duration?.coerceAtLeast(0L) ?: 0L,
+                shuffleEnabled = queueState.shuffleEnabled,
+                repeatMode = queueState.repeatMode,
+                priorityQueue = queueState.priorityQueue,
+                mainQueueTracks = queueManager.getUpcomingContextTracks(),
+                contextType = queueState.context?.type,
+                contextId = queueState.context?.id,
+                errorMessage = effectiveErrorMessage,
+                // isCurrentTrackLiked est preserve et mis a jour via updateLikedState()
+                // pour eviter un reset a false a chaque sync de progression
+            )
+        }
+    }
+
+    private suspend fun restoreSnapshot() {
+        val snapshot = stateStore.restore() ?: return
+        queueManager.restoreModes(snapshot.shuffleEnabled, snapshot.repeatMode)
+        
+        snapshot.currentTrackId?.let { trackId ->
+            val trackRow = repository.getTrackById(trackId)
+            if (trackRow != null) {
+                updateLikedState(trackRow.isLiked)
+                val queuedTrack = QueuedTrack(
+                    trackId = trackRow.id,
+                    title = trackRow.title,
+                    artistName = trackRow.artistName,
+                    albumTitle = trackRow.albumTitle,
+                    contentUri = trackRow.contentUri,
+                    durationMs = trackRow.durationMs,
+                    coverUri = null,
+                    source = com.aura.music.domain.player.TrackSource.CONTEXT
+                )
+                
+                val contextType = snapshot.contextType ?: "single_track"
+                val contextId = snapshot.contextId ?: trackRow.id
+                
+                var finalTracks = reloadContextTracks(contextType, contextId)
+                var startIndex = finalTracks.indexOfFirst { it.trackId == trackId }
+                if (startIndex == -1) {
+                    finalTracks = listOf(queuedTrack)
+                    startIndex = 0
+                }
+                
+                queueManager.setContext(
+                    type = contextType,
+                    id = contextId,
+                    tracks = finalTracks,
+                    startIndex = startIndex
+                )
+                
+                val ctrl = controller
+                if (ctrl != null) {
+                    syncExoPlayerPlaylist(snapshot.positionMs)
+                }
+            }
+        }
+        
+        syncUiState()
+    }
+
+    private suspend fun reloadContextTracks(type: String, id: String): List<QueuedTrack> {
+        return when (type) {
+            "favorites" -> repository.getLikedTracks().map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            }
+            "playlist" -> repository.getPlaylistDetail(id)?.tracks?.map { row ->
+                QueuedTrack(
+                    trackId = row.trackId,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            } ?: emptyList()
+            "album" -> repository.getAlbumDetail(id)?.tracks?.map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            } ?: emptyList()
+            "artist" -> repository.getArtistDetail(id)?.topTracks?.map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            } ?: emptyList()
+            "library_tracks" -> repository.getAllTracks().map { row ->
+                QueuedTrack(
+                    trackId = row.id,
+                    title = row.title,
+                    artistName = row.artistName,
+                    albumTitle = row.albumTitle,
+                    contentUri = row.contentUri,
+                    durationMs = row.durationMs,
+                    coverUri = row.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+            }
+            else -> emptyList()
+        }
+    }
+
+    private fun syncExoPlayerPlaylist(initialPositionMs: Long = C.TIME_UNSET) {
+        val ctrl = controller ?: return
+        
+        val state = queueManager.state.value
+        
+        // Update native repeat mode based on AURA repeat mode
+        ctrl.repeatMode = when (state.repeatMode) {
+            RepeatMode.One -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+
+        val currentTrack = state.currentTrack ?: run {
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: currentTrack is null")
+            return
+        }
+        
+        android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: START. currentTrack=${currentTrack.trackId}, currentMediaItemIndex=${ctrl.currentMediaItemIndex}, mediaItemCount=${ctrl.mediaItemCount}")
+        for (i in 0 until ctrl.mediaItemCount) {
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: ExoPlayer item[$i] = ${ctrl.getMediaItemAt(i).mediaId}")
+        }
+
+        val rawPrev = state.history.lastOrNull()
+        val rawNext = state.priorityQueue.firstOrNull() ?: queueManager.getUpcomingContextTracks().firstOrNull()
+
+        // Filter out adjacent duplicates of the current track to avoid duplicates in the 3-item sliding window
+        val prev = if (rawPrev?.trackId != currentTrack.trackId) rawPrev else null
+        val next = if (rawNext?.trackId != currentTrack.trackId) rawNext else null
+        
+        if (ctrl.mediaItemCount < 1) {
+            val desiredTracks = mutableListOf<QueuedTrack>()
+            if (prev != null) desiredTracks.add(prev)
+            desiredTracks.add(currentTrack)
+            if (next != null) desiredTracks.add(next)
+
+            val mediaItems = desiredTracks.mapNotNull { createMediaItem(it) }
+            val activeIndex = if (prev != null) 1 else 0
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: empty playlist. Setting items: ${desiredTracks.map { it.trackId }}, activeIndex=$activeIndex, pos=$initialPositionMs")
+            ctrl.setMediaItems(mediaItems, activeIndex, initialPositionMs)
+            ctrl.prepare()
+            return
+        }
+
+        val state_ = queueManager.state.value
+        val currentTrack_ = state_.currentTrack ?: return
+        
+        val desiredTracks = mutableListOf<QueuedTrack>()
+        if (prev != null) {
+            desiredTracks.add(prev)
+        }
+        desiredTracks.add(currentTrack_)
+        if (next != null) {
+            desiredTracks.add(next)
+        }
+        
+        android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: Desired layout: prev=${prev?.trackId}, current=${currentTrack_.trackId}, next=${next?.trackId}")
+
+        // Safely resolve the index of the current track in ExoPlayer, preferring the active index if it matches.
+        var currentIndexInPlayer = -1
+        val activeIndex = ctrl.currentMediaItemIndex
+        if (activeIndex in 0 until ctrl.mediaItemCount && ctrl.getMediaItemAt(activeIndex).mediaId == currentTrack_.trackId) {
+            currentIndexInPlayer = activeIndex
+        } else {
+            for (i in 0 until ctrl.mediaItemCount) {
+                if (ctrl.getMediaItemAt(i).mediaId == currentTrack_.trackId) {
+                    currentIndexInPlayer = i
+                    break
+                }
+            }
+        }
+        android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: currentIndexInPlayer=$currentIndexInPlayer")
+        
+        if (currentIndexInPlayer == -1) {
+            val mediaItems = desiredTracks.mapNotNull { createMediaItem(it) }
+            val startIndex = if (prev != null) 1 else 0
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: track not in playlist. Rebuilding: ${desiredTracks.map { it.trackId }}, startIndex=$startIndex, pos=$initialPositionMs")
+            ctrl.setMediaItems(mediaItems, startIndex, initialPositionMs)
+            ctrl.prepare()
+            return
+        }
+        
+        val desiredNext = next
+        val hasNextInPlayer = ctrl.mediaItemCount > currentIndexInPlayer + 1
+        val currentNextMediaId = if (hasNextInPlayer) ctrl.getMediaItemAt(currentIndexInPlayer + 1).mediaId else null
+        
+        if (desiredNext != null) {
+            val nextMediaItem = createMediaItem(desiredNext)
+            if (nextMediaItem != null) {
+                if (currentNextMediaId != desiredNext.trackId) {
+                    if (hasNextInPlayer) {
+                        android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing next item at index ${currentIndexInPlayer + 1} (was $currentNextMediaId)")
+                        ctrl.removeMediaItem(currentIndexInPlayer + 1)
+                    }
+                    android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: adding next item ${desiredNext.trackId} at index ${currentIndexInPlayer + 1}")
+                    ctrl.addMediaItem(currentIndexInPlayer + 1, nextMediaItem)
+                }
+                while (ctrl.mediaItemCount > currentIndexInPlayer + 2) {
+                    android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing trailing item at index ${currentIndexInPlayer + 2}")
+                    ctrl.removeMediaItem(currentIndexInPlayer + 2)
+                }
+            } else {
+                while (ctrl.mediaItemCount > currentIndexInPlayer + 1) {
+                    android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing trailing item at index ${currentIndexInPlayer + 1}")
+                    ctrl.removeMediaItem(currentIndexInPlayer + 1)
+                }
+            }
+        } else {
+            while (ctrl.mediaItemCount > currentIndexInPlayer + 1) {
+                android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing trailing item at index ${currentIndexInPlayer + 1}")
+                ctrl.removeMediaItem(currentIndexInPlayer + 1)
+            }
+        }
+        
+        val desiredPrev = prev
+        val hasPrevInPlayer = currentIndexInPlayer > 0
+        val currentPrevMediaId = if (hasPrevInPlayer) ctrl.getMediaItemAt(currentIndexInPlayer - 1).mediaId else null
+        
+        if (desiredPrev != null) {
+            val prevMediaItem = createMediaItem(desiredPrev)
+            if (prevMediaItem != null) {
+                if (currentPrevMediaId != desiredPrev.trackId) {
+                    if (hasPrevInPlayer) {
+                        for (i in 0 until currentIndexInPlayer) {
+                            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing preceding item at index 0 (was ${ctrl.getMediaItemAt(0).mediaId})")
+                            ctrl.removeMediaItem(0)
+                        }
+                    }
+                    android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: adding prev item ${desiredPrev.trackId} at index 0")
+                    ctrl.addMediaItem(0, prevMediaItem)
+                } else {
+                    if (currentIndexInPlayer > 1) {
+                        for (i in 0 until currentIndexInPlayer - 1) {
+                            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing redundant preceding item at index 0 (was ${ctrl.getMediaItemAt(0).mediaId})")
+                            ctrl.removeMediaItem(0)
+                        }
+                    }
+                }
+            } else {
+                for (i in 0 until currentIndexInPlayer) {
+                    android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing preceding item at index 0 (was ${ctrl.getMediaItemAt(0).mediaId})")
+                    ctrl.removeMediaItem(0)
+                }
+            }
+        } else {
+            for (i in 0 until currentIndexInPlayer) {
+                android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: removing preceding item at index 0 (was ${ctrl.getMediaItemAt(0).mediaId})")
+                ctrl.removeMediaItem(0)
+            }
+        }
+
+        val activeMediaItem = if (ctrl.mediaItemCount > 0 && ctrl.currentMediaItemIndex in 0 until ctrl.mediaItemCount) {
+            ctrl.getMediaItemAt(ctrl.currentMediaItemIndex)
+        } else {
+            null
+        }
+        val isAlreadyPlayingCurrent = activeMediaItem?.mediaId == currentTrack_.trackId
+
+        if (initialPositionMs != C.TIME_UNSET) {
+            val targetActiveIndex = if (desiredPrev != null) 1 else 0
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: initial restore seek to index $targetActiveIndex, pos $initialPositionMs")
+            ctrl.seekTo(targetActiveIndex, initialPositionMs)
+        } else if (!isAlreadyPlayingCurrent || ctrl.playbackState == Player.STATE_ENDED) {
+            val targetActiveIndex = if (desiredPrev != null) 1 else 0
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: track changed or ended, seeking to index $targetActiveIndex")
+            ctrl.seekTo(targetActiveIndex, 0L)
+        }
+        
+        android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: END. currentMediaItemIndex=${ctrl.currentMediaItemIndex}, mediaItemCount=${ctrl.mediaItemCount}")
+        for (i in 0 until ctrl.mediaItemCount) {
+            android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: post-sync ExoPlayer item[$i] = ${ctrl.getMediaItemAt(i).mediaId}")
+        }
+    }
+
+    private fun createMediaItem(track: QueuedTrack): MediaItem? {
+        val resolution = playbackResolver.resolve(track)
+        val uri = when (resolution) {
+            is PlayableResolution.LocalFile -> resolution.uri
+            is PlayableResolution.ScopedContent -> resolution.contentUri
+            is PlayableResolution.CloudStream -> resolution.streamUrl
+            is PlayableResolution.NotAvailable -> return null
+        }
+        
+        val artworkUri = track.coverUri?.let { uriStr ->
+            if (uriStr.startsWith("/") || uriStr.startsWith("file://")) {
+                val filePath = if (uriStr.startsWith("file://")) {
+                    uriStr.substring(7)
+                } else {
+                    uriStr
+                }
+                val file = java.io.File(filePath)
+                // Serve cover art via public ArtworkContentProvider (Zero-Jank async I/O)
+                Uri.parse("content://com.aura.music.artwork/covers/${file.name}")
+            } else {
+                Uri.parse(uriStr)
+            }
+        }
+
+        val metadata = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artistName)
+            .setAlbumTitle(track.albumTitle)
+            .setArtworkUri(artworkUri)
+            .build()
+
+        return MediaItem.Builder()
+            .setMediaId(track.trackId)
+            .setUri(Uri.parse(uri))
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
+    private suspend fun handleExternalTrackTransition(trackId: String) {
+        val state = queueManager.state.value
+        val context = state.context
+        val indexInContext = context?.tracks?.indexOfFirst { it.trackId == trackId } ?: -1
+        if (context != null && indexInContext != -1) {
+            queueManager.setContext(
+                type = context.type,
+                id = context.id,
+                tracks = context.tracks,
+                startIndex = indexInContext
+            )
+            syncExoPlayerPlaylist()
+            saveSnapshot()
+        } else {
+            val track = repository.getTrackById(trackId)
+            if (track != null) {
+                val queuedTrack = QueuedTrack(
+                    trackId = track.id,
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    contentUri = track.contentUri,
+                    durationMs = track.durationMs,
+                    coverUri = track.coverUri,
+                    source = TrackSource.CONTEXT
+                )
+                queueManager.setContext(
+                    type = "single_track",
+                    id = trackId,
+                    tracks = listOf(queuedTrack),
+                    startIndex = 0
+                )
+                syncExoPlayerPlaylist()
+                saveSnapshot()
+            }
+        }
+        syncUiState()
+    }
+
+    private fun transitionReasonToString(reason: Int): String {
+        return when (reason) {
+            Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "AUTO"
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "PLAYLIST_CHANGED"
+            Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "SEEK"
+            Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "REPEAT"
+            else -> "UNKNOWN($reason)"
+        }
+    }
+
+    private fun playbackStateToString(state: Int): String {
+        return when (state) {
+            Player.STATE_IDLE -> "IDLE"
+            Player.STATE_BUFFERING -> "BUFFERING"
+            Player.STATE_READY -> "READY"
+            Player.STATE_ENDED -> "ENDED"
+            else -> "UNKNOWN($state)"
+        }
+    }
+
+    // =========================================================================
+    // Sleep Timer Engine (AlarmManager + Coroutine + Volume Fade-out)
+    // =========================================================================
+
+    fun setSleepTimer(minutes: Int, endOfTrack: Boolean = false) {
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+
+        if (endOfTrack) {
+            sleepTimerIsEndOfTrack = true
+            sleepTimerTargetEpochMs = null
+            persistSleepTimerState(targetEpochMs = 0L, isEndOfTrack = true)
+            _uiState.update { it.copy(isSleepTimerEndOfTrack = true, sleepTimerRemainingSeconds = null) }
+            android.util.Log.i("PlaybackOrchestrator", "Sleep timer set to: End of current track")
+            return
+        }
+
+        if (minutes <= 0) return
+
+        val now = System.currentTimeMillis()
+        val targetEpochMs = now + (minutes * 60 * 1000L)
+        sleepTimerTargetEpochMs = targetEpochMs
+        sleepTimerIsEndOfTrack = false
+
+        persistSleepTimerState(targetEpochMs = targetEpochMs, isEndOfTrack = false)
+        scheduleAlarmManagerWakeup(targetEpochMs)
+        startSleepTimerCountdownLoop(targetEpochMs)
+        android.util.Log.i("PlaybackOrchestrator", "Sleep timer set for $minutes min (targetEpochMs=$targetEpochMs)")
+    }
+
+    fun extendSleepTimer(additionalMinutes: Int) {
+        if (additionalMinutes <= 0) return
+
+        // If currently in fade-out, immediately restore original volume
+        if (sleepTimerOriginalVolume != null) {
+            controller?.volume = sleepTimerOriginalVolume ?: 1.0f
+            sleepTimerOriginalVolume = null
+        }
+
+        val baseEpochMs = maxOf(System.currentTimeMillis(), sleepTimerTargetEpochMs ?: System.currentTimeMillis())
+        val newTargetEpochMs = baseEpochMs + (additionalMinutes * 60 * 1000L)
+        sleepTimerTargetEpochMs = newTargetEpochMs
+        sleepTimerIsEndOfTrack = false
+
+        persistSleepTimerState(targetEpochMs = newTargetEpochMs, isEndOfTrack = false)
+        scheduleAlarmManagerWakeup(newTargetEpochMs)
+        startSleepTimerCountdownLoop(newTargetEpochMs)
+        android.util.Log.i("PlaybackOrchestrator", "Extended sleep timer by $additionalMinutes min (new targetEpochMs=$newTargetEpochMs)")
+    }
+
+    fun cancelSleepTimer() {
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+        _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+        android.util.Log.i("PlaybackOrchestrator", "Sleep timer cancelled")
+    }
+
+    private fun startSleepTimerCountdownLoop(targetEpochMs: Long) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = scope.launch {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val remainingMs = maxOf(0L, targetEpochMs - now)
+                val remainingSec = ((remainingMs + 999L) / 1000L).toInt()
+
+                if (remainingMs <= 0L) {
+                    onSleepTimerExpired()
+                    break
+                }
+
+                // Volume fade-out guard for the last 10 seconds
+                if (remainingMs <= 10_000L) {
+                    if (sleepTimerOriginalVolume == null) {
+                        sleepTimerOriginalVolume = controller?.volume ?: 1.0f
+                    }
+                    val progress = (remainingMs / 10_000f).coerceIn(0f, 1f)
+                    controller?.volume = (sleepTimerOriginalVolume ?: 1.0f) * progress
+                } else {
+                    if (sleepTimerOriginalVolume != null) {
+                        controller?.volume = sleepTimerOriginalVolume ?: 1.0f
+                        sleepTimerOriginalVolume = null
+                    }
+                }
+
+                _uiState.update { it.copy(sleepTimerRemainingSeconds = remainingSec, isSleepTimerEndOfTrack = false) }
+
+                delay(1000L)
+            }
+        }
+    }
+
+    private fun onSleepTimerExpired() {
+        android.util.Log.i("PlaybackOrchestrator", "Sleep timer countdown reached 0. Pausing playback.")
+        handlePause()
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = true, clearStorage = true)
+        _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+    }
+
+    fun onSleepTimerAlarmFired() {
+        android.util.Log.i("PlaybackOrchestrator", "onSleepTimerAlarmFired from AlarmManager")
+        handlePause()
+        cancelSleepTimerInternal(resetVolume = true, cancelAlarm = false, clearStorage = true)
+        _uiState.update { it.copy(sleepTimerRemainingSeconds = null, isSleepTimerEndOfTrack = false) }
+    }
+
+    private fun cancelSleepTimerInternal(resetVolume: Boolean, cancelAlarm: Boolean, clearStorage: Boolean) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerTargetEpochMs = null
+        sleepTimerIsEndOfTrack = false
+
+        if (resetVolume && sleepTimerOriginalVolume != null) {
+            controller?.volume = sleepTimerOriginalVolume ?: 1.0f
+            sleepTimerOriginalVolume = null
+        }
+
+        if (cancelAlarm) {
+            cancelAlarmManagerWakeup()
+        }
+
+        if (clearStorage) {
+            persistSleepTimerState(targetEpochMs = 0L, isEndOfTrack = false)
+        }
+    }
+
+    private fun scheduleAlarmManagerWakeup(targetEpochMs: Long) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            val intent = Intent(context, com.aura.music.service.SleepTimerReceiver::class.java).apply {
+                action = com.aura.music.service.SleepTimerReceiver.ACTION_SLEEP_TIMER_EXPIRED
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                SLEEP_TIMER_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (alarmManager != null) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, targetEpochMs, pendingIntent)
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, targetEpochMs, pendingIntent)
+                }
+                android.util.Log.i("PlaybackOrchestrator", "Scheduled AlarmManager sleep timer wakeup at $targetEpochMs")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to schedule AlarmManager sleep timer", e)
+        }
+    }
+
+    private fun cancelAlarmManagerWakeup() {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            val intent = Intent(context, com.aura.music.service.SleepTimerReceiver::class.java).apply {
+                action = com.aura.music.service.SleepTimerReceiver.ACTION_SLEEP_TIMER_EXPIRED
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                SLEEP_TIMER_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (alarmManager != null && pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                pendingIntent.cancel()
+                android.util.Log.i("PlaybackOrchestrator", "Cancelled AlarmManager sleep timer wakeup")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to cancel AlarmManager sleep timer", e)
+        }
+    }
+
+    private fun persistSleepTimerState(targetEpochMs: Long, isEndOfTrack: Boolean) {
+        try {
+            val prefs = context.getSharedPreferences("aura_sleep_timer", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putLong("target_epoch_ms", targetEpochMs)
+                .putBoolean("is_end_of_track", isEndOfTrack)
+                .apply()
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to persist sleep timer state", e)
+        }
+    }
+
+    private fun restorePersistedSleepTimerIfAny() {
+        try {
+            val prefs = context.getSharedPreferences("aura_sleep_timer", Context.MODE_PRIVATE)
+            val targetEpochMs = prefs.getLong("target_epoch_ms", 0L)
+            val isEndOfTrack = prefs.getBoolean("is_end_of_track", false)
+
+            if (isEndOfTrack) {
+                sleepTimerIsEndOfTrack = true
+                _uiState.update { it.copy(isSleepTimerEndOfTrack = true, sleepTimerRemainingSeconds = null) }
+                android.util.Log.i("PlaybackOrchestrator", "Restored persisted sleep timer: End of Track")
+            } else if (targetEpochMs > 0L) {
+                val now = System.currentTimeMillis()
+                if (targetEpochMs > now) {
+                    sleepTimerTargetEpochMs = targetEpochMs
+                    scheduleAlarmManagerWakeup(targetEpochMs)
+                    startSleepTimerCountdownLoop(targetEpochMs)
+                    android.util.Log.i("PlaybackOrchestrator", "Restored persisted active sleep timer: $targetEpochMs")
+                } else {
+                    persistSleepTimerState(targetEpochMs = 0L, isEndOfTrack = false)
+                    android.util.Log.i("PlaybackOrchestrator", "Persisted sleep timer expired while process was idle. Cleaned up.")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PlaybackOrchestrator", "Failed to restore sleep timer state", e)
+        }
+    }
+}

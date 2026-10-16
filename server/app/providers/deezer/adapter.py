@@ -165,7 +165,9 @@ class DeezerAdapter:
                 logger.warning(f"Failed to parse track: {e}")
                 continue
 
-        for artist_data in artists_response.get("data", [])[:limit_artists]:
+        raw_artists = artists_response.get("data", [])
+        raw_artists.sort(key=lambda a: int(a.get("nb_fan") or 0), reverse=True)
+        for artist_data in raw_artists[:limit_artists]:
             try:
                 provider_artist = self._parse_artist(artist_data)
                 result.artists.append(provider_artist)

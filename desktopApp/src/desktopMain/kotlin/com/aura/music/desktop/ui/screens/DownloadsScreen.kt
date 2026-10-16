@@ -1,0 +1,307 @@
+package com.aura.music.desktop.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aura.music.data.local.DownloadJobRowModel
+import com.aura.music.desktop.DesktopPlaybackOrchestrator
+import com.aura.music.desktop.state.DesktopAppState
+import com.aura.music.desktop.state.DesktopReassignTarget
+import com.aura.music.desktop.ui.components.DesktopDownloadErrorDetailDialog
+import com.aura.music.desktop.ui.*
+import com.aura.music.ui.theme.*
+
+@Composable
+fun DownloadsScreen(
+    downloadJobs: List<DownloadJobRowModel>,
+    orchestrator: DesktopPlaybackOrchestrator,
+    appState: DesktopAppState,
+    modifier: Modifier = Modifier
+) {
+    var selectedJobForError by remember { mutableStateOf<DownloadJobRowModel?>(null) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(DeepBlack)
+            .padding(horizontal = 32.dp, vertical = 24.dp)
+    ) {
+        // En-tête
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (appState.canNavigateBack) {
+                    IconButton(
+                        onClick = { appState.navigateBack() },
+                        modifier = Modifier.size(36.dp).handCursor()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowBack,
+                            contentDescription = "Retour",
+                            tint = PureWhite,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                }
+                Column {
+                    Text(
+                        text = "Téléchargements",
+                        color = PureWhite,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${downloadJobs.size} tâches au total (moteur de téléchargement : yt-dlp / deezer)",
+                        color = PureWhite.copy(alpha = 0.5f),
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            if (downloadJobs.isNotEmpty()) {
+                Button(
+                    onClick = { orchestrator.clearCompletedDownloadJobs() },
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkGraphite),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(imageVector = Icons.Rounded.DeleteSweep, contentDescription = null, tint = PureWhite, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Nettoyer l'historique", color = PureWhite, fontSize = 13.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (downloadJobs.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Rounded.CloudDone,
+                        contentDescription = null,
+                        tint = PureWhite.copy(alpha = 0.3f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Aucun téléchargement en cours",
+                        color = PureWhite.copy(alpha = 0.5f),
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(downloadJobs, key = { it.jobId }) { jobItem ->
+                    DownloadJobRowItem(
+                        jobItem = jobItem,
+                        onRetry = { orchestrator.retryDownloadJob(jobItem.jobId) },
+                        onCancel = { orchestrator.cancelDownloadJob(jobItem.jobId) },
+                        onErrorClick = { selectedJobForError = jobItem },
+                        onChooseResolution = {
+                            appState.openReassignAudio(
+                                DesktopReassignTarget(
+                                    trackId = jobItem.trackId,
+                                    title = jobItem.title,
+                                    artist = jobItem.artistName,
+                                    coverUri = jobItem.coverUri
+                                )
+                            )
+                        },
+                        onChangeAudioVersion = {
+                            appState.openReassignAudio(
+                                DesktopReassignTarget(
+                                    trackId = jobItem.trackId,
+                                    title = jobItem.title,
+                                    artist = jobItem.artistName,
+                                    coverUri = jobItem.coverUri
+                                )
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (selectedJobForError != null) {
+        DesktopDownloadErrorDetailDialog(
+            job = selectedJobForError,
+            onDismiss = { selectedJobForError = null },
+            onRetry = {
+                orchestrator.retryDownloadJob(selectedJobForError!!.jobId)
+            }
+        )
+    }
+}
+
+@Composable
+private fun DownloadJobRowItem(
+    jobItem: DownloadJobRowModel,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    onErrorClick: () -> Unit,
+    onChooseResolution: () -> Unit,
+    onChangeAudioVersion: () -> Unit
+) {
+    val isFailed = jobItem.status.equals("failed", ignoreCase = true)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .handClickable(enabled = isFailed, onClick = onErrorClick),
+        colors = CardDefaults.cardColors(containerColor = OffBlack)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Statut Icon
+            val (icon, tint) = when (jobItem.status.lowercase()) {
+                "running" -> Icons.Rounded.Download to BlazeOrange
+                "queued" -> Icons.Rounded.HourglassEmpty to PureWhite.copy(alpha = 0.6f)
+                "requires_resolution" -> Icons.Rounded.Tune to BlazeOrange
+                "superseded" -> Icons.Rounded.History to PureWhite.copy(alpha = 0.4f)
+                "succeeded", "completed" -> Icons.Rounded.CheckCircle to Color(0xFF4CAF50)
+                "failed" -> Icons.Rounded.Error to MaterialTheme.colorScheme.error
+                else -> Icons.Rounded.CloudDownload to BlazeOrange
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(tint.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Titre & Artiste & Progression
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = jobItem.title,
+                    color = PureWhite,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = jobItem.artistName,
+                    color = PureWhite.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (jobItem.status.equals("running", ignoreCase = true)) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { (jobItem.progressPercent ?: 0f) / 100f },
+                        color = BlazeOrange,
+                        trackColor = DarkGraphite,
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                    )
+                }
+
+                if (!jobItem.errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${jobItem.errorMessage} (cliquez pour voir les logs yt-dlp)",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Statut texte
+            Text(
+                text = when (jobItem.status.lowercase()) {
+                    "running" -> "${(jobItem.progressPercent ?: 0f).toInt()}%"
+                    "queued" -> "En attente"
+                    "requires_resolution" -> "À choisir"
+                    "superseded" -> "Remplacé"
+                    "succeeded", "completed" -> "Terminé"
+                    "failed" -> "Échoué"
+                    else -> jobItem.status
+                },
+                color = tint,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(90.dp)
+            )
+
+            // Actions
+            if (jobItem.status.equals("requires_resolution", ignoreCase = true)) {
+                Button(
+                    onClick = onChooseResolution,
+                    colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(imageVector = Icons.Rounded.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Choisir", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            if (jobItem.status.equals("succeeded", ignoreCase = true) || jobItem.status.equals("completed", ignoreCase = true)) {
+                IconButton(onClick = onChangeAudioVersion) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Changer la version audio",
+                        tint = PureWhite.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            if (isFailed) {
+                IconButton(onClick = onRetry) {
+                    Icon(imageVector = Icons.Rounded.Refresh, contentDescription = "Réessayer", tint = BlazeOrange)
+                }
+            }
+
+            if (jobItem.status.equals("running", ignoreCase = true) || jobItem.status.equals("queued", ignoreCase = true) || jobItem.status.equals("requires_resolution", ignoreCase = true)) {
+                IconButton(onClick = onCancel) {
+                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Annuler", tint = PureWhite.copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}

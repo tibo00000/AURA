@@ -1,0 +1,21 @@
+plugins {
+    // Gradle plugins defined at root level
+    id("com.android.application") version "8.5.2" apply false
+    id("com.android.library") version "8.5.2" apply false
+    id("org.jetbrains.kotlin.multiplatform") version "2.1.0" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.1.0" apply false
+    id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
+    id("org.jetbrains.compose") version "1.7.0" apply false
+    id("androidx.room3") version "3.0.0-alpha01" apply false
+    kotlin("plugin.serialization") version "2.1.0" apply false
+}
+
+// ── Workaround: KT-48420 ──
+// Le Kotlin Gradle Plugin 2.1.0 exécute `uname -m` pour détecter l'architecture
+// lors du téléchargement de Node.js, ce qui échoue sur Windows ARM64 (Snapdragon).
+// Désactiver le téléchargement automatique pour utiliser le Node.js système (v22.x).
+rootProject.plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin> {
+    rootProject.the<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootExtension>().apply {
+        download = false
+    }
+}

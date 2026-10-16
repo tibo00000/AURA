@@ -5,11 +5,12 @@ services:
     restart: unless-stopped
     depends_on:
       - aura-api
+      - aura-api-dev
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
 

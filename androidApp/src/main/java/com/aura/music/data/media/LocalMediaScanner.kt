@@ -1,0 +1,396 @@
+package com.aura.music.data.media
+
+import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.util.Log
+import androidx.room3.useWriterConnection
+import androidx.room3.immediateTransaction
+import com.aura.music.data.local.AlbumEntity
+import com.aura.music.data.local.ArtistEntity
+import com.aura.music.data.local.AuraDatabase
+import com.aura.music.data.local.TrackEntity
+import com.aura.music.data.local.TrackMediaLinkEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+
+/**
+ * Composant spécialisé dans l'indexation, l'analyse et la réconciliation
+ * des fichiers audio locaux (MediaStore et dossier privé downloads/).
+ */
+class LocalMediaScanner(
+    private val database: AuraDatabase,
+    private val mediaStoreAudioDataSource: MediaStoreAudioDataSource,
+    private val context: Context,
+    private val onInvalidateSearchIndex: () -> Unit,
+    private val inFlightCloudTrackIdsProvider: (() -> Set<String>)? = null,
+) {
+    suspend fun syncLocalMedia(): Int = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val scannedArtists = mutableMapOf<String, ArtistEntity>()
+        val scannedAlbums = mutableMapOf<String, AlbumEntity>()
+        val scannedTracks = mutableListOf<TrackEntity>()
+        val scannedMediaLinks = mutableListOf<TrackMediaLinkEntity>()
+        val resolvedArtistIds = mutableMapOf<String, String>()
+        val resolvedAlbumIds = mutableMapOf<String, String>()
+
+        val likedTrackIds = database.trackLikeDao().getAllLikedTrackIds().toSet()
+        val playlistTrackIds = database.playlistDao().getAllPlaylistTrackIds().toSet()
+        val preservedTrackIds = likedTrackIds + playlistTrackIds
+
+        // 1. Scan private downloads/ directory in a single pass
+        val downloadsDir = File(context.filesDir, "downloads")
+        val validAudioExtensions = setOf("mp3", "m4a", "flac", "wav", "opus", "ogg")
+        val downloadedFilesByTrackId = mutableMapOf<String, File>()
+
+        if (downloadsDir.exists() && downloadsDir.isDirectory) {
+            val audioFiles = downloadsDir.listFiles { file ->
+                file.isFile &&
+                file.length() > 0L &&
+                !file.name.endsWith(".part", ignoreCase = true) &&
+                !file.name.endsWith(".ytdl", ignoreCase = true) &&
+                !file.name.endsWith(".tmp", ignoreCase = true) &&
+                file.extension.lowercase() in validAudioExtensions
+            } ?: emptyArray()
+
+            for (file in audioFiles) {
+                val trackId = file.nameWithoutExtension.replace(';', ':')
+                downloadedFilesByTrackId[trackId] = file
+                try {
+                    val existingTrack = database.trackDao().getRawTrackById(trackId)
+
+                    var rawTitle: String? = null
+                    var rawArtist: String? = null
+                    var rawAlbum: String? = null
+                    var durationMs: Long? = existingTrack?.durationMs
+                    var coverUri: String? = existingTrack?.coverUri
+
+                    if (existingTrack == null || existingTrack.title.isBlank() || existingTrack.displayArtistName.isNullOrBlank()) {
+                        val retriever = MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(file.absolutePath)
+                            rawTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            rawArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                            rawAlbum = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            durationMs = durationStr?.toLongOrNull() ?: durationMs
+
+                            if (coverUri == null) {
+                                val embeddedPicture = retriever.embeddedPicture
+                                if (embeddedPicture != null) {
+                                    val coversDir = File(context.filesDir, "covers")
+                                    if (!coversDir.exists()) coversDir.mkdirs()
+                                    val coverFile = File(coversDir, "${trackId.replace(':', ';')}.jpg")
+                                    FileOutputStream(coverFile).use { fos ->
+                                        fos.write(embeddedPicture)
+                                    }
+                                    coverUri = Uri.fromFile(coverFile).toString()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("LocalMediaScanner", "Could not extract metadata via retriever for ${file.name}: ${e.message}")
+                        } finally {
+                            try {
+                                retriever.release()
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        }
+                    }
+
+                    val title = if (existingTrack != null && existingTrack.title.isNotBlank()) {
+                        existingTrack.title
+                    } else {
+                        rawTitle?.ifBlank { null } ?: file.nameWithoutExtension
+                    }
+
+                    val artistName = if (existingTrack != null && !existingTrack.displayArtistName.isNullOrBlank()) {
+                        existingTrack.displayArtistName ?: "Unknown artist"
+                    } else {
+                        rawArtist?.ifBlank { null } ?: "Unknown artist"
+                    }
+
+                    val albumTitle = if (existingTrack != null && !existingTrack.displayAlbumTitle.isNullOrBlank()) {
+                        existingTrack.displayAlbumTitle
+                    } else {
+                        rawAlbum?.ifBlank { null }
+                    }
+
+                    val artistId = existingTrack?.primaryArtistId ?: resolveArtistId(artistName, resolvedArtistIds)
+                    val albumId = existingTrack?.albumId ?: albumTitle?.let { resolveAlbumId(artistName, it, artistId, resolvedAlbumIds) }
+                    val fileUri = Uri.fromFile(file).toString()
+
+                    if (!scannedArtists.containsKey(artistId)) {
+                        scannedArtists[artistId] = ArtistEntity(
+                            id = artistId,
+                            name = artistName,
+                            normalizedName = normalize(artistName),
+                            pictureUri = null,
+                            summary = null,
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    }
+
+                    if (albumId != null && albumTitle != null) {
+                        if (!scannedAlbums.containsKey(albumId)) {
+                            scannedAlbums[albumId] = AlbumEntity(
+                                id = albumId,
+                                primaryArtistId = artistId,
+                                title = albumTitle,
+                                normalizedTitle = normalize(albumTitle),
+                                coverUri = coverUri,
+                                releaseDate = null,
+                                trackCount = null,
+                                createdAt = now,
+                                updatedAt = now,
+                            )
+                        }
+                    }
+
+                    scannedTracks.add(
+                        TrackEntity(
+                            id = trackId,
+                            primaryArtistId = artistId,
+                            albumId = albumId,
+                            title = title,
+                            normalizedTitle = normalize(title),
+                            displayArtistName = artistName,
+                            displayAlbumTitle = albumTitle,
+                            durationMs = durationMs,
+                            coverUri = coverUri,
+                            canonicalAudioSourceType = "downloaded",
+                            isLiked = existingTrack?.isLiked == true || likedTrackIds.contains(trackId),
+                            isDownloadedByAura = true,
+                            isExplicit = existingTrack?.isExplicit,
+                            popularity = existingTrack?.popularity,
+                            genresJson = existingTrack?.genresJson,
+                            createdAt = existingTrack?.createdAt ?: file.lastModified(),
+                            updatedAt = existingTrack?.updatedAt ?: file.lastModified(),
+                        )
+                    )
+
+                    val mimeType = when (file.extension.lowercase()) {
+                        "m4a" -> "audio/mp4"
+                        "wav" -> "audio/wav"
+                        else -> "audio/mpeg"
+                    }
+
+                    scannedMediaLinks.add(
+                        MediaLinkResolver.resolveOrCreateMediaLink(
+                            database = database,
+                            trackId = trackId,
+                            contentUri = fileUri,
+                            fileSizeBytes = file.length(),
+                            mimeType = mimeType,
+                            now = now
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.e("LocalMediaScanner", "Error retrieving metadata for private file ${file.name}", e)
+                }
+            }
+        }
+
+        // 2. Scan MediaStore if permission is granted
+        val mediaScanResult = mediaStoreAudioDataSource.getLocalAudioFilesResult()
+        if (mediaScanResult.isComplete) {
+            val mediaFiles = mediaScanResult.tracks
+            for (media in mediaFiles) {
+                val trackId = trackIdOf(media.mediaStoreId)
+                val existingTrack = database.trackDao().getRawTrackById(trackId)
+
+                val title = if (existingTrack != null && existingTrack.title.isNotBlank()) {
+                    existingTrack.title
+                } else {
+                    media.title
+                }
+
+                val artistName = if (existingTrack != null && !existingTrack.displayArtistName.isNullOrBlank()) {
+                    existingTrack.displayArtistName ?: media.artistName
+                } else {
+                    media.artistName
+                }
+
+                val albumTitle = if (existingTrack != null && !existingTrack.displayAlbumTitle.isNullOrBlank()) {
+                    existingTrack.displayAlbumTitle
+                } else {
+                    media.albumTitle
+                }
+
+                val artistId = existingTrack?.primaryArtistId ?: resolveArtistId(artistName, resolvedArtistIds)
+                val albumId = existingTrack?.albumId ?: albumTitle?.let { resolveAlbumId(artistName, it, artistId, resolvedAlbumIds) }
+                val coverUri = existingTrack?.coverUri ?: media.coverUri
+
+                if (!scannedArtists.containsKey(artistId)) {
+                    scannedArtists[artistId] = ArtistEntity(
+                        id = artistId,
+                        name = artistName,
+                        normalizedName = normalize(artistName),
+                        pictureUri = null,
+                        summary = null,
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                }
+
+                if (albumId != null && albumTitle != null) {
+                    if (!scannedAlbums.containsKey(albumId)) {
+                        scannedAlbums[albumId] = AlbumEntity(
+                            id = albumId,
+                            primaryArtistId = artistId,
+                            title = albumTitle,
+                            normalizedTitle = normalize(albumTitle),
+                            coverUri = coverUri,
+                            releaseDate = null,
+                            trackCount = null,
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    }
+                }
+
+                scannedTracks.add(
+                    TrackEntity(
+                        id = trackId,
+                        primaryArtistId = artistId,
+                        albumId = albumId,
+                        title = title,
+                        normalizedTitle = normalize(title),
+                        displayArtistName = artistName,
+                        displayAlbumTitle = albumTitle,
+                        durationMs = existingTrack?.durationMs ?: media.durationMs,
+                        coverUri = coverUri,
+                        canonicalAudioSourceType = "local",
+                        isLiked = existingTrack?.isLiked == true || likedTrackIds.contains(trackId),
+                        isDownloadedByAura = false,
+                        isExplicit = null,
+                        popularity = null,
+                        genresJson = null,
+                        createdAt = existingTrack?.createdAt ?: (media.dateModifiedEpochMs ?: now),
+                        updatedAt = existingTrack?.updatedAt ?: (media.dateModifiedEpochMs ?: now),
+                    )
+                )
+
+                scannedMediaLinks.add(
+                    TrackMediaLinkEntity(
+                        id = "media-link:${media.mediaStoreId}",
+                        trackId = trackId,
+                        mediaStoreId = media.mediaStoreId,
+                        contentUri = media.contentUri,
+                        fileSizeBytes = media.fileSizeBytes,
+                        mimeType = media.mimeType,
+                        dateModifiedEpochMs = media.dateModifiedEpochMs,
+                        availabilityStatus = "present",
+                        lastScannedAt = now,
+                    )
+                )
+            }
+        }
+
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val scannedIds = scannedTracks.map { it.id }.toSet()
+                val obsoleteIds = mutableListOf<String>()
+
+                // Purge obsolete MediaStore tracks ONLY if the MediaStore scan completed successfully
+                if (mediaScanResult.isComplete) {
+                    val existingLocalIds = database.trackDao().getLocalTrackIds()
+                    for (id in existingLocalIds) {
+                        if (id !in scannedIds) {
+                            obsoleteIds.add(id)
+                        }
+                    }
+                } else {
+                    Log.w("LocalMediaScanner", "MediaStore scan incomplete or permission missing. Skipped purging local MediaStore tracks to prevent data loss.")
+                }
+
+                // Purge obsolete downloaded tracks based on physical file scan
+                val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
+                val activeJobTrackIds = try {
+                    database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
+                } catch (e: Exception) {
+                    emptySet()
+                }
+                val inFlightCloudTrackIds = inFlightCloudTrackIdsProvider?.invoke() ?: emptySet()
+                for (id in existingDownloadedIds) {
+                    if (id !in downloadedFilesByTrackId.keys && id !in activeJobTrackIds && id !in inFlightCloudTrackIds) {
+                        obsoleteIds.add(id)
+                    }
+                }
+
+                if (obsoleteIds.isNotEmpty()) {
+                    // Les morceaux qui sont aimés ou présents dans une playlist sont préservés pour ne pas détruire
+                    // les métadonnées de l'utilisateur par cascade SQLite (onDelete = CASCADE).
+                    // On supprime uniquement leur lien média physique (track_media_links).
+                    val toDeleteCompletely = obsoleteIds.filter { it !in preservedTrackIds }
+                    val toDetachOnly = obsoleteIds.filter { it in preservedTrackIds }
+
+                    if (toDeleteCompletely.isNotEmpty()) {
+                        database.trackDao().deleteTracksByIds(toDeleteCompletely)
+                    }
+                    for (id in toDetachOnly) {
+                        database.trackDao().deleteTrackMediaLinksByTrackId(id)
+                    }
+                }
+
+                if (scannedTracks.isNotEmpty()) {
+                    database.artistDao().insertArtistsIgnore(scannedArtists.values.toList())
+                    database.albumDao().insertAlbumsIgnore(scannedAlbums.values.toList())
+                    database.trackDao().upsertTracks(scannedTracks)
+                    database.trackDao().upsertTrackMediaLinks(scannedMediaLinks)
+                }
+            }
+        }
+
+        onInvalidateSearchIndex()
+        scannedTracks.size
+    }
+
+    private suspend fun resolveArtistId(artistName: String, sessionCache: MutableMap<String, String>): String {
+        val norm = normalize(artistName)
+        sessionCache[norm]?.let { return it }
+        val existing = database.artistDao().getArtistByNormalizedName(norm)
+        val resolved = existing?.id ?: artistIdOf(artistName)
+        sessionCache[norm] = resolved
+        return resolved
+    }
+
+    private suspend fun resolveAlbumId(
+        artistName: String,
+        albumTitle: String,
+        artistId: String,
+        sessionCache: MutableMap<String, String>
+    ): String {
+        val normTitle = normalize(albumTitle)
+        val cacheKey = "$artistId:$normTitle"
+        sessionCache[cacheKey]?.let { return it }
+        val existing = database.albumDao().getAlbumByNormalizedTitle(normTitle, artistId)
+        val resolved = existing?.id ?: albumIdOf(artistName, albumTitle)
+        sessionCache[cacheKey] = resolved
+        return resolved
+    }
+
+    private fun trackIdOf(mediaStoreId: Long): String = "track:local:$mediaStoreId"
+
+    private fun artistIdOf(artistName: String): String =
+        "artist:${normalize(artistName).ifBlank { "unknown-artist" }}"
+
+    private fun albumIdOf(artistName: String, albumTitle: String): String =
+        "album:${normalize(artistName).ifBlank { "unknown-artist" }}:${normalize(albumTitle).ifBlank { "unknown-album" }}"
+
+    private fun normalize(value: String): String {
+        val slug = value
+            .trim()
+            .lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), "-")
+            .trim('-')
+        if (slug.isNotBlank()) return slug
+        val bytes = value.trim().lowercase().toByteArray(Charsets.UTF_8)
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        val hex = digest.joinToString("") { "%02x".format(it) }
+        return hex.take(16).ifBlank { "unknown" }
+    }
+}

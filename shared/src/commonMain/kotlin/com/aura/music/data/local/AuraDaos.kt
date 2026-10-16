@@ -1,0 +1,1046 @@
+package com.aura.music.data.local
+
+import androidx.room3.Dao
+import androidx.room3.Insert
+import androidx.room3.OnConflictStrategy
+import androidx.room3.Query
+import androidx.room3.Upsert
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface ArtistDao {
+    @Upsert
+    suspend fun upsertArtists(items: List<ArtistEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertArtistsIgnore(items: List<ArtistEntity>)
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
+        FROM artists
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        GROUP BY artists.id
+        ORDER BY COUNT(DISTINCT tracks.id) DESC, artists.name ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getBrowseArtists(limit: Int): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
+        FROM artists
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        GROUP BY artists.id
+        ORDER BY lower(artists.name) ASC
+        """,
+    )
+    suspend fun getAllBrowseArtists(): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
+        FROM artists
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        GROUP BY artists.id
+        ORDER BY lower(artists.name) ASC
+        """,
+    )
+    fun getAllBrowseArtistsFlow(): Flow<List<ArtistBrowseRow>>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            COUNT(DISTINCT tracks.id) AS track_count,
+            COUNT(DISTINCT albums.id) AS album_count,
+            artists.updated_at AS updated_at
+        FROM artists
+        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        LEFT JOIN albums ON albums.primary_artist_id = artists.id
+        WHERE lower(artists.name) LIKE '%' || lower(:query) || '%'
+        GROUP BY artists.id
+        ORDER BY COUNT(DISTINCT tracks.id) DESC, artists.name ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun searchArtists(query: String, limit: Int): List<ArtistBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            artists.id AS id,
+            artists.name AS name,
+            artists.picture_uri AS picture_uri,
+            artists.summary AS summary
+        FROM artists
+        WHERE artists.id = :artistId
+        LIMIT 1
+        """,
+    )
+    suspend fun getArtistDetail(artistId: String): ArtistDetailRow?
+
+    /**
+     * Met à jour l'image et l'origine d'un artiste lors d'un enrichissement backend.
+     * Ne touche pas les autres colonnes pour éviter d'écraser des données locales.
+     */
+    @Query(
+        """
+        UPDATE artists
+        SET picture_uri = :pictureUri,
+            artwork_origin = :artworkOrigin,
+            artwork_last_resolved_at = :resolvedAt,
+            updated_at = :updatedAt
+        WHERE id = :artistId
+        """
+    )
+    suspend fun updateArtwork(
+        artistId: String,
+        pictureUri: String,
+        artworkOrigin: String,
+        resolvedAt: Long,
+        updatedAt: Long,
+    )
+
+    /**
+     * Lit l'horodatage du dernier enrichissement pour déduplication.
+     */
+    @Query("SELECT artwork_last_resolved_at FROM artists WHERE id = :artistId LIMIT 1")
+    suspend fun getArtworkLastResolvedAt(artistId: String): Long?
+
+    @Query("SELECT * FROM artists WHERE normalized_name = :normalizedName LIMIT 1")
+    suspend fun getArtistByNormalizedName(normalizedName: String): ArtistEntity?
+}
+
+@Dao
+interface AlbumDao {
+    @Upsert
+    suspend fun upsertAlbums(items: List<AlbumEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAlbumsIgnore(items: List<AlbumEntity>)
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        INNER JOIN tracks ON tracks.album_id = albums.id
+        GROUP BY albums.id
+        ORDER BY albums.updated_at DESC, albums.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getBrowseAlbums(limit: Int): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        INNER JOIN tracks ON tracks.album_id = albums.id
+        GROUP BY albums.id
+        ORDER BY albums.title ASC
+        """,
+    )
+    suspend fun getAllBrowseAlbums(): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        INNER JOIN tracks ON tracks.album_id = albums.id
+        GROUP BY albums.id
+        ORDER BY albums.title ASC
+        """,
+    )
+    fun getAllBrowseAlbumsFlow(): Flow<List<AlbumBrowseRow>>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        INNER JOIN tracks ON tracks.album_id = albums.id
+        WHERE lower(albums.title) LIKE '%' || lower(:query) || '%'
+           OR lower(artists.name) LIKE '%' || lower(:query) || '%'
+        GROUP BY albums.id
+        ORDER BY albums.updated_at DESC, albums.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun searchAlbums(query: String, limit: Int): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        INNER JOIN tracks ON tracks.album_id = albums.id
+        WHERE albums.primary_artist_id = :artistId
+        GROUP BY albums.id
+        ORDER BY albums.updated_at DESC, albums.title ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getAlbumsForArtist(artistId: String, limit: Int): List<AlbumBrowseRow>
+
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            albums.release_date AS release_date,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        WHERE albums.id = :albumId
+        GROUP BY albums.id
+        LIMIT 1
+        """,
+    )
+    suspend fun getAlbumDetail(albumId: String): AlbumDetailRow?
+    @Query(
+        """
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.primary_artist_id AS artist_id,
+            artists.name AS artist_name,
+            albums.cover_uri AS cover_uri,
+            COALESCE(albums.track_count, COUNT(tracks.id)) AS track_count
+        FROM albums
+        LEFT JOIN artists ON artists.id = albums.primary_artist_id
+        LEFT JOIN tracks ON tracks.album_id = albums.id
+        WHERE lower(albums.title) = lower(:title) AND lower(artists.name) = lower(:artistName)
+        GROUP BY albums.id
+        LIMIT 1
+        """
+    )
+    suspend fun getAlbumByTitleAndArtist(title: String, artistName: String): AlbumBrowseRow?
+
+    /**
+     * Met à jour la cover et l'origine d'un album lors d'un enrichissement backend.
+     */
+    @Query(
+        """
+        UPDATE albums
+        SET cover_uri = :coverUri,
+            artwork_origin = :artworkOrigin,
+            artwork_last_resolved_at = :resolvedAt,
+            updated_at = :updatedAt
+        WHERE id = :albumId
+        """
+    )
+    suspend fun updateArtwork(
+        albumId: String,
+        coverUri: String,
+        artworkOrigin: String,
+        resolvedAt: Long,
+        updatedAt: Long,
+    )
+
+    /**
+     * Lit l'horodatage du dernier enrichissement pour déduplication.
+     */
+    @Query("SELECT artwork_last_resolved_at FROM albums WHERE id = :albumId LIMIT 1")
+    suspend fun getArtworkLastResolvedAt(albumId: String): Long?
+
+    @Query("SELECT title FROM albums WHERE primary_artist_id = :artistId AND title IS NOT NULL LIMIT 1")
+    suspend fun getSampleAlbumTitleForArtist(artistId: String): String?
+
+    @Query("SELECT * FROM albums WHERE normalized_title = :normalizedTitle AND (:artistId IS NULL OR primary_artist_id = :artistId) LIMIT 1")
+    suspend fun getAlbumByNormalizedTitle(normalizedTitle: String, artistId: String? = null): AlbumEntity?
+}
+
+@Dao
+interface TrackDao {
+    @Upsert
+    suspend fun upsertTracks(items: List<TrackEntity>)
+
+    @Upsert
+    suspend fun upsertTrack(item: TrackEntity)
+
+    @Upsert
+    suspend fun upsertTrackMediaLinks(items: List<TrackMediaLinkEntity>)
+
+    @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
+    suspend fun getRawTrackById(trackId: String): TrackEntity?
+
+    @Query("SELECT title FROM tracks WHERE primary_artist_id = :artistId AND title IS NOT NULL LIMIT 1")
+    suspend fun getSampleTrackTitleForArtist(artistId: String): String?
+
+    @Query("SELECT title FROM tracks WHERE album_id = :albumId AND title IS NOT NULL LIMIT 1")
+    suspend fun getSampleTrackTitleForAlbum(albumId: String): String?
+
+    @Query("SELECT content_uri FROM track_media_links WHERE track_id = :trackId LIMIT 1")
+    suspend fun getTrackContentUri(trackId: String): String?
+
+    @Query("SELECT * FROM track_media_links WHERE track_id = :trackId LIMIT 1")
+    suspend fun getMediaLinkByTrackId(trackId: String): TrackMediaLinkEntity?
+
+    @Query("SELECT media_store_id FROM track_media_links WHERE media_store_id = :mediaStoreId LIMIT 1")
+    suspend fun isMediaStoreIdTaken(mediaStoreId: Long): Long?
+
+    @Query("SELECT COUNT(*) FROM tracks")
+    suspend fun getTrackCount(): Int
+
+    @Query("SELECT id FROM tracks WHERE canonical_audio_source_type = 'local'")
+    suspend fun getLocalTrackIds(): List<String>
+
+    @Query("SELECT id FROM tracks WHERE canonical_audio_source_type = 'downloaded'")
+    suspend fun getDownloadedTrackIds(): List<String>
+
+    @Query("DELETE FROM tracks WHERE id IN (:ids)")
+    suspend fun deleteTracksByIds(ids: List<String>)
+
+    @Query("DELETE FROM track_media_links WHERE track_id = :trackId")
+    suspend fun deleteTrackMediaLinksByTrackId(trackId: String)
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        ORDER BY tracks.created_at DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getRecentTracks(limit: Int): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.id = :trackId
+        LIMIT 1
+        """,
+    )
+    suspend fun getTrackById(trackId: String): TrackListRow?
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.id IN (:ids)
+        """,
+    )
+    suspend fun getTracksByIds(ids: List<String>): List<TrackListRow>
+
+    @Query("SELECT id FROM tracks WHERE id IN (:ids) AND is_liked = 1")
+    suspend fun getLikedTrackIds(ids: List<String>): List<String>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE (lower(tracks.title) LIKE '%' || lower(:query) || '%'
+           OR lower(tracks.display_artist_name) LIKE '%' || lower(:query) || '%'
+           OR lower(COALESCE(tracks.display_album_title, '')) LIKE '%' || lower(:query) || '%')
+        ORDER BY tracks.created_at DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun searchTracks(query: String, limit: Int): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE track_media_links.content_uri IS NOT NULL OR tracks.canonical_audio_source_type = 'cloud' OR tracks.canonical_audio_source_type = 'local'
+        ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
+        """,
+    )
+    suspend fun getAllTracks(): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.album_id = :albumId
+        ORDER BY lower(tracks.title) ASC
+        """
+    )
+    suspend fun getTracksForAlbum(albumId: String): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE lower(tracks.display_album_title) = lower(:albumTitle)
+          AND lower(tracks.display_artist_name) = lower(:artistName)
+        ORDER BY lower(tracks.title) ASC
+        """
+    )
+    suspend fun getTracksForAlbumByText(albumTitle: String, artistName: String): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE tracks.primary_artist_id = :artistId
+        ORDER BY tracks.created_at DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getTracksForArtist(artistId: String, limit: Int = 50): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE track_media_links.content_uri IS NOT NULL OR tracks.canonical_audio_source_type = 'cloud' OR tracks.canonical_audio_source_type = 'local'
+        ORDER BY lower(tracks.display_artist_name) ASC, lower(tracks.title) ASC
+        """,
+    )
+    fun getAllTracksFlow(): Flow<List<TrackListRow>>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            1 AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        INNER JOIN track_likes ON track_likes.track_id = tracks.id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        ORDER BY track_likes.liked_at DESC
+        """,
+    )
+    suspend fun getLikedTracks(): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            1 AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        INNER JOIN track_likes ON track_likes.track_id = tracks.id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        ORDER BY track_likes.liked_at DESC
+        """,
+    )
+    fun getLikedTracksFlow(): Flow<List<TrackListRow>>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE track_media_links.content_uri IS NOT NULL AND track_media_links.content_uri != ''
+        ORDER BY tracks.updated_at DESC
+        """
+    )
+    suspend fun getDownloadedTracks(): List<TrackListRow>
+}
+
+@Dao
+interface PlaylistDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPlaylist(entity: PlaylistEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylist(entity: PlaylistEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylists(entities: List<PlaylistEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPlaylistItem(entity: PlaylistItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylistItem(entity: PlaylistItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPlaylistItems(entities: List<PlaylistItemEntity>)
+
+    @Query("UPDATE playlists SET name = :name, updated_at = :updatedAt WHERE id = :playlistId")
+    suspend fun renamePlaylist(playlistId: String, name: String, updatedAt: Long): Int
+
+    @Query("DELETE FROM playlists WHERE id = :playlistId")
+    suspend fun deletePlaylist(playlistId: String): Int
+
+    @Query("SELECT COUNT(*) FROM playlists")
+    suspend fun getPlaylistCount(): Int
+
+    @Query(
+        """
+        SELECT
+            playlists.id AS id,
+            playlists.name AS name,
+            playlists.is_pinned AS is_pinned,
+            COUNT(playlist_items.id) AS item_count,
+            playlists.updated_at AS updated_at
+        FROM playlists
+        LEFT JOIN playlist_items ON playlist_items.playlist_id = playlists.id
+        GROUP BY playlists.id
+        ORDER BY is_pinned DESC, updated_at DESC
+        """,
+    )
+    suspend fun getPlaylists(): List<PlaylistListRow>
+
+    @Query(
+        """
+        SELECT
+            playlists.id AS id,
+            playlists.name AS name,
+            playlists.is_pinned AS is_pinned,
+            COUNT(playlist_items.id) AS item_count,
+            playlists.updated_at AS updated_at
+        FROM playlists
+        LEFT JOIN playlist_items ON playlist_items.playlist_id = playlists.id
+        GROUP BY playlists.id
+        ORDER BY is_pinned DESC, updated_at DESC
+        """,
+    )
+    fun getPlaylistsFlow(): Flow<List<PlaylistListRow>>
+
+    @Query(
+        """
+        SELECT tracks.cover_uri
+        FROM playlist_items
+        JOIN tracks ON tracks.id = playlist_items.track_id
+        WHERE playlist_items.playlist_id = :playlistId 
+          AND tracks.cover_uri IS NOT NULL 
+          AND tracks.cover_uri != ''
+        ORDER BY playlist_items.position ASC
+        LIMIT 4
+        """
+    )
+    suspend fun getPlaylistCoverPreviews(playlistId: String): List<String>
+
+    @Query(
+        """
+        SELECT
+            playlists.id AS id,
+            playlists.name AS name,
+            playlists.cover_uri AS cover_uri,
+            playlists.is_pinned AS is_pinned,
+            COUNT(playlist_items.id) AS item_count,
+            playlists.updated_at AS updated_at
+        FROM playlists
+        LEFT JOIN playlist_items ON playlist_items.playlist_id = playlists.id
+        WHERE playlists.id = :playlistId
+        GROUP BY playlists.id
+        LIMIT 1
+        """,
+    )
+    suspend fun getPlaylistDetail(playlistId: String): PlaylistDetailRow?
+
+    @Query(
+        """
+        SELECT
+            playlist_items.id AS playlist_item_id,
+            playlist_items.playlist_id AS playlist_id,
+            playlist_items.track_id AS track_id,
+            playlist_items.position AS position,
+            playlist_items.added_at AS added_at,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.is_liked AS is_liked
+        FROM playlist_items
+        INNER JOIN tracks ON tracks.id = playlist_items.track_id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE playlist_items.playlist_id = :playlistId
+        ORDER BY playlist_items.position ASC
+        """,
+    )
+    suspend fun getPlaylistTracks(playlistId: String): List<PlaylistTrackRow>
+
+    @Query(
+        """
+        SELECT
+            playlist_items.id AS playlist_item_id,
+            playlist_items.playlist_id AS playlist_id,
+            playlist_items.track_id AS track_id,
+            playlist_items.position AS position,
+            playlist_items.added_at AS added_at,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.is_liked AS is_liked
+        FROM playlist_items
+        INNER JOIN tracks ON tracks.id = playlist_items.track_id
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE playlist_items.playlist_id = :playlistId
+        ORDER BY playlist_items.position ASC
+        """,
+    )
+    fun getPlaylistTracksFlow(playlistId: String): Flow<List<PlaylistTrackRow>>
+
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_items WHERE playlist_id = :playlistId")
+    suspend fun getNextPlaylistPosition(playlistId: String): Int
+
+    @Query("SELECT * FROM playlist_items WHERE id = :playlistItemId LIMIT 1")
+    suspend fun getPlaylistItem(playlistItemId: String): PlaylistItemEntity?
+
+    @Query("DELETE FROM playlist_items WHERE id = :playlistItemId")
+    suspend fun deletePlaylistItem(playlistItemId: String): Int
+
+    @Query("DELETE FROM playlist_items WHERE playlist_id = :playlistId AND track_id = :trackId")
+    suspend fun deletePlaylistItemByTrack(playlistId: String, trackId: String): Int
+
+    @Query("UPDATE playlist_items SET position = :position WHERE id = :playlistItemId")
+    suspend fun updatePlaylistItemPosition(playlistItemId: String, position: Int): Int
+
+    @Query("UPDATE playlists SET updated_at = :updatedAt WHERE id = :playlistId")
+    suspend fun touchPlaylist(playlistId: String, updatedAt: Long): Int
+
+    @Query("SELECT DISTINCT track_id FROM playlist_items")
+    suspend fun getAllPlaylistTrackIds(): List<String>
+
+    @Query("SELECT COUNT(*) > 0 FROM playlist_items WHERE playlist_id = :playlistId AND track_id = :trackId")
+    suspend fun isTrackInPlaylist(playlistId: String, trackId: String): Boolean
+
+    @Query("SELECT COUNT(*) > 0 FROM playlist_items WHERE track_id = :trackId")
+    suspend fun isTrackInAnyPlaylist(trackId: String): Boolean
+}
+
+@Dao
+interface PlaybackSnapshotDao {
+    @Query("SELECT * FROM playback_snapshots WHERE id = 'active' LIMIT 1")
+    suspend fun getActiveSnapshot(): PlaybackSnapshotEntity?
+
+    @Upsert
+    suspend fun upsert(snapshot: PlaybackSnapshotEntity)
+}
+
+@Dao
+interface RecentSearchDao {
+    @Upsert
+    suspend fun upsert(entity: RecentSearchEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun recordSearch(entity: RecentSearchEntity)
+
+    @Query("SELECT query FROM recent_searches ORDER BY searched_at DESC LIMIT :limit")
+    suspend fun getRecentQueries(limit: Int): List<String>
+
+    @Query("SELECT query FROM recent_searches ORDER BY searched_at DESC LIMIT :limit")
+    fun getRecentQueriesFlow(limit: Int = 10): Flow<List<String>>
+
+    @Query("DELETE FROM recent_searches WHERE query = :query")
+    suspend fun deleteQuery(query: String)
+
+    @Query("DELETE FROM recent_searches")
+    suspend fun clearAll()
+
+    @Query("SELECT COUNT(*) FROM recent_searches")
+    suspend fun getRecentSearchCount(): Int
+
+    @Query(
+        """
+        DELETE FROM recent_searches
+        WHERE id NOT IN (
+            SELECT id FROM recent_searches
+            ORDER BY searched_at DESC
+            LIMIT :limit
+        )
+        """,
+    )
+    suspend fun trimTo(limit: Int)
+}
+
+@Dao
+interface TrackLikeDao {
+    /**
+     * Insere ou remplace une ligne dans track_likes.
+     * Gouverne par : docs/android/room-schema.md — table track_likes.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLike(entity: TrackLikeEntity)
+
+    /**
+     * Supprime la ligne de like pour la piste donnee.
+     */
+    @Query("DELETE FROM track_likes WHERE track_id = :trackId")
+    suspend fun deleteLike(trackId: String)
+
+    /**
+     * Met a jour le booleen denormalise dans tracks.
+     * Gouverne par : docs/android/room-schema.md — regle : tracks.is_liked doit refleter
+     * l'existence ou non d'une ligne dans track_likes.
+     */
+    @Query("UPDATE tracks SET is_liked = :liked, updated_at = :updatedAt WHERE id = :trackId")
+    suspend fun setTrackIsLiked(trackId: String, liked: Boolean, updatedAt: Long)
+
+    @Query("SELECT COUNT(*) > 0 FROM track_likes WHERE track_id = :trackId")
+    suspend fun isTrackLiked(trackId: String): Boolean
+
+    @Query("SELECT track_id FROM track_likes")
+    suspend fun getAllLikedTrackIds(): List<String>
+
+    @Query("SELECT COUNT(*) > 0 FROM track_likes WHERE track_id = :trackId")
+    fun isLikedFlow(trackId: String): Flow<Boolean>
+}
+
+@Dao
+interface UserSettingsDao {
+    @Query("SELECT * FROM user_settings WHERE id = 'default' LIMIT 1")
+    suspend fun getSettings(): UserSettingsEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrReplace(entity: UserSettingsEntity)
+
+    @Query("UPDATE user_settings SET sync_enabled = :enabled WHERE id = 'default'")
+    suspend fun updateSyncEnabled(enabled: Boolean): Int
+
+    @Query("UPDATE user_settings SET online_search_enabled = :enabled WHERE id = 'default'")
+    suspend fun updateOnlineSearchEnabled(enabled: Boolean): Int
+
+    @Query("UPDATE user_settings SET online_search_network_policy = :policy WHERE id = 'default'")
+    suspend fun updateOnlineSearchNetworkPolicy(policy: String): Int
+
+    @Query("UPDATE user_settings SET stats_sync_network_policy = :policy WHERE id = 'default'")
+    suspend fun updateStatsSyncNetworkPolicy(policy: String): Int
+
+    @Query("UPDATE user_settings SET sync_token = :token, last_sync_at = :lastSyncAt WHERE id = 'default'")
+    suspend fun updateSyncToken(token: String?, lastSyncAt: Long): Int
+}
+
+// ---------------------------------------------------------------------------
+// Source link DAOs (AND-009 / AND-010)
+// ---------------------------------------------------------------------------
+
+@Dao
+interface ArtistSourceLinkDao {
+    /**
+     * Insère ou met à jour un lien de résolution artiste.
+     * Governé par : docs/android/room-schema.md — UNIQUE(artist_id, usage_type, provider_name, provider_artist_id)
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ArtistSourceLinkEntity)
+
+    /**
+     * Retourne le lien actif pour un artiste, utilisé pour récupérer l'ID backend mémorisé.
+     */
+    @Query(
+        """
+        SELECT * FROM artist_source_links
+        WHERE artist_id = :artistId
+          AND usage_type = :usageType
+          AND is_active_for_usage = 1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getActiveLink(artistId: String, usageType: String): ArtistSourceLinkEntity?
+}
+
+@Dao
+interface AlbumSourceLinkDao {
+    /**
+     * Insère ou met à jour un lien de résolution album.
+     * Governé par : docs/android/room-schema.md — UNIQUE(album_id, usage_type, provider_name, provider_album_id)
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AlbumSourceLinkEntity)
+
+    /**
+     * Retourne le lien actif pour un album, utilisé pour récupérer l'ID backend mémorisé.
+     */
+    @Query(
+        """
+        SELECT * FROM album_source_links
+        WHERE album_id = :albumId
+          AND usage_type = :usageType
+          AND is_active_for_usage = 1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getActiveLink(albumId: String, usageType: String): AlbumSourceLinkEntity?
+}
+
+
+@Dao
+interface DownloadJobDao {
+    @Upsert
+    suspend fun upsert(job: DownloadJobEntity)
+
+    @Upsert
+    suspend fun upsert(jobs: List<DownloadJobEntity>)
+
+    @Query("SELECT * FROM download_jobs WHERE id = :jobId LIMIT 1")
+    suspend fun getJobById(jobId: String): DownloadJobEntity?
+
+    @Query("SELECT * FROM download_jobs ORDER BY created_at DESC")
+    fun getAllJobsFlow(): kotlinx.coroutines.flow.Flow<List<DownloadJobEntity>>
+
+    @Query("SELECT * FROM download_jobs WHERE status = :status ORDER BY created_at DESC")
+    fun getJobsByStatusFlow(status: String): kotlinx.coroutines.flow.Flow<List<DownloadJobEntity>>
+
+    @Query("SELECT * FROM download_jobs WHERE status IN ('queued', 'running')")
+    suspend fun getActiveJobs(): List<DownloadJobEntity>
+
+    @Query("""
+        SELECT 
+            download_jobs.id AS jobId,
+            download_jobs.track_id AS trackId,
+            COALESCE(tracks.title, 'Piste inconnue') AS title,
+            COALESCE(tracks.display_artist_name, 'Artiste inconnu') AS artistName,
+            tracks.cover_uri AS coverUri,
+            download_jobs.status AS status,
+            download_jobs.progress_percent AS progressPercent,
+            download_jobs.error_code AS errorCode,
+            download_jobs.error_message AS errorMessage,
+            download_jobs.created_at AS createdAt,
+            download_jobs.updated_at AS updatedAt
+        FROM download_jobs
+        LEFT JOIN tracks ON tracks.id = download_jobs.track_id
+        ORDER BY 
+            CASE 
+                WHEN download_jobs.status = 'running' THEN 0 
+                WHEN download_jobs.status = 'requires_resolution' THEN 1
+                WHEN download_jobs.status = 'queued' THEN 2 
+                ELSE 3 
+            END ASC,
+            download_jobs.created_at ASC
+    """)
+    fun getAllJobsWithTrackFlow(): kotlinx.coroutines.flow.Flow<List<DownloadJobRowModel>>
+
+    @Query("DELETE FROM download_jobs WHERE id = :jobId")
+    suspend fun deleteJob(jobId: String): Int
+
+    @Query("DELETE FROM download_jobs WHERE status IN ('succeeded', 'failed', 'cancelled')")
+    suspend fun clearCompletedJobs(): Int
+
+    @Query("DELETE FROM download_jobs")
+    suspend fun clearAllJobs(): Int
+}
+
+@Dao
+interface SyncOutboxDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: SyncOutboxEntity)
+
+    @Query("SELECT * FROM sync_outbox WHERE status = 'pending' ORDER BY rowid ASC")
+    suspend fun getPendingOperations(): List<SyncOutboxEntity>
+
+    @Query("UPDATE sync_outbox SET status = :status, attempt_count = attempt_count + 1, updated_at = :now WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String, now: Long)
+
+    @Query("DELETE FROM sync_outbox WHERE id = :id")
+    suspend fun deleteOperation(id: String): Int
+
+    @Query("DELETE FROM sync_outbox")
+    suspend fun clearAll()
+}
+

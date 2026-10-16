@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AURA</string>
+
+    <!-- Nouveautés de version (What's New) -->
+    <string name="whats_new_dialog_title">Bienvenue dans AURA %1$s</string>
+    <string name="whats_new_dialog_subtitle">Découvrez les nouveautés et améliorations de cette mise à jour :</string>
+    <string name="whats_new_btn_start">C\'est parti !</string>
+    <string name="settings_whats_new_title">Nouveautés de la version</string>
+    <string name="settings_whats_new_desc">Consulter les changements apportés par la dernière mise à jour</string>
+
+    <!-- Version 2 / 0.2.0 features -->
+    <string name="whats_new_v2_feature1_title">Gestion des doublons en playlist</string>
+    <string name="whats_new_v2_feature1_desc">Lorsqu\'un morceau est déjà présent dans une liste de lecture, une confirmation vous propose désormais de l\'ajouter quand même ou d\'annuler.</string>
+
+    <string name="whats_new_v2_feature2_title">Favoris et Cloud sécurisés</string>
+    <string name="whats_new_v2_feature2_desc">Ajoutez en favoris et organisez vos morceaux en ligne et Cloud dès le premier démarrage, même avec une bibliothèque locale vide.</string>
+
+    <string name="whats_new_v2_feature3_title">Recherche et Navigation hybrides</string>
+    <string name="whats_new_v2_feature3_desc">Recherche locale et catalogue en ligne intégrés avec tri intelligent par pertinence pour trouver vos titres instantanément.</string>
+
+    <string name="whats_new_v2_feature4_title">Fluidité et Performances audio</string>
+    <string name="whats_new_v2_feature4_desc">Chargement instantané de l\'interface, transitions optimisées et gestion haute performance de la file d\'attente.</string>
+
+    <!-- Version 3 / 0.3.0 features -->
+    <string name="whats_new_v3_feature1_title">Changer la version audio</string>
+    <string name="whats_new_v3_feature1_desc">Choisissez la version souhaitée (live, studio, remix) parmi les suggestions YouTube Music depuis le menu d\'un morceau.</string>
+
+    <string name="whats_new_v3_feature2_title">Écoute sans coupure</string>
+    <string name="whats_new_v3_feature2_desc">La nouvelle version audio est rechargée instantanément en conservant votre position de lecture.</string>
+
+    <string name="whats_new_v3_feature3_title">Synchronisation &amp; Téléchargements</string>
+    <string name="whats_new_v3_feature3_desc">Gestion plus rapide et résiliente des téléchargements et mise à jour en temps réel sur vos appareils.</string>
+
+    <!-- Version 4 / 0.4.0 features -->
+    <string name="whats_new_v4_feature1_title">Navigation Artiste &amp; Album</string>
+    <string name="whats_new_v4_feature1_desc">Touchez le nom de l\'artiste ou de l\'album sur le lecteur pour ouvrir directement sa page dédiée.</string>
+
+    <string name="whats_new_v4_feature2_title">Notification interactive</string>
+    <string name="whats_new_v4_feature2_desc">Touchez le lecteur dans le volet des notifications ou l\'écran de veille pour revenir instantanément dans l\'application.</string>
+
+    <string name="whats_new_v4_feature3_title">Collaborations &amp; Choix de version</string>
+    <string name="whats_new_v4_feature3_desc">Téléchargement amélioré des duos et featurings, avec badge visible et bouton pour réessayer ou choisir la version.</string>
+</resources>
+

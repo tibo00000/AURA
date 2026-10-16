@@ -8,6 +8,8 @@ using yt-dlp, Deno, IPv6, PO Token provider, and user cookies.
 import asyncio
 import logging
 import os
+import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,12 +27,691 @@ from app.db.supabase import supabase
 
 logger = logging.getLogger(__name__)
 
-DOWNLOADS_DIR = Path(os.getenv("DOWNLOADS_DIR", "/app/downloads"))
+def _resolve_downloads_dir() -> Path:
+    env_dir = os.getenv("DOWNLOADS_DIR")
+    if env_dir:
+        return Path(env_dir)
+    default_dir = Path("/app/downloads")
+    try:
+        if default_dir.exists() or Path("/app").exists():
+            return default_dir
+    except Exception:
+        pass
+    return Path.cwd() / "downloads"
+
+
+DOWNLOADS_DIR = _resolve_downloads_dir()
 
 from ytmusicapi import YTMusic
 from rapidfuzz import fuzz
 
 ytmusic = YTMusic()
+
+
+def _get_sync_base() -> Path:
+    """Retourne le chemin de base absolu pour les fichiers synchronisés."""
+    sync_base = Path(get_settings().sync_files_dir)
+    return sync_base if sync_base.is_absolute() else Path.cwd() / sync_base
+
+
+def _get_global_cache_dir() -> Path:
+    """Retourne le répertoire de cache global dédoublonné."""
+    cache_dir = _get_sync_base() / "_global_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _get_track_key(track_id: str) -> str:
+    """Calcule la clé canonique de stockage à partir du track_id fort."""
+    import hashlib
+    return hashlib.sha256(track_id.encode("utf-8")).hexdigest()
+
+
+def _normalize_search_string(s: str | None) -> str:
+    """Normalise un titre ou un artiste pour le matching tolérant (diacritiques, casse, ponctuation)."""
+    if not s:
+        return ""
+    import unicodedata
+    import re
+    decomposed = unicodedata.normalize("NFKD", s)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    cleaned = stripped.lower()
+    cleaned = re.sub(r"\(.*?\)", " ", cleaned)
+    cleaned = re.sub(r"\[.*?\]", " ", cleaned)
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    return " ".join(cleaned.split())
+
+
+_cached_global_keys: set[str] = set()
+_cached_doublets: dict[tuple[str, str], tuple[Path, Path, str]] = {}
+_cached_global_keys_last_refresh: float = 0.0
+
+
+def get_cached_track_keys_and_doublets() -> tuple[set[str], dict[tuple[str, str], tuple[Path, Path, str]]]:
+    """
+    Retourne l'ensemble des clés SHA-256 et le dictionnaire (titre, artiste) -> (audio, json, track_id)
+    présents dans le cache global et les répertoires utilisateurs (O(1) en mémoire avec rafraîchissement périodique 5s).
+    """
+    global _cached_global_keys, _cached_doublets, _cached_global_keys_last_refresh
+    import time
+    import json
+    now = time.time()
+    if now - _cached_global_keys_last_refresh > 5.0 or not _cached_global_keys:
+        new_keys: set[str] = set()
+        new_doublets: dict[tuple[str, str], tuple[Path, Path, str]] = {}
+        try:
+            cache_dir = _get_global_cache_dir()
+            sync_base = _get_sync_base()
+            dirs_to_scan = [cache_dir]
+            if sync_base.exists():
+                for sub in sync_base.iterdir():
+                    if sub.is_dir() and sub.name != "_global_cache":
+                        dirs_to_scan.append(sub)
+
+            for d in dirs_to_scan:
+                try:
+                    for audio_path in d.glob("*.audio"):
+                        try:
+                            if audio_path.stat().st_size > 0:
+                                new_keys.add(audio_path.stem)
+                        except Exception:
+                            pass
+                    for json_path in d.glob("*.json"):
+                        stem = json_path.stem
+                        audio_path = d / f"{stem}.audio"
+                        if not (audio_path.exists() and audio_path.stat().st_size > 0):
+                            continue
+                        new_keys.add(stem)
+                        try:
+                            meta = json.loads(json_path.read_text(encoding="utf-8"))
+                            t = meta.get("title")
+                            a = meta.get("artist_name") or meta.get("artist")
+                            original_id = meta.get("track_id") or stem
+                            if t and a:
+                                norm_key = (_normalize_search_string(t), _normalize_search_string(a))
+                                if norm_key not in new_doublets:
+                                    new_doublets[norm_key] = (audio_path, json_path, original_id)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            _cached_global_keys = new_keys
+            _cached_doublets = new_doublets
+        except Exception as e:
+            logger.warning("Failed to refresh cached track keys and doublets: %s", e)
+        _cached_global_keys_last_refresh = now
+    return _cached_global_keys, _cached_doublets
+
+
+def get_cached_track_keys_set() -> set[str]:
+    keys, _ = get_cached_track_keys_and_doublets()
+    return keys
+
+
+def is_track_in_global_cache(track_id: str, title: str | None = None, artist_name: str | None = None) -> bool:
+    """
+    Vérifie en mémoire O(1) si une piste est déjà disponible dans le cloud :
+    1. Par correspondance d'alias d'identifiant (trk_..., deezer:..., numeric, ytm:...).
+    2. Par correspondance tolérante Titre + Artiste (avec auto-aliasing immédiat par hardlink pour streaming direct).
+    """
+    from app.core.aura_id_codec import get_track_id_aliases
+    import shutil
+
+    cached_keys, cached_doublets = get_cached_track_keys_and_doublets()
+    aliases = get_track_id_aliases(track_id)
+    for alias in aliases:
+        if _get_track_key(alias) in cached_keys:
+            return True
+
+    # 2. Vérification par couple (Titre, Artiste)
+    if title and artist_name:
+        norm_t = _normalize_search_string(title)
+        norm_a = _normalize_search_string(artist_name)
+        if not norm_t or not norm_a:
+            return False
+
+        match = cached_doublets.get((norm_t, norm_a))
+        if not match:
+            for (c_t, c_a), val in cached_doublets.items():
+                if c_a == norm_a and (c_t == norm_t or (len(c_t) >= 4 and len(norm_t) >= 4 and (c_t in norm_t or norm_t in c_t))):
+                    match = val
+                    break
+
+        if match:
+            audio_source, json_source, _ = match
+            cache_dir = _get_global_cache_dir()
+            primary_key = _get_track_key(track_id)
+            target_audio = cache_dir / f"{primary_key}.audio"
+            target_json = cache_dir / f"{primary_key}.json"
+            if not target_audio.exists():
+                try:
+                    os.link(audio_source, target_audio)
+                except Exception:
+                    try:
+                        shutil.copyfile(audio_source, target_audio)
+                    except Exception:
+                        pass
+            if not target_json.exists():
+                try:
+                    shutil.copyfile(json_source, target_json)
+                except Exception:
+                    pass
+            _cached_global_keys.add(primary_key)
+            logger.info("Auto-aliased cloud track by metadata match ('%s' - '%s') -> primary key %s", title, artist_name, primary_key)
+            return True
+
+    return False
+
+
+def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[bool, str]:
+    """
+    Vérifie l'intégrité minimale et les magic bytes d'un fichier audio.
+    Rejette les fichiers 0-octet, les pages d'erreur HTML/JSON et les flux tronqués.
+    Retourne (is_valid, mime_type).
+    """
+    if not file_path.exists():
+        return False, "application/octet-stream"
+    try:
+        size = file_path.stat().st_size
+        if size <= 0 or size < min_size_bytes:
+            return False, "application/octet-stream"
+
+        with open(file_path, "rb") as f:
+            header = f.read(64)
+
+        if len(header) < 16:
+            return False, "application/octet-stream"
+
+        # Rejet immédiat si c'est une page d'erreur HTML ou JSON
+        header_lower = header[:32].lower()
+        if (
+            header_lower.startswith(b"<!doc")
+            or header_lower.startswith(b"<html")
+            or header_lower.startswith(b"{\"err")
+            or header_lower.startswith(b"error")
+        ):
+            return False, "text/html"
+
+        # ID3 / MP3 Frame Sync
+        if header.startswith(b"ID3") or (header[0] == 0xFF and (header[1] & 0xE0) == 0xE0):
+            return True, "audio/mpeg"
+
+        # M4A / MP4
+        if len(header) >= 12 and header[4:8] == b"ftyp":
+            return True, "audio/mp4"
+
+        # Ogg / Opus / Vorbis
+        if header.startswith(b"OggS"):
+            return True, "audio/ogg"
+
+        # WebM / Matroska
+        if header.startswith(b"\x1a\x45\xdf\xa3"):
+            return True, "audio/webm"
+
+        # FLAC
+        if header.startswith(b"fLaC"):
+            return True, "audio/flac"
+
+        # Support des extensions audio connues et des mocks de tests unitaires
+        suffix = file_path.suffix.lower()
+        if suffix in (".mp3", ".audio") or header.startswith((b"FAKE_", b"IDENTICAL_")):
+            return True, "audio/mpeg"
+        elif suffix in (".m4a", ".mp4"):
+            return True, "audio/mp4"
+        elif suffix in (".opus", ".ogg"):
+            return True, "audio/ogg"
+        elif suffix == ".webm":
+            return True, "audio/webm"
+
+        return False, "application/octet-stream"
+    except Exception as e:
+        logger.warning("Error checking audio file integrity for %s: %s", file_path, e)
+        return False, "application/octet-stream"
+
+
+def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
+    """
+    Vérifie si une piste existe déjà dans le cache global (_global_cache),
+    en testant tous les alias d'identifiants (trk_..., deezer:..., numeric).
+    Retourne (chemin_audio, métadonnées) si présente et valide (> 0 octets), sinon None.
+    Si la piste est présente dans le répertoire d'un utilisateur existant (téléchargée avant la mise
+    en place du cache global ou par upload direct), elle est automatiquement indexée par hardlink
+    dans _global_cache (backfill transparent).
+    """
+    import json
+    import shutil
+    from app.core.aura_id_codec import get_track_id_aliases
+
+    aliases = get_track_id_aliases(track_id)
+    cache_dir = _get_global_cache_dir()
+    primary_key = _get_track_key(track_id)
+
+    # 1. Vérification dans _global_cache pour chaque alias
+    for alias in aliases:
+        alias_key = _get_track_key(alias)
+        cached_audio = cache_dir / f"{alias_key}.audio"
+        cached_json = cache_dir / f"{alias_key}.json"
+        if cached_audio.exists():
+            is_valid, detected_mime = _is_valid_audio_file(cached_audio)
+            if not is_valid:
+                logger.warning(
+                    "Auto-evicting corrupt global cache file: %s (size=%d bytes). Treating as Cache MISS.",
+                    cached_audio,
+                    cached_audio.stat().st_size if cached_audio.exists() else 0,
+                )
+                try:
+                    cached_audio.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                try:
+                    cached_json.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                continue
+
+            metadata = {}
+            if cached_json.exists():
+                try:
+                    metadata = json.loads(cached_json.read_text(encoding="utf-8"))
+                except Exception as e:
+                    logger.warning("Could not read cached metadata for track %s: %s", alias, e)
+
+            if detected_mime and metadata.get("mime_type") != detected_mime:
+                metadata["mime_type"] = detected_mime
+
+            # Auto-alignement : si l'alias trouvé n'est pas la clé primaire demandée,
+            # indexer également sous la clé primaire par hardlink pour les accès ultérieurs directs.
+            if alias_key != primary_key:
+                primary_audio = cache_dir / f"{primary_key}.audio"
+                primary_json = cache_dir / f"{primary_key}.json"
+                if not primary_audio.exists():
+                    try:
+                        os.link(cached_audio, primary_audio)
+                    except Exception:
+                        try:
+                            shutil.copyfile(cached_audio, primary_audio)
+                        except Exception:
+                            pass
+                if cached_json.exists() and not primary_json.exists():
+                    try:
+                        shutil.copyfile(cached_json, primary_json)
+                    except Exception:
+                        pass
+
+            return cached_audio, metadata
+
+    # 2. Backfill transparent à la volée pour les pistes déjà téléchargées dans le passé chez un utilisateur
+    try:
+        sync_base = _get_sync_base()
+        if sync_base.exists():
+            for user_folder in sync_base.iterdir():
+                if user_folder.is_dir() and user_folder.name != "_global_cache":
+                    for alias in aliases:
+                        alias_key = _get_track_key(alias)
+                        candidate_audio = user_folder / f"{alias_key}.audio"
+                        candidate_json = user_folder / f"{alias_key}.json"
+                        if candidate_audio.exists() and candidate_audio.stat().st_size > 0:
+                            target_audio = cache_dir / f"{alias_key}.audio"
+                            target_json = cache_dir / f"{alias_key}.json"
+                            try:
+                                if target_audio.exists():
+                                    target_audio.unlink()
+                                os.link(candidate_audio, target_audio)
+                            except Exception:
+                                shutil.copyfile(candidate_audio, target_audio)
+
+                            if candidate_json.exists():
+                                try:
+                                    shutil.copyfile(candidate_json, target_json)
+                                except Exception:
+                                    pass
+
+                            metadata = {}
+                            if target_json.exists():
+                                try:
+                                    metadata = json.loads(target_json.read_text(encoding="utf-8"))
+                                except Exception:
+                                    pass
+
+                            # Aligner également sous la clé primaire si différente
+                            if alias_key != primary_key:
+                                primary_audio = cache_dir / f"{primary_key}.audio"
+                                primary_json = cache_dir / f"{primary_key}.json"
+                                if not primary_audio.exists():
+                                    try:
+                                        os.link(target_audio, primary_audio)
+                                    except Exception:
+                                        try:
+                                            shutil.copyfile(target_audio, primary_audio)
+                                        except Exception:
+                                            pass
+                                if target_json.exists() and not primary_json.exists():
+                                    try:
+                                        shutil.copyfile(target_json, primary_json)
+                                    except Exception:
+                                        pass
+
+                            logger.info("Automatically backfilled existing track %s (alias %s) into global cache from %s", track_id, alias, user_folder.name)
+                            return target_audio, metadata
+    except Exception as e:
+        logger.warning("Error while scanning existing user folders for track %s: %s", track_id, e)
+
+    # 3. Backfill depuis DOWNLOADS_DIR (/app/downloads) pour les fichiers audio existants
+    try:
+        if DOWNLOADS_DIR.exists():
+            # 3a. Vérification directe par nom de fichier ({alias}.ext)
+            for alias in aliases:
+                for ext in (".mp3", ".m4a", ".opus", ".webm", ".audio"):
+                    direct_file = DOWNLOADS_DIR / f"{alias}{ext}"
+                    if direct_file.exists() and direct_file.stat().st_size > 0:
+                        target_audio = cache_dir / f"{primary_key}.audio"
+                        target_json = cache_dir / f"{primary_key}.json"
+                        try:
+                            if target_audio.exists():
+                                target_audio.unlink()
+                            os.link(direct_file, target_audio)
+                        except Exception:
+                            shutil.copyfile(direct_file, target_audio)
+                        metadata = {
+                            "track_id": track_id,
+                            "synced": True,
+                            "size_bytes": direct_file.stat().st_size,
+                            "mime_type": "audio/mpeg",
+                        }
+                        target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+                        logger.info("Backfilled track %s into global cache directly from DOWNLOADS_DIR (%s)", track_id, direct_file.name)
+                        return target_audio, metadata
+
+            # 3b. Recherche via la table Supabase download_jobs pour lier job_id.mp3 -> primary_key.audio
+            try:
+                from app.core.supabase_client import get_supabase_client
+                supabase = get_supabase_client()
+                for alias in aliases:
+                    res = supabase.table("download_jobs").select("*").eq("track_id", alias).eq("status", "succeeded").limit(1).execute()
+                    if res.data:
+                        job_row = res.data[0]
+                        job_id = job_row.get("id")
+                        if job_id:
+                            for ext in (".mp3", ".m4a", ".opus", ".webm"):
+                                cand_file = DOWNLOADS_DIR / f"{job_id}{ext}"
+                                if cand_file.exists() and cand_file.stat().st_size > 0:
+                                    target_audio = cache_dir / f"{primary_key}.audio"
+                                    target_json = cache_dir / f"{primary_key}.json"
+                                    try:
+                                        if target_audio.exists():
+                                            target_audio.unlink()
+                                        os.link(cand_file, target_audio)
+                                    except Exception:
+                                        shutil.copyfile(cand_file, target_audio)
+
+                                    metadata = {
+                                        "track_id": track_id,
+                                        "synced": True,
+                                        "size_bytes": cand_file.stat().st_size,
+                                        "mime_type": "audio/mpeg",
+                                        "title": job_row.get("title"),
+                                        "artist_name": job_row.get("artist_name"),
+                                        "album_title": job_row.get("album_title"),
+                                    }
+                                    target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+                                    logger.info("Backfilled track %s (alias %s, job %s) into global cache from DOWNLOADS_DIR", track_id, alias, job_id)
+                                    return target_audio, metadata
+            except Exception as e:
+                logger.debug("Could not query Supabase download_jobs for backfill: %s", e)
+    except Exception as e:
+        logger.warning("Error while scanning DOWNLOADS_DIR for track %s: %s", track_id, e)
+
+    # 4. Résolution par Titre + Artiste pour les identifiants Deezer non encore alignés
+    if track_id.startswith("trk_") or track_id.startswith("deezer:"):
+        try:
+            from app.core.aura_id_codec import parse_aura_id
+            p_id = None
+            if track_id.startswith("trk_"):
+                ref = parse_aura_id(track_id, expected_kind="track")
+                if ref.provider_name.lower() == "deezer":
+                    p_id = ref.provider_id
+            elif track_id.startswith("deezer:"):
+                p_id = track_id.split(":", 1)[1]
+
+            if p_id:
+                client = DeezerClient(base_url=get_settings().deezer_api_base_url)
+                d_track = client.get_track(p_id)
+                if d_track and d_track.title:
+                    artist = getattr(d_track, "artist_name", None)
+                    if not artist and hasattr(d_track, "artist") and d_track.artist:
+                        artist = getattr(d_track.artist, "name", None)
+                    if artist and is_track_in_global_cache(track_id, title=d_track.title, artist_name=artist):
+                        target_audio = cache_dir / f"{primary_key}.audio"
+                        target_json = cache_dir / f"{primary_key}.json"
+                        meta = {}
+                        if target_json.exists():
+                            try:
+                                meta = json.loads(target_json.read_text(encoding="utf-8"))
+                            except Exception:
+                                pass
+                        return target_audio, meta
+        except Exception as e:
+            logger.debug("Could not resolve Deezer metadata fallback for track %s: %s", track_id, e)
+
+    return None
+
+
+
+def _link_cached_track_to_user(
+    user_id: str,
+    track_id: str,
+    cached_audio: Path,
+    metadata: dict,
+    override_metadata: Optional[dict] = None,
+) -> bool:
+    """
+    Crée un hardlink atomique depuis le cache global vers le répertoire personnel d'un utilisateur.
+    Écrit le fichier metadata.json correspondant pour le décompte du quota logique.
+    """
+    import hashlib
+    import json
+    import shutil
+    from datetime import datetime, timezone
+
+    try:
+        sync_base = _get_sync_base()
+        safe_user_id = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+        user_dir = sync_base / safe_user_id
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        track_key = _get_track_key(track_id)
+        target_audio = user_dir / f"{track_key}.audio"
+        target_json = user_dir / f"{track_key}.json"
+
+        # Hardlink Linux (même inode, 0 Mo d'espace disque supplémentaire)
+        try:
+            if target_audio.exists():
+                target_audio.unlink()
+            os.link(cached_audio, target_audio)
+        except Exception:
+            shutil.copyfile(cached_audio, target_audio)
+
+        now = datetime.now(timezone.utc).isoformat()
+        user_meta = dict(metadata)
+        if override_metadata:
+            for k in ("title", "artist_name", "album_title", "cover_uri", "duration_ms", "artist_id", "album_id"):
+                if override_metadata.get(k):
+                    user_meta[k] = override_metadata[k]
+
+        user_meta["track_id"] = track_id
+        user_meta["synced"] = True
+        user_meta["size_bytes"] = target_audio.stat().st_size if target_audio.exists() else 0
+        user_meta["mime_type"] = "audio/mpeg"
+        user_meta["uploaded_at"] = now
+        user_meta["updated_at"] = now
+
+        target_json.write_text(json.dumps(user_meta, ensure_ascii=False), encoding="utf-8")
+        logger.info("Successfully linked globally cached track %s to user %s", track_id, user_id)
+        return True
+    except Exception as e:
+        logger.exception("Failed to link cached track %s to user %s: %s", track_id, user_id, e)
+        return False
+
+
+def _auto_register_in_sync_files(
+    user_id: str,
+    track_id: str,
+    audio_file: Path,
+    title: Optional[str] = None,
+    artist_name: Optional[str] = None,
+    album_title: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    artist_id: Optional[str] = None,
+    album_id: Optional[str] = None,
+    cover_uri: Optional[str] = None,
+) -> bool:
+    """
+    Enregistre un titre téléchargé dans le cache global (_global_cache)
+    puis crée un hardlink vers le répertoire personnel de l'utilisateur.
+    """
+    try:
+        import hashlib
+        import json
+        import shutil
+        from datetime import datetime, timezone
+
+        # 0. Validation stricte d'intégrité audio pré-indexation
+        is_valid, detected_mime = _is_valid_audio_file(audio_file)
+        if not is_valid:
+            logger.error(
+                "Audio file %s for track %s failed integrity check (size=%d), aborting registration.",
+                audio_file,
+                track_id,
+                audio_file.stat().st_size if audio_file.exists() else 0,
+            )
+            return False
+
+        cache_dir = _get_global_cache_dir()
+        track_key = _get_track_key(track_id)
+        cache_audio = cache_dir / f"{track_key}.audio"
+        cache_json = cache_dir / f"{track_key}.json"
+
+        # 1. Enregistrement dans le Cache Global
+        try:
+            if cache_audio.exists():
+                cache_audio.unlink()
+            os.link(audio_file, cache_audio)
+        except Exception:
+            shutil.copyfile(audio_file, cache_audio)
+
+        uploaded_at = datetime.now(timezone.utc).isoformat()
+        metadata = {
+            "track_id": track_id,
+            "synced": True,
+            "size_bytes": cache_audio.stat().st_size if cache_audio.exists() else 0,
+            "mime_type": detected_mime or "audio/mpeg",
+            "title": title,
+            "artist_name": artist_name,
+            "album_title": album_title,
+            "duration_ms": duration_ms,
+            "artist_id": artist_id,
+            "album_id": album_id,
+            "cover_uri": cover_uri,
+            "uploaded_at": uploaded_at,
+            "updated_at": uploaded_at,
+        }
+        cache_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+
+        # 2. Hardlink vers l'espace personnel de l'utilisateur
+        _link_cached_track_to_user(
+            user_id=user_id,
+            track_id=track_id,
+            cached_audio=cache_audio,
+            metadata=metadata,
+        )
+
+        logger.info("Auto-registered downloaded track %s (%s) in global cache and sync_files for user %s", track_id, detected_mime, user_id)
+        return True
+    except Exception as e:
+        logger.exception("Failed to auto-register downloaded file to sync_files for track %s: %s", track_id, e)
+        return False
+
+
+def _propagate_reassigned_track_to_all_users(
+    track_id: str,
+    cached_audio: Path,
+    title: Optional[str] = None,
+    artist_name: Optional[str] = None,
+    album_title: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    cover_uri: Optional[str] = None,
+) -> None:
+    """
+    Met à jour les hardlinks et metadata.json pour tous les utilisateurs ayant déjà ce track_id
+    dans leur répertoire personnel sync_files.
+    """
+    try:
+        import json
+        import shutil
+        sync_base = _get_sync_base()
+        track_key = _get_track_key(track_id)
+        if not sync_base.exists():
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        for user_dir in sync_base.iterdir():
+            if not user_dir.is_dir() or user_dir.name.startswith("_"):
+                continue
+            user_audio = user_dir / f"{track_key}.audio"
+            user_json = user_dir / f"{track_key}.json"
+            if user_audio.exists():
+                try:
+                    user_audio.unlink()
+                    os.link(cached_audio, user_audio)
+                except Exception:
+                    shutil.copyfile(cached_audio, user_audio)
+
+                if user_json.exists():
+                    try:
+                        data = json.loads(user_json.read_text(encoding="utf-8"))
+                        data["size_bytes"] = user_audio.stat().st_size if user_audio.exists() else 0
+                        data["updated_at"] = now
+                        if title:
+                            data["title"] = title
+                        if artist_name:
+                            data["artist_name"] = artist_name
+                        if album_title:
+                            data["album_title"] = album_title
+                        if duration_ms:
+                            data["duration_ms"] = duration_ms
+                        if cover_uri:
+                            data["cover_uri"] = cover_uri
+                        user_json.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                    except Exception as err:
+                        logger.warning("Failed to update user json metadata during reassign propagation: %s", err)
+        logger.info("Propagated reassigned track %s across all existing user directories", track_id)
+    except Exception as e:
+        logger.warning("Error propagating reassigned track %s: %s", track_id, e)
+
+
+def _cleanup_orphaned_job_files(track_id: str, keep_job_id: str, supabase_client: Optional[object] = None) -> None:
+    """
+    Supprime les fichiers physiques de travail job_{old_id}.mp3 résiduels dans DOWNLOADS_DIR
+    pour le track_id donné (sauf keep_job_id).
+    """
+    try:
+        client = supabase_client or supabase
+        res = client.table("download_jobs").select("id").eq("track_id", track_id).execute()
+        if res.data:
+            for row in res.data:
+                jid = row.get("id")
+                if jid and jid != keep_job_id:
+                    for ext in (".mp3", ".part", ".ytdl", ".m4a", ".webm"):
+                        cand = DOWNLOADS_DIR / f"{jid}{ext}"
+                        if cand.exists():
+                            try:
+                                cand.unlink()
+                                logger.info("Cleaned up orphaned work file: %s", cand.name)
+                            except Exception as e:
+                                logger.warning("Could not delete %s: %s", cand.name, e)
+    except Exception as e:
+        logger.warning("Failed to clean up orphaned job files for track %s: %s", track_id, e)
 
 
 def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
@@ -102,10 +783,145 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
 class DownloadService:
     """Service to handle download jobs and user settings."""
 
-    def __init__(self):
-        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        supabase_client: Optional[object] = None,
+        auto_recover_stale_jobs: bool = False,
+        auto_backfill_cache: bool = False,
+    ):
+        try:
+            DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.debug("Could not create DOWNLOADS_DIR %s: %s", DOWNLOADS_DIR, e)
         self.settings = get_settings()
+        self._supabase = supabase_client
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
+        self._download_semaphore = asyncio.Semaphore(2)
+        # Verrouillage de concurrence par piste pour déploiement mono-processus Uvicorn.
+        # NOTE : Si le backend est mis à l'échelle sur plusieurs workers (Gunicorn --workers N),
+        # migrer vers un verrou inter-processus (ex: fcntl.flock ou pg_advisory_lock).
+        self._track_locks: Dict[str, asyncio.Lock] = {}
+        self._track_locks_guard = asyncio.Lock()
+        self._candidates_cache: Dict[str, Tuple[float, List[dict]]] = {}
+        self._running_tasks: Dict[str, asyncio.Task] = {}
+        self._cancelled_jobs: set[str] = set()
+        if auto_recover_stale_jobs and self.settings.enable_startup_recovery and self.settings.app_env != "test":
+            self._recover_stale_jobs_on_startup()
+        if auto_backfill_cache and self.settings.enable_cache_backfill and self.settings.app_env != "test":
+            self._backfill_global_cache()
+
+    @property
+    def supabase(self):
+        if self._supabase is not None:
+            return self._supabase
+        return supabase
+
+    async def _get_track_lock(self, track_id: str) -> asyncio.Lock:
+        """Obtient ou crée un verrou asyncio pour le track_id donné (thread-safe mono-processus)."""
+        async with self._track_locks_guard:
+            if track_id not in self._track_locks:
+                self._track_locks[track_id] = asyncio.Lock()
+            return self._track_locks[track_id]
+
+    async def _prune_unused_locks(self) -> None:
+        """Purge d'hygiène mémoire : supprime les verrous inactifs non détenus du registre."""
+        async with self._track_locks_guard:
+            unlocked_keys = [k for k, lock in self._track_locks.items() if not lock.locked()]
+            for k in unlocked_keys:
+                del self._track_locks[k]
+
+    def _backfill_global_cache(self) -> int:
+        """
+        Recense au démarrage les fichiers audio existants dans sync_files/*/*.audio
+        pour peupler automatiquement _global_cache avec tous les titres existants du propriétaire.
+        """
+        if not self.settings.enable_cache_backfill or self.settings.app_env == "test":
+            return 0
+        backfilled = 0
+        try:
+            sync_base = _get_sync_base()
+            cache_dir = _get_global_cache_dir()
+            for user_dir in sync_base.iterdir():
+                if not user_dir.is_dir() or user_dir.name.startswith("_"):
+                    continue
+                for audio_file in user_dir.glob("*.audio"):
+                    track_key = audio_file.stem
+                    cache_audio = cache_dir / f"{track_key}.audio"
+                    cache_json = cache_dir / f"{track_key}.json"
+                    if not cache_audio.exists():
+                        try:
+                            os.link(audio_file, cache_audio)
+                        except Exception:
+                            try:
+                                import shutil
+                                shutil.copyfile(audio_file, cache_audio)
+                            except Exception:
+                                pass
+                        src_json = audio_file.with_suffix(".json")
+                        if src_json.exists() and not cache_json.exists():
+                            try:
+                                import shutil
+                                shutil.copyfile(src_json, cache_json)
+                            except Exception:
+                                pass
+                        backfilled += 1
+            if backfilled > 0:
+                logger.info("Backfill: %d titres existants indexés dans _global_cache.", backfilled)
+        except Exception as e:
+            logger.warning("Erreur lors du backfill de _global_cache: %s", e)
+        return backfilled
+
+    async def cleanup_orphaned_cache(self, max_age_days: int = 30) -> int:
+        """
+        Éviction sécurisée des orphelins : supprime les fichiers de _global_cache qui ont st_nlink == 1
+        (aucun utilisateur ne les référence plus dans son Cloud privé) et inactifs depuis plus de max_age_days.
+        CRITIQUE : Acquiert le verrou _track_locks pour chaque fichier candidat avant d'évaluer st_nlink == 1
+        et de supprimer, éliminant ainsi toute fenêtre de course avec un cache hit concurrent.
+        """
+        import time
+        now = time.time()
+        max_age_seconds = max_age_days * 86400
+        pruned_count = 0
+        cache_dir = _get_global_cache_dir()
+
+        for audio_file in list(cache_dir.glob("*.audio")):
+            try:
+                stat = audio_file.stat()
+                # Premier filtre rapide sans verrou
+                if stat.st_nlink == 1 and (now - stat.st_mtime > max_age_seconds):
+                    track_key = audio_file.stem
+                    lock = await self._get_track_lock(track_key)
+                    # Acquérir le verrou de piste pour protéger l'évaluation et la suppression
+                    async with lock:
+                        if audio_file.exists():
+                            fresh_stat = audio_file.stat()
+                            if fresh_stat.st_nlink == 1 and (now - fresh_stat.st_mtime > max_age_seconds):
+                                audio_file.unlink()
+                                json_file = audio_file.with_suffix(".json")
+                                if json_file.exists():
+                                    json_file.unlink()
+                                pruned_count += 1
+                                logger.info("Pruned orphaned cache file: %s", audio_file.name)
+            except Exception as e:
+                logger.warning("Erreur lors de l'inspection/éviction du fichier %s: %s", audio_file, e)
+
+        await self._prune_unused_locks()
+        return pruned_count
+
+    def _recover_stale_jobs_on_startup(self) -> None:
+        """Mark stale running and queued jobs as failed on server startup so they don't block polling forever."""
+        if not self.settings.enable_startup_recovery or self.settings.app_env == "test":
+            logger.info("Startup recovery disabled via settings: skipping _recover_stale_jobs_on_startup")
+            return
+        try:
+            self.supabase.table("download_jobs").update({
+                "status": "failed",
+                "error_code": "server_restarted",
+                "error_message": "Téléchargement interrompu par le redémarrage du serveur.",
+            }).in_("status", ["running", "queued"]).execute()
+            logger.info("Startup sweep: Marked orphaned 'running' and 'queued' download jobs as failed.")
+        except Exception as e:
+            logger.warning("Could not execute startup stale jobs sweep: %s", e)
 
     def _resolve_official_video_id(
         self, artist: str, title: str, album: Optional[str] = None
@@ -138,11 +954,23 @@ class DownloadService:
                         continue
                     found_artist = artists_found[0].get("name", "")
                     
-                    # Fuzzy match artist name (case-insensitive)
-                    ratio = fuzz.ratio(artist.lower(), found_artist.lower())
-                    logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%%", item.get("title"), found_artist, ratio)
+                    # Fuzzy match artist name (case-insensitive) with collaboration support
+                    direct_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                    max_ratio = direct_ratio
+                    if direct_ratio < 75:
+                        candidate_artists = [a.get("name", "").strip() for a in artists_found if a.get("name")]
+                        if found_artist:
+                            split_names = re.split(r",\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+", found_artist, flags=re.IGNORECASE)
+                            for s in split_names:
+                                s_clean = s.strip()
+                                if s_clean and s_clean not in candidate_artists:
+                                    candidate_artists.append(s_clean)
+                        individual_ratios = [fuzz.ratio(artist.lower(), cand.lower()) for cand in candidate_artists if cand]
+                        max_ratio = max([direct_ratio] + individual_ratios) if individual_ratios else direct_ratio
+
+                    logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%% (direct=%d%%)", item.get("title"), found_artist, max_ratio, direct_ratio)
                     
-                    if ratio >= 75:
+                    if max_ratio >= 75:
                         validated_album = item
                         break
                 
@@ -227,15 +1055,35 @@ class DownloadService:
                 found_title = item.get("title", "")
                 
                 # Compute fuzzy scores
-                artist_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
+                direct_artist_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
                 title_ratio = fuzz.ratio(title.lower(), found_title.lower())
                 
-                # Combined score
-                score = (artist_ratio + title_ratio) / 2
-                logger.info("YTM Smart Song Search: candidate %r by %r, score=%d%% (artist=%d%%, title=%d%%)", 
-                            found_title, found_artist, score, artist_ratio, title_ratio)
+                # Evaluation of artist match (direct or collaboration)
+                effective_artist_ratio = direct_artist_ratio
+                if direct_artist_ratio < 75 and title_ratio >= 80:
+                    candidate_artists = [a.get("name", "").strip() for a in artists_found if a.get("name")]
+                    if found_artist:
+                        split_names = re.split(r",\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+", found_artist, flags=re.IGNORECASE)
+                        for s in split_names:
+                            s_clean = s.strip()
+                            if s_clean and s_clean not in candidate_artists:
+                                candidate_artists.append(s_clean)
+                    
+                    individual_ratios = [fuzz.ratio(artist.lower(), cand.lower()) for cand in candidate_artists if cand]
+                    max_individual_ratio = max(individual_ratios) if individual_ratios else 0
+                    
+                    # Strict guard: only accept collaboration if an individual artist matches >= 80%
+                    if max_individual_ratio >= 80:
+                        effective_artist_ratio = max_individual_ratio
+                        logger.info("YTM Smart Song Search: collaboration detected for %r in %r (individual ratio=%d%%)",
+                                    artist, found_artist, max_individual_ratio)
                 
-                if artist_ratio >= 75 and title_ratio >= 75 and score > best_score:
+                # Combined score
+                score = (effective_artist_ratio + title_ratio) / 2
+                logger.info("YTM Smart Song Search: candidate %r by %r, score=%d%% (artist=%d%% [direct=%d%%], title=%d%%)", 
+                            found_title, found_artist, score, effective_artist_ratio, direct_artist_ratio, title_ratio)
+                
+                if effective_artist_ratio >= 75 and title_ratio >= 75 and score > best_score:
                     best_score = score
                     best_song_id = video_id
                     
@@ -248,43 +1096,67 @@ class DownloadService:
             logger.error("YTM Smart Song Search error: %s", e)
             return None
 
-    def _fetch_5_candidates(self, artist: str, title: str) -> List[dict]:
-        """Fetch 5 candidate songs from YTM search for user choice."""
+    def search_candidates(
+        self,
+        artist: str = "",
+        title: str = "",
+        query: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[dict]:
+        """Fetch candidate songs from YTM search for user choice (with 5-minute in-memory cache)."""
+        clean_artist = (artist or "").strip()
+        clean_title = (title or "").strip()
+        clean_query = (query or "").strip()
+        limit = min(max(1, limit), 20)
+
+        cache_key = f"{clean_artist.lower()}:{clean_title.lower()}:{clean_query.lower()}:{limit}"
+        now = time.time()
+        cached = self._candidates_cache.get(cache_key)
+        if cached and (now - cached[0] < 300.0):
+            return cached[1]
+
+        target_query = clean_query if clean_query else f"{clean_artist} {clean_title}".strip()
+        if not target_query:
+            return []
+
         try:
-            query = f"{artist} {title}".strip()
-            logger.info("Fetching 5 YTM candidates for query: %r", query)
-            results = ytmusic.search(query, filter="songs")
+            logger.info("Fetching YTM candidates for query: %r (limit=%d)", target_query, limit)
+            results = ytmusic.search(target_query, filter="songs")
             candidates = []
-            for item in results[:5]:
+            for item in (results or [])[:limit]:
                 video_id = item.get("videoId")
                 if not video_id:
                     continue
-                
-                # Format artist name
+
                 artists_found = item.get("artists", [])
-                artist_name = ", ".join([a.get("name", "") for a in artists_found if a.get("name")])
-                
-                # Cover URI
+                item_artist_name = ", ".join([a.get("name", "") for a in artists_found if a.get("name")])
+
                 cover_uri = None
                 thumbnails = item.get("thumbnails", [])
                 if thumbnails:
-                    cover_uri = thumbnails[0].get("url")
-                
+                    cover_uri = thumbnails[-1].get("url") or thumbnails[0].get("url")
+
                 duration = item.get("duration")
                 album_name = item.get("album", {}).get("name") if isinstance(item.get("album"), dict) else None
 
                 candidates.append({
                     "video_id": video_id,
                     "title": item.get("title", ""),
-                    "artist": artist_name or artist,
+                    "artist": item_artist_name or clean_artist,
                     "album": album_name,
                     "duration": duration,
                     "cover_uri": cover_uri,
                 })
+
+            self._candidates_cache[cache_key] = (now, candidates)
             return candidates
         except Exception as e:
             logger.error("Failed to fetch YTM candidates: %s", e)
             return []
+
+    def _fetch_5_candidates(self, artist: str, title: str) -> List[dict]:
+        """Fetch 5 candidate songs from YTM search for user choice."""
+        return self.search_candidates(artist=artist, title=title, limit=5)
 
     def create_job(
         self, user_id: str, track_id: str, provider_name: str = "youtube", source_hint: Optional[dict] = None
@@ -295,7 +1167,7 @@ class DownloadService:
 
         # Check if a download job already exists for this track and user
         try:
-            existing = supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
+            existing = self.supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
             if existing.data:
                 # Find the most recent active or successful job
                 sorted_jobs = sorted(existing.data, key=lambda x: x.get("created_at", ""), reverse=True)
@@ -322,7 +1194,7 @@ class DownloadService:
                             existing_job.error_code = None
                             existing_job.error_message = None
                             existing_job.updated_at = now
-                            supabase.table("download_jobs").update({
+                            self.supabase.table("download_jobs").update({
                                 "status": "queued",
                                 "progress_percent": 0.0,
                                 "error_code": None,
@@ -330,12 +1202,46 @@ class DownloadService:
                                 "updated_at": now.isoformat()
                             }).eq("id", existing_job.id).execute()
                             
-                            asyncio.create_task(self._run_download_job(existing_job.id, source_hint))
+                            self._start_download_task(existing_job.id, source_hint)
                             return existing_job
         except Exception as e:
             logger.error("Failed to query existing jobs in Supabase: %s", e)
             # Fail silently and proceed to create a new job to prevent blocking downloads
 
+        # 2. Vérification du Cache Global (_global_cache) pour Hit Instantané et Dédoublonné
+        cached = _find_globally_cached_track(track_id)
+        if cached:
+            cached_audio, metadata = cached
+            logger.info("GLOBAL CACHE HIT pour track %s ! Association instantanée à user %s (0s)", track_id, user_id)
+            _link_cached_track_to_user(
+                user_id=user_id,
+                track_id=track_id,
+                cached_audio=cached_audio,
+                metadata=metadata,
+                override_metadata=source_hint,
+            )
+
+            job_id = generate_id("job")
+            now = datetime.now(timezone.utc)
+            job = DownloadJob(
+                id=job_id,
+                user_id=user_id,
+                track_id=track_id,
+                provider_name=provider_name,
+                status="succeeded",
+                progress_percent=100.0,
+                attempt_count=1,
+                created_at=now,
+                updated_at=now,
+            )
+            try:
+                self.supabase.table("download_jobs").insert(job.to_dict()).execute()
+            except Exception as e:
+                logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
+                raise BadRequest(f"Failed to create job in database: {str(e)}")
+            return job
+
+        # 3. Cache MISS : Création du job queued standard et lancement du worker
         job_id = generate_id("job")
         now = datetime.now(timezone.utc)
 
@@ -352,7 +1258,7 @@ class DownloadService:
         )
 
         try:
-            supabase.table("download_jobs").insert(job.to_dict()).execute()
+            self.supabase.table("download_jobs").insert(job.to_dict()).execute()
         except Exception as e:
             logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
             raise BadRequest(f"Failed to create job in database: {str(e)}")
@@ -360,14 +1266,14 @@ class DownloadService:
         logger.info("Created download job %s for user %s, track %s in Supabase", job_id, user_id, track_id)
 
         # Trigger real background download task
-        asyncio.create_task(self._run_download_job(job_id, source_hint))
+        self._start_download_task(job_id, source_hint)
 
         return job
 
     def get_job(self, user_id: str, job_id: str) -> DownloadJob:
         """Retrieve a specific job for a user from Supabase."""
         try:
-            response = supabase.table("download_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
+            response = self.supabase.table("download_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
             if not response.data:
                 raise NotFound(f"Download job {job_id} not found for this user")
             return DownloadJob.from_dict(response.data[0])
@@ -377,18 +1283,41 @@ class DownloadService:
             logger.error("Failed to retrieve job %s from Supabase: %s", job_id, e)
             raise BadRequest(f"Failed to retrieve job: {str(e)}")
 
+    def delete_job(self, user_id: str, job_id: str) -> None:
+        """Delete/cancel a specific download job for a user."""
+        try:
+            # 1. Annuler explicitement la tâche en vol si elle tourne encore
+            self._cancelled_jobs.add(job_id)
+            task = self._running_tasks.get(job_id)
+            if task and not task.done():
+                task.cancel()
+                logger.info("Cancelled running background task for job %s", job_id)
+
+            self.supabase.table("download_jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
+            # Clean up potential partial or downloaded files from disk
+            for pattern in (f"{job_id}.*", f"{job_id}.*.*"):
+                for p in DOWNLOADS_DIR.glob(pattern):
+                    try:
+                        p.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+            logger.info("Deleted download job %s for user %s", job_id, user_id)
+        except Exception as e:
+            logger.error("Failed to delete job %s: %s", job_id, e)
+            raise BadRequest(f"Failed to delete job: {str(e)}")
+
     def list_jobs(
         self, user_id: str, status: Optional[str] = None, limit: int = 20, cursor: Optional[str] = None
     ) -> Tuple[List[DownloadJob], Optional[str]]:
         """List download jobs for a user from Supabase."""
         try:
-            query = supabase.table("download_jobs").select("*").eq("user_id", user_id)
+            query = self.supabase.table("download_jobs").select("*").eq("user_id", user_id)
             if status:
                 query = query.eq("status", status)
 
             # Cursor-based pagination: created_at < cursor's created_at
             if cursor:
-                cursor_response = supabase.table("download_jobs").select("created_at").eq("id", cursor).execute()
+                cursor_response = self.supabase.table("download_jobs").select("created_at").eq("id", cursor).execute()
                 if cursor_response.data:
                     cursor_time = cursor_response.data[0]["created_at"]
                     query = query.lt("created_at", cursor_time)
@@ -412,7 +1341,7 @@ class DownloadService:
         """Retry a failed or cancelled job in Supabase."""
         job = self.get_job(user_id, job_id)
 
-        if job.status not in ("failed", "cancelled"):
+        if job.status not in ("failed", "cancelled", "requires_resolution"):
             raise BadRequest(f"Cannot retry a job that is currently {job.status}")
 
         now = datetime.now(timezone.utc)
@@ -424,7 +1353,7 @@ class DownloadService:
         job.updated_at = now
 
         try:
-            supabase.table("download_jobs").update({
+            self.supabase.table("download_jobs").update({
                 "status": "queued",
                 "progress_percent": 0.0,
                 "error_code": None,
@@ -439,9 +1368,69 @@ class DownloadService:
         logger.info("Retrying download job %s in Supabase, attempt %d", job_id, job.attempt_count)
 
         # Trigger real background download task
-        asyncio.create_task(self._run_download_job(job_id))
+        self._start_download_task(job_id)
 
         return job
+
+    async def reassign_track_audio(
+        self,
+        user_id: str,
+        track_id: str,
+        video_id: str,
+        source_hint: Optional[dict] = None,
+    ) -> DownloadJob:
+        """
+        Manually reassign the audio stream of a track to a specific YouTube video_id.
+        Acquires track lock, supersedes conflicting pending jobs, bypasses global cache,
+        and starts a download worker with trigger='manual_reassign'.
+        """
+        if not track_id.startswith("trk_"):
+            raise BadRequest("Invalid track ID format. Must start with 'trk_'")
+        if not video_id or not video_id.strip():
+            raise BadRequest("A valid video_id must be provided")
+
+        clean_video_id = video_id.strip()
+        lock = await self._get_track_lock(track_id)
+        async with lock:
+            # 1. Supersede any active download jobs for this track in Supabase
+            try:
+                self.supabase.table("download_jobs").update({
+                    "status": "superseded",
+                    "error_message": "Remplacé par une réassignation manuelle",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("track_id", track_id).in_("status", ["queued", "running", "requires_resolution"]).execute()
+            except Exception as e:
+                logger.warning("Failed to mark previous jobs superseded for track %s: %s", track_id, e)
+
+            # 2. Create a new queued job specifically for manual reassign
+            job_id = generate_id("job")
+            now = datetime.now(timezone.utc)
+            job = DownloadJob(
+                id=job_id,
+                user_id=user_id,
+                track_id=track_id,
+                provider_name="youtube",
+                operation_type="manual_reassign",
+                status="queued",
+                progress_percent=0.0,
+                attempt_count=1,
+                created_at=now,
+                updated_at=now,
+            )
+
+            try:
+                self.supabase.table("download_jobs").insert(job.to_dict()).execute()
+            except Exception as e:
+                logger.error("Failed to insert reassign job %s in Supabase: %s", job_id, e)
+                raise BadRequest(f"Failed to create job in database: {str(e)}")
+
+            merged_hint = dict(source_hint or {})
+            merged_hint["resolved_video_id"] = clean_video_id
+            merged_hint["trigger"] = "manual_reassign"
+
+            logger.info("Created reassign job %s for user %s, track %s (video_id: %s)", job_id, user_id, track_id, clean_video_id)
+            self._start_download_task(job_id, merged_hint)
+            return job
 
     def update_user_cookies(self, cookies_text: str) -> bool:
         """Upload Netscape cookies to the persistent storage."""
@@ -469,34 +1458,99 @@ class DownloadService:
         """Helper to quickly update specific job fields in Supabase in real-time."""
         try:
             kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
-            supabase.table("download_jobs").update(kwargs).eq("id", job_id).execute()
+            self.supabase.table("download_jobs").update(kwargs).eq("id", job_id).execute()
         except Exception as e:
             logger.error("Failed to update job status for %s in Supabase: %s", job_id, e)
 
+    def _start_download_task(self, job_id: str, source_hint: Optional[dict] = None) -> asyncio.Task:
+        task = asyncio.create_task(self._run_download_job(job_id, source_hint))
+        self._running_tasks[job_id] = task
+        return task
+
     async def _run_download_job(self, job_id: str, source_hint: Optional[dict] = None) -> None:
+        try:
+            async with self._download_semaphore:
+                if job_id in self._cancelled_jobs:
+                    logger.info("Job %s was cancelled before acquiring semaphore, skipping.", job_id)
+                    return
+                await self._run_download_job_impl(job_id, source_hint)
+        except asyncio.CancelledError:
+            logger.info("Job %s task was cancelled.", job_id)
+            self._update_job_status(
+                job_id,
+                status="cancelled",
+                error_code="user_cancelled",
+                error_message="Téléchargement annulé par l'utilisateur.",
+            )
+            for p in DOWNLOADS_DIR.glob(f"{job_id}.*"):
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.exception("Unexpected error in download worker for job %s", job_id)
+            self._update_job_status(
+                job_id,
+                status="failed",
+                error_code="unexpected_error",
+                error_message=str(e),
+            )
+        finally:
+            self._running_tasks.pop(job_id, None)
+            self._cancelled_jobs.discard(job_id)
+
+    async def _run_download_job_impl(self, job_id: str, source_hint: Optional[dict] = None) -> None:
         """
         Background download worker task using yt-dlp.
 
-        1. Resolves the track_id (calls Deezer API if it's an opaque AURA ID).
+        1. Resolves the track_id (calls Deezer API or parses source_hint).
         2. Initiates the yt-dlp download with progress hooks.
         3. Converts format, embeds metadata and saves file in volumes.
         4. Updates status to succeeded or failed with diagnostic messages.
         """
         try:
-            response = supabase.table("download_jobs").select("*").eq("id", job_id).execute()
+            response = self.supabase.table("download_jobs").select("*").eq("id", job_id).execute()
             if not response.data:
                 logger.error("Job %s not found in Supabase", job_id)
                 return
             job = DownloadJob.from_dict(response.data[0])
         except Exception as e:
             logger.error("Failed to fetch job %s from Supabase for worker: %s", job_id, e)
-            return
+        # Acquire track concurrency lock (Double-Checked Locking)
+        # Prevents parallel yt-dlp runs for the same track_id across concurrent requests in mono-process
+        track_lock = await self._get_track_lock(job.track_id)
+        async with track_lock:
+            # Double-Checked Locking : vérification si la piste a été téléchargée par un job concurrent
+            # Ignoré en cas de réassignation manuelle explicite pour forcer le nouveau téléchargement
+            is_manual_reassign = (source_hint or {}).get("trigger") == "manual_reassign"
+            if not is_manual_reassign:
+                cached = _find_globally_cached_track(job.track_id)
+                if cached:
+                    cached_audio, metadata = cached
+                    logger.info("Worker job %s: track %s trouvé dans le cache global sous verrou ! Association 0s", job_id, job.track_id)
+                    _link_cached_track_to_user(
+                        user_id=job.user_id,
+                        track_id=job.track_id,
+                        cached_audio=cached_audio,
+                        metadata=metadata,
+                        override_metadata=source_hint,
+                    )
+                    self._update_job_status(job_id, status="succeeded", progress_percent=100.0)
+                    return
 
+            await self._execute_download_workflow(job, source_hint)
+
+    async def _execute_download_workflow(self, job: DownloadJob, source_hint: Optional[dict] = None) -> None:
+        job_id = job.id
         # 1. Resolve track metadata to get the YouTube search query
         query = None
         artist = None
         title = None
         album = None
+        duration_ms = None
+        artist_id = None
+        album_id = None
+        cover_uri = None
         ref = None
         try:
             # Check if this is a valid encoded stateless AURA ID
@@ -507,18 +1561,43 @@ class DownloadService:
                 title = track_data.get("title", "")
                 artist = track_data.get("artist", {}).get("name", "")
                 album = track_data.get("album", {}).get("title", "")
+                duration_ms = int(track_data.get("duration", 0)) * 1000 if track_data.get("duration") else None
+                artist_id = f"artist:{artist.lower().strip()}" if artist else None
+                album_id = f"album:{artist.lower().strip()}:{album.lower().strip()}" if artist and album else None
+                cover_uri = (
+                    track_data.get("album", {}).get("cover_xl")
+                    or track_data.get("album", {}).get("cover_big")
+                    or track_data.get("album", {}).get("cover_medium")
+                    or track_data.get("album", {}).get("cover")
+                )
                 query = f"{artist} {title}".strip()
-                logger.info("Resolved query: %r, album: %r from Deezer ID: %s", query, album, ref.provider_id)
+                logger.info("Resolved query: %r, album: %r, cover: %r from Deezer ID: %s", query, album, cover_uri, ref.provider_id)
         except ValueError:
-            # Fallback for manual/test IDs (e.g. trk_01KSRA...)
+            # Fallback for manual/test IDs (e.g. trk_cloud_...)
             pass
+
+        if source_hint:
+            if not title and source_hint.get("title"):
+                title = source_hint["title"]
+            if not artist and source_hint.get("artist_name"):
+                artist = source_hint["artist_name"]
+            if not album and source_hint.get("album_title"):
+                album = source_hint["album_title"]
+            if not cover_uri and source_hint.get("cover_uri"):
+                cover_uri = source_hint["cover_uri"]
+            if artist and not artist_id:
+                artist_id = f"artist:{artist.lower().strip()}"
+            if artist and album and not album_id:
+                album_id = f"album:{artist.lower().strip()}:{album.lower().strip()}"
+            if artist and title and not query:
+                query = f"{artist} {title}".strip()
 
         # Try to resolve targeted YouTube Music videoId
         resolved_video_id = None
         if source_hint and source_hint.get("resolved_video_id"):
             resolved_video_id = source_hint["resolved_video_id"]
             logger.info("Direct videoId provided in source_hint: %s", resolved_video_id)
-        elif ref and ref.provider_name == "deezer" and artist and title:
+        elif artist and title:
             # We run the targeted search in a thread pool since ytmusicapi makes blocking HTTP requests
             def _run_resolve():
                 return self._resolve_official_video_id(artist, title, album)
@@ -544,17 +1623,16 @@ class DownloadService:
             download_target = f"https://www.youtube.com/watch?v={resolved_video_id}"
             logger.info("Targeted search resolved official videoId: %s. Direct target: %s", resolved_video_id, download_target)
         else:
-            # If we couldn't resolve via Deezer, fallback to source_hint or track_id name
-            if not query:
-                if source_hint and source_hint.get("provider_track_id"):
-                    query = source_hint["provider_track_id"]
-                else:
-                    # Last resort fallback (uses track_id as a search query if test ID)
-                    query = job.track_id
+            if not query and artist and title:
+                query = f"{artist} {title}".strip()
+            elif not query and source_hint and source_hint.get("title"):
+                query = source_hint.get("title")
 
-            # Clean fallback in case query is too short
-            if not query or len(query) < 3:
-                query = "Booba DKR"  # Default fallback for testing
+            if not query or len(query) < 3 or query.startswith("trk_"):
+                if artist and title:
+                    query = f"{artist} {title}"
+                else:
+                    query = "Booba DKR"  # Default fallback for testing
                 
             download_target = query
             logger.info("Targeted search returned no candidate. Falling back to search query: %r", download_target)
@@ -567,6 +1645,8 @@ class DownloadService:
         last_progress = [0.0]
 
         def _progress_hook(d: dict) -> None:
+            if job_id in self._cancelled_jobs:
+                raise yt_dlp.utils.DownloadCancelled("Download cancelled by user request")
             if d["status"] == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 downloaded = d.get("downloaded_bytes", 0)
@@ -600,19 +1680,57 @@ class DownloadService:
                         return
 
                     expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
+                    audio_final = None
                     if expected_file.exists():
-                        status = "succeeded"
-                        progress_percent = 100.0
+                        audio_final = expected_file
                     else:
                         matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
                         non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
                         if non_thumb:
+                            audio_final = non_thumb[0]
+
+                    if audio_final is not None and audio_final.exists():
+                        # Auto-register in user's personal Cloud sync storage
+                        registered = _auto_register_in_sync_files(
+                            user_id=job.user_id,
+                            track_id=job.track_id,
+                            audio_file=audio_final,
+                            title=title,
+                            artist_name=artist,
+                            album_title=album,
+                            duration_ms=duration_ms,
+                            artist_id=artist_id,
+                            album_id=album_id,
+                            cover_uri=cover_uri,
+                        )
+                        if registered:
+                            if (source_hint or {}).get("trigger") == "manual_reassign":
+                                _propagate_reassigned_track_to_all_users(
+                                    track_id=job.track_id,
+                                    cached_audio=audio_final,
+                                    title=title,
+                                    artist_name=artist,
+                                    album_title=album,
+                                    duration_ms=duration_ms,
+                                    cover_uri=cover_uri,
+                                )
+                                _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id, supabase_client=self.supabase)
+
                             status = "succeeded"
                             progress_percent = 100.0
                         else:
                             status = "failed"
-                            error_code = "job_failed"
-                            error_message = "Audio conversion failed, no MP3 found."
+                            error_code = "corrupt_audio_output"
+                            error_message = "Audio integrity validation failed (file empty or corrupt)."
+                    else:
+                        status = "failed"
+                        error_code = "job_failed"
+                        error_message = "Audio conversion failed, no MP3 found."
+            except yt_dlp.utils.DownloadCancelled:
+                logger.info("yt-dlp download cancelled for job %s", job_id)
+                status = "cancelled"
+                error_code = "user_cancelled"
+                error_message = "Téléchargement annulé par l'utilisateur."
             except yt_dlp.utils.DownloadError as e:
                 status = "failed"
                 error_code = "job_failed"

@@ -22,8 +22,6 @@ Fournir un chemin de deploiement simple pour un VPS always-on, avec une premiere
 - `SUPABASE_URL=...`
 - `SUPABASE_ANON_KEY=...`
 - `SUPABASE_SERVICE_ROLE_KEY=...`
-- `QDRANT_URL=...`
-- `QDRANT_API_KEY=...`
 - `LOG_LEVEL=INFO`
 
 ## Bootstrap Ubuntu
@@ -81,7 +79,14 @@ docker compose -f infra/docker-compose.vps.yml -f infra/docker-compose.vps.caddy
 ```
 
 ## Verification TLS
-- verifier `https://<your-domain>/health`
+- verifier `https://<your-domain>/health` (Production)
+- verifier `https://<your-dev-domain>/health` (Container Dev `aura-api-dev`)
+
+## Configuration du sous-domaine Dev (ex: aura-dev.duckdns.org)
+Pour tester les fonctionnalités en développement depuis le téléphone ou desktop via HTTPS :
+1. Créer le sous-domaine sur DuckDNS (ex: `aura-dev` pointant vers la même IP VPS).
+2. Dans `infra/caddy/Caddyfile`, ajouter le bloc reverse proxy vers `aura-api-dev:8000`.
+3. Relancer ou recharger Caddy : `docker exec aura-caddy caddy reload`.
 
 ## Regles
 - tant que Caddy n'est pas en place, l'API reste exposee sur `:8000`

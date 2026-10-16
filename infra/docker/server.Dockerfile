@@ -19,6 +19,7 @@ WORKDIR /app
 
 COPY server/pyproject.toml server/README.md ./
 COPY server/app ./app
+COPY server/scripts ./scripts
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
