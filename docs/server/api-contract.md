@@ -27,6 +27,12 @@ Definir le contrat HTTP de reference du backend AURA pour les capacites online, 
 
 ## Enveloppe JSON canonique
 
+Les routes privées exigent un access token Supabase vérifié selon
+`docs/server/security-and-secrets.md`, par Bearer ou paramètre `token` pour la lecture audio.
+Les erreurs d'authentification conservent le format FastAPI HTTP 401 `{"detail": "..."}`
+et `WWW-Authenticate: Bearer`. Aucun identifiant propriétaire fixe n'est accepté.
+Les routes historiques `/test` ne font pas partie de l'application principale (HTTP 404).
+
 ### Reponse de succes
 ```json
 {

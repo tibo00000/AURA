@@ -83,7 +83,7 @@ Server
 - `docs/server/storage.md`: strategie de stockage.
 - `docs/server/providers/deezer.md`: provider de recherche online v1.
 - `docs/server/providers/streaming-bridge.md`: extension future pour streaming/Hi-Fi.
-- `docs/server/security-and-secrets.md`: secrets, variables et permissions.
+- `docs/server/security-and-secrets.md`: secrets, authentification, projet Supabase de test isolé et checklist opérationnelle du lot 1.
 
 MCP And Operations
 - `docs/mcp/overview.md`: vue d'ensemble du serveur MCP.
@@ -92,5 +92,9 @@ MCP And Operations
 - `docs/ops/logging-observability.md`: logs et correlation.
 - `docs/ops/env-vars.md`: inventaire des variables d'environnement.
 - `docs/ops/hosting-strategy.md`: strategie d'hebergement always-on avant la recherche online produit.
+- `docs/ops/security-lot1-intervention.md`: candidats de confinement, commandes, risques, vérifications et autorisations pour le déploiement sécurisé du lot 1.
 - `docs/ops/ota-deployment-guide.md`: procedure pas-a-pas pour publier une mise a jour OTA et synchroniser l'APK et version.json sur le VPS.
+
+Verification Tools
+- `server/scripts/verify_security_lot1_local.py`: sonde hors ligne Auth, streaming synthétique et journaux Uvicorn ; aucune connexion Supabase réelle.
 

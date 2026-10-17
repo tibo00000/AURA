@@ -24,7 +24,7 @@ TEST_TEMP_DIR = Path(tempfile.mkdtemp(prefix="aura_test_sync_"))
 os.environ["SYNC_FILES_DIR"] = str(TEST_TEMP_DIR)
 
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Mock external optional audio libraries if not present in local test venv
 for mod in ("yt_dlp", "ytmusicapi"):
@@ -296,22 +296,33 @@ class TestGlobalTrackCache(unittest.TestCase):
 
     def test_auth_token_query_parameter(self):
         """Vérifie que get_current_user accepte un jeton transmis via ?token= (streaming)."""
+        import time
+        import jwt
+        from types import SimpleNamespace
+        user_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        secret = "synthetic-test-signing-secret-32-bytes-minimum"
+        config = SimpleNamespace(supabase_url="https://auth.example.test", supabase_jwt_secret=secret)
+        access_token = jwt.encode({
+            "sub": user_id, "aud": "authenticated", "iss": "https://auth.example.test/auth/v1",
+            "role": "authenticated", "exp": int(time.time()) + 300,
+        }, secret, algorithm="HS256")
         async def run_auth_test():
-            from app.core.auth import get_current_user, TRANSITIONAL_OWNER_UUID
+            from app.core.auth import get_current_user
             
             # 1. Via Header
-            user_header = await get_current_user(authorization=f"Bearer {TRANSITIONAL_OWNER_UUID}")
-            self.assertEqual(user_header.id, TRANSITIONAL_OWNER_UUID)
+            user_header = await get_current_user(authorization=f"Bearer {access_token}")
+            self.assertEqual(user_header.id, user_id)
 
             # 2. Via Query param
-            user_query = await get_current_user(token=TRANSITIONAL_OWNER_UUID)
-            self.assertEqual(user_query.id, TRANSITIONAL_OWNER_UUID)
+            user_query = await get_current_user(token=access_token)
+            self.assertEqual(user_query.id, user_id)
 
             # 3. Via Query param avec préfixe Bearer
-            user_query_bearer = await get_current_user(token=f"Bearer {TRANSITIONAL_OWNER_UUID}")
-            self.assertEqual(user_query_bearer.id, TRANSITIONAL_OWNER_UUID)
+            user_query_bearer = await get_current_user(token=f"Bearer {access_token}")
+            self.assertEqual(user_query_bearer.id, user_id)
 
-        asyncio.run(run_auth_test())
+        with patch("app.core.auth.get_settings", return_value=config):
+            asyncio.run(run_auth_test())
 
     def test_sync_file_download_endpoint_cross_alias(self):
         """Vérifie que l'endpoint download_sync_file sert le fichier même si stocké sous un autre alias."""

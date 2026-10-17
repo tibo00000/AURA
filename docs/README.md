@@ -83,9 +83,14 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 69. `docs/ops/logging-observability.md`
 70. `docs/ops/env-vars.md`
 71. `docs/ops/hosting-strategy.md`
+72. `docs/ops/security-lot1-intervention.md`
 
 ## Rythme de mise a jour
 - Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
 - Toute modification de structure impose une regeneration de `llms-full.txt`.
 - Les documents produit et domaine doivent etre valides avant de documenter une implementation detaillee.
 - Toute modification documentaire doit respecter `docs/documentation/style-guide.md`.
+
+## Outils de verification
+
+- `server/scripts/verify_security_lot1_local.py` : sonde hors ligne Auth, streaming synthétique et journaux Uvicorn ; procédure et limites dans `docs/server/security-and-secrets.md` et `docs/ops/logging-observability.md`.

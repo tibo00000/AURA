@@ -751,6 +751,7 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
         # Quiet output
         "quiet": True,
         "no_warnings": False,
+        "logger": logger,
         "noplaylist": True,
 
         # Embed metadata & thumbnail

@@ -1,0 +1,9 @@
+# Candidate only. Merge AFTER compose.containment.yml. Do not activate disabled-dev.
+services:
+  aura-api:
+    image: ${AURA_SECURITY_IMAGE:?Set the verified local image tag after loading and checking its immutable ID}
+    pull_policy: never
+    build: !reset null
+    volumes: !override
+      - aura-downloads:/app/downloads
+      - ../server/scripts:/app/scripts:ro
