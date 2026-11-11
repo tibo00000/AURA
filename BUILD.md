@@ -363,6 +363,8 @@ Resultat attendu :
 
 ## Journal des changements
 
+- 2026-11-11T15:40:03+01:00 | release, android | `androidApp/build.gradle.kts`, `BUILD.md` | AND-OTA-042 : publication OTA facultative de 0.4.2/code 6 après confirmation sur téléphone de la reconnexion, du streaming et des favoris hors ligne. APK signé comme la 0.4.1, retéléchargé en HTTPS avec SHA-256 conforme. Backend SEC-005.2 sain, ancien APK conservé et seuil minimal 2.
+
 - 2026-11-11T15:08:00+01:00 | dépôt, docs, ops | `docs/ops/security-lot5-candidate.md`, `docs/ops/security-lot5-window-decisions.md` | Clôture des lots de sécurité. Sources et validations backend comparées au contexte SEC-005.2 déployé, Android au candidat figé. Commits distincts, procédures de sauvegarde et déploiement versionnées, preuves historiques archivées hors Git et règles d’ignorance complétées. 162 tests backend isolés, 77 tests Android x64 et 5 tests d’archive réussis. Aucun déploiement ni changement de version.
 
 - 2026-11-11T14:53:50+01:00 | ops, decision | `docs/ops/security-lot5-window-decisions.md` | SEC-005.15 — V repris avec succès, fixtures A/B nettoyées et journal SQLite intègre. SEC-005.2 ouvert en production. Santé et Auth HTTPS 200, streaming 200/206, rejet multipart 413, dev 503 et filtrage des logs vérifiés. Expiration réelle du JWT reportée à la demande opérateur.
@@ -864,3 +866,11 @@ commit ou push ; backend SEC-003.3 inchangé.
 Preuves : `scratch/ota-0.4.1/rapport.md`, manifest152fichiers et reçus voisins.
 Action utilisateur : installer via Paramètres → Vérifier les mises à jour, sans
 désinstaller l'application, puis observer les favoris et tester le mode hors ligne.
+
+### [RELEASE v0.4.2] - 2026-11-11 (versionCode: 6)
+
+- Reconnexion automatique après expiration de la session.
+- Les favoris déjà présents sur le téléphone restent disponibles hors ligne.
+- La lecture privée reste isolée lors d’un changement de compte.
+
+Publication Android facultative via `/app/updates/aura-0.4.2.apk`. SHA-256 `3d7c73be850879bdb718451c6964b723c6cc33365b4f6e8996110e5011c96dcf`. Les 77 tests ciblés Android x64 du candidat ont réussi. La signature correspond à celle de la version précédente. Le descripteur OTA, le SHA-256 du téléchargement public et `/health` ont été vérifiés à 15 h 40, heure de Paris. Seuil de mise à jour obligatoire inchangé à 2.
