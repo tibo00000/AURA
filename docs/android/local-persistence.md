@@ -365,6 +365,24 @@ Une éviction du cache de streaming Media3 ne peut jamais effacer ce fichier pri
 d'un téléchargement hors-ligne suit exclusivement un flux explicite de gestion du stockage, puis
 met à jour son lien Room de façon cohérente.
 
+### Coordination des fichiers privés
+
+La garde par piste précède la transaction Room ; aucune attente réseau ne doit
+garder cette garde. Finalisation, réparation, scan et purge utilisent la même
+coordination. Le snapshot disque initial ne suffit jamais à déclarer un fichier
+privé absent : la décision est revalidée sous garde. Une purge tardive compare
+l'URI et la génération `last_scanned_at` du lien réellement observé. Une réparation
+incrémente cette génération, même à horloge identique. Un fichier local valide
+est réassocié avant tout transfert réseau. Les purges automatiques ne suppriment
+pas les octets audio ; les favoris, préférences et caches restent préservés.
+Un scan MediaStore incomplet interdit toute purge de ce scan, y compris celle
+d'un lien vers un fichier privé apparemment absent.
+
+L'écran favoris observe le Flow Room existant ; l'option automatique persistée
+est distincte de l'état des transferts. Une réassociation locale n'est pas
+présentée comme un nouveau téléchargement réseau. Aucun changement de schéma
+Room ni de contrat backend n'est nécessaire.
+
 ## Édition des Métadonnées & Protection Anti-Écrasement
 
 - **Continuité 3 Couches** : Toute modification de métadonnées (`updateTrackMetadata`) met à jour simultanément la base Room (`TrackEntity`, `ArtistEntity`, `AlbumEntity`), le fichier MP3 physique via `AudioTagWriter` (frames ID3v2.3 `TIT2`, `TPE1`, `TALB`, `TRCK`, `TYER`, `APIC`) et notifie `MediaScannerConnection` pour actualiser l'OS.

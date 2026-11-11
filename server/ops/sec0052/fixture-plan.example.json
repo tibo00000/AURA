@@ -1,0 +1,24 @@
+{
+  "format": "sec0052-V-v2",
+  "namespace": "32d091222b8a4a22b677708431f430c7",
+  "expected_image": "sha256:cd2a68b333fcafd5753a3654d34be12a5dc5a492d11f0469ffb9446d7d824e91",
+  "api": "http://127.0.0.1:18052",
+  "auth": "https://neosgkuccazvgkzwzjzh.supabase.co",
+  "production_accounts_confirmed": false,
+  "accounts": {
+    "A": null,
+    "B": null
+  },
+  "tracks": {
+    "personal_a": "trk_djE6dHJhY2s6bG9jYWw6c2VjMDA1MnYtMzJkMDkxMjIyYjhhNGEyMmI2Nzc3MDg0MzFmNDMwYzctcGVyc29uYWxfYQ",
+    "personal_b": "trk_djE6dHJhY2s6bG9jYWw6c2VjMDA1MnYtMzJkMDkxMjIyYjhhNGEyMmI2Nzc3MDg0MzFmNDMwYzctcGVyc29uYWxfYg",
+    "shared": "trk_djE6dHJhY2s6bG9jYWw6c2VjMDA1MnYtMzJkMDkxMjIyYjhhNGEyMmI2Nzc3MDg0MzFmNDMwYzctc2hhcmVk",
+    "ordinary": "trk_djE6dHJhY2s6bG9jYWw6c2VjMDA1MnYtMzJkMDkxMjIyYjhhNGEyMmI2Nzc3MDg0MzFmNDMwYzctb3JkaW5hcnk"
+  },
+  "video_ids": [],
+  "max_requests": 120,
+  "max_upload_bytes": 167772160,
+  "max_jobs": 4,
+  "native_source_max_seconds": 60,
+  "provider_storage_budget_bytes": 104857600
+}

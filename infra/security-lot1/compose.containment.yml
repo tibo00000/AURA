@@ -1,0 +1,38 @@
+# Candidate only. Merge AFTER both existing VPS Compose files, using project infra.
+services:
+  aura-api:
+    image: ${AURA_CONTAINMENT_IMAGE:-aura-security-lot1:containment-prelot1-20261017}
+    pull_policy: never
+    build: !reset null
+    ports: !reset []
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      ENABLE_STARTUP_RECOVERY: "false"
+      ENABLE_CACHE_BACKFILL: "false"
+    command: ["uvicorn", "app.core.operational_logging:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--log-config", "/app/app/core/security-logging.json"]
+    volumes:
+      - ../server/app/core/operational_logging.py:/app/app/core/operational_logging.py:ro
+      - ../server/app/core/security-logging.json:/app/app/core/security-logging.json:ro
+  aura-api-dev:
+    ports: !reset []
+    profiles: [disabled-dev]
+    restart: "no"
+    environment:
+      APP_DEBUG: "false"
+      ENABLE_STARTUP_RECOVERY: "false"
+      ENABLE_CACHE_BACKFILL: "false"
+  caddy:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on: !override
+      aura-api:
+        condition: service_healthy

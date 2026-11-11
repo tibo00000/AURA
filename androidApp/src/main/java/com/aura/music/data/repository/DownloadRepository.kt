@@ -276,6 +276,8 @@ class DownloadRepository(
      * Automatically exits when there are no active jobs left.
      */
     suspend fun startPolling(userToken: String) = withContext(Dispatchers.IO) {
+        val auth = com.aura.music.core.AuthSessionManager.getInstance(context)
+        val pollingAnchor = auth.authorize(userToken)
         if (isPolling) return@withContext
         isPolling = true
         Log.d(TAG, "Starting active download jobs polling loop (batch-optimized)")
@@ -287,8 +289,11 @@ class DownloadRepository(
                     break
                 }
 
+                val lease = auth.validSession()
+                if (!auth.isCurrent(pollingAnchor)) break
+                val currentToken = lease.bearer
                 try {
-                    val response = apiService.listDownloads(token = userToken, limit = 50)
+                    val response = apiService.listDownloads(token = currentToken, limit = 50)
                     val items = response.data?.items
                     if (items != null && response.error == null) {
                         val now = System.currentTimeMillis()
@@ -367,14 +372,14 @@ class DownloadRepository(
                     } else {
                         // Fallback: poll top 3 active jobs with slight delay between requests
                         for (job in activeJobs.take(3)) {
-                            pollSingleJob(userToken, job)
+                            pollSingleJob(currentToken, job)
                             delay(100)
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error during batch download polling, attempting fallback poll", e)
                     for (job in activeJobs.take(2)) {
-                        pollSingleJob(userToken, job)
+                        pollSingleJob(currentToken, job)
                         delay(100)
                     }
                 }
@@ -590,11 +595,12 @@ class DownloadRepository(
             }
 
             val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            val tempFile = File(downloadsDir, "${trackId.replace(':', ';')}.tmp")
+            val tempFile = File.createTempFile("aura-job-transfer-", ".tmp", downloadsDir)
             if (tempFile.exists()) {
                 tempFile.delete()
             }
 
+            var publishedGeneration: Long? = null
             try {
                 // Stream download to prevent OOM
                 val channel = response.bodyAsChannel()
@@ -607,12 +613,13 @@ class DownloadRepository(
                         }
                     }
                 }
-                if (targetFile.exists()) {
-                    targetFile.delete()
-                }
-                if (!tempFile.renameTo(targetFile)) {
-                    tempFile.copyTo(targetFile, overwrite = true)
-                    tempFile.delete()
+                val coordinator = com.aura.music.data.media.TrackMediaCoordinator.shared
+                coordinator.withTrack(trackId) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        coordinator.publish(tempFile, targetFile)
+                        coordinator.repairLocked(database, downloadsDir, trackId)
+                        publishedGeneration = database.trackDao().getMediaLinkByTrackId(trackId)?.lastScannedAt
+                    }
                 }
             } catch (streamEx: Exception) {
                 if (tempFile.exists()) {
@@ -682,6 +689,9 @@ class DownloadRepository(
             val now = System.currentTimeMillis()
             val fileUri = Uri.fromFile(targetFile).toString()
 
+            com.aura.music.data.media.TrackMediaCoordinator.shared.withTrack(trackId) {
+            val currentLink = database.trackDao().getMediaLinkByTrackId(trackId)
+            if (currentLink?.lastScannedAt != publishedGeneration || !com.aura.music.data.media.AudioIntegrityValidator.isValidAudioFile(targetFile, checkMetadata = false)) return@withTrack
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
                     // 1. Create or reuse media link deterministically
@@ -712,6 +722,7 @@ class DownloadRepository(
                 }
             }
 
+            }
             // Trigger background upload if auto-sync is enabled
             val settings = database.userSettingsDao().getSettings()
             if (settings != null && settings.syncEnabled) {

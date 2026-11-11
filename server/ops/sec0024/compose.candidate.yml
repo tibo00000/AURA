@@ -1,0 +1,9 @@
+# FIFTH file after both VPS base files and both lot1 overrides. Never use alone.
+services:
+  aura-api:
+    image: ${AURA_SECURITY_IMAGE:?Set the verified immutable lot2 candidate image ID}
+    pull_policy: never
+    build: !reset null
+    # Application and validation tools are embedded; retain only existing audio data.
+    volumes: !override
+      - aura-downloads:/app/downloads

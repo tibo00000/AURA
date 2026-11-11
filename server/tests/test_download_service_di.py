@@ -4,6 +4,7 @@ Unit tests for DownloadService dependency injection and startup recovery configu
 
 import sys
 import unittest
+import asyncio
 from unittest.mock import MagicMock
 
 # Mock rapidfuzz and ytmusicapi if not installed in current environment
@@ -12,7 +13,7 @@ for mod in ("ytmusicapi", "rapidfuzz", "rapidfuzz.fuzz"):
         sys.modules[mod] = MagicMock()
 
 from app.config import Settings
-from app.services.download_service import DownloadService, _cleanup_orphaned_job_files
+from app.services.download_service import DownloadService
 
 
 class TestDownloadServiceDependencyInjection(unittest.TestCase):
@@ -78,23 +79,20 @@ class TestDownloadServiceDependencyInjection(unittest.TestCase):
         self.mock_supabase.table.assert_not_called()
 
     def test_cleanup_orphaned_job_files_uses_injected_client(self):
-        """_cleanup_orphaned_job_files queries the provided client without relying on globals."""
-        mock_table = MagicMock()
-        mock_select = MagicMock()
-        mock_eq = MagicMock()
-        self.mock_supabase.table.return_value = mock_table
-        mock_table.select.return_value = mock_select
-        mock_select.eq.return_value = mock_eq
-        mock_eq.execute.return_value = MagicMock(data=[])
-
-        _cleanup_orphaned_job_files(
-            track_id="trk_dummy_123",
-            keep_job_id="job_active_123",
-            supabase_client=self.mock_supabase,
-        )
-
-        self.mock_supabase.table.assert_called_with("download_jobs")
-        mock_select.eq.assert_called_with("track_id", "trk_dummy_123")
+        from app.domain.models import DownloadJob
+        query = MagicMock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.in_.return_value = query
+        query.execute.return_value = MagicMock(data=[])
+        self.mock_supabase.table.return_value = query
+        service = DownloadService(supabase_client=self.mock_supabase)
+        keep = DownloadJob(id='job_active_123', user_id='synthetic-owner', track_id='trk_dummy_123',
+                           provider_name='youtube', status='succeeded')
+        asyncio.run(service._cleanup_orphaned_job_files(keep))
+        self.mock_supabase.table.assert_called_with('download_jobs')
+        self.assertIn(unittest.mock.call('user_id', 'synthetic-owner'), query.eq.call_args_list)
+        self.assertIn(unittest.mock.call('track_id', 'trk_dummy_123'), query.eq.call_args_list)
 
 
 if __name__ == "__main__":

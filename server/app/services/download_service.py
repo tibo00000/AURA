@@ -22,8 +22,16 @@ from app.core.aura_id_codec import parse_aura_id
 from app.core.id_generator import generate_id
 from app.domain.models import DownloadJob
 from app.providers.deezer.client import DeezerClient
-from app.services.exceptions import BadRequest, NotFound, RequiresResolutionException
+from app.services.exceptions import AmbiguousMutation, BadRequest, Conflict, NotFound, ProviderUnavailable, RequiresResolutionException
+from app.services.download_lifecycle import (
+    AdmissionIntent, DownloadAttempt, TaskSupervisor, blocking, cleanup_legacy_files, drain, legacy_audio, regular_file, validate_job_id,
+)
 from app.db.supabase import supabase
+from app.services import download_cache
+import threading
+from app.services.storage_safety import STORAGE_LOCK as _STORAGE_LOCK, reserve_copy, replace_pair, stage_json
+from app.services.replacement_history import ReplacementHistory
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +63,7 @@ def _get_sync_base() -> Path:
 
 
 def _get_global_cache_dir() -> Path:
-    """Retourne le répertoire de cache global dédoublonné."""
-    cache_dir = _get_sync_base() / "_global_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
+    return download_cache.directory(_get_sync_base(), create=True)
 
 
 def _get_track_key(track_id: str) -> str:
@@ -87,121 +92,25 @@ _cached_doublets: dict[tuple[str, str], tuple[Path, Path, str]] = {}
 _cached_global_keys_last_refresh: float = 0.0
 
 
-def get_cached_track_keys_and_doublets() -> tuple[set[str], dict[tuple[str, str], tuple[Path, Path, str]]]:
-    """
-    Retourne l'ensemble des clés SHA-256 et le dictionnaire (titre, artiste) -> (audio, json, track_id)
-    présents dans le cache global et les répertoires utilisateurs (O(1) en mémoire avec rafraîchissement périodique 5s).
-    """
-    global _cached_global_keys, _cached_doublets, _cached_global_keys_last_refresh
-    import time
-    import json
-    now = time.time()
-    if now - _cached_global_keys_last_refresh > 5.0 or not _cached_global_keys:
-        new_keys: set[str] = set()
-        new_doublets: dict[tuple[str, str], tuple[Path, Path, str]] = {}
-        try:
-            cache_dir = _get_global_cache_dir()
-            sync_base = _get_sync_base()
-            dirs_to_scan = [cache_dir]
-            if sync_base.exists():
-                for sub in sync_base.iterdir():
-                    if sub.is_dir() and sub.name != "_global_cache":
-                        dirs_to_scan.append(sub)
-
-            for d in dirs_to_scan:
-                try:
-                    for audio_path in d.glob("*.audio"):
-                        try:
-                            if audio_path.stat().st_size > 0:
-                                new_keys.add(audio_path.stem)
-                        except Exception:
-                            pass
-                    for json_path in d.glob("*.json"):
-                        stem = json_path.stem
-                        audio_path = d / f"{stem}.audio"
-                        if not (audio_path.exists() and audio_path.stat().st_size > 0):
-                            continue
-                        new_keys.add(stem)
-                        try:
-                            meta = json.loads(json_path.read_text(encoding="utf-8"))
-                            t = meta.get("title")
-                            a = meta.get("artist_name") or meta.get("artist")
-                            original_id = meta.get("track_id") or stem
-                            if t and a:
-                                norm_key = (_normalize_search_string(t), _normalize_search_string(a))
-                                if norm_key not in new_doublets:
-                                    new_doublets[norm_key] = (audio_path, json_path, original_id)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-            _cached_global_keys = new_keys
-            _cached_doublets = new_doublets
-        except Exception as e:
-            logger.warning("Failed to refresh cached track keys and doublets: %s", e)
-        _cached_global_keys_last_refresh = now
-    return _cached_global_keys, _cached_doublets
+def get_cached_track_keys_and_doublets():
+    # Read only, including availability checks reached from public catalogue routes.
+    keys, doublets = set(), {}
+    for audio, metadata in download_cache.entries(_get_sync_base()):
+        keys.add(audio.stem)
+        title, artist = metadata.get('title'), metadata.get('artist_name')
+        if title and artist:
+            doublets[(_normalize_search_string(title), _normalize_search_string(artist))] = (
+                audio, audio.with_suffix('.json'), metadata['track_id'])
+    return keys, doublets
 
 
-def get_cached_track_keys_set() -> set[str]:
-    keys, _ = get_cached_track_keys_and_doublets()
-    return keys
+def get_cached_track_keys_set():
+    return get_cached_track_keys_and_doublets()[0]
 
 
-def is_track_in_global_cache(track_id: str, title: str | None = None, artist_name: str | None = None) -> bool:
-    """
-    Vérifie en mémoire O(1) si une piste est déjà disponible dans le cloud :
-    1. Par correspondance d'alias d'identifiant (trk_..., deezer:..., numeric, ytm:...).
-    2. Par correspondance tolérante Titre + Artiste (avec auto-aliasing immédiat par hardlink pour streaming direct).
-    """
-    from app.core.aura_id_codec import get_track_id_aliases
-    import shutil
-
-    cached_keys, cached_doublets = get_cached_track_keys_and_doublets()
-    aliases = get_track_id_aliases(track_id)
-    for alias in aliases:
-        if _get_track_key(alias) in cached_keys:
-            return True
-
-    # 2. Vérification par couple (Titre, Artiste)
-    if title and artist_name:
-        norm_t = _normalize_search_string(title)
-        norm_a = _normalize_search_string(artist_name)
-        if not norm_t or not norm_a:
-            return False
-
-        match = cached_doublets.get((norm_t, norm_a))
-        if not match:
-            for (c_t, c_a), val in cached_doublets.items():
-                if c_a == norm_a and (c_t == norm_t or (len(c_t) >= 4 and len(norm_t) >= 4 and (c_t in norm_t or norm_t in c_t))):
-                    match = val
-                    break
-
-        if match:
-            audio_source, json_source, _ = match
-            cache_dir = _get_global_cache_dir()
-            primary_key = _get_track_key(track_id)
-            target_audio = cache_dir / f"{primary_key}.audio"
-            target_json = cache_dir / f"{primary_key}.json"
-            if not target_audio.exists():
-                try:
-                    os.link(audio_source, target_audio)
-                except Exception:
-                    try:
-                        shutil.copyfile(audio_source, target_audio)
-                    except Exception:
-                        pass
-            if not target_json.exists():
-                try:
-                    shutil.copyfile(json_source, target_json)
-                except Exception:
-                    pass
-            _cached_global_keys.add(primary_key)
-            logger.info("Auto-aliased cloud track by metadata match ('%s' - '%s') -> primary key %s", title, artist_name, primary_key)
-            return True
-
-    return False
+def is_track_in_global_cache(track_id, title=None, artist_name=None):
+    # An alias or metadata match is never permission to adopt a personal file.
+    return _find_globally_cached_track(track_id) is not None
 
 
 def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[bool, str]:
@@ -270,231 +179,12 @@ def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[boo
         return False, "application/octet-stream"
 
 
-def _find_globally_cached_track(track_id: str) -> Optional[Tuple[Path, dict]]:
-    """
-    Vérifie si une piste existe déjà dans le cache global (_global_cache),
-    en testant tous les alias d'identifiants (trk_..., deezer:..., numeric).
-    Retourne (chemin_audio, métadonnées) si présente et valide (> 0 octets), sinon None.
-    Si la piste est présente dans le répertoire d'un utilisateur existant (téléchargée avant la mise
-    en place du cache global ou par upload direct), elle est automatiquement indexée par hardlink
-    dans _global_cache (backfill transparent).
-    """
-    import json
-    import shutil
-    from app.core.aura_id_codec import get_track_id_aliases
-
-    aliases = get_track_id_aliases(track_id)
-    cache_dir = _get_global_cache_dir()
-    primary_key = _get_track_key(track_id)
-
-    # 1. Vérification dans _global_cache pour chaque alias
-    for alias in aliases:
-        alias_key = _get_track_key(alias)
-        cached_audio = cache_dir / f"{alias_key}.audio"
-        cached_json = cache_dir / f"{alias_key}.json"
-        if cached_audio.exists():
-            is_valid, detected_mime = _is_valid_audio_file(cached_audio)
-            if not is_valid:
-                logger.warning(
-                    "Auto-evicting corrupt global cache file: %s (size=%d bytes). Treating as Cache MISS.",
-                    cached_audio,
-                    cached_audio.stat().st_size if cached_audio.exists() else 0,
-                )
-                try:
-                    cached_audio.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                try:
-                    cached_json.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                continue
-
-            metadata = {}
-            if cached_json.exists():
-                try:
-                    metadata = json.loads(cached_json.read_text(encoding="utf-8"))
-                except Exception as e:
-                    logger.warning("Could not read cached metadata for track %s: %s", alias, e)
-
-            if detected_mime and metadata.get("mime_type") != detected_mime:
-                metadata["mime_type"] = detected_mime
-
-            # Auto-alignement : si l'alias trouvé n'est pas la clé primaire demandée,
-            # indexer également sous la clé primaire par hardlink pour les accès ultérieurs directs.
-            if alias_key != primary_key:
-                primary_audio = cache_dir / f"{primary_key}.audio"
-                primary_json = cache_dir / f"{primary_key}.json"
-                if not primary_audio.exists():
-                    try:
-                        os.link(cached_audio, primary_audio)
-                    except Exception:
-                        try:
-                            shutil.copyfile(cached_audio, primary_audio)
-                        except Exception:
-                            pass
-                if cached_json.exists() and not primary_json.exists():
-                    try:
-                        shutil.copyfile(cached_json, primary_json)
-                    except Exception:
-                        pass
-
-            return cached_audio, metadata
-
-    # 2. Backfill transparent à la volée pour les pistes déjà téléchargées dans le passé chez un utilisateur
+def _find_globally_cached_track(track_id):
+    """Pure lookup in the native-published namespace; never backfill on read."""
     try:
-        sync_base = _get_sync_base()
-        if sync_base.exists():
-            for user_folder in sync_base.iterdir():
-                if user_folder.is_dir() and user_folder.name != "_global_cache":
-                    for alias in aliases:
-                        alias_key = _get_track_key(alias)
-                        candidate_audio = user_folder / f"{alias_key}.audio"
-                        candidate_json = user_folder / f"{alias_key}.json"
-                        if candidate_audio.exists() and candidate_audio.stat().st_size > 0:
-                            target_audio = cache_dir / f"{alias_key}.audio"
-                            target_json = cache_dir / f"{alias_key}.json"
-                            try:
-                                if target_audio.exists():
-                                    target_audio.unlink()
-                                os.link(candidate_audio, target_audio)
-                            except Exception:
-                                shutil.copyfile(candidate_audio, target_audio)
-
-                            if candidate_json.exists():
-                                try:
-                                    shutil.copyfile(candidate_json, target_json)
-                                except Exception:
-                                    pass
-
-                            metadata = {}
-                            if target_json.exists():
-                                try:
-                                    metadata = json.loads(target_json.read_text(encoding="utf-8"))
-                                except Exception:
-                                    pass
-
-                            # Aligner également sous la clé primaire si différente
-                            if alias_key != primary_key:
-                                primary_audio = cache_dir / f"{primary_key}.audio"
-                                primary_json = cache_dir / f"{primary_key}.json"
-                                if not primary_audio.exists():
-                                    try:
-                                        os.link(target_audio, primary_audio)
-                                    except Exception:
-                                        try:
-                                            shutil.copyfile(target_audio, primary_audio)
-                                        except Exception:
-                                            pass
-                                if target_json.exists() and not primary_json.exists():
-                                    try:
-                                        shutil.copyfile(target_json, primary_json)
-                                    except Exception:
-                                        pass
-
-                            logger.info("Automatically backfilled existing track %s (alias %s) into global cache from %s", track_id, alias, user_folder.name)
-                            return target_audio, metadata
-    except Exception as e:
-        logger.warning("Error while scanning existing user folders for track %s: %s", track_id, e)
-
-    # 3. Backfill depuis DOWNLOADS_DIR (/app/downloads) pour les fichiers audio existants
-    try:
-        if DOWNLOADS_DIR.exists():
-            # 3a. Vérification directe par nom de fichier ({alias}.ext)
-            for alias in aliases:
-                for ext in (".mp3", ".m4a", ".opus", ".webm", ".audio"):
-                    direct_file = DOWNLOADS_DIR / f"{alias}{ext}"
-                    if direct_file.exists() and direct_file.stat().st_size > 0:
-                        target_audio = cache_dir / f"{primary_key}.audio"
-                        target_json = cache_dir / f"{primary_key}.json"
-                        try:
-                            if target_audio.exists():
-                                target_audio.unlink()
-                            os.link(direct_file, target_audio)
-                        except Exception:
-                            shutil.copyfile(direct_file, target_audio)
-                        metadata = {
-                            "track_id": track_id,
-                            "synced": True,
-                            "size_bytes": direct_file.stat().st_size,
-                            "mime_type": "audio/mpeg",
-                        }
-                        target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-                        logger.info("Backfilled track %s into global cache directly from DOWNLOADS_DIR (%s)", track_id, direct_file.name)
-                        return target_audio, metadata
-
-            # 3b. Recherche via la table Supabase download_jobs pour lier job_id.mp3 -> primary_key.audio
-            try:
-                from app.core.supabase_client import get_supabase_client
-                supabase = get_supabase_client()
-                for alias in aliases:
-                    res = supabase.table("download_jobs").select("*").eq("track_id", alias).eq("status", "succeeded").limit(1).execute()
-                    if res.data:
-                        job_row = res.data[0]
-                        job_id = job_row.get("id")
-                        if job_id:
-                            for ext in (".mp3", ".m4a", ".opus", ".webm"):
-                                cand_file = DOWNLOADS_DIR / f"{job_id}{ext}"
-                                if cand_file.exists() and cand_file.stat().st_size > 0:
-                                    target_audio = cache_dir / f"{primary_key}.audio"
-                                    target_json = cache_dir / f"{primary_key}.json"
-                                    try:
-                                        if target_audio.exists():
-                                            target_audio.unlink()
-                                        os.link(cand_file, target_audio)
-                                    except Exception:
-                                        shutil.copyfile(cand_file, target_audio)
-
-                                    metadata = {
-                                        "track_id": track_id,
-                                        "synced": True,
-                                        "size_bytes": cand_file.stat().st_size,
-                                        "mime_type": "audio/mpeg",
-                                        "title": job_row.get("title"),
-                                        "artist_name": job_row.get("artist_name"),
-                                        "album_title": job_row.get("album_title"),
-                                    }
-                                    target_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-                                    logger.info("Backfilled track %s (alias %s, job %s) into global cache from DOWNLOADS_DIR", track_id, alias, job_id)
-                                    return target_audio, metadata
-            except Exception as e:
-                logger.debug("Could not query Supabase download_jobs for backfill: %s", e)
-    except Exception as e:
-        logger.warning("Error while scanning DOWNLOADS_DIR for track %s: %s", track_id, e)
-
-    # 4. Résolution par Titre + Artiste pour les identifiants Deezer non encore alignés
-    if track_id.startswith("trk_") or track_id.startswith("deezer:"):
-        try:
-            from app.core.aura_id_codec import parse_aura_id
-            p_id = None
-            if track_id.startswith("trk_"):
-                ref = parse_aura_id(track_id, expected_kind="track")
-                if ref.provider_name.lower() == "deezer":
-                    p_id = ref.provider_id
-            elif track_id.startswith("deezer:"):
-                p_id = track_id.split(":", 1)[1]
-
-            if p_id:
-                client = DeezerClient(base_url=get_settings().deezer_api_base_url)
-                d_track = client.get_track(p_id)
-                if d_track and d_track.title:
-                    artist = getattr(d_track, "artist_name", None)
-                    if not artist and hasattr(d_track, "artist") and d_track.artist:
-                        artist = getattr(d_track.artist, "name", None)
-                    if artist and is_track_in_global_cache(track_id, title=d_track.title, artist_name=artist):
-                        target_audio = cache_dir / f"{primary_key}.audio"
-                        target_json = cache_dir / f"{primary_key}.json"
-                        meta = {}
-                        if target_json.exists():
-                            try:
-                                meta = json.loads(target_json.read_text(encoding="utf-8"))
-                            except Exception:
-                                pass
-                        return target_audio, meta
-        except Exception as e:
-            logger.debug("Could not resolve Deezer metadata fallback for track %s: %s", track_id, e)
-
-    return None
+        return download_cache.lookup(_get_sync_base(), track_id)
+    except (OSError, ValueError):
+        return None
 
 
 
@@ -512,125 +202,71 @@ def _link_cached_track_to_user(
     import hashlib
     import json
     import shutil
-    from datetime import datetime, timezone
-
-    try:
-        sync_base = _get_sync_base()
-        safe_user_id = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
-        user_dir = sync_base / safe_user_id
-        user_dir.mkdir(parents=True, exist_ok=True)
-
-        track_key = _get_track_key(track_id)
-        target_audio = user_dir / f"{track_key}.audio"
-        target_json = user_dir / f"{track_key}.json"
-
-        # Hardlink Linux (même inode, 0 Mo d'espace disque supplémentaire)
-        try:
-            if target_audio.exists():
-                target_audio.unlink()
-            os.link(cached_audio, target_audio)
-        except Exception:
-            shutil.copyfile(cached_audio, target_audio)
-
-        now = datetime.now(timezone.utc).isoformat()
-        user_meta = dict(metadata)
-        if override_metadata:
-            for k in ("title", "artist_name", "album_title", "cover_uri", "duration_ms", "artist_id", "album_id"):
-                if override_metadata.get(k):
-                    user_meta[k] = override_metadata[k]
-
-        user_meta["track_id"] = track_id
-        user_meta["synced"] = True
-        user_meta["size_bytes"] = target_audio.stat().st_size if target_audio.exists() else 0
-        user_meta["mime_type"] = "audio/mpeg"
-        user_meta["uploaded_at"] = now
-        user_meta["updated_at"] = now
-
-        target_json.write_text(json.dumps(user_meta, ensure_ascii=False), encoding="utf-8")
-        logger.info("Successfully linked globally cached track %s to user %s", track_id, user_id)
-        return True
-    except Exception as e:
-        logger.exception("Failed to link cached track %s to user %s: %s", track_id, user_id, e)
+    import tempfile
+    trusted = _find_globally_cached_track(track_id)
+    if not trusted or trusted[0] != cached_audio:
         return False
-
-
-def _auto_register_in_sync_files(
-    user_id: str,
-    track_id: str,
-    audio_file: Path,
-    title: Optional[str] = None,
-    artist_name: Optional[str] = None,
-    album_title: Optional[str] = None,
-    duration_ms: Optional[int] = None,
-    artist_id: Optional[str] = None,
-    album_id: Optional[str] = None,
-    cover_uri: Optional[str] = None,
-) -> bool:
-    """
-    Enregistre un titre téléchargé dans le cache global (_global_cache)
-    puis crée un hardlink vers le répertoire personnel de l'utilisateur.
-    """
+    metadata = trusted[1]
     try:
-        import hashlib
-        import json
-        import shutil
-        from datetime import datetime, timezone
-
-        # 0. Validation stricte d'intégrité audio pré-indexation
-        is_valid, detected_mime = _is_valid_audio_file(audio_file)
-        if not is_valid:
-            logger.error(
-                "Audio file %s for track %s failed integrity check (size=%d), aborting registration.",
-                audio_file,
-                track_id,
-                audio_file.stat().st_size if audio_file.exists() else 0,
-            )
+        user_dir = _get_sync_base() / hashlib.sha256(user_id.encode('utf-8')).hexdigest()
+        if user_dir.is_symlink() or user_dir.is_junction():
             return False
-
-        cache_dir = _get_global_cache_dir()
-        track_key = _get_track_key(track_id)
-        cache_audio = cache_dir / f"{track_key}.audio"
-        cache_json = cache_dir / f"{track_key}.json"
-
-        # 1. Enregistrement dans le Cache Global
-        try:
-            if cache_audio.exists():
-                cache_audio.unlink()
-            os.link(audio_file, cache_audio)
-        except Exception:
-            shutil.copyfile(audio_file, cache_audio)
-
-        uploaded_at = datetime.now(timezone.utc).isoformat()
-        metadata = {
-            "track_id": track_id,
-            "synced": True,
-            "size_bytes": cache_audio.stat().st_size if cache_audio.exists() else 0,
-            "mime_type": detected_mime or "audio/mpeg",
-            "title": title,
-            "artist_name": artist_name,
-            "album_title": album_title,
-            "duration_ms": duration_ms,
-            "artist_id": artist_id,
-            "album_id": album_id,
-            "cover_uri": cover_uri,
-            "uploaded_at": uploaded_at,
-            "updated_at": uploaded_at,
-        }
-        cache_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-
-        # 2. Hardlink vers l'espace personnel de l'utilisateur
-        _link_cached_track_to_user(
-            user_id=user_id,
-            track_id=track_id,
-            cached_audio=cache_audio,
-            metadata=metadata,
-        )
-
-        logger.info("Auto-registered downloaded track %s (%s) in global cache and sync_files for user %s", track_id, detected_mime, user_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        target_audio = user_dir / (_get_track_key(track_id) + '.audio')
+        target_json = target_audio.with_suffix('.json')
+        now = datetime.now(timezone.utc).isoformat()
+        user_meta = {**metadata, 'track_id': track_id, 'synced': True,
+                     'uploaded_at': now, 'updated_at': now, 'cache_origin': 'native_v1'}
+        if override_metadata:
+            for name in ('title', 'artist_name', 'album_title', 'cover_uri', 'duration_ms', 'artist_id', 'album_id'):
+                if override_metadata.get(name):
+                    user_meta[name] = override_metadata[name]
+        with cached_audio.open('rb') as stream:
+            user_meta['cache_sha256'] = __import__('hashlib').file_digest(stream, 'sha256').hexdigest()
+        with _STORAGE_LOCK:
+            fd, temporary = tempfile.mkstemp(dir=user_dir, prefix='_link_')
+            os.close(fd)
+            temp = Path(temporary)
+            try:
+                temp.unlink()
+                try:
+                    os.link(cached_audio, temp)
+                except OSError:
+                    with reserve_copy(_get_sync_base(), cached_audio.stat().st_size):
+                        shutil.copyfile(cached_audio, temp)
+                staged_json = stage_json(target_json, user_meta)
+                try:
+                    replace_pair(temp, target_audio, staged_json, target_json, _get_sync_base())
+                finally:
+                    staged_json.unlink(missing_ok=True)
+            finally:
+                temp.unlink(missing_ok=True)
         return True
-    except Exception as e:
-        logger.exception("Failed to auto-register downloaded file to sync_files for track %s: %s", track_id, e)
+    except OSError:
+        logger.warning('Personal cache link unavailable')
         return False
+
+
+def _auto_register_in_sync_files(user_id, track_id, audio_file, title=None, artist_name=None,
+        album_title=None, duration_ms=None, artist_id=None, album_id=None, cover_uri=None, *, attempt=None):
+    """Publish only an authorized attempt's private native output, never an arbitrary file."""
+    if (attempt is None or attempt.job.user_id != user_id or attempt.job.track_id != track_id
+            or attempt.cancelled.is_set() or attempt.workspace is None
+            or attempt.workspace != DOWNLOADS_DIR / '_attempts' / attempt.identity
+            or audio_file != attempt.workspace / 'audio.mp3'
+            or not regular_file(audio_file) or attempt.workspace.is_symlink()
+            or attempt.workspace.is_junction()):
+        return False
+    valid, mime = _is_valid_audio_file(audio_file)
+    if not valid:
+        return False
+    now = datetime.now(timezone.utc).isoformat()
+    metadata = dict(track_id=track_id, synced=True, size_bytes=audio_file.stat().st_size,
+        mime_type=mime, title=title, artist_name=artist_name, album_title=album_title,
+        duration_ms=duration_ms, artist_id=artist_id, album_id=album_id, cover_uri=cover_uri,
+        uploaded_at=now, updated_at=now)
+    cached = download_cache.publish(_get_sync_base(), track_id, audio_file, metadata)
+    return _link_cached_track_to_user(user_id, track_id, cached, metadata)
 
 
 def _propagate_reassigned_track_to_all_users(
@@ -646,72 +282,59 @@ def _propagate_reassigned_track_to_all_users(
     Met à jour les hardlinks et metadata.json pour tous les utilisateurs ayant déjà ce track_id
     dans leur répertoire personnel sync_files.
     """
-    try:
-        import json
-        import shutil
-        sync_base = _get_sync_base()
-        track_key = _get_track_key(track_id)
-        if not sync_base.exists():
-            return
-
-        now = datetime.now(timezone.utc).isoformat()
-        for user_dir in sync_base.iterdir():
-            if not user_dir.is_dir() or user_dir.name.startswith("_"):
+    import hashlib
+    import json
+    import shutil
+    import tempfile
+    trusted = _find_globally_cached_track(track_id)
+    if not trusted or trusted[0] != cached_audio:
+        return
+    track_key = _get_track_key(track_id)
+    updated = failed = 0
+    with _STORAGE_LOCK:
+        for user_dir in _get_sync_base().iterdir():
+            if (not re.fullmatch(r'[0-9a-f]{64}', user_dir.name) or user_dir.is_symlink()
+                    or user_dir.is_junction() or not user_dir.is_dir()):
                 continue
-            user_audio = user_dir / f"{track_key}.audio"
-            user_json = user_dir / f"{track_key}.json"
-            if user_audio.exists():
+            audio, meta = user_dir / (track_key + '.audio'), user_dir / (track_key + '.json')
+            if not regular_file(audio) or not regular_file(meta):
+                continue
+            try:
+                data = json.loads(meta.read_text(encoding='utf-8'))
+                with audio.open('rb') as stream:
+                    digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                if data.get('cache_origin') != 'native_v1' or data.get('cache_sha256') != digest:
+                    continue  # Private uploads and uncertain legacy references are never replaced.
+                fd, name = tempfile.mkstemp(dir=user_dir, prefix='_reassign_')
+                os.close(fd)
+                staged = Path(name)
                 try:
-                    user_audio.unlink()
-                    os.link(cached_audio, user_audio)
-                except Exception:
-                    shutil.copyfile(cached_audio, user_audio)
-
-                if user_json.exists():
+                    staged.unlink()
                     try:
-                        data = json.loads(user_json.read_text(encoding="utf-8"))
-                        data["size_bytes"] = user_audio.stat().st_size if user_audio.exists() else 0
-                        data["updated_at"] = now
-                        if title:
-                            data["title"] = title
-                        if artist_name:
-                            data["artist_name"] = artist_name
-                        if album_title:
-                            data["album_title"] = album_title
-                        if duration_ms:
-                            data["duration_ms"] = duration_ms
-                        if cover_uri:
-                            data["cover_uri"] = cover_uri
-                        user_json.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-                    except Exception as err:
-                        logger.warning("Failed to update user json metadata during reassign propagation: %s", err)
-        logger.info("Propagated reassigned track %s across all existing user directories", track_id)
-    except Exception as e:
-        logger.warning("Error propagating reassigned track %s: %s", track_id, e)
-
-
-def _cleanup_orphaned_job_files(track_id: str, keep_job_id: str, supabase_client: Optional[object] = None) -> None:
-    """
-    Supprime les fichiers physiques de travail job_{old_id}.mp3 résiduels dans DOWNLOADS_DIR
-    pour le track_id donné (sauf keep_job_id).
-    """
-    try:
-        client = supabase_client or supabase
-        res = client.table("download_jobs").select("id").eq("track_id", track_id).execute()
-        if res.data:
-            for row in res.data:
-                jid = row.get("id")
-                if jid and jid != keep_job_id:
-                    for ext in (".mp3", ".part", ".ytdl", ".m4a", ".webm"):
-                        cand = DOWNLOADS_DIR / f"{jid}{ext}"
-                        if cand.exists():
-                            try:
-                                cand.unlink()
-                                logger.info("Cleaned up orphaned work file: %s", cand.name)
-                            except Exception as e:
-                                logger.warning("Could not delete %s: %s", cand.name, e)
-    except Exception as e:
-        logger.warning("Failed to clean up orphaned job files for track %s: %s", track_id, e)
+                        os.link(cached_audio, staged)
+                    except OSError:
+                        with reserve_copy(_get_sync_base(), cached_audio.stat().st_size):
+                            shutil.copyfile(cached_audio, staged)
+                    with cached_audio.open('rb') as stream:
+                        data['cache_sha256'] = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    data['updated_at'] = datetime.now(timezone.utc).isoformat()
+                    data['size_bytes'] = cached_audio.stat().st_size
+                    for name, value in dict(title=title, artist_name=artist_name, album_title=album_title,
+                                           duration_ms=duration_ms, cover_uri=cover_uri).items():
+                        if value:
+                            data[name] = value
+                    staged_json = stage_json(meta, data)
+                    try:
+                        replace_pair(staged, audio, staged_json, meta, _get_sync_base())
+                    finally:
+                        staged_json.unlink(missing_ok=True)
+                    updated += 1
+                finally:
+                    staged.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                failed += 1
+                logger.warning('Shared native reference update unavailable')
+    return dict(updated=updated, failed=failed)
 
 
 def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
@@ -751,6 +374,7 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
         # Quiet output
         "quiet": True,
         "no_warnings": False,
+        "logger": logger,
         "noplaylist": True,
 
         # Embed metadata & thumbnail
@@ -772,7 +396,7 @@ def _build_yt_dlp_opts(output_dir: Path, download_id: str) -> dict:
     }
 
     # Inject user cookies if uploaded in the downloads folder
-    cookies_file = output_dir / "cookies.txt"
+    cookies_file = DOWNLOADS_DIR / "cookies.txt"
     if cookies_file.exists():
         logger.info("Using uploaded cookie file: %s", cookies_file)
         opts["cookiefile"] = str(cookies_file)
@@ -803,8 +427,16 @@ class DownloadService:
         self._track_locks: Dict[str, asyncio.Lock] = {}
         self._track_locks_guard = asyncio.Lock()
         self._candidates_cache: Dict[str, Tuple[float, List[dict]]] = {}
-        self._running_tasks: Dict[str, asyncio.Task] = {}
-        self._cancelled_jobs: set[str] = set()
+        self._attempts: Dict[str, DownloadAttempt] = {}
+        # Fixed lock pool: unauthorized/nonexistent IDs never grow a lock registry.
+        self._job_gates = tuple(asyncio.Lock() for _ in range(64))
+        self._admission_gates = tuple(asyncio.Lock() for _ in range(64))
+        self._commands = TaskSupervisor()
+        self._workers = TaskSupervisor()
+        self._finalizers = TaskSupervisor()
+        self._pending_admissions = {}
+        self._closing = False
+        self._shutdown_task = None
         if auto_recover_stale_jobs and self.settings.enable_startup_recovery and self.settings.app_env != "test":
             self._recover_stale_jobs_on_startup()
         if auto_backfill_cache and self.settings.enable_cache_backfill and self.settings.app_env != "test":
@@ -831,82 +463,17 @@ class DownloadService:
                 del self._track_locks[k]
 
     def _backfill_global_cache(self) -> int:
-        """
-        Recense au démarrage les fichiers audio existants dans sync_files/*/*.audio
-        pour peupler automatiquement _global_cache avec tous les titres existants du propriétaire.
-        """
-        if not self.settings.enable_cache_backfill or self.settings.app_env == "test":
-            return 0
-        backfilled = 0
-        try:
-            sync_base = _get_sync_base()
-            cache_dir = _get_global_cache_dir()
-            for user_dir in sync_base.iterdir():
-                if not user_dir.is_dir() or user_dir.name.startswith("_"):
-                    continue
-                for audio_file in user_dir.glob("*.audio"):
-                    track_key = audio_file.stem
-                    cache_audio = cache_dir / f"{track_key}.audio"
-                    cache_json = cache_dir / f"{track_key}.json"
-                    if not cache_audio.exists():
-                        try:
-                            os.link(audio_file, cache_audio)
-                        except Exception:
-                            try:
-                                import shutil
-                                shutil.copyfile(audio_file, cache_audio)
-                            except Exception:
-                                pass
-                        src_json = audio_file.with_suffix(".json")
-                        if src_json.exists() and not cache_json.exists():
-                            try:
-                                import shutil
-                                shutil.copyfile(src_json, cache_json)
-                            except Exception:
-                                pass
-                        backfilled += 1
-            if backfilled > 0:
-                logger.info("Backfill: %d titres existants indexés dans _global_cache.", backfilled)
-        except Exception as e:
-            logger.warning("Erreur lors du backfill de _global_cache: %s", e)
-        return backfilled
+        # Legacy names/metadata do not establish provenance; no automatic promotion.
+        return 0
 
     async def cleanup_orphaned_cache(self, max_age_days: int = 30) -> int:
-        """
-        Éviction sécurisée des orphelins : supprime les fichiers de _global_cache qui ont st_nlink == 1
-        (aucun utilisateur ne les référence plus dans son Cloud privé) et inactifs depuis plus de max_age_days.
-        CRITIQUE : Acquiert le verrou _track_locks pour chaque fichier candidat avant d'évaluer st_nlink == 1
-        et de supprimer, éliminant ainsi toute fenêtre de course avec un cache hit concurrent.
-        """
-        import time
-        now = time.time()
-        max_age_seconds = max_age_days * 86400
-        pruned_count = 0
-        cache_dir = _get_global_cache_dir()
+        """Disabled until eviction shares publication guards (SEC-003.3 R2).
 
-        for audio_file in list(cache_dir.glob("*.audio")):
-            try:
-                stat = audio_file.stat()
-                # Premier filtre rapide sans verrou
-                if stat.st_nlink == 1 and (now - stat.st_mtime > max_age_seconds):
-                    track_key = audio_file.stem
-                    lock = await self._get_track_lock(track_key)
-                    # Acquérir le verrou de piste pour protéger l'évaluation et la suppression
-                    async with lock:
-                        if audio_file.exists():
-                            fresh_stat = audio_file.stat()
-                            if fresh_stat.st_nlink == 1 and (now - fresh_stat.st_mtime > max_age_seconds):
-                                audio_file.unlink()
-                                json_file = audio_file.with_suffix(".json")
-                                if json_file.exists():
-                                    json_file.unlink()
-                                pruned_count += 1
-                                logger.info("Pruned orphaned cache file: %s", audio_file.name)
-            except Exception as e:
-                logger.warning("Erreur lors de l'inspection/éviction du fichier %s: %s", audio_file, e)
-
-        await self._prune_unused_locks()
-        return pruned_count
+        The historical hashed-key lock did not protect workers using track IDs.
+        No file enumeration, directory creation or lock pruning is allowed here.
+        """
+        logger.warning('Native cache eviction disabled: shared coordination required')
+        return 0
 
     def _recover_stale_jobs_on_startup(self) -> None:
         """Mark stale running and queued jobs as failed on server startup so they don't block polling forever."""
@@ -1158,153 +725,247 @@ class DownloadService:
         """Fetch 5 candidate songs from YTM search for user choice."""
         return self.search_candidates(artist=artist, title=title, limit=5)
 
-    def create_job(
-        self, user_id: str, track_id: str, provider_name: str = "youtube", source_hint: Optional[dict] = None
-    ) -> DownloadJob:
-        """Create a new download job and triggers the async background download."""
-        if not track_id.startswith("trk_"):
-            raise BadRequest("Invalid track ID format. Must start with 'trk_'")
+    def _job_gate(self, job_id: str) -> asyncio.Lock:
+        return self._job_gates[hash(job_id) % len(self._job_gates)]
 
-        # Check if a download job already exists for this track and user
+    def _admission(self, user_id, track_id):
+        return self._admission_gates[hash((user_id, track_id)) % len(self._admission_gates)]
+
+    def _mutate_job(self, job, changes=None, *, delete=False):
         try:
-            existing = self.supabase.table("download_jobs").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
-            if existing.data:
-                # Find the most recent active or successful job
-                sorted_jobs = sorted(existing.data, key=lambda x: x.get("created_at", ""), reverse=True)
-                for job_dict in sorted_jobs:
-                    existing_job = DownloadJob.from_dict(job_dict)
-                    
-                    # If job is currently active (queued, running, requires_resolution), reuse it
-                    if existing_job.status in ("queued", "running", "requires_resolution"):
-                        logger.info("Reusing existing active download job %s for user %s, track %s", existing_job.id, user_id, track_id)
-                        return existing_job
-                        
-                    # If job is already succeeded, verify the physical file exists on disk
-                    if existing_job.status == "succeeded":
-                        expected_file = DOWNLOADS_DIR / f"{existing_job.id}.mp3"
-                        if expected_file.exists() and expected_file.stat().st_size > 0:
-                            logger.info("Reusing existing succeeded download job %s for user %s, track %s (file present)", existing_job.id, user_id, track_id)
-                            return existing_job
-                        else:
-                            # If succeeded but file is missing, we reset its status to queued and trigger it again
-                            logger.info("Found succeeded job %s but file was missing. Resetting to queued...", existing_job.id)
-                            now = datetime.now(timezone.utc)
-                            existing_job.status = "queued"
-                            existing_job.progress_percent = 0.0
-                            existing_job.error_code = None
-                            existing_job.error_message = None
-                            existing_job.updated_at = now
-                            self.supabase.table("download_jobs").update({
-                                "status": "queued",
-                                "progress_percent": 0.0,
-                                "error_code": None,
-                                "error_message": None,
-                                "updated_at": now.isoformat()
-                            }).eq("id", existing_job.id).execute()
-                            
-                            self._start_download_task(existing_job.id, source_hint)
-                            return existing_job
-        except Exception as e:
-            logger.error("Failed to query existing jobs in Supabase: %s", e)
-            # Fail silently and proceed to create a new job to prevent blocking downloads
+            query = self.supabase.table('download_jobs')
+            query = query.delete() if delete else query.update({
+                **changes, 'updated_at': datetime.now(timezone.utc).isoformat()})
+            result = (query.eq('id', job.id).eq('user_id', job.user_id).eq('track_id', job.track_id)
+                      .eq('status', job.status).eq('attempt_count', job.attempt_count).execute())
+        except Exception:
+            raise ProviderUnavailable('Download storage temporarily unavailable') from None
+        data = getattr(result, 'data', None)
+        if not isinstance(data, list) or len(data) > 1:
+            raise AmbiguousMutation('Download mutation response is ambiguous')
+        if not data:
+            self.get_job(job.user_id, job.id)
+            raise Conflict('Download job changed concurrently; retry the request')
+        updated = data[0]
+        required = {'id', 'user_id', 'track_id', 'status', 'attempt_count', 'provider_name'}
+        if (not isinstance(updated, dict) or not required.issubset(updated)
+                or updated['id'] != job.id or str(updated['user_id']) != job.user_id
+                or updated['track_id'] != job.track_id):
+            raise AmbiguousMutation('Download mutation could not be verified')
+        try:
+            return DownloadJob.from_dict(updated)
+        except Exception:
+            raise AmbiguousMutation('Download mutation could not be verified') from None
 
-        # 2. Vérification du Cache Global (_global_cache) pour Hit Instantané et Dédoublonné
-        cached = _find_globally_cached_track(track_id)
-        if cached:
-            cached_audio, metadata = cached
-            logger.info("GLOBAL CACHE HIT pour track %s ! Association instantanée à user %s (0s)", track_id, user_id)
-            _link_cached_track_to_user(
-                user_id=user_id,
-                track_id=track_id,
-                cached_audio=cached_audio,
-                metadata=metadata,
-                override_metadata=source_hint,
-            )
+    async def _command(self, coroutine):
+        if self._closing:
+            coroutine.close()
+            raise ProviderUnavailable('Download service is stopping')
+        return await self._commands.run(coroutine)
 
-            job_id = generate_id("job")
-            now = datetime.now(timezone.utc)
-            job = DownloadJob(
-                id=job_id,
-                user_id=user_id,
-                track_id=track_id,
-                provider_name=provider_name,
-                status="succeeded",
-                progress_percent=100.0,
-                attempt_count=1,
-                created_at=now,
-                updated_at=now,
-            )
+    async def create_job(self, user_id, track_id, provider_name='youtube', source_hint=None):
+        return await self._command(self._admit_create(user_id, track_id, provider_name, source_hint))
+
+    async def _admit_create(self, user_id, track_id, provider_name, source_hint):
+        if not track_id.startswith('trk_'):
+            raise BadRequest('Invalid track ID format. Must start with trk_')
+        async with self._admission(user_id, track_id):
+            resumed = await self._resume_pending_pair(user_id, track_id)
+            if resumed is not None:
+                return resumed
+            return await self._create_job(user_id, track_id, provider_name, source_hint)
+
+    @staticmethod
+    def _same_admission(actual, expected):
+        return (actual.id == expected.id and actual.user_id == expected.user_id
+                and actual.track_id == expected.track_id and actual.status == expected.status
+                and actual.attempt_count == expected.attempt_count
+                and actual.operation_type == expected.operation_type
+                and actual.created_at == expected.created_at)
+
+    async def _write_admission(self, intent):
+        """Caller holds admission then job guard; replay targets the same ID/CAS."""
+        job = intent.job
+        self._pending_admissions[job.id] = intent
+        try:
+            if intent.previous is None:
+                result = await blocking(lambda: self.supabase.table('download_jobs').insert(job.to_dict()).execute())
+                data = getattr(result, 'data', None)
+                if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+                    raise AmbiguousMutation('Download insertion response is ambiguous')
+                try:
+                    confirmed = DownloadJob.from_dict(data[0])
+                except Exception:
+                    raise AmbiguousMutation('Download insertion could not be verified') from None
+            else:
+                confirmed = await blocking(self._mutate_job, intent.previous, intent.changes)
+            if not self._same_admission(confirmed, job):
+                raise AmbiguousMutation('Download admission could not be verified')
+        except AmbiguousMutation:
+            # A committed queued row remains supervised, but never report HTTP success.
             try:
-                self.supabase.table("download_jobs").insert(job.to_dict()).execute()
-            except Exception as e:
-                logger.error("Failed to insert cached job %s in Supabase: %s", job_id, e)
-                raise BadRequest(f"Failed to create job in database: {str(e)}")
-            return job
+                current = await blocking(self.get_job, job.user_id, job.id)
+                if self._same_admission(current, job):
+                    await self._ensure_pair_available(current)
+                    self._start_download_task(current, intent.source_hint)
+                    self._pending_admissions.pop(job.id, None)
+            except (NotFound, ProviderUnavailable, Conflict):
+                pass  # The intent fences all subsequent admissions for this pair.
+            raise
+        except Conflict:
+            self._pending_admissions.pop(job.id, None)
+            raise
+        except Exception:
+            # Transport loss is not proof of rollback; confirm only the known identity.
+            try:
+                confirmed = await blocking(self.get_job, job.user_id, job.id)
+            except (NotFound, ProviderUnavailable):
+                raise ProviderUnavailable('Download job creation could not be confirmed') from None
+            if not self._same_admission(confirmed, job):
+                raise ProviderUnavailable('Download admission outcome is unknown') from None
+        self._pending_admissions.pop(job.id, None)
+        return confirmed
 
-        # 3. Cache MISS : Création du job queued standard et lancement du worker
-        job_id = generate_id("job")
-        now = datetime.now(timezone.utc)
+    async def _insert_owned_job(self, job, source_hint=None):
+        async with self._job_gate(job.id):
+            await self._write_admission(AdmissionIntent(job, source_hint=source_hint))
 
-        job = DownloadJob(
-            id=job_id,
-            user_id=user_id,
-            track_id=track_id,
-            provider_name=provider_name,
-            status="queued",
-            progress_percent=0.0,
-            attempt_count=1,
-            created_at=now,
-            updated_at=now,
-        )
+    async def _resume_pending_pair(self, user_id, track_id):
+        """Reconcile under admission before any pair mutation is allowed."""
+        for intent in tuple(self._pending_admissions.values()):
+            expected = intent.job
+            if expected.user_id != user_id or expected.track_id != track_id:
+                continue
+            async with self._job_gate(expected.id):
+                if self._pending_admissions.get(expected.id) is not intent:
+                    continue  # DELETE resolved it while we waited for the job guard.
+                try:
+                    current = await blocking(self.get_job, user_id, expected.id)
+                except NotFound:
+                    if intent.previous is not None:
+                        self._pending_admissions.pop(expected.id, None)
+                        continue  # A restart never recreates a deleted SQL row.
+                    # Reuse this PK even if the first request can still commit late.
+                    current = await self._write_admission(intent)
+                if not self._same_admission(current, expected):
+                    if intent.previous is not None and self._same_admission(current, intent.previous):
+                        current = await self._write_admission(intent)  # Same CAS and count.
+                    else:
+                        self._pending_admissions.pop(expected.id, None)
+                        raise Conflict('Pending download admission changed')
+                if expected.id not in self._attempts:
+                    await self._ensure_pair_available(current)
+                    self._start_download_task(current, intent.source_hint)
+                self._pending_admissions.pop(expected.id, None)
+                return current
+        return None
 
+    async def _ensure_pair_available(self, job):
+        for attempt in self._attempts.values():
+            if attempt.job.user_id == job.user_id and attempt.job.track_id == job.track_id:
+                raise Conflict('Download attempt is still stopping or executing')
         try:
-            self.supabase.table("download_jobs").insert(job.to_dict()).execute()
-        except Exception as e:
-            logger.error("Failed to insert job %s in Supabase: %s", job_id, e)
-            raise BadRequest(f"Failed to create job in database: {str(e)}")
+            rows = await blocking(lambda: self.supabase.table('download_jobs').select('*')
+                .eq('user_id', job.user_id).eq('track_id', job.track_id)
+                .in_('status', ['queued', 'running', 'requires_resolution']).execute().data)
+        except Exception:
+            raise ProviderUnavailable('Download storage temporarily unavailable') from None
+        if any(row['id'] != job.id for row in rows):
+            raise Conflict('Another download is already active for this track')
 
-        logger.info("Created download job %s for user %s, track %s in Supabase", job_id, user_id, track_id)
-
-        # Trigger real background download task
-        self._start_download_task(job_id, source_hint)
-
+    async def _create_job(self, user_id, track_id, provider_name, source_hint):
+        def read_existing():
+            return (self.supabase.table('download_jobs').select('*').eq('user_id', user_id)
+                    .eq('track_id', track_id).execute().data)
+        try:
+            rows = await blocking(read_existing)
+        except Exception:
+            raise ProviderUnavailable('Download storage temporarily unavailable') from None
+        for attempt in self._attempts.values():
+            if attempt.job.user_id == user_id and attempt.job.track_id == track_id:
+                current = await blocking(self.get_job, user_id, attempt.job.id)
+                if attempt.cancelled.is_set() or current.status not in ('queued', 'running', 'requires_resolution'):
+                    raise Conflict('Download attempt is still stopping or executing')
+                return current
+        for entry in sorted(rows, key=lambda x: x.get('created_at') or '', reverse=True):
+            if str(entry.get('user_id')) != user_id:
+                continue
+            existing = DownloadJob.from_dict(entry)
+            validate_job_id(existing.id)
+            async with self._job_gate(existing.id):
+                existing = await blocking(self.get_job, user_id, existing.id)
+                if existing.status in ('queued', 'running', 'requires_resolution'):
+                    return existing
+                if existing.status == 'succeeded':
+                    if await blocking(legacy_audio, DOWNLOADS_DIR, existing.id):
+                        return existing
+                    return await self._restart_locked(existing, source_hint=source_hint)
+        now = datetime.now(timezone.utc)
+        job = DownloadJob(id=generate_id('job'), user_id=user_id, track_id=track_id,
+                          provider_name=provider_name, status='queued', created_at=now, updated_at=now)
+        await self._insert_owned_job(job, source_hint)
+        track_lock = await self._get_track_lock(track_id)
+        if not track_lock.locked():
+            async with track_lock:
+                attempt = DownloadAttempt(job)
+                self._attempts[job.id] = attempt
+                try:
+                    # Pure lookup is fenced against DELETE before publication.
+                    cached = await self._with_attempt(attempt, lambda current: _find_globally_cached_track(current.track_id))
+                    if cached:
+                        await self._publish_cached(attempt, cached, source_hint)
+                        if attempt.cancelled.is_set():
+                            raise Conflict('Download creation was interrupted')
+                        return await blocking(self.get_job, user_id, job.id)
+                    if attempt.cancelled.is_set():
+                        raise Conflict('Download creation was interrupted')
+                except Exception:
+                    await self._record_stopped_attempt(attempt, failed=True)
+                    raise
+                finally:
+                    self._discard_attempt(attempt)
+        self._start_download_task(job, source_hint)
         return job
 
     def get_job(self, user_id: str, job_id: str) -> DownloadJob:
-        """Retrieve a specific job for a user from Supabase."""
+        validate_job_id(job_id)
         try:
-            response = self.supabase.table("download_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
-            if not response.data:
-                raise NotFound(f"Download job {job_id} not found for this user")
+            response = (self.supabase.table('download_jobs').select('*')
+                        .eq('id', job_id).eq('user_id', user_id).execute())
+            if not isinstance(response.data, list) or len(response.data) > 1:
+                raise ProviderUnavailable('Download lookup response is ambiguous')
+            if (not response.data or response.data[0].get('id') != job_id
+                    or str(response.data[0].get('user_id')) != user_id):
+                raise NotFound('Download job not found')
             return DownloadJob.from_dict(response.data[0])
         except NotFound:
             raise
-        except Exception as e:
-            logger.error("Failed to retrieve job %s from Supabase: %s", job_id, e)
-            raise BadRequest(f"Failed to retrieve job: {str(e)}")
+        except Exception:
+            raise ProviderUnavailable('Download storage temporarily unavailable') from None
 
-    def delete_job(self, user_id: str, job_id: str) -> None:
-        """Delete/cancel a specific download job for a user."""
-        try:
-            # 1. Annuler explicitement la tâche en vol si elle tourne encore
-            self._cancelled_jobs.add(job_id)
-            task = self._running_tasks.get(job_id)
-            if task and not task.done():
-                task.cancel()
-                logger.info("Cancelled running background task for job %s", job_id)
-
-            self.supabase.table("download_jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
-            # Clean up potential partial or downloaded files from disk
-            for pattern in (f"{job_id}.*", f"{job_id}.*.*"):
-                for p in DOWNLOADS_DIR.glob(pattern):
-                    try:
-                        p.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-            logger.info("Deleted download job %s for user %s", job_id, user_id)
-        except Exception as e:
-            logger.error("Failed to delete job %s: %s", job_id, e)
-            raise BadRequest(f"Failed to delete job: {str(e)}")
+    async def delete_job(self, user_id: str, job_id: str) -> None:
+        await blocking(self.get_job, user_id, job_id)
+        async with self._job_gate(job_id):
+            def cancel_owned():
+                job = self.get_job(user_id, job_id)
+                attempt = self._attempts.get(job_id)
+                if attempt is not None and attempt.job.user_id != user_id:
+                    raise Conflict('Download attempt owner mismatch')
+                try:
+                    self._mutate_job(job, delete=True)
+                except ProviderUnavailable:
+                    # Unknown SQL outcome: fence this authorized attempt conservatively.
+                    if attempt is not None:
+                        attempt.cancelled.set()
+                    raise
+                if attempt is not None:
+                    attempt.cancelled.set()
+                self._pending_admissions.pop(job_id, None)
+                try:
+                    cleanup_legacy_files(DOWNLOADS_DIR, job_id)
+                except OSError:
+                    raise ProviderUnavailable('Job removed; private cleanup incomplete') from None
+            await blocking(cancel_owned)
 
     def list_jobs(
         self, user_id: str, status: Optional[str] = None, limit: int = 20, cursor: Optional[str] = None
@@ -1317,7 +978,7 @@ class DownloadService:
 
             # Cursor-based pagination: created_at < cursor's created_at
             if cursor:
-                cursor_response = self.supabase.table("download_jobs").select("created_at").eq("id", cursor).execute()
+                cursor_response = self.supabase.table("download_jobs").select("created_at").eq("id", cursor).eq("user_id", user_id).execute()
                 if cursor_response.data:
                     cursor_time = cursor_response.data[0]["created_at"]
                     query = query.lt("created_at", cursor_time)
@@ -1337,100 +998,120 @@ class DownloadService:
             logger.error("Failed to list jobs from Supabase: %s", e)
             return [], None
 
-    def retry_job(self, user_id: str, job_id: str) -> DownloadJob:
-        """Retry a failed or cancelled job in Supabase."""
-        job = self.get_job(user_id, job_id)
+    @staticmethod
+    def _restart_source(job, source_hint, *, explicit_resolution=False):
+        if job.operation_type != 'manual_reassign':
+            return source_hint
+        # No selected video is persisted by the current SQL schema. Never infer
+        # it from the old cache, candidates or a process-local worker hint.
+        video_id = (source_hint or {}).get('resolved_video_id')
+        if not explicit_resolution or not isinstance(video_id, str) or not video_id.strip():
+            raise BadRequest('A shared replacement requires a new explicit video selection; resolve or reassign')
+        return {**source_hint, 'resolved_video_id': video_id.strip()}
 
-        if job.status not in ("failed", "cancelled", "requires_resolution"):
-            raise BadRequest(f"Cannot retry a job that is currently {job.status}")
+    async def _restart_locked(self, job, *, increment=False, source_hint=None, explicit_resolution=False):
+        source_hint = self._restart_source(job, source_hint, explicit_resolution=explicit_resolution)
+        await self._ensure_pair_available(job)
+        changes = dict(status='queued', progress_percent=0.0, error_code=None,
+                       error_message=None, candidates=[], attempt_count=job.attempt_count + int(increment))
+        expected = DownloadJob.from_dict({**job.to_dict(), **changes})
+        updated = await self._write_admission(AdmissionIntent(expected, job, changes, source_hint))
+        self._start_download_task(updated, source_hint)
+        return updated
 
-        now = datetime.now(timezone.utc)
-        job.status = "queued"
-        job.progress_percent = 0.0
-        job.error_code = None
-        job.error_message = None
-        job.attempt_count += 1
-        job.updated_at = now
+    async def retry_job(self, user_id, job_id):
+        return await self._command(self._admit_restart(user_id, job_id, increment=True))
 
-        try:
-            self.supabase.table("download_jobs").update({
-                "status": "queued",
-                "progress_percent": 0.0,
-                "error_code": None,
-                "error_message": None,
-                "attempt_count": job.attempt_count,
-                "updated_at": now.isoformat()
-            }).eq("id", job_id).execute()
-        except Exception as e:
-            logger.error("Failed to update job %s for retry in Supabase: %s", job_id, e)
-            raise BadRequest(f"Failed to retry job: {str(e)}")
+    async def resolve_job(self, user_id, job_id, video_id):
+        return await self._command(self._admit_restart(user_id, job_id,
+                                  source_hint={'resolved_video_id': video_id}))
 
-        logger.info("Retrying download job %s in Supabase, attempt %d", job_id, job.attempt_count)
+    async def _admit_restart(self, user_id, job_id, *, increment=False, source_hint=None):
+        snapshot = await blocking(self.get_job, user_id, job_id)
+        async with self._admission(user_id, snapshot.track_id):
+            async with self._job_gate(job_id):
+                current = await blocking(self.get_job, user_id, job_id)
+                self._restart_source(current, source_hint, explicit_resolution=not increment)
+                if current.operation_type == 'manual_reassign' and any(
+                        intent.job.user_id == user_id and intent.job.track_id == snapshot.track_id
+                        for intent in self._pending_admissions.values()):
+                    # An uncertain original admission may still own its selected
+                    # source. A new resolve must not silently replay that choice.
+                    raise Conflict('Previous replacement admission must settle before explicit resolution')
+            resumed = await self._resume_pending_pair(user_id, snapshot.track_id)
+            if resumed is not None and resumed.id == job_id:
+                return resumed
+            async with self._job_gate(job_id):
+                job = await blocking(self.get_job, user_id, job_id)
+                if job.track_id != snapshot.track_id:
+                    raise Conflict('Download track changed concurrently')
+                allowed = ('failed', 'cancelled', 'requires_resolution') if increment else ('requires_resolution', 'failed', 'queued')
+                if job.status not in allowed:
+                    raise BadRequest(f'Job cannot be restarted from status={job.status}')
+                return await self._restart_locked(job, increment=increment, source_hint=source_hint,
+                                                  explicit_resolution=not increment)
 
-        # Trigger real background download task
-        self._start_download_task(job_id)
+    async def reassign_track_audio(self, user_id, track_id, video_id, source_hint=None):
+        return await self._command(self._admit_reassign(user_id, track_id, video_id, source_hint))
 
-        return job
-
-    async def reassign_track_audio(
-        self,
-        user_id: str,
-        track_id: str,
-        video_id: str,
-        source_hint: Optional[dict] = None,
-    ) -> DownloadJob:
-        """
-        Manually reassign the audio stream of a track to a specific YouTube video_id.
-        Acquires track lock, supersedes conflicting pending jobs, bypasses global cache,
-        and starts a download worker with trigger='manual_reassign'.
-        """
-        if not track_id.startswith("trk_"):
-            raise BadRequest("Invalid track ID format. Must start with 'trk_'")
+    async def _admit_reassign(self, user_id, track_id, video_id, source_hint):
+        if not track_id.startswith('trk_'):
+            raise BadRequest('Invalid track ID format. Must start with trk_')
         if not video_id or not video_id.strip():
-            raise BadRequest("A valid video_id must be provided")
-
-        clean_video_id = video_id.strip()
-        lock = await self._get_track_lock(track_id)
-        async with lock:
-            # 1. Supersede any active download jobs for this track in Supabase
+            raise BadRequest('A valid video_id must be provided')
+        async with self._admission(user_id, track_id):
+            await self._resume_pending_pair(user_id, track_id)
             try:
-                self.supabase.table("download_jobs").update({
-                    "status": "superseded",
-                    "error_message": "Remplacé par une réassignation manuelle",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }).eq("track_id", track_id).in_("status", ["queued", "running", "requires_resolution"]).execute()
-            except Exception as e:
-                logger.warning("Failed to mark previous jobs superseded for track %s: %s", track_id, e)
-
-            # 2. Create a new queued job specifically for manual reassign
-            job_id = generate_id("job")
+                rows = await blocking(lambda: self.supabase.table('download_jobs').select('*')
+                    .eq('user_id', user_id).eq('track_id', track_id)
+                    .in_('status', ['queued', 'running', 'requires_resolution']).execute().data)
+            except Exception:
+                raise ProviderUnavailable('Download storage temporarily unavailable') from None
+            for entry in rows:
+                jid = validate_job_id(entry['id'])
+                async with self._job_gate(jid):
+                    current = await blocking(self.get_job, user_id, jid)
+                    if current.track_id != track_id:
+                        raise Conflict('Download track changed concurrently')
+                    if current.status not in ('queued', 'running', 'requires_resolution'):
+                        continue
+                    await blocking(self._mutate_job, current, dict(status='superseded',
+                                   error_message='Remplacé par une réassignation manuelle'))
+                    previous = self._attempts.get(jid)
+                    if previous is not None:
+                        previous.cancelled.set()
+            stopping = [a for a in tuple(self._attempts.values())
+                        if a.job.user_id == user_id and a.job.track_id == track_id]
+            for previous in stopping:
+                previous.cancelled.set()
+                if previous.task:
+                    await drain(previous.task)  # No job/track guard held while waiting.
+            if any(a.job.user_id == user_id and a.job.track_id == track_id for a in self._attempts.values()):
+                raise Conflict('Previous download has not finished')
             now = datetime.now(timezone.utc)
-            job = DownloadJob(
-                id=job_id,
-                user_id=user_id,
-                track_id=track_id,
-                provider_name="youtube",
-                operation_type="manual_reassign",
-                status="queued",
-                progress_percent=0.0,
-                attempt_count=1,
-                created_at=now,
-                updated_at=now,
-            )
-
-            try:
-                self.supabase.table("download_jobs").insert(job.to_dict()).execute()
-            except Exception as e:
-                logger.error("Failed to insert reassign job %s in Supabase: %s", job_id, e)
-                raise BadRequest(f"Failed to create job in database: {str(e)}")
-
-            merged_hint = dict(source_hint or {})
-            merged_hint["resolved_video_id"] = clean_video_id
-            merged_hint["trigger"] = "manual_reassign"
-
-            logger.info("Created reassign job %s for user %s, track %s (video_id: %s)", job_id, user_id, track_id, clean_video_id)
-            self._start_download_task(job_id, merged_hint)
+            job = DownloadJob(id=generate_id('job'), user_id=user_id, track_id=track_id,
+                              provider_name='youtube', operation_type='manual_reassign',
+                              status='queued', created_at=now, updated_at=now)
+            hint = {**(source_hint or {}), 'resolved_video_id': video_id.strip(), 'trigger': 'manual_reassign'}
+            await self._insert_owned_job(job, hint)
+            self._start_download_task(job, hint)
             return job
+
+    async def _cleanup_orphaned_job_files(self, keep_job: DownloadJob):
+        def candidates():
+            return (self.supabase.table('download_jobs').select('*').eq('user_id', keep_job.user_id)
+                    .eq('track_id', keep_job.track_id)
+                    .in_('status', ['succeeded', 'failed', 'cancelled', 'superseded']).execute().data)
+        for entry in await blocking(candidates):
+            jid = validate_job_id(entry['id'])
+            if jid == keep_job.id:
+                continue
+            await blocking(self.get_job, keep_job.user_id, jid)
+            async with self._job_gate(jid):
+                current = await blocking(self.get_job, keep_job.user_id, jid)
+                if (jid not in self._attempts and current.track_id == keep_job.track_id
+                        and current.status in ('succeeded', 'failed', 'cancelled', 'superseded')):
+                    await blocking(cleanup_legacy_files, DOWNLOADS_DIR, jid)
 
     def update_user_cookies(self, cookies_text: str) -> bool:
         """Upload Netscape cookies to the persistent storage."""
@@ -1454,93 +1135,238 @@ class DownloadService:
             logger.error("Failed to write cookies file: %s", e)
             raise BadRequest(f"Internal error saving cookies: {str(e)}")
 
-    def _update_job_status(self, job_id: str, **kwargs) -> None:
-        """Helper to quickly update specific job fields in Supabase in real-time."""
-        try:
-            kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
-            self.supabase.table("download_jobs").update(kwargs).eq("id", job_id).execute()
-        except Exception as e:
-            logger.error("Failed to update job status for %s in Supabase: %s", job_id, e)
+    def _start_download_task(self, job: DownloadJob, source_hint: Optional[dict] = None) -> asyncio.Task:
+        validate_job_id(job.id)
+        if job.id in self._attempts:
+            raise Conflict('Download attempt is still stopping or executing')
+        attempt = DownloadAttempt(job)
+        self._attempts[job.id] = attempt
+        attempt.task = self._workers.start(self._run_download_job(attempt, source_hint))
+        return attempt.task
 
-    def _start_download_task(self, job_id: str, source_hint: Optional[dict] = None) -> asyncio.Task:
-        task = asyncio.create_task(self._run_download_job(job_id, source_hint))
-        self._running_tasks[job_id] = task
-        return task
+    def _discard_attempt(self, attempt):
+        if self._attempts.get(attempt.job.id) is attempt:
+            del self._attempts[attempt.job.id]
 
-    async def _run_download_job(self, job_id: str, source_hint: Optional[dict] = None) -> None:
-        try:
-            async with self._download_semaphore:
-                if job_id in self._cancelled_jobs:
-                    logger.info("Job %s was cancelled before acquiring semaphore, skipping.", job_id)
+    async def _with_attempt(self, attempt, action):
+        async with self._job_gate(attempt.job.id):
+            def checked():
+                if (self._attempts.get(attempt.job.id) is not attempt or attempt.cancelled.is_set()):
+                    return False
+                current = self.get_job(attempt.job.user_id, attempt.job.id)
+                if (current.attempt_count != attempt.job.attempt_count
+                        or current.track_id != attempt.job.track_id
+                        or current.operation_type != attempt.job.operation_type
+                        or current.status not in ('queued', 'running')):
+                    attempt.cancelled.set()
+                    return False
+                return action(current)
+            try:
+                return await blocking(checked, on_cancel=attempt.cancelled.set)
+            except NotFound:
+                attempt.cancelled.set()
+                return False
+            except (Conflict, ProviderUnavailable):
+                attempt.cancelled.set()
+                raise
+
+    async def _update_job_status(self, attempt, **changes):
+        def update(current):
+            self._mutate_job(current, changes)
+            return True
+        return await self._with_attempt(attempt, update)
+
+    async def _record_stopped_attempt(self, attempt, *, failed=False):
+        """A stopped attempt may only finish its own still-active row, never publish.
+
+        A completed DELETE has no row. A transient SQL failure must not strand a
+        running row after the storage becomes reachable again.
+        """
+        async with self._job_gate(attempt.job.id):
+            def finish():
+                if self._attempts.get(attempt.job.id) is not attempt:
                     return
-                await self._run_download_job_impl(job_id, source_hint)
-        except asyncio.CancelledError:
-            logger.info("Job %s task was cancelled.", job_id)
-            self._update_job_status(
-                job_id,
-                status="cancelled",
-                error_code="user_cancelled",
-                error_message="Téléchargement annulé par l'utilisateur.",
-            )
-            for p in DOWNLOADS_DIR.glob(f"{job_id}.*"):
+                current = self.get_job(attempt.job.user_id, attempt.job.id)
+                if (current.attempt_count == attempt.job.attempt_count
+                        and current.track_id == attempt.job.track_id
+                        and current.status in ('queued', 'running')):
+                    self._mutate_job(current, dict(status='failed' if failed else 'cancelled',
+                        error_code='download_interrupted', error_message='Download interrupted; retry available'))
+            try:
+                await blocking(finish)
+            except NotFound:
+                pass
+            except Exception:
+                logger.warning('Stopped download status could not be recorded for %s', attempt.job.id)
+
+    async def _publish_cached(self, attempt, cached, source_hint=None):
+        def publish(current):
+            ok = _link_cached_track_to_user(current.user_id, current.track_id,
+                                           cached[0], cached[1], source_hint)
+            self._mutate_job(current, dict(status='succeeded' if ok else 'failed',
+                             progress_percent=100.0 if ok else 0.0,
+                             error_code=None if ok else 'cache_link_failed'))
+            return ok
+        return await self._with_attempt(attempt, publish)
+
+    async def _publish_audio(self, attempt, audio, metadata, source_hint):
+        def publish(current):
+            if audio != attempt.workspace / 'audio.mp3' or not regular_file(audio):
+                raise BadRequest('Invalid download output')
+            target = DOWNLOADS_DIR / (validate_job_id(current.id) + '.mp3')
+            shared = current.operation_type == 'manual_reassign'
+            history = ReplacementHistory(_get_sync_base()) if shared else None
+            with _STORAGE_LOCK:
+                previous = _find_globally_cached_track(current.track_id) if shared else None
+                old_digest = None
+                if history:
+                    import hashlib
+                    if previous:
+                        with previous[0].open('rb') as stream:
+                            old_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    with audio.open('rb') as stream:
+                        new_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    history.begin(attempt, (source_hint or {}).get('replacement_reason'))
+                    history.prepare(attempt, old_digest, new_digest)
+                def unsuccessful_outcome():
+                    after = _find_globally_cached_track(current.track_id)
+                    unchanged = after == previous
+                    if after:
+                        with after[0].open('rb') as stream:
+                            unchanged = unchanged and hashlib.file_digest(stream, 'sha256').hexdigest() == old_digest
+                    return 'failed' if unchanged else 'partial'
                 try:
-                    p.unlink(missing_ok=True)
+                    ok = _auto_register_in_sync_files(current.user_id, current.track_id, audio, **metadata, attempt=attempt)
+                    if ok:
+                        os.replace(audio, target)
+                    if ok and shared:
+                        propagation = _propagate_reassigned_track_to_all_users(current.track_id,
+                            _find_globally_cached_track(current.track_id)[0],
+                            **{k: metadata[k] for k in ('title', 'artist_name', 'album_title', 'duration_ms', 'cover_uri')})
+                        ok = not propagation['failed']
+                    outcome = 'succeeded' if ok else (unsuccessful_outcome() if history else 'failed')
+                    self._mutate_job(current, dict(status='succeeded' if ok else 'failed',
+                                     progress_percent=100.0 if ok else 0.0,
+                                     error_code=None if ok else ('shared_audio_replace_partial' if outcome == 'partial' else 'corrupt_audio_output')))
+                    if history:
+                        history.finish(attempt, outcome)
+                    return ok
                 except Exception:
-                    pass
-        except Exception as e:
-            logger.exception("Unexpected error in download worker for job %s", job_id)
-            self._update_job_status(
-                job_id,
-                status="failed",
-                error_code="unexpected_error",
-                error_message=str(e),
-            )
-        finally:
-            self._running_tasks.pop(job_id, None)
-            self._cancelled_jobs.discard(job_id)
+                    if history:
+                        history.finish(attempt, unsuccessful_outcome())
+                    raise
+        return await self._with_attempt(attempt, publish)
 
-    async def _run_download_job_impl(self, job_id: str, source_hint: Optional[dict] = None) -> None:
-        """
-        Background download worker task using yt-dlp.
+    def _schedule_progress(self, attempt, progress):
+        if self._attempts.get(attempt.job.id) is not attempt or attempt.cancelled.is_set():
+            return
+        task = asyncio.create_task(self._update_job_status(attempt, progress_percent=progress))
+        attempt.progress_tasks.add(task)
+        def finished(done):
+            attempt.progress_tasks.discard(done)
+            if not done.cancelled() and done.exception():
+                logger.warning('Download progress update unavailable for %s', attempt.job.id)
+        task.add_done_callback(finished)
 
-        1. Resolves the track_id (calls Deezer API or parses source_hint).
-        2. Initiates the yt-dlp download with progress hooks.
-        3. Converts format, embeds metadata and saves file in volumes.
-        4. Updates status to succeeded or failed with diagnostic messages.
-        """
+    async def _run_download_job(self, attempt, source_hint=None):
+        failed = False
         try:
-            response = self.supabase.table("download_jobs").select("*").eq("id", job_id).execute()
-            if not response.data:
-                logger.error("Job %s not found in Supabase", job_id)
-                return
-            job = DownloadJob.from_dict(response.data[0])
-        except Exception as e:
-            logger.error("Failed to fetch job %s from Supabase for worker: %s", job_id, e)
-        # Acquire track concurrency lock (Double-Checked Locking)
-        # Prevents parallel yt-dlp runs for the same track_id across concurrent requests in mono-process
-        track_lock = await self._get_track_lock(job.track_id)
-        async with track_lock:
-            # Double-Checked Locking : vérification si la piste a été téléchargée par un job concurrent
-            # Ignoré en cas de réassignation manuelle explicite pour forcer le nouveau téléchargement
-            is_manual_reassign = (source_hint or {}).get("trigger") == "manual_reassign"
-            if not is_manual_reassign:
+            if attempt.job.operation_type == 'manual_reassign':
+                def audit(current):
+                    ReplacementHistory(_get_sync_base()).begin(attempt, (source_hint or {}).get('replacement_reason'))
+                    return True
+                if not await self._with_attempt(attempt, audit):
+                    return
+            async with self._download_semaphore:
+                if not attempt.cancelled.is_set():
+                    track_lock = await self._get_track_lock(attempt.job.track_id)
+                    async with track_lock:
+                        await self._run_download_job_impl(attempt, source_hint)
+        except asyncio.CancelledError:
+            attempt.cancelled.set()
+        except Exception:
+            failed = True
+            logger.warning('Download attempt failed for %s', attempt.job.id)
+        finally:
+            attempt.finalizer = self._finalizers.start(self._finalize_attempt(attempt, failed))
+            await drain(attempt.finalizer, on_cancel=attempt.cancelled.set)
+
+    async def _finalize_attempt(self, attempt, failed):
+        if attempt.native_future is not None:
+            await drain(attempt.native_future, on_cancel=attempt.cancelled.set)
+        if attempt.progress_tasks:
+            await drain(asyncio.gather(*tuple(attempt.progress_tasks), return_exceptions=True))
+        if failed or attempt.cancelled.is_set():
+            await self._record_stopped_attempt(attempt, failed=failed)
+        if attempt.job.operation_type == 'manual_reassign':
+            try:
+                await blocking(ReplacementHistory(_get_sync_base()).settle, attempt, attempt.cancelled.is_set())
+            except Exception:
+                logger.warning('Replacement audit finalization unavailable')
+        try:
+            await blocking(attempt.cleanup, DOWNLOADS_DIR)
+        except Exception:
+            logger.warning('Private attempt cleanup incomplete for %s', attempt.job.id)
+        self._discard_attempt(attempt)
+
+    async def shutdown(self):
+        if self._shutdown_task is None:
+            self._closing = True
+            self._shutdown_task = asyncio.create_task(self._shutdown())
+        await drain(self._shutdown_task)
+
+    async def _shutdown(self):
+        await self._commands.join()
+        for attempt in tuple(self._attempts.values()):
+            attempt.cancelled.set()
+        await self._workers.join()
+        await self._finalizers.join()
+
+    async def get_download_file(self, user_id, job_id):
+        await blocking(self.get_job, user_id, job_id)
+        async with self._job_gate(job_id):
+            job = await blocking(self.get_job, user_id, job_id)
+            if job.status != 'succeeded':
+                raise BadRequest(f'Download job is not succeeded: status={job.status}')
+            def find():
                 cached = _find_globally_cached_track(job.track_id)
                 if cached:
-                    cached_audio, metadata = cached
-                    logger.info("Worker job %s: track %s trouvé dans le cache global sous verrou ! Association 0s", job_id, job.track_id)
-                    _link_cached_track_to_user(
-                        user_id=job.user_id,
-                        track_id=job.track_id,
-                        cached_audio=cached_audio,
-                        metadata=metadata,
-                        override_metadata=source_hint,
-                    )
-                    self._update_job_status(job_id, status="succeeded", progress_percent=100.0)
-                    return
+                    return cached[0]
+                candidate = legacy_audio(DOWNLOADS_DIR, job.id)
+                if candidate:
+                    return candidate
+                trash = DOWNLOADS_DIR / '_legacy_trash'
+                if trash.is_dir() and not trash.is_symlink() and not trash.is_junction():
+                    for directory in sorted(trash.iterdir()):
+                        if directory.is_dir() and not directory.is_symlink() and not directory.is_junction():
+                            candidate = legacy_audio(directory, job.id)
+                            if candidate:
+                                return candidate
+                return None
+            path = await blocking(find)
+            if path is None:
+                raise NotFound('Audio file not found')
+            return path
 
-            await self._execute_download_workflow(job, source_hint)
+    async def _run_download_job_impl(self, attempt: DownloadAttempt, source_hint=None):
+        if not await self._update_job_status(attempt, status='running', progress_percent=0.0):
+            return
+        if attempt.job.operation_type == 'manual_reassign':
+            video_id = (source_hint or {}).get('resolved_video_id')
+            if not isinstance(video_id, str) or not video_id.strip():
+                await self._update_job_status(attempt, status='failed',
+                    error_code='replacement_source_required',
+                    error_message='Select a new explicit video using resolve or reassign')
+                return
+        else:
+            cached = await self._with_attempt(attempt, lambda current: _find_globally_cached_track(current.track_id))
+            if cached:
+                await self._publish_cached(attempt, cached, source_hint)
+                return
+        await self._execute_download_workflow(attempt, source_hint)
 
-    async def _execute_download_workflow(self, job: DownloadJob, source_hint: Optional[dict] = None) -> None:
+    async def _execute_download_workflow(self, attempt: DownloadAttempt, source_hint: Optional[dict] = None) -> None:
+        job = attempt.job
         job_id = job.id
         # 1. Resolve track metadata to get the YouTube search query
         query = None
@@ -1604,11 +1430,11 @@ class DownloadService:
             
             loop = asyncio.get_event_loop()
             try:
-                resolved_video_id = await loop.run_in_executor(None, _run_resolve)
+                resolved_video_id = await blocking(_run_resolve, on_cancel=attempt.cancelled.set)
             except RequiresResolutionException as e:
                 # Capture des candidats et mise à jour du job en requires_resolution
-                self._update_job_status(
-                    job_id,
+                await self._update_job_status(
+                    attempt,
                     status="requires_resolution",
                     candidates=e.candidates
                 )
@@ -1637,119 +1463,75 @@ class DownloadService:
             download_target = query
             logger.info("Targeted search returned no candidate. Falling back to search query: %r", download_target)
 
-        self._update_job_status(job_id, status="running", progress_percent=5.0)
-        logger.info("Starting real download for target: %r (Job: %s)", download_target, job_id)
-
-        # 2. Setup progress hooks (with performance throttling to avoid saturating Supabase requests)
+        if not await self._update_job_status(attempt, status='running', progress_percent=5.0):
+            return
+        workspace = await self._with_attempt(attempt, lambda current: attempt.prepare_workspace(DOWNLOADS_DIR))
+        if not workspace:
+            return
+        loop = asyncio.get_running_loop()
         last_update_time = [0.0]
         last_progress = [0.0]
 
-        def _progress_hook(d: dict) -> None:
-            if job_id in self._cancelled_jobs:
-                raise yt_dlp.utils.DownloadCancelled("Download cancelled by user request")
-            if d["status"] == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-                downloaded = d.get("downloaded_bytes", 0)
-                if total > 0:
-                    progress = round((downloaded / total) * 100, 1)
-                    now_time = time.time()
-                    if (progress - last_progress[0] >= 3.0) or (now_time - last_update_time[0] >= 2.0):
-                        self._update_job_status(job_id, progress_percent=progress)
-                        last_progress[0] = progress
-                        last_update_time[0] = now_time
-            elif d["status"] == "finished":
-                self._update_job_status(job_id, progress_percent=99.0)
+        class AttemptCancelled(Exception):
+            pass
 
-        # 3. Define the blocking yt-dlp execution
-        def _execute_yt_dlp():
-            opts = _build_yt_dlp_opts(DOWNLOADS_DIR, job_id)
-            opts["progress_hooks"] = [_progress_hook]
+        def check_cancelled():
+            if attempt.cancelled.is_set():
+                raise AttemptCancelled()
 
-            status = "failed"
-            error_code = None
-            error_message = None
-            progress_percent = 0.0
+        def progress_hook(data):
+            check_cancelled()
+            if data.get('status') == 'downloading':
+                total = data.get('total_bytes') or data.get('total_bytes_estimate') or 0
+                progress = round((data.get('downloaded_bytes', 0) / total) * 100, 1) if total else 0.0
+                now = time.monotonic()
+                if progress - last_progress[0] >= 3.0 or now - last_update_time[0] >= 2.0:
+                    loop.call_soon_threadsafe(self._schedule_progress, attempt, progress)
+                    last_progress[0], last_update_time[0] = progress, now
+            elif data.get('status') == 'finished':
+                loop.call_soon_threadsafe(self._schedule_progress, attempt, 99.0)
 
+        def execute_native():
+            # The native worker writes only private artifacts. It never publishes or writes SQL.
             try:
+                check_cancelled()
+                opts = _build_yt_dlp_opts(workspace, 'audio')
+                opts['progress_hooks'] = [progress_hook]
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(download_target, download=True)
-                    if info is None:
-                        status = "failed"
-                        error_code = "job_failed"
-                        error_message = "No search result found on YouTube"
-                        return
+                check_cancelled()
+                audio = workspace / 'audio.mp3'
+                if info is None or not regular_file(audio) or audio.stat().st_size == 0:
+                    return dict(status='failed', error_code='job_failed', error_message='No MP3 output')
+                return dict(status='succeeded', audio=audio)
+            except Exception as exc:
+                if attempt.cancelled.is_set():
+                    return dict(status='cancelled', error_code='user_cancelled', error_message='Download stopped')
+                # Preserve actionable client categories without persisting provider free text,
+                # URLs, cookies, tokens or credential-bearing exception payloads.
+                diagnostic = str(exc).lower()
+                if any(word in diagnostic for word in ('bot', 'sign in', 'cookie')):
+                    code, message = 'youtube_bot_or_cookies', 'YouTube sign in or cookies required'
+                elif 'po_token' in diagnostic or 'po-token' in diagnostic:
+                    code, message = 'po_token_failed', 'YouTube PO-token unavailable'
+                elif 'timeout' in diagnostic or '504' in diagnostic or isinstance(exc, TimeoutError):
+                    code, message = 'provider_timeout', 'Audio provider timeout'
+                elif 'not found' in diagnostic or 'no match' in diagnostic:
+                    code, message = 'no_match', 'Audio source not found'
+                else:
+                    code, message = 'job_failed', 'Audio provider failed'
+                return dict(status='failed', error_code=code, error_message=message)
 
-                    expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
-                    audio_final = None
-                    if expected_file.exists():
-                        audio_final = expected_file
-                    else:
-                        matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
-                        non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp")]
-                        if non_thumb:
-                            audio_final = non_thumb[0]
-
-                    if audio_final is not None and audio_final.exists():
-                        # Auto-register in user's personal Cloud sync storage
-                        registered = _auto_register_in_sync_files(
-                            user_id=job.user_id,
-                            track_id=job.track_id,
-                            audio_file=audio_final,
-                            title=title,
-                            artist_name=artist,
-                            album_title=album,
-                            duration_ms=duration_ms,
-                            artist_id=artist_id,
-                            album_id=album_id,
-                            cover_uri=cover_uri,
-                        )
-                        if registered:
-                            if (source_hint or {}).get("trigger") == "manual_reassign":
-                                _propagate_reassigned_track_to_all_users(
-                                    track_id=job.track_id,
-                                    cached_audio=audio_final,
-                                    title=title,
-                                    artist_name=artist,
-                                    album_title=album,
-                                    duration_ms=duration_ms,
-                                    cover_uri=cover_uri,
-                                )
-                                _cleanup_orphaned_job_files(job.track_id, keep_job_id=job.id, supabase_client=self.supabase)
-
-                            status = "succeeded"
-                            progress_percent = 100.0
-                        else:
-                            status = "failed"
-                            error_code = "corrupt_audio_output"
-                            error_message = "Audio integrity validation failed (file empty or corrupt)."
-                    else:
-                        status = "failed"
-                        error_code = "job_failed"
-                        error_message = "Audio conversion failed, no MP3 found."
-            except yt_dlp.utils.DownloadCancelled:
-                logger.info("yt-dlp download cancelled for job %s", job_id)
-                status = "cancelled"
-                error_code = "user_cancelled"
-                error_message = "Téléchargement annulé par l'utilisateur."
-            except yt_dlp.utils.DownloadError as e:
-                status = "failed"
-                error_code = "job_failed"
-                error_message = str(e).splitlines()[-1] if str(e).splitlines() else str(e)
-            except Exception as e:
-                status = "failed"
-                error_code = "job_failed"
-                error_message = f"Unexpected: {type(e).__name__}: {str(e)}"
-            finally:
-                # Update Supabase with the final state
-                self._update_job_status(
-                    job_id,
-                    status=status,
-                    progress_percent=progress_percent if status == "succeeded" else None,
-                    error_code=error_code,
-                    error_message=error_message,
-                )
-
-        # 4. Run blocking yt-dlp in a thread pool
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _execute_yt_dlp)
-        logger.info("Real download job finished. (Job: %s)", job_id)
+        attempt.native_future = loop.run_in_executor(None, execute_native)
+        result = await drain(attempt.native_future, on_cancel=attempt.cancelled.set)
+        if result['status'] != 'succeeded':
+            await self._update_job_status(attempt, **result)
+            return
+        metadata = dict(title=title, artist_name=artist, album_title=album, duration_ms=duration_ms,
+                        artist_id=artist_id, album_id=album_id, cover_uri=cover_uri)
+        published = await self._publish_audio(attempt, result['audio'], metadata, source_hint)
+        if published and job.operation_type == 'manual_reassign':
+            try:
+                await self._cleanup_orphaned_job_files(job)
+            except Exception:
+                logger.warning('Optional historical job cleanup incomplete for %s', job_id)

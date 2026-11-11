@@ -87,14 +87,16 @@ class TestAuraIdCodec(unittest.TestCase):
 
 class TestAuthModule(unittest.TestCase):
 
-    def test_decode_jwt_fallback_and_malformed_rejection(self):
+    def test_decode_signed_jwt_and_malformed_rejection(self):
         mock_settings = MagicMock()
-        mock_settings.supabase_jwt_secret = None
+        mock_settings.supabase_jwt_secret = "synthetic-test-signing-secret-32-bytes-minimum"
+        mock_settings.supabase_url = "https://auth.example.test"
 
         with patch("app.core.auth.get_settings", return_value=mock_settings):
             valid_token = _make_hs256_jwt(
-                {"sub": "11111111-2222-3333-4444-555555555555", "aud": "authenticated", "exp": int(time.time()) + 3600},
-                "any_secret",
+                {"sub": "11111111-2222-3333-4444-555555555555", "aud": "authenticated", "exp": int(time.time()) + 3600,
+                 "iss": "https://auth.example.test/auth/v1", "role": "authenticated"},
+                mock_settings.supabase_jwt_secret,
             )
             payload = _decode_jwt_payload(valid_token)
             self.assertEqual(payload["sub"], "11111111-2222-3333-4444-555555555555")
@@ -105,11 +107,13 @@ class TestAuthModule(unittest.TestCase):
 
     def test_get_current_user_extracts_bearer_query_and_rejects_missing_or_invalid(self):
         mock_settings = MagicMock()
-        mock_settings.supabase_jwt_secret = None
+        mock_settings.supabase_jwt_secret = "synthetic-test-signing-secret-32-bytes-minimum"
+        mock_settings.supabase_url = "https://auth.example.test"
         user_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         jwt_token = _make_hs256_jwt(
-            {"sub": user_uuid, "aud": "authenticated", "exp": int(time.time()) + 3600},
-            "test_secret",
+            {"sub": user_uuid, "aud": "authenticated", "exp": int(time.time()) + 3600,
+             "iss": "https://auth.example.test/auth/v1", "role": "authenticated"},
+            mock_settings.supabase_jwt_secret,
         )
 
         with patch("app.core.auth.get_settings", return_value=mock_settings):

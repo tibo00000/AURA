@@ -80,6 +80,13 @@ Le `MoreVert` (⋮) ouvre un `DropdownMenu` avec les actions suivantes :
 - Source Room : jointure `tracks INNER JOIN track_likes`, triée par `track_likes.liked_at DESC`.
 - La `TrackListRow` expose `isLiked = true` pour toutes les lignes de cet écran.
 - L'écran ne trie pas côté Kotlin — le ordre SQL est la source de vérité.
+- La liste observe `getLikedTracksFlow()` via le repository : un lien média réparé ou
+  un téléchargement terminé est reflété par Room, sans réécriture d'un snapshot UI.
+- Le choix `auto_download_favorites` reste une préférence persistée. L'indicateur
+  d'activité utilise les transferts réseau effectifs de `CloudFileRepository`, pas
+  le simple parcours des favoris ou la réparation d'un lien local.
+- Un fichier privé valide est réassocié avant toute récupération réseau ; un scan
+  ancien ne suffit pas à retirer son association (voir `local-persistence.md`).
 
 ## Contexte de lecture
 

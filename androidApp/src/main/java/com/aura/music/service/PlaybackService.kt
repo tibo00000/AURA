@@ -24,6 +24,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 import com.google.common.collect.ImmutableList
 
 /**
@@ -36,6 +39,8 @@ class PlaybackService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var lastBrowsedFolderId: String? = null
+    private val controllerTrust by lazy { ControllerTrustPolicy(this) }
+    private val privatePlaybackReady = PlaybackSessionReadiness()
 
     override fun onCreate() {
         super.onCreate()
@@ -68,24 +73,36 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
         player = exoPlayer
+        serviceScope.launch(Dispatchers.Main.immediate, start = CoroutineStart.UNDISPATCHED) {
+            // Secure preferences/Keystore may initialize on a cold Auto/service start.
+            lateinit var auth: com.aura.music.core.AuthSessionManager
+            lateinit var privatePlayback: PrivatePlaybackGuard
+            if (!privatePlaybackReady.initialize {
+                auth = withContext(Dispatchers.IO) { (application as AuraApplication).container.authSessionManager }
+                privatePlayback = PrivatePlaybackGuard(exoPlayer, auth.sessionScope.value)
+            }) {
+                android.util.Log.e("PlaybackService", "Initialisation de session audio indisponible")
+                return@launch
+            }
+            auth.sessionScope.collect(privatePlayback::onScopeChanged)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
-        mediaSession
+        mediaSession.takeIf { controllerTrust.allows(controllerInfo) }
 
-    private val librarySessionCallback = object : MediaLibrarySession.Callback {
+    internal val librarySessionCallback = object : MediaLibrarySession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+            if (controllerTrust.allows(controller)) MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            else MediaSession.ConnectionResult.reject()
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
             // Filtrage des clients de confiance (système, Android Auto, Assistant, package local)
-            val isTrusted = browser.isTrusted ||
-                browser.packageName == "com.google.android.projection.gearhead" ||
-                browser.packageName == "com.google.android.googlequicksearchbox" ||
-                browser.packageName == packageName
-
-            if (!isTrusted) {
+            if (!controllerTrust.allows(browser)) {
                 return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
             }
 
@@ -111,6 +128,8 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            if (!controllerTrust.allows(browser)) return Futures.immediateFuture(
+                LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
             val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
             lastBrowsedFolderId = parentId
 
@@ -187,6 +206,8 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String
         ): ListenableFuture<LibraryResult<MediaItem>> {
+            if (!controllerTrust.allows(browser)) return Futures.immediateFuture(
+                LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
             val future = SettableFuture.create<LibraryResult<MediaItem>>()
             serviceScope.launch {
                 try {
@@ -242,16 +263,22 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>
         ): List<MediaItem> {
+            if (!controllerTrust.allows(controller)) throw SecurityException("Contrôleur non autorisé")
+            privatePlaybackReady.await() // Admit no source until the non-blocking session observer is ready.
             val container = (application as AuraApplication).container
             val repository = container.localLibraryRepository
+            val admittedItems = ControllerMediaResolver(this@PlaybackService, controllerTrust,
+                com.aura.music.core.PrivateStreamPolicy(java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)),
+                repository::getTrackById, { repository.searchLocalTracks(it, limit = 20) }
+            ).resolve(controller, mediaItems)
             val queueManager = container.queueManager
             val connectedPackages = mediaSession?.connectedControllers?.map { it.packageName } ?: emptyList()
 
             val resolvedItems = mutableListOf<MediaItem>()
 
             // Resolution de la file d'attente (reprise du contexte de navigation)
-            if (mediaItems.size == 1 && controller.packageName != packageName) {
-                val targetTrackId = mediaItems[0].mediaId
+            if (admittedItems.size == 1 && !controllerTrust.isInternal(controller)) {
+                val targetTrackId = admittedItems[0].mediaId
                 var parentFolderId = lastBrowsedFolderId
 
                 // Helper function to load context tracks dynamically
@@ -387,15 +414,7 @@ class PlaybackService : MediaLibraryService() {
 
             if (resolvedItems.isEmpty()) {
                 // Fallback resolution standard si non-contexte externe ou erreur
-                for (item in mediaItems) {
-                    val trackId = item.mediaId
-                    val track = repository.getTrackById(trackId)
-                    if (track != null) {
-                        resolvedItems.add(track.toMediaItem(this@PlaybackService, controller.packageName, connectedPackages))
-                    } else {
-                        resolvedItems.add(item)
-                    }
-                }
+                resolvedItems.addAll(admittedItems)
             }
 
             return resolvedItems
@@ -432,11 +451,14 @@ class PlaybackService : MediaLibraryService() {
                     
                     // Resolve correct starting index based on target track ID ONLY for external controllers.
                     // For the internal application controller, use the requested startIndex directly.
-                    val resolvedIndex = if (controller.packageName != packageName && mediaItems.firstOrNull()?.mediaId != null) {
-                        resolved.indexOfFirst { it.mediaId == mediaItems.firstOrNull()?.mediaId }
+                    val resolvedIndex = if (!controllerTrust.isInternal(controller) && mediaItems.size == 1) {
+                        val requestedId = mediaItems.first().mediaId.takeIf { it.isNotBlank() }
+                            ?: (application as AuraApplication).container.queueManager.state.value.currentTrack?.trackId
+                        resolved.indexOfFirst { it.mediaId == requestedId }
                     } else -1
                     
-                    val targetStartIndex = if (resolvedIndex != -1) resolvedIndex else startIndex
+                    val targetStartIndex = if (resolvedIndex != -1) resolvedIndex else if (resolved.isEmpty()) C.INDEX_UNSET
+                        else if (startIndex == C.INDEX_UNSET) startIndex else startIndex.coerceIn(0, resolved.lastIndex)
                     
                     future.set(MediaSession.MediaItemsWithStartPosition(resolved, targetStartIndex, startPositionMs))
                 } catch (e: Exception) {
@@ -484,6 +506,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        privatePlaybackReady.close()
         val container = (application as? AuraApplication)?.container
         container?.applicationScope?.launch(Dispatchers.IO) {
             container.playbackStateStore.flushPendingPlaybackSnapshot()

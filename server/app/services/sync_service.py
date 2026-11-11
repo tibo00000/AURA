@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-from app.db.supabase import supabase
+from supabase import Client
 from app.services.exceptions import BadRequest
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,9 @@ def compute_order_token(playlist_updated_at: str) -> str:
 class SyncService:
     """Service handling synchronization logic, idempotency, bootstrap, push-batch and pull-batch."""
 
+    def __init__(self, client: Client):
+        self.db = client
+
     def bootstrap(self, user_id: str, device_id: str) -> dict:
         """
         Compile initial client hydration snapshot containing user settings,
@@ -58,10 +61,10 @@ class SyncService:
         
         # Ensure user profile exists in profiles table to satisfy Foreign Key constraints
         try:
-            prof_res = supabase.table("profiles").select("*").eq("id", user_id).execute()
+            prof_res = self.db.table("profiles").select("*").eq("id", user_id).execute()
             if not prof_res.data:
                 logger.info("Initializing missing user profile for %s in profiles table", user_id)
-                supabase.table("profiles").insert({
+                self.db.table("profiles").insert({
                     "id": user_id,
                     "display_name": f"User {user_id[:8]}",
                     "avatar_uri": None,
@@ -71,7 +74,7 @@ class SyncService:
 
         try:
             # 1. User Settings
-            settings_res = supabase.table("user_settings").select("*").eq("user_id", user_id).execute()
+            settings_res = self.db.table("user_settings").select("*").eq("user_id", user_id).execute()
             settings = None
             if settings_res.data:
                 s = settings_res.data[0]
@@ -94,13 +97,13 @@ class SyncService:
                 }
 
             # 2. Playlists & Playlist Items
-            playlists_res = supabase.table("playlists").select("*").eq("user_id", user_id).execute()
+            playlists_res = self.db.table("playlists").select("*").eq("user_id", user_id).execute()
             playlists_list = playlists_res.data or []
             playlists = []
             
             for pl in playlists_list:
                 pl_id = pl["id"]
-                items_res = supabase.table("playlist_items").select("*").eq("playlist_id", pl_id).order("position").execute()
+                items_res = self.db.table("playlist_items").select("*").eq("playlist_id", pl_id).order("position").execute()
                 items_list = items_res.data or []
                 
                 playlists.append({
@@ -124,7 +127,7 @@ class SyncService:
                 })
 
             # 3. Track Likes (Favorites)
-            likes_res = supabase.table("likes").select("*").eq("user_id", user_id).execute()
+            likes_res = self.db.table("likes").select("*").eq("user_id", user_id).execute()
             likes_list = likes_res.data or []
             track_likes = [
                 {
@@ -137,7 +140,7 @@ class SyncService:
             ]
 
             # 4. Playback Snapshot
-            snapshot_res = supabase.table("playback_snapshots").select("*").eq("user_id", user_id).execute()
+            snapshot_res = self.db.table("playback_snapshots").select("*").eq("user_id", user_id).execute()
             playback_snapshot = None
             if snapshot_res.data:
                 snap = snapshot_res.data[0]
@@ -167,7 +170,7 @@ class SyncService:
             }
         except Exception as e:
             logger.error("Bootstrap execution failed for user %s: %s", user_id, e)
-            raise BadRequest(f"Bootstrap execution failed: {str(e)}")
+            raise BadRequest("Bootstrap execution failed") from None
 
     def push_batch(self, user_id: str, device_id: str, batch_id: str, operations: List[dict]) -> dict:
         """
@@ -179,7 +182,7 @@ class SyncService:
         # 0. Batch-Level Idempotency Check
         if batch_id:
             try:
-                batch_res = supabase.table("processed_batches").select("*").eq("batch_id", batch_id).eq("user_id", user_id).execute()
+                batch_res = self.db.table("processed_batches").select("*").eq("batch_id", batch_id).eq("user_id", user_id).execute()
                 if batch_res.data:
                     logger.info("Batch %s already processed for user %s. Returning idempotent duplicate response.", batch_id, user_id)
                     return {
@@ -202,14 +205,14 @@ class SyncService:
                         }
                     }
             except Exception as be:
-                logger.debug("processed_batches lookup skipped/failed: %s", be)
+                raise BadRequest("Unable to verify batch idempotency") from None
 
         # Ensure user profile exists in profiles table to satisfy Foreign Key constraints
         try:
-            prof_res = supabase.table("profiles").select("*").eq("id", user_id).execute()
+            prof_res = self.db.table("profiles").select("*").eq("id", user_id).execute()
             if not prof_res.data:
                 logger.info("Initializing missing user profile for %s in profiles table during push", user_id)
-                supabase.table("profiles").insert({
+                self.db.table("profiles").insert({
                     "id": user_id,
                     "display_name": f"User {user_id[:8]}",
                     "avatar_uri": None,
@@ -227,11 +230,11 @@ class SyncService:
             try:
                 for i in range(0, len(all_op_ids), 100):
                     chunk_ids = all_op_ids[i:i + 100]
-                    dup_batch = supabase.table("processed_operations").select("operation_id").in_("operation_id", chunk_ids).execute()
+                    dup_batch = self.db.table("processed_operations").select("operation_id").in_("operation_id", chunk_ids).eq("user_id", user_id).execute()
                     if dup_batch.data:
                         already_processed_ids.update(r["operation_id"] for r in dup_batch.data)
             except Exception as e:
-                logger.warning("Batch idempotency check error: %s", e)
+                raise BadRequest("Unable to verify operation idempotency") from None
 
         for op in operations:
             op_id = op.get("operation_id")
@@ -303,6 +306,7 @@ class SyncService:
 
                 # 3. Stage operation for bulk idempotency recording
                 if status in ("applied", "merged", "ignored_duplicate"):
+                    already_processed_ids.add(op_id)
                     ops_to_record.append({
                         "operation_id": op_id,
                         "user_id": user_id,
@@ -332,20 +336,20 @@ class SyncService:
         if ops_to_record:
             try:
                 for i in range(0, len(ops_to_record), 100):
-                    supabase.table("processed_operations").upsert(ops_to_record[i:i + 100], on_conflict="operation_id").execute()
+                    self.db.table("processed_operations").upsert(ops_to_record[i:i + 100], on_conflict="user_id,operation_id", ignore_duplicates=True).execute()
             except Exception as e:
-                logger.error("Failed to bulk record processed_operations: %s", e)
+                raise BadRequest("Unable to persist operation idempotency") from None
 
         # Record completed batch for future idempotency checks
-        if batch_id:
+        if batch_id and len(results) == len(operations) and all(r["status"] != "conflict" for r in results):
             try:
-                supabase.table("processed_batches").upsert({
+                self.db.table("processed_batches").upsert({
                     "batch_id": batch_id,
                     "user_id": user_id,
                     "processed_at": datetime.now(timezone.utc).isoformat(),
-                }, on_conflict="batch_id").execute()
+                }, on_conflict="user_id,batch_id", ignore_duplicates=True).execute()
             except Exception as be:
-                logger.debug("Failed to record processed_batches for %s: %s", batch_id, be)
+                raise BadRequest("Unable to persist batch idempotency") from None
 
         return {
             "batch_id": batch_id,
@@ -368,7 +372,7 @@ class SyncService:
         try:
             # 1. user_settings
             if not entity_types or "user_settings" in entity_types:
-                res = supabase.table("user_settings").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
+                res = self.db.table("user_settings").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
                 for item in (res.data or []):
                     changes.append({
                         "change_id": f"chg_set_{item['user_id']}",
@@ -387,7 +391,7 @@ class SyncService:
 
             # 2. playlists
             if not entity_types or "playlist" in entity_types:
-                res = supabase.table("playlists").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
+                res = self.db.table("playlists").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
                 for item in (res.data or []):
                     changes.append({
                         "change_id": f"chg_pl_{item['id']}",
@@ -407,10 +411,10 @@ class SyncService:
             # 3. playlist_items
             if not entity_types or "playlist_item" in entity_types:
                 # Find modifications using joined query or items whose playlist belongs to user
-                playlists_res = supabase.table("playlists").select("id").eq("user_id", user_id).execute()
+                playlists_res = self.db.table("playlists").select("id").eq("user_id", user_id).execute()
                 pl_ids = [p["id"] for p in (playlists_res.data or [])]
                 if pl_ids:
-                    res = supabase.table("playlist_items").select("*").in_("playlist_id", pl_ids).gt("added_at", since_iso).execute()
+                    res = self.db.table("playlist_items").select("*").in_("playlist_id", pl_ids).gt("added_at", since_iso).execute()
                     for item in (res.data or []):
                         changes.append({
                             "change_id": f"chg_pli_{item['id']}",
@@ -431,7 +435,7 @@ class SyncService:
 
             # 4. track_like (likes)
             if not entity_types or "track_like" in entity_types:
-                res = supabase.table("likes").select("*").eq("user_id", user_id).gt("liked_at", since_iso).execute()
+                res = self.db.table("likes").select("*").eq("user_id", user_id).gt("liked_at", since_iso).execute()
                 for item in (res.data or []):
                     changes.append({
                         "change_id": f"chg_lk_{item['track_id']}",
@@ -450,7 +454,7 @@ class SyncService:
 
             # 5. playback_snapshot
             if not entity_types or "playback_snapshot" in entity_types:
-                res = supabase.table("playback_snapshots").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
+                res = self.db.table("playback_snapshots").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
                 for item in (res.data or []):
                     changes.append({
                         "change_id": f"chg_snap_{item['user_id']}",
@@ -490,13 +494,13 @@ class SyncService:
             }
         except Exception as e:
             logger.error("Pull batch execution failed for user %s: %s", user_id, e)
-            raise BadRequest(f"Pull batch failed: {str(e)}")
+            raise BadRequest("Pull batch failed") from None
 
     # --- PRIVATE ENTITY HANDLERS ---
 
     def _handle_user_settings_sync(self, user_id: str, occurred_at: str, payload: dict) -> Tuple[str, dict]:
         """Process LWW user settings patch sync."""
-        db_res = supabase.table("user_settings").select("*").eq("user_id", user_id).execute()
+        db_res = self.db.table("user_settings").select("*").eq("user_id", user_id).execute()
         
         if not db_res.data:
             # Creation
@@ -509,7 +513,7 @@ class SyncService:
                 "stats_sync_network_policy": payload.get("stats_sync_network_policy", "wifi_only"),
                 "updated_at": now,
             }
-            supabase.table("user_settings").insert(insert_data).execute()
+            self.db.table("user_settings").insert(insert_data).execute()
             return "applied", insert_data
 
         server_data = db_res.data[0]
@@ -529,16 +533,16 @@ class SyncService:
             "stats_sync_network_policy": payload.get("stats_sync_network_policy", server_data["stats_sync_network_policy"]),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        supabase.table("user_settings").update(updates).eq("user_id", user_id).execute()
+        self.db.table("user_settings").update(updates).eq("user_id", user_id).execute()
         return "merged", updates
 
     def _handle_playlist_sync(self, user_id: str, playlist_id: str, op_type: str, occurred_at: str, payload: dict) -> Tuple[str, dict, dict]:
         """Process playlist creation, LWW update or deletion."""
-        db_res = supabase.table("playlists").select("*").eq("id", playlist_id).execute()
+        db_res = self.db.table("playlists").select("*").eq("id", playlist_id).eq("user_id", user_id).execute()
         
         if op_type == "delete":
             if db_res.data:
-                supabase.table("playlists").delete().eq("id", playlist_id).execute()
+                self.db.table("playlists").delete().eq("id", playlist_id).eq("user_id", user_id).execute()
                 return "applied", None, None
             return "ignored_duplicate", None, None
 
@@ -554,7 +558,7 @@ class SyncService:
                 "created_at": now,
                 "updated_at": now,
             }
-            supabase.table("playlists").insert(insert_data).execute()
+            self.db.table("playlists").insert(insert_data).execute()
             return "applied", insert_data, None
 
         server_data = db_res.data[0]
@@ -571,108 +575,80 @@ class SyncService:
             "is_pinned": payload.get("is_pinned", server_data["is_pinned"]),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        supabase.table("playlists").update(updates).eq("id", playlist_id).execute()
+        self.db.table("playlists").update(updates).eq("id", playlist_id).eq("user_id", user_id).execute()
         return "merged", updates, None
 
+    def _owned_parent(self, table: str, parent_id: str, user_id: str) -> dict:
+        rows = self.db.table(table).select("*").eq("id", parent_id).eq("user_id", user_id).execute().data
+        if not rows:
+            raise BadRequest("Resource unavailable")
+        return rows[0]
+
     def _handle_playlist_item_sync(self, user_id: str, item_id: str, op_type: str, payload: dict) -> Tuple[str, dict]:
-        """Process playlist item insertion (with position compaction/shifting) or deletion."""
-        db_res = supabase.table("playlist_items").select("*").eq("id", item_id).execute()
-
-        if op_type == "delete":
-            if db_res.data:
-                supabase.table("playlist_items").delete().eq("id", item_id).execute()
-                return "applied", None
-            return "ignored_duplicate", None
-
-        if db_res.data:
-            return "ignored_duplicate", db_res.data[0]
-
-        # Insert (Add) playlist item
+        """Authorize the parent; shift/insert/delete atomically under its SQL row lock."""
         playlist_id = payload.get("playlist_id")
-        position = payload.get("position", 0)
-        track_id = payload.get("track_id")
-
-        if not playlist_id or not track_id:
-            raise BadRequest("playlist_id and track_id are required to add a playlist item")
-
-        # Compaction rule: if position is already taken, shift positions >= requested position
-        dup_pos = supabase.table("playlist_items").select("*").eq("playlist_id", playlist_id).eq("position", position).execute()
-        if dup_pos.data:
-            logger.info("Position %d taken in playlist %s. Shifting items in DB.", position, playlist_id)
-            # Fetch all items to avoid unique constraint violations on shift (shift from end to front)
-            all_items = supabase.table("playlist_items").select("id", "position").eq("playlist_id", playlist_id).ge("position", position).order("position", desc=True).execute()
-            for it in (all_items.data or []):
-                supabase.table("playlist_items").update({"position": it["position"] + 1}).eq("id", it["id"]).execute()
-
-        # Insert the new item
-        now = datetime.now(timezone.utc).isoformat()
-        insert_data = {
-            "id": item_id,
-            "playlist_id": playlist_id,
-            "track_id": track_id,
-            "position": position,
-            "added_at": payload.get("added_at") or now,
-            "added_from_context_type": payload.get("added_from_context_type"),
-            "added_from_context_id": payload.get("added_from_context_id"),
-        }
-        supabase.table("playlist_items").insert(insert_data).execute()
-        
-        # Touch playlist's updated_at to invalidate order token
-        supabase.table("playlists").update({"updated_at": now}).eq("id", playlist_id).execute()
-        
-        return "applied", insert_data
+        if not playlist_id:
+            raise BadRequest("playlist_id is required")
+        self._owned_parent("playlists", playlist_id, user_id)
+        result = self.db.rpc("aura_mutate_playlist_items", {
+            "p_playlist_id": playlist_id,
+            "p_item_id": item_id,
+            "p_action": "delete" if op_type == "delete" else "insert",
+            "p_payload": payload,
+        }).execute().data
+        return result["status"], result.get("entity")
 
     def _handle_playlist_reorder_sync(self, user_id: str, playlist_id: str, payload: dict) -> Tuple[str, dict, dict]:
-        """Process playlist full reordering using order tokens to prevent concurrent merge conflicts."""
-        db_res = supabase.table("playlists").select("updated_at").eq("id", playlist_id).execute()
-        if not db_res.data:
-            conflict = {
-                "reason": "playlist_not_found",
-                "server_entity": None,
-                "client_payload": payload,
-                "retryable": False,
+        rows = self.db.table("playlists").select("*").eq("id", playlist_id).eq("user_id", user_id).execute().data
+        if not rows:
+            return "conflict", None, {
+                "reason": "playlist_not_found", "server_entity": None,
+                "client_payload": payload, "retryable": False,
             }
-            return "conflict", None, conflict
-
-        playlist_updated = db_res.data[0]["updated_at"]
-        server_token = compute_order_token(playlist_updated)
-        client_token = payload.get("base_order_token")
-
-        if server_token != client_token:
-            logger.warning("Order token mismatch on playlist %s. Server: %s, Client: %s", playlist_id, server_token, client_token)
-            conflict = {
+        current = rows[0]
+        server_token = compute_order_token(current["updated_at"])
+        if payload.get("base_order_token") != server_token:
+            return "conflict", None, {
                 "reason": "base_outdated",
-                "server_entity": {
-                    "playlist_id": playlist_id,
-                    "order_token": server_token,
-                },
-                "client_payload": {
-                    "base_order_token": client_token,
-                },
+                "server_entity": {"playlist_id": playlist_id, "order_token": server_token},
+                "client_payload": {"base_order_token": payload.get("base_order_token")},
                 "retryable": True,
             }
-            return "conflict", None, conflict
-
-        # Apply reorder
-        items_reorder = payload.get("items") or []
-        for it in items_reorder:
-            item_id = it.get("playlist_item_id")
-            pos = it.get("position")
-            if item_id is not None and pos is not None:
-                # Update positions
-                supabase.table("playlist_items").update({"position": pos}).eq("id", item_id).execute()
-
-        # Touch playlist to rotate token
-        now = datetime.now(timezone.utc).isoformat()
-        supabase.table("playlists").update({"updated_at": now}).eq("id", playlist_id).execute()
-        
-        return "applied", {"playlist_id": playlist_id, "order_token": compute_order_token(now)}, None
+        items = payload.get("items", [])
+        if not isinstance(items, list) or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("playlist_item_id"), str)
+            or type(item.get("position")) is not int or item["position"] < 0
+            for item in items
+        ):
+            raise BadRequest("Invalid playlist order")
+        ids = [item["playlist_item_id"] for item in items]
+        positions = [item["position"] for item in items]
+        if len(set(ids)) != len(ids) or len(set(positions)) != len(positions):
+            raise BadRequest("Invalid playlist order")
+        if ids:
+            members = self.db.table("playlist_items").select("id").eq("playlist_id", playlist_id).in_("id", ids).execute().data
+            if {row["id"] for row in (members or [])} != set(ids):
+                raise BadRequest("Resource unavailable")
+        result = self.db.rpc("aura_mutate_playlist_items", {
+            "p_playlist_id": playlist_id, "p_item_id": None, "p_action": "reorder",
+            "p_payload": {"items": items},
+            "p_expected_updated_at": current["updated_at"],
+        }).execute().data
+        order = {"playlist_id": playlist_id, "order_token": compute_order_token(result["updated_at"])}
+        if result["status"] == "conflict":
+            return "conflict", None, {
+                "reason": "base_outdated", "server_entity": order,
+                "client_payload": {"base_order_token": payload.get("base_order_token")},
+                "retryable": True,
+            }
+        return result["status"], order, None
 
     def _handle_track_like_sync(self, user_id: str, track_id: str, payload: dict) -> Tuple[str, dict]:
         """Process track like/favorite state sync."""
         is_liked = payload.get("is_liked", True)
         
-        db_res = supabase.table("likes").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
+        db_res = self.db.table("likes").select("*").eq("user_id", user_id).eq("track_id", track_id).execute()
 
         if is_liked:
             if db_res.data:
@@ -685,13 +661,13 @@ class SyncService:
                 "source_context_type": payload.get("source_context_type"),
                 "source_context_id": payload.get("source_context_id"),
             }
-            supabase.table("likes").insert(insert_data).execute()
+            self.db.table("likes").insert(insert_data).execute()
             return "applied", insert_data
         else:
             if not db_res.data:
                 return "ignored_duplicate", None
             # Delete like
-            supabase.table("likes").delete().eq("user_id", user_id).eq("track_id", track_id).execute()
+            self.db.table("likes").delete().eq("user_id", user_id).eq("track_id", track_id).execute()
             return "applied", None
 
     def _handle_playback_snapshot_sync(self, user_id: str, payload: dict) -> Tuple[str, dict]:
@@ -708,7 +684,7 @@ class SyncService:
             "repeat_mode": payload.get("repeat_mode", "none"),
             "updated_at": now,
         }
-        supabase.table("playback_snapshots").upsert(snapshot_data).execute()
+        self.db.table("playback_snapshots").upsert(snapshot_data).execute()
         return "applied", snapshot_data
 
     def _handle_history_item_sync(self, user_id: str, item_id: str, payload: dict) -> Tuple[str, dict]:
@@ -724,12 +700,18 @@ class SyncService:
             "source_context_type": payload.get("source_context_type"),
             "source_context_id": payload.get("source_context_id"),
         }
-        supabase.table("history_items").upsert(insert_data).execute()
+        existing = self.db.table("history_items").select("*").eq("id", item_id).eq("user_id", user_id).execute()
+        if existing.data:
+            return "ignored_duplicate", existing.data[0]
+        if insert_data["listening_session_id"]:
+            self._owned_parent("listening_sessions", insert_data["listening_session_id"], user_id)
+        # A hidden/global ID collision must fail INSERT, never overwrite another owner.
+        self.db.table("history_items").insert(insert_data).execute()
         return "applied", insert_data
 
     def _handle_listening_session_sync(self, user_id: str, session_id: str, payload: dict) -> Tuple[str, dict]:
         """Process session upsert/patch synchronization."""
-        db_res = supabase.table("listening_sessions").select("*").eq("id", session_id).execute()
+        db_res = self.db.table("listening_sessions").select("*").eq("id", session_id).eq("user_id", user_id).execute()
         
         insert_data = {
             "id": session_id,
@@ -744,25 +726,26 @@ class SyncService:
         }
 
         if not db_res.data:
-            supabase.table("listening_sessions").insert(insert_data).execute()
+            self.db.table("listening_sessions").insert(insert_data).execute()
             return "applied", insert_data
         
         # Merge/Upsert
         server_data = db_res.data[0]
         # Keep original started_at
         insert_data["started_at"] = server_data["started_at"]
-        supabase.table("listening_sessions").update(insert_data).eq("id", session_id).execute()
+        self.db.table("listening_sessions").update(insert_data).eq("id", session_id).eq("user_id", user_id).execute()
         return "merged", insert_data
 
     def _handle_playback_event_sync(self, user_id: str, event_id: str, payload: dict) -> Tuple[str, dict]:
         """Process additive playback event sync."""
-        db_res = supabase.table("playback_events").select("*").eq("id", event_id).execute()
+        db_res = self.db.table("playback_events").select("*").eq("id", event_id).eq("user_id", user_id).execute()
         if db_res.data:
             return "ignored_duplicate", db_res.data[0]
 
         session_id = payload.get("session_id")
         if not session_id:
             raise BadRequest("session_id is required to create a playback event")
+        self._owned_parent("listening_sessions", session_id, user_id)
 
         insert_data = {
             "id": event_id,
@@ -777,5 +760,5 @@ class SyncService:
             "skip_reason": payload.get("skip_reason"),
             "liked_during_playback": payload.get("liked_during_playback", False),
         }
-        supabase.table("playback_events").insert(insert_data).execute()
+        self.db.table("playback_events").insert(insert_data).execute()
         return "applied", insert_data

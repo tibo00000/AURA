@@ -1,0 +1,61 @@
+{
+    log default {
+        output stdout
+        format filter {
+            wrap json {
+                message_key ""
+                stacktrace_key ""
+            }
+            fields {
+                request>uri regexp "[?].*$" ""
+                request>headers delete
+                resp_headers delete
+                error delete
+                errorVerbose delete
+            }
+        }
+    }
+}
+
+(safe_access) {
+    log {
+        output stdout
+        format filter {
+            wrap json {
+                message_key ""
+                stacktrace_key ""
+            }
+            fields {
+                request>uri regexp "[?].*$" ""
+                request>headers delete
+                resp_headers delete
+                error delete
+                errorVerbose delete
+            }
+        }
+    }
+    log_append request_id {http.request.uuid}
+    header X-Request-ID {http.request.uuid}
+}
+
+aura-prod.duckdns.org {
+    import safe_access
+    encode gzip zstd
+    @sec005_upload {
+        method POST
+        path /me/sync/files/*
+        not path /me/sync/files/batch-metadata
+    }
+    request_body @sec005_upload {
+        max_size 53477376
+    }
+    reverse_proxy aura-api:8000 {
+        header_up X-Request-ID {http.request.uuid}
+    }
+}
+
+aura-dev.duckdns.org {
+    import safe_access
+    header Retry-After 300
+    respond "Maintenance" 503
+}

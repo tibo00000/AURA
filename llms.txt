@@ -77,13 +77,18 @@ Server
 - `docs/server/sync-conflict-resolution.md`: strategie canonique de sync, payloads exacts et regles de resolution des conflits.
 - `docs/server/sync-batch-api.md`: contrats HTTP batch concrets pour bootstrap, push et pull de sync.
 - `docs/server/api-sync-flows.md`: diagrammes des flux entre Android, API, Supabase et jobs.
-- `docs/server/jobs.md`: cycle de vie des jobs.
+- `docs/server/jobs.md`: cycle de vie des jobs, autorisation/annulation SEC-003.2, supervision et reprise des admissions SQL, ordre des gardes et limites mono-processus.
 - `docs/server/database-postgres.md`: schema logique Postgres/Supabase et tables cloud candidates.
 - `docs/server/postgres-relationships.md`: diagramme relationnel du schema Postgres synchronisable.
-- `docs/server/storage.md`: strategie de stockage.
+- `docs/server/storage.md`: strategie de stockage, provenance du cache natif, uploads privés, fichiers des tentatives et nettoyage exact.
 - `docs/server/providers/deezer.md`: provider de recherche online v1.
 - `docs/server/providers/streaming-bridge.md`: extension future pour streaming/Hi-Fi.
-- `docs/server/security-and-secrets.md`: secrets, variables et permissions.
+- `docs/server/security-and-secrets.md`: secrets, authentification, projet Supabase de test isolé et checklist opérationnelle du lot 1.
+- `docs/server/security-lot2-isolation.md`: SEC-002, matrice avant/après des opérations privées, client JWT par requête, RLS/parents, migration locale et résultats/limites de validation.
+- `docs/ops/security-lot2-validation.md`: SEC-002.1, défauts de cohérence REST/RPC reproduits, requêtes d'inventaire et droits, test isolé préparé, gates de maintenance et NO-GO activation.
+- `docs/ops/security-lot2-isolated-integration.md`: SEC-002.3, environnement Supabase dédié, préparation offline, tests réels A/B et pull positif, nettoyage et autorisations préalables.
+- `docs/ops/security-lot2-deployment.md`: SEC-002.4, identité du candidat autonome reproductible, inventaire de livraison, résultats, préflight production en lecture seule, sauvegarde/restauration et commandes finales M0–M8.
+- `docs/ops/security-lot2-recovery.md`: SEC-002.5, gate M2 simplifié, sauvegarde unique public/Auth/historique, dépendances applicatives et restauration privée vérifiée, heure T et RPO non nul accepté, autorisation M2-S.
 
 MCP And Operations
 - `docs/mcp/overview.md`: vue d'ensemble du serveur MCP.
@@ -92,5 +97,16 @@ MCP And Operations
 - `docs/ops/logging-observability.md`: logs et correlation.
 - `docs/ops/env-vars.md`: inventaire des variables d'environnement.
 - `docs/ops/hosting-strategy.md`: strategie d'hebergement always-on avant la recherche online produit.
+- `docs/ops/security-lot1-intervention.md`: candidats de confinement, commandes, risques, vérifications et autorisations pour le déploiement sécurisé du lot 1.
 - `docs/ops/ota-deployment-guide.md`: procedure pas-a-pas pour publier une mise a jour OTA et synchroniser l'APK et version.json sur le VPS.
+- `docs/ops/security-lot5-local-validation.md`: SEC-005 local, uploads bornés avant buffering, journal SQLite des remplacements partagés, seuils collaboratifs, tests et réserves avant activation.
+- `docs/ops/security-lot5-candidate.md`: construction du backend, procédure de déploiement, sauvegarde/restauration et validation synthétique.
+- `docs/ops/security-lot5-window-decisions.md`: déploiement SEC-005.2 du 11 novembre 2026, résultats et expiration JWT reportée.
 
+Verification Tools
+- `server/scripts/verify_security_lot1_local.py`: sonde hors ligne Auth, streaming synthétique et journaux Uvicorn ; aucune connexion Supabase réelle.
+
+
+- `docs/ops/security-lot3-candidate.md`: SEC-003.3, réserves R1/R2, image autonome locale et preuves embarquées, limites et gates avant activation.
+
+- `docs/ops/security-lot3-preflight.md`: SEC-003.4 terminé, SEC-003.3 déployé et production rouverte le21 octobre ;329 tests VPS,110 hashes, téléchargement/DELETE/streaming réels, reçus expurgés et wrapper courant six fichiers.

@@ -20,12 +20,13 @@ from app.schemas.sync import (
     PushBatchResponse,
 )
 from app.services.sync_service import SyncService
+from app.db.user_client import get_current_user_client
 from app.services.exceptions import BadRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/me/sync", tags=["sync"])
-sync_service = SyncService()
+
 
 
 @router.post(
@@ -35,6 +36,7 @@ sync_service = SyncService()
 async def bootstrap(
     request: BootstrapRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    user_client=Depends(get_current_user_client),
 ):
     """
     Hydrate a device after connection or token loss.
@@ -42,7 +44,7 @@ async def bootstrap(
     """
     try:
         res = await anyio.to_thread.run_sync(
-            lambda: sync_service.bootstrap(
+            lambda: SyncService(user_client).bootstrap(
                 user_id=current_user.id,
                 device_id=request.device_id,
             )
@@ -65,6 +67,7 @@ async def bootstrap(
 async def push_batch(
     request: PushBatchRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    user_client=Depends(get_current_user_client),
 ):
     """
     Push a batch of local outbox mutations from the client.
@@ -74,7 +77,7 @@ async def push_batch(
         # Convert Pydantic models to dict for the service layer
         operations_dict = [op.model_dump() for op in request.operations]
         res = await anyio.to_thread.run_sync(
-            lambda: sync_service.push_batch(
+            lambda: SyncService(user_client).push_batch(
                 user_id=current_user.id,
                 device_id=request.device_id,
                 batch_id=request.batch_id,
@@ -100,6 +103,7 @@ async def push_batch(
 async def pull_batch(
     request: PullBatchRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    user_client=Depends(get_current_user_client),
 ):
     """
     Pull all server-side changes occurred since the client's last SyncToken.
@@ -122,7 +126,7 @@ async def pull_batch(
             )
 
         res = await anyio.to_thread.run_sync(
-            lambda: sync_service.pull_batch(
+            lambda: SyncService(user_client).pull_batch(
                 user_id=current_user.id,
                 since_token=request.since_token,
                 limit=request.limit,
@@ -145,5 +149,5 @@ async def pull_batch(
         logger.error("Pull batch endpoint failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal sync error: {str(e)}",
+            detail="Internal sync error",
         )

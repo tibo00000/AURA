@@ -98,6 +98,7 @@ class ReassignAudioRequest(BaseModel):
     track_id: str = Field(..., description="Target AURA track ID (trk_{ulid})")
     video_id: str = Field(..., description="The YTM video ID selected by the user")
     source_hint: Optional[SourceHint] = Field(None, description="Optional metadata advice for track re-download")
+    reason: Optional[Literal['incorrect_audio', 'quality', 'wrong_version', 'other']] = None
 
 
 class CookieUploadRequest(BaseModel):

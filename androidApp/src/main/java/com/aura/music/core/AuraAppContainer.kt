@@ -49,7 +49,7 @@ class AuraAppContainer(context: Context) {
     }
 
     val auraApiService: AuraApiService by lazy {
-        com.aura.music.data.network.KtorAuraApiService.createDefault()
+        authenticatedApi(authSessionManager)
     }
 
     val cloudFileRepository by lazy {

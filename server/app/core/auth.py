@@ -1,115 +1,108 @@
-"""
-Authentication middleware and dependencies for AURA.
+"""Verify Supabase access tokens before exposing an authenticated identity."""
 
-Validates Supabase Auth JWTs from the Bearer token in the Authorization header
-and extracts the authenticated user UUID (sub).
-"""
-
-import json
-import base64
-import logging
+import math
+from functools import lru_cache
 from typing import Optional
+from urllib.parse import urlsplit
+from uuid import UUID
+
+import anyio
+import jwt
 from fastapi import Header, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.config import get_settings
 
-logger = logging.getLogger(__name__)
-
-# Single-owner transition UUID
-TRANSITIONAL_OWNER_UUID = "12345678-1234-1234-1234-1234567890ab"
-
 
 class AuthenticatedUser(BaseModel):
-    """Representing an authenticated user."""
-    id: str  # UUID string
+    id: str
     token: str
 
 
-def _decode_jwt_payload(token: str) -> dict:
-    """Decodes JWT payload safely."""
-    # 1. Verification with JWT secret if configured
-    settings = get_settings()
-    secret = settings.supabase_jwt_secret
-    if secret:
-        try:
-            import jwt
-            return jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated")
-        except Exception as e:
-            logger.warning("Supabase JWT verification failed with secret: %s", e)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+def _unauthorized() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired authentication token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
-    # 2. Fallback: Parse claims directly if no secret is set yet
+
+@lru_cache(maxsize=8)
+def _jwks_client(issuer: str) -> jwt.PyJWKClient:
+    # Cache the set, not individual keys indefinitely, so revoked keys expire.
+    # The library serializes refreshes and bounds unknown-kid refreshes to 30s.
+    return jwt.PyJWKClient(
+        issuer + "/.well-known/jwks.json",
+        cache_keys=False, lifespan=600, timeout=5, cooldown_duration=30,
+    )
+
+
+def _decode_jwt_payload(token: str) -> dict:
+    """Return claims only after signature, access-token claims and UUID validation."""
+    settings = get_settings()
     try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise ValueError("Malformed JWT token")
-        payload_b64 = parts[1]
-        # Pad base64 if needed
-        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
-        decoded = base64.urlsafe_b64decode(padded.encode("utf-8"))
-        return json.loads(decoded.decode("utf-8"))
-    except Exception as e:
-        logger.warning("Failed to parse JWT claims: %s", e)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token format",
-            headers={"WWW-Authenticate": "Bearer"},
+        base_url = settings.supabase_url.rstrip("/")
+        parsed = urlsplit(base_url)
+        if (
+            parsed.scheme != "https" or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment
+        ):
+            raise ValueError("Missing or invalid trusted Supabase URL")
+        issuer = base_url + "/auth/v1"
+
+        # The untrusted header selects only among our allowlisted verifiers.
+        # No key URL, issuer, or key material from the token establishes trust.
+        header = jwt.get_unverified_header(token)
+        algorithm = header.get("alg")
+        if algorithm == "HS256" and settings.supabase_jwt_secret:
+            key = settings.supabase_jwt_secret
+        elif algorithm in ("ES256", "RS256"):
+            if not isinstance(header.get("kid"), str) or not header["kid"]:
+                raise ValueError("Missing signing key identifier")
+            signing_key = _jwks_client(issuer).get_signing_key(header["kid"])
+            if signing_key.algorithm_name != algorithm:
+                raise ValueError("Signing key algorithm mismatch")
+            key = signing_key.key
+        else:
+            raise ValueError("No trusted verifier for this algorithm")
+
+        payload = jwt.decode(
+            token, key, algorithms=[algorithm], audience="authenticated", issuer=issuer,
+            options={"require": ["exp", "aud", "iss", "sub", "role"]},
         )
+        expiry = payload["exp"]
+        if (
+            isinstance(expiry, bool) or not isinstance(expiry, (int, float))
+            or not math.isfinite(expiry) or payload["role"] != "authenticated"
+            or not isinstance(payload["sub"], str)
+        ):
+            raise ValueError("Invalid user access-token claims")
+        payload["sub"] = str(UUID(payload["sub"]))
+        return payload
+    except (jwt.PyJWTError, ValueError, OverflowError) as exc:
+        # Never return unverified claims or include token/key material in errors.
+        raise _unauthorized() from exc
 
 
 async def get_current_user(
     authorization: Optional[str] = Header(None),
     token: Optional[str] = Query(None),
 ) -> AuthenticatedUser:
-    """
-    Dependency to validate authorization header or query token and get current authenticated user.
-    Supports Authorization: Bearer <token> or ?token=<token> (for streaming media players).
-    """
-    raw_token: Optional[str] = None
-
-    if isinstance(authorization, str) and authorization.strip():
+    """Accept a Bearer header or the existing audio-stream query transport."""
+    raw_token = None
+    if isinstance(authorization, str):
         parts = authorization.strip().split(" ")
         if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization format. Use 'Bearer <token>'",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            raise _unauthorized()
         raw_token = parts[1].strip()
-    elif isinstance(token, str) and token.strip():
+    elif isinstance(token, str):
         raw_token = token.strip()
         if raw_token.lower().startswith("bearer "):
             raw_token = raw_token[7:].strip()
-
-
     if not raw_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header or token query parameter",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthorized()
 
-    # TRANSITIONAL COMPATIBILITY:
-    # Single-owner temporary bypass for zero-downtime client rollout.
-    # TODO: Remove after client rollout is confirmed.
-    if raw_token.lower() == TRANSITIONAL_OWNER_UUID:
-        logger.debug("Authenticated owner via transitional UUID token: %s", TRANSITIONAL_OWNER_UUID)
-        return AuthenticatedUser(id=TRANSITIONAL_OWNER_UUID, token=raw_token)
-
-    # Decode and validate Supabase JWT
-    payload = _decode_jwt_payload(raw_token)
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token missing 'sub' (user_id) claim",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    logger.debug("Authenticated user_id: %s from Supabase JWT", user_id)
-    return AuthenticatedUser(id=user_id.lower(), token=raw_token)
+    # JWKS discovery and cryptographic work must not block the async API loop.
+    payload = await anyio.to_thread.run_sync(_decode_jwt_payload, raw_token)
+    return AuthenticatedUser(id=payload["sub"], token=raw_token)

@@ -10,16 +10,46 @@ local.properties
 
 # Python
 server/.venv/
-server/.pytest_cache/
-server/__pycache__/
-server/**/*.pyc
+server/venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
 
 # Environment files
 .env
 .env.*
 !.env.example
+.envrc
 server/.env
 server/.env.local
+
+# Credentials and private recovery material
+credentials/
+secrets/
+private-recovery/
+*.dpapi
+*.jwt
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.age
+*.age.partial
+id_rsa
+id_ed25519
+credentials.json
+service-account.json
+token.json
+tokens.json
+cookies.txt
+.pgpass
+*.dump
+*.backup
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 
 # OS and editors
 .DS_Store
@@ -35,4 +65,13 @@ shared/src/commonMain/kotlin/com/aura/music/data/network/BuildConfig.kt
 # Scratch and temporary agent files
 scratch/
 org/
+*.log
+test-results/
+reports/local/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.apk
+*.aab
 

@@ -1,20 +1,25 @@
 import hashlib
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.schemas.responses import ResponseEnvelope
+from app.api.upload_admission import UploadAdmissionRoute
+from app.services.download_lifecycle import blocking
+from app.services.storage_safety import StorageLimit, replace_pair, stage_json
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/me/sync/files", tags=["sync-files"])
+router = APIRouter(prefix="/me/sync/files", tags=["sync-files"], route_class=UploadAdmissionRoute)
 
 
 def _base_dir() -> Path:
@@ -29,6 +34,8 @@ def _track_key(track_id: str) -> str:
 def _user_dir(user_id: str) -> Path:
     safe_user_id = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
     path = _base_dir() / safe_user_id
+    if path.is_symlink() or path.is_junction():
+        raise HTTPException(503, 'Unsafe personal storage')
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -55,6 +62,7 @@ def _read_metadata(path: Path) -> dict[str, Any] | None:
 )
 async def upload_sync_file(
     track_id: str,
+    request: Request,
     file: UploadFile = File(...),
     title: str = Form(None),
     artist_name: str = Form(None),
@@ -65,18 +73,38 @@ async def upload_sync_file(
     cover_uri: str = Form(None),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    target_file, metadata_file = _paths(current_user.id, track_id)
+    if getattr(request.state, 'upload_owner', current_user.id) != current_user.id:
+        raise HTTPException(401, 'Upload session changed')
+    target_file, metadata_file = await blocking(_paths, current_user.id, track_id)
     uploaded_at = datetime.now(timezone.utc).isoformat()
 
+    # Stage independently: replacing an upload must not modify a shared native inode.
+    fd, temporary = await blocking(lambda: tempfile.mkstemp(dir=target_file.parent, prefix='_upload_'))
+    staged = Path(temporary)
     size = 0
     try:
-        with target_file.open("wb") as output:
+        with os.fdopen(fd, 'wb') as output:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
-                output.write(chunk)
-    except Exception as exc:
-        logger.exception("Failed to store sync file for user=%s track=%s", current_user.id, track_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+                if size > get_settings().upload_max_file_bytes:
+                    raise StorageLimit(413, 'upload_file_too_large')
+                reservation = getattr(request.state, 'upload_reservation', None)
+                if reservation:
+                    guard, token = reservation
+                    await blocking(guard.check)
+                await blocking(output.write, chunk)
+                if reservation:
+                    guard.allocated(token, token.allocated + len(chunk))
+            await blocking(output.flush)
+            await blocking(os.fsync, output.fileno())
+    except BaseException as exc:
+        staged.unlink(missing_ok=True)
+        if not isinstance(exc, Exception):
+            raise
+        if isinstance(exc, StorageLimit):
+            raise HTTPException(exc.status, exc.code) from None
+        logger.warning('Personal upload staging failed')
+        raise HTTPException(status_code=500, detail='Personal upload failed') from None
     finally:
         await file.close()
 
@@ -95,26 +123,20 @@ async def upload_sync_file(
         "uploaded_at": uploaded_at,
         "updated_at": uploaded_at,
     }
-    metadata_file.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-
-    # Mirror dans le cache global pour dédoublonnage instantané avec les autres utilisateurs
+    from app.services.download_service import _STORAGE_LOCK
+    staged_metadata = None
+    def publish():
+        nonlocal staged_metadata
+        staged_metadata = stage_json(metadata_file, metadata)
+        with _STORAGE_LOCK:
+            replace_pair(staged, target_file, staged_metadata, metadata_file, _base_dir())
     try:
-        from app.services.download_service import _get_global_cache_dir, _get_track_key
-        cache_dir = _get_global_cache_dir()
-        track_key = _get_track_key(track_id)
-        cache_audio = cache_dir / f"{track_key}.audio"
-        cache_json = cache_dir / f"{track_key}.json"
-        if not cache_audio.exists():
-            import os
-            import shutil
-            try:
-                os.link(target_file, cache_audio)
-            except Exception:
-                shutil.copyfile(target_file, cache_audio)
-            cache_json.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-            logger.info("Mirrored uploaded track %s to _global_cache", track_id)
-    except Exception as e:
-        logger.debug("Could not link uploaded track to global cache: %s", e)
+        await blocking(publish)
+    finally:
+        staged.unlink(missing_ok=True)
+        if staged_metadata:
+            staged_metadata.unlink(missing_ok=True)
+    # Uploads remain personal, even when a client supplies a catalogue-shaped ID.
 
     return ResponseEnvelope(data=metadata)
 
@@ -143,7 +165,7 @@ async def download_sync_file(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     from app.core.aura_id_codec import get_track_id_aliases
-    from app.services.download_service import _find_globally_cached_track, _link_cached_track_to_user
+    from app.services.download_service import _find_globally_cached_track
 
     aliases = get_track_id_aliases(track_id)
     target_file: Path | None = None
@@ -152,7 +174,7 @@ async def download_sync_file(
     # 1. Vérification dans le répertoire personnel de l'utilisateur (track_id ou alias)
     for alias in aliases:
         cand_file, cand_meta = _paths(current_user.id, alias)
-        if cand_file.exists() and cand_file.stat().st_size > 0:
+        if not cand_file.is_symlink() and cand_file.is_file() and cand_file.stat().st_size > 0:
             target_file = cand_file
             metadata = _read_metadata(cand_meta) or {}
             break
@@ -281,15 +303,21 @@ async def delete_sync_file(
     from app.core.aura_id_codec import get_track_id_aliases
 
     aliases = get_track_id_aliases(track_id)
-    deleted = False
-    for alias in aliases:
-        target_file, metadata_file = _paths(current_user.id, alias)
-        for path in (target_file, metadata_file):
-            if path.exists():
-                try:
-                    path.unlink()
-                    deleted = True
-                except Exception as exc:
-                    logger.warning("Failed to delete %s: %s", path, exc)
+    from app.services.download_service import _STORAGE_LOCK
+    from app.services.download_lifecycle import blocking
+    def remove_owned():
+        deleted = False
+        with _STORAGE_LOCK:
+            for alias in aliases:
+                target_file, metadata_file = _paths(current_user.id, alias)
+                for path in (target_file, metadata_file):
+                    if path.exists() or path.is_symlink():
+                        try:
+                            path.unlink()
+                            deleted = True
+                        except OSError as exc:
+                            logger.warning("Failed to delete %s: %s", path, exc)
+        return deleted
+    deleted = await blocking(remove_owned)
 
     return ResponseEnvelope(data={"track_id": track_id, "deleted": deleted})

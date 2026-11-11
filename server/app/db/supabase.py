@@ -5,7 +5,7 @@ Provides a shared Supabase client instance configured with the service_role key
 to perform privileged database operations.
 """
 
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 from app.config import get_settings
 
 settings = get_settings()
@@ -21,15 +21,24 @@ supabase: Client = create_client(
 )
 
 
-def get_user_supabase_client(user_jwt: str) -> Client:
+def get_user_supabase_client(user_jwt: str, *, httpx_client=None) -> Client:
     """
     Instantiate a user-scoped Supabase client that injects the user's JWT.
-    This guarantees that PostgreSQL evaluates auth.uid() and applies Row Level Security (RLS).
+    Call only with the token returned by get_current_user. RLS policies must also be installed.
+    Never mutate the shared privileged client or fall back to its key/session.
     """
+    if not isinstance(user_jwt, str) or not user_jwt.strip():
+        raise ValueError("A verified user token is required")
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise ValueError("User database access is not configured")
     client: Client = create_client(
-        settings.supabase_url or "https://placeholder.supabase.co",
-        settings.supabase_anon_key or settings.supabase_service_role_key or "placeholder_key"
+        settings.supabase_url,
+        settings.supabase_anon_key,
+        options=ClientOptions(
+            auto_refresh_token=False,
+            persist_session=False,
+            httpx_client=httpx_client,
+        ),
     )
-    if user_jwt:
-        client.postgrest.auth(user_jwt)
+    client.postgrest.auth(user_jwt)
     return client

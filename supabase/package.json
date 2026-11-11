@@ -1,0 +1,12 @@
+{
+  "name": "aura-supabase-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Configuration for Supabase database and migrations.",
+  "scripts": {
+    "supabase": "supabase"
+  },
+  "devDependencies": {
+    "supabase": "^2.121.0"
+  }
+}
