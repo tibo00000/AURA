@@ -65,7 +65,7 @@ backend, appliquer les filtres Caddy aux logs d'accès et d'erreur, traiter la p
 Uvicorn. Préserver les erreurs et vérifier la chaîne entière avec des marqueurs synthétiques dans
 un environnement isolé avant une vraie session. Cibles : Caddyfile, lancement Uvicorn, configuration
 `APP_DEBUG` et publication des ports du Compose ; aucun de ces éléments n'a été modifié par l'audit.
-Les résultats détaillés et les limites figurent dans `security-lot1-tests.md`.
+Les résultats opérationnels figurent dans [le runbook du lot 1](security-lot1-intervention.md). Les preuves de revue initiales sont archivées hors Git sous `scratch/archive-security-2026-11-11/`.
 
 ### Proposition Caddy à valider avant application
 

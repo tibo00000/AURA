@@ -31,6 +31,25 @@ Definir le schema detaille de `Supabase/Postgres` pour les donnees transactionne
 
 ## Tables
 
+### Isolation des données personnelles — SEC-002
+
+**Appliqué en production le2026-10-18 après autorisation nominative** :
+`supabase/migrations/20261017200822_secure_user_data_isolation.sql`.
+Historique Supabase `20261018203759 / secure_user_data_isolation`, wrapper d'intégrité et
+postcheck conformes ; exécution dans `docs/ops/security-lot2-deployment.md`.
+Architecture, matrice et limites : `docs/server/security-lot2-isolation.md`.
+
+- Les routes privées REST/sync utilisent un client lié au JWT vérifié ; `authenticated`
+  reçoit les droits CRUD avec RLS propriétaire et garde restrictive, `anon` aucun droit.
+- `playlist_items` est autorisée par sa playlist possédée ; événements et historique
+  vérifient également la session propriétaire. Les FK composites ci-dessous protègent
+  aussi les écritures serveur privilégiées.
+- `download_jobs` demeure serveur uniquement. `user_track_stats` et `recent_searches`,
+  lorsqu'elles existent, ne sont accessibles directement qu'en lecture propriétaire.
+- Le catalogue conserve ses privilèges serveur. Les anciens `FOR ALL USING` ne sont pas
+  considérés dépourvus de contrôle INSERT : PostgreSQL réutilise USING comme WITH CHECK
+  en l'absence de clause explicite. Le problème confirmé était son contournement par service_role.
+
 ### `profiles`
 
 | Column | Type | Null | Key | Notes |
@@ -142,7 +161,17 @@ Constraints:
 | `added_from_context_id` | `TEXT` | yes |  | contexte |
 
 Constraints:
-- `UNIQUE(playlist_id, position)`
+- `UNIQUE(playlist_id, position) DEFERRABLE INITIALLY IMMEDIATE` après SEC-002.
+- La RPC `aura_mutate_playlist_items` est `SECURITY INVOKER`, verrouille la playlist
+  possédée, valide tous les IDs puis insère/supprime/réordonne dans une transaction.
+  La contrainte est rétablie avant retour ; une collision annule tous les déplacements.
+  Plusieurs occurrences d'une même piste restent autorisées.
+- SEC-002.2 ajoute `rest_insert` (sans décalage), `rest_delete_track` (toutes les occurrences,
+  sans compaction) et `rest_patch` (métadonnées, null ignoré). Mutation et touch du parent
+  partagent le verrou propriétaire et la transaction. Les actions REST et items batch calculent
+  `greatest(clock_timestamp(), parent.updated_at + interval '1 microsecond')` après verrou.
+  Une erreur SQL du touch annule aussi les écritures enfants. Migration et backend actifs en
+  production depuis SEC-002.4-RUN ; preuves dans `docs/ops/security-lot2-deployment.md`.
 
 ### `likes`
 
@@ -182,6 +211,10 @@ Constraints:
 | `source_context_type` | `TEXT` | yes |  | contexte |
 | `source_context_id` | `TEXT` | yes |  | contexte |
 
+Après SEC-002, `history_items(user_id,listening_session_id)` référence
+`listening_sessions(user_id,id)`. Session facultative ; sa suppression met uniquement
+`listening_session_id` à NULL et conserve le propriétaire/historique (PostgreSQL >=15).
+
 ### `download_jobs`
 
 | Column | Type | Null | Key | Notes |
@@ -214,6 +247,10 @@ Constraints:
 | `total_listening_ms` | `INTEGER` | no |  | temps |
 
 ### `playback_events`
+
+Après SEC-002 : `listening_sessions` porte aussi `UNIQUE(user_id,id)` et
+`playback_events(user_id,session_id)` la référence avec `ON DELETE CASCADE`.
+Une session étrangère ne peut pas recevoir les événements du compte courant.
 
 | Column | Type | Null | Key | Notes |
 |---|---|---|---|---|
@@ -263,6 +300,13 @@ Constraints:
 Retention:
 - optionnelle
 - borne glissante de 10 recherches si active
+
+### `processed_operations` et `processed_batches`
+
+Après SEC-002, PK respectives `(user_id,operation_id)` et `(user_id,batch_id)` ; IDs
+opaques conservés, dates `processed_at` conservées. Les conflits d'upsert ciblent la même
+clé composite avec `ignore_duplicates`. A et B peuvent réutiliser le même ID de marqueur
+sans interférence. Aucune suppression de marqueur existant n'est prévue.
 
 ## Tables explicitement absentes
 - aucune replication brute de `MediaStore`

@@ -1,0 +1,2 @@
+infra/security-lot5/Caddyfile.* text eol=lf
+infra/security-lot5/compose.sec0052.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
