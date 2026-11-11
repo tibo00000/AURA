@@ -21,8 +21,18 @@ class ProviderUnavailable(ServiceError):
     pass
 
 
+class AmbiguousMutation(ProviderUnavailable):
+    """SQL completed with an unverifiable representation; keep HTTP 503."""
+    pass
+
+
 class BadRequest(ServiceError):
     """Request is invalid."""
+    pass
+
+
+class Conflict(ServiceError):
+    """The resource changed concurrently or still has an active attempt."""
     pass
 
 

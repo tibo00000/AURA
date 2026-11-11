@@ -28,12 +28,31 @@ from app.schemas.downloads import (
 )
 from app.schemas.responses import ErrorDetails, ResponseEnvelope
 from app.services.download_service import DownloadService, DOWNLOADS_DIR
-from app.services.exceptions import BadRequest, NotFound
+from app.services.exceptions import BadRequest, Conflict, NotFound, ProviderUnavailable
+from app.services.download_lifecycle import blocking, legacy_audio
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 download_service = DownloadService()
+
+
+@router.get('/me/audio-replacements', response_model=ResponseEnvelope[dict])
+async def audio_replacement_history(
+    track_id: Optional[str] = Query(None, max_length=512),
+    before: Optional[int] = Query(None, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Authenticated collaborative history. Actor UUIDs, never sessions or source URLs."""
+    from app.services.download_service import _get_sync_base
+    from app.services.replacement_history import ReplacementHistory
+    try:
+        items = await blocking(lambda: ReplacementHistory(_get_sync_base()).list(
+            track_id=track_id, before=before, limit=limit))
+        return ResponseEnvelope(data={'items': items, 'next_cursor': items[-1]['sequence'] if len(items) == limit else None})
+    except Exception:
+        raise HTTPException(503, 'Replacement history temporarily unavailable') from None
 
 
 @router.post(
@@ -51,7 +70,7 @@ async def create_download(
     Validates user authentication and creates an asynchronous download job.
     """
     try:
-        job = download_service.create_job(
+        job = await download_service.create_job(
             user_id=current_user.id,
             track_id=request.track_id,
             provider_name="youtube",
@@ -65,6 +84,10 @@ async def create_download(
         )
         return ResponseEnvelope(data=data)
 
+    except Conflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except BadRequest as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -128,7 +151,7 @@ async def retry_download(
 ):
     """Retry a failed or cancelled download job."""
     try:
-        job = download_service.retry_job(
+        job = await download_service.retry_job(
             user_id=current_user.id,
             job_id=job_id,
         )
@@ -145,6 +168,10 @@ async def retry_download(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
+    except Conflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except BadRequest as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -165,31 +192,10 @@ async def resolve_download(
     Resolve a pending download job by choosing one of the YouTube Music candidates.
     """
     try:
-        job = download_service.get_job(user_id=current_user.id, job_id=job_id)
-        if job.status not in ("requires_resolution", "failed", "queued"):
-            raise BadRequest(f"Job is not in a resolvable state: status={job.status}")
-            
-        import asyncio
-        from datetime import datetime, timezone
-        
-        # Persist reset status to Supabase so polling clients see the transition
-        download_service._update_job_status(
-            job_id=job_id,
-            status="queued",
-            progress_percent=0.0,
-            error_code=None,
-            error_message=None,
-            candidates=[]
+        job = await download_service.resolve_job(
+            user_id=current_user.id, job_id=job_id, video_id=request.video_id,
         )
-        
-        # Trigger background download task with the selected video_id injected in source_hint
-        asyncio.create_task(
-            download_service._run_download_job(
-                job_id=job_id,
-                source_hint={"resolved_video_id": request.video_id}
-            )
-        )
-        
+
         data = DownloadCreateResponse(
             job_id=job.id,
             track_id=job.track_id,
@@ -202,6 +208,10 @@ async def resolve_download(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
+    except Conflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except BadRequest as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -219,13 +229,17 @@ async def delete_download_job(
 ):
     """Cancel and delete a download job."""
     try:
-        download_service.delete_job(user_id=current_user.id, job_id=job_id)
+        await download_service.delete_job(user_id=current_user.id, job_id=job_id)
         return None
     except NotFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
+    except Conflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except BadRequest as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -297,11 +311,14 @@ async def reassign_audio(
     Manually reassign the audio stream of a track to a specific YouTube video_id.
     """
     try:
+        hint = request.source_hint.model_dump() if request.source_hint else None
+        if request.reason:
+            hint = {**(hint or {}), 'replacement_reason': request.reason}
         job = await download_service.reassign_track_audio(
             user_id=current_user.id,
             track_id=request.track_id,
             video_id=request.video_id,
-            source_hint=request.source_hint.model_dump() if request.source_hint else None,
+            source_hint=hint,
         )
 
         data = DownloadCreateResponse(
@@ -311,6 +328,10 @@ async def reassign_audio(
         )
         return ResponseEnvelope(data=data)
 
+    except Conflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except BadRequest as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -318,31 +339,6 @@ async def reassign_audio(
         )
 
 
-@router.delete(
-
-    "/downloads/{job_id}",
-    response_model=ResponseEnvelope[dict],
-)
-async def delete_download(
-    job_id: str,
-    current_user: AuthenticatedUser = Depends(get_current_user),
-):
-    """
-    Cancel and delete a download job.
-    """
-    try:
-        download_service.delete_job(user_id=current_user.id, job_id=job_id)
-        return ResponseEnvelope(data={"success": True})
-    except NotFound as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-    except BadRequest as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
 
 
 
@@ -363,6 +359,10 @@ async def upload_cookies(
         success = download_service.update_user_cookies(request.cookies_text)
         return ResponseEnvelope(data={"success": success})
 
+    except Conflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except BadRequest as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -386,44 +386,8 @@ async def serve_downloaded_file(
     from pathlib import Path
     
     try:
-        job = download_service.get_job(user_id=current_user.id, job_id=job_id)
-        
-        if job.status != "succeeded":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Download job is not succeeded: status={job.status}",
-            )
-            
-        expected_file = DOWNLOADS_DIR / f"{job_id}.mp3"
-        if not expected_file.exists() or expected_file.stat().st_size == 0:
-            # 1. Fallback checks at root of DOWNLOADS_DIR
-            matches = list(DOWNLOADS_DIR.glob(f"{job_id}.*"))
-            non_thumb = [m for m in matches if m.suffix not in (".jpg", ".png", ".webp") and m.stat().st_size > 0]
-            if non_thumb:
-                expected_file = non_thumb[0]
-            else:
-                # 2. Fallback check in quarantine _legacy_trash
-                trash_matches = list((DOWNLOADS_DIR / "_legacy_trash").glob(f"*/{job_id}.*"))
-                valid_trash = [m for m in trash_matches if m.suffix not in (".jpg", ".png", ".webp") and m.stat().st_size > 0]
-                if valid_trash:
-                    expected_file = valid_trash[0]
-                elif job.track_id:
-                    # 3. Fallback to _global_cache via job.track_id
-                    from app.services.download_service import _find_globally_cached_track
-                    cached = _find_globally_cached_track(job.track_id)
-                    if cached and cached[0].exists() and cached[0].stat().st_size > 0:
-                        expected_file = cached[0]
-                    else:
-                        raise HTTPException(
-                            status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Audio file not found on disk or in global cache",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Audio file not found on disk",
-                    )
-                
+        expected_file = await download_service.get_download_file(current_user.id, job_id)
+
         return FileResponse(
             path=str(expected_file),
             media_type="audio/mpeg",
@@ -436,3 +400,7 @@ async def serve_downloaded_file(
             detail=str(e),
         )
 
+    except BadRequest as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
