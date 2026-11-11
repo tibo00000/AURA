@@ -347,7 +347,6 @@ fun SearchScreen(
 
     val uiState by orchestrator.uiState.collectAsState()
     val isBuffering = uiState.playbackState == PlaybackState.Buffering || uiState.playbackState == PlaybackState.Preparing
-    val shimmerBrush = rememberShimmerBrush()
 
     // Calcul dynamique de pertinence des sections pour l'onglet "Tout"
     val localSectionOrder = remember(filteredLocalTracks, filteredLocalArtists, filteredLocalAlbums, appState.searchQuery) {
@@ -1161,6 +1160,7 @@ fun SearchScreen(
             } else {
                 // === VUE CATALOGUE CLOUD / EN LIGNE ===
                 if (isOnlineLoading) {
+                    val shimmerBrush = rememberShimmerBrush()
                     when (selectedCategory) {
                         SearchCategoryFilter.ALL -> DesktopMixedSearchSkeleton(brush = shimmerBrush)
                         SearchCategoryFilter.TRACKS -> {

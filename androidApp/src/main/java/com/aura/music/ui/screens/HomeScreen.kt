@@ -197,12 +197,13 @@ private fun ResumeRail(
         )
         
         if (isLoading) {
+            val shimmerBrush = rememberShimmerBrush()
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 items(4) {
-                    ShimmerCard(width = 140.dp, height = 180.dp)
+                    ShimmerCard(brush = shimmerBrush, width = 140.dp, height = 180.dp)
                 }
             }
             return
