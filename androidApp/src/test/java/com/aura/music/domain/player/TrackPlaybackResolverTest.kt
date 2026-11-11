@@ -55,7 +55,7 @@ class TrackPlaybackResolverTest {
 
         val resolver = TrackPlaybackResolver(
             downloadsDir = tempFolder.root,
-            onPurgeTrack = { purgedTracks.add(it) },
+            onPurgeTrack = { id, _ -> purgedTracks.add(id) },
             scope = testScope
         )
 
@@ -77,7 +77,7 @@ class TrackPlaybackResolverTest {
 
         val resolver = TrackPlaybackResolver(
             downloadsDir = tempFolder.root,
-            onPurgeTrack = { purgedTracks.add(it) },
+            onPurgeTrack = { id, _ -> purgedTracks.add(id) },
             scope = testScope
         )
 
@@ -89,8 +89,8 @@ class TrackPlaybackResolverTest {
         val cloudResolution = resolution as PlayableResolution.CloudStream
         assertTrue(cloudResolution.streamUrl.contains("track:deezer:102"))
 
-        // Corrupt file must be deleted from disk
-        assertFalse(corruptFile.exists())
+        // Automatic resolution preserves physical bytes; explicit replacement owns deletion.
+        assertTrue(corruptFile.exists())
 
         // Run coroutine to verify DB purge callback
         testScope.advanceUntilIdle()
@@ -104,7 +104,7 @@ class TrackPlaybackResolverTest {
 
         val resolver = TrackPlaybackResolver(
             downloadsDir = tempFolder.root,
-            onPurgeTrack = { purgedTracks.add(it) },
+            onPurgeTrack = { id, _ -> purgedTracks.add(id) },
             scope = testScope
         )
 
@@ -132,7 +132,7 @@ class TrackPlaybackResolverTest {
 
         val resolver = TrackPlaybackResolver(
             downloadsDir = downloadsDir,
-            onPurgeTrack = {},
+            onPurgeTrack = { _, _ -> },
             scope = testScope
         )
 
@@ -150,7 +150,7 @@ class TrackPlaybackResolverTest {
         val downloadsDir = tempFolder.newFolder("empty_downloads")
         val resolver = TrackPlaybackResolver(
             downloadsDir = downloadsDir,
-            onPurgeTrack = {},
+            onPurgeTrack = { _, _ -> },
             scope = testScope
         )
 
@@ -166,7 +166,7 @@ class TrackPlaybackResolverTest {
     fun testResolveNotAvailableWhenTrackIdIsBlank() {
         val resolver = TrackPlaybackResolver(
             downloadsDir = tempFolder.root,
-            onPurgeTrack = {},
+            onPurgeTrack = { _, _ -> },
             scope = testScope
         )
 
@@ -180,7 +180,7 @@ class TrackPlaybackResolverTest {
     fun testResolveScopedStorageContentUri() {
         val resolver = TrackPlaybackResolver(
             downloadsDir = tempFolder.root,
-            onPurgeTrack = {},
+            onPurgeTrack = { _, _ -> },
             scope = testScope
         )
 

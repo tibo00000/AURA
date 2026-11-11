@@ -19,7 +19,7 @@ sealed interface PlayableResolution {
 
 class TrackPlaybackResolver(
     private val downloadsDir: File,
-    private val onPurgeTrack: (suspend (String) -> Unit)? = null,
+    private val onPurgeTrack: (suspend (String, String) -> Unit)? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) {
     constructor(
@@ -28,7 +28,13 @@ class TrackPlaybackResolver(
         scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     ) : this(
         downloadsDir = File(context.filesDir, "downloads"),
-        onPurgeTrack = { trackId -> database.trackDao().deleteTrackMediaLinksByTrackId(trackId) },
+        onPurgeTrack = { trackId, uri ->
+            val observed = database.trackDao().getMediaLinkByTrackId(trackId)
+            if (observed?.contentUri == uri) {
+                com.aura.music.data.media.TrackMediaCoordinator.shared.purgeObserved(
+                    database, File(context.filesDir, "downloads"), observed)
+            }
+        },
         scope = scope
     )
 
@@ -61,61 +67,22 @@ class TrackPlaybackResolver(
         val contentUri = track.contentUri
 
         if (!contentUri.isNullOrBlank()) {
-            if (UriPathParser.isContentUri(contentUri)) {
-                // MediaStore Content URI (Scoped Storage)
-                return PlayableResolution.ScopedContent(contentUri)
-            }
-
-            val localFile = UriPathParser.parseLocalFile(contentUri)
-
-            if (localFile != null && localFile.exists()) {
-                if (AudioIntegrityValidator.isValidAudioFile(localFile, checkMetadata = false)) {
-                    return PlayableResolution.LocalFile(contentUri, localFile)
-                } else {
-                    logWarn("Local file for track ${track.trackId} is corrupt or 0-byte (${localFile.path}). Purging and falling back to cloud...")
-                    try {
-                        localFile.delete()
-                    } catch (e: Exception) {
-                        logWarn("Failed to delete corrupt file: ${localFile.absolutePath}", e)
-                    }
-                    if (onPurgeTrack != null) {
-                        scope.launch {
-                            try {
-                                onPurgeTrack.invoke(track.trackId)
-                            } catch (e: Exception) {
-                                logWarn("Failed to purge corrupt track link in DB", e)
-                            }
-                        }
-                    }
-                }
-            } else {
-                // File does not exist anymore (dead link)
-                logWarn("Local file for track ${track.trackId} does not exist (${localFile?.path ?: contentUri}). Purging dead link in DB...")
-                if (onPurgeTrack != null) {
-                    scope.launch {
-                        try {
-                            onPurgeTrack.invoke(track.trackId)
-                        } catch (e: Exception) {
-                            logWarn("Failed to purge dead track link in DB", e)
-                        }
-                    }
-                }
+            if (UriPathParser.isContentUri(contentUri)) return PlayableResolution.ScopedContent(contentUri)
+            val local = UriPathParser.parseLocalFile(contentUri)
+            if (local != null && AudioIntegrityValidator.isValidAudioFile(local, checkMetadata = false)) {
+                return PlayableResolution.LocalFile(contentUri, local)
             }
         }
-
-        // Check if physical file exists in private downloads dir even if contentUri was not set in memory
+        // A valid replacement wins BEFORE scheduling any cleanup of an obsolete URI.
         val altFile = File(downloadsDir, "${track.trackId.replace(':', ';')}.mp3")
-        if (altFile.exists()) {
-            if (AudioIntegrityValidator.isValidAudioFile(altFile, checkMetadata = false)) {
-                val uri = altFile.toURI().toString()
-                return PlayableResolution.LocalFile(uri, altFile)
-            } else {
-                logWarn("Private download file for ${track.trackId} is corrupt. Purging...")
-                try {
-                    altFile.delete()
-                } catch (e: Exception) {
-                    logWarn("Failed to delete corrupt private download file", e)
-                }
+        if (AudioIntegrityValidator.isValidAudioFile(altFile, checkMetadata = false)) {
+            return PlayableResolution.LocalFile(altFile.toURI().toString(), altFile)
+        }
+        if (!contentUri.isNullOrBlank() && onPurgeTrack != null) {
+            scope.launch {
+                try { onPurgeTrack.invoke(track.trackId, contentUri) }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { logWarn("Failed conditional media-link cleanup", e) }
             }
         }
 

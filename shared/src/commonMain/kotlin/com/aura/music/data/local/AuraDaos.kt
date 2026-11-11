@@ -356,6 +356,12 @@ interface TrackDao {
     @Query("DELETE FROM track_media_links WHERE track_id = :trackId")
     suspend fun deleteTrackMediaLinksByTrackId(trackId: String)
 
+    @Query("SELECT * FROM track_media_links")
+    suspend fun getAllMediaLinks(): List<TrackMediaLinkEntity>
+
+    @Query("DELETE FROM track_media_links WHERE track_id = :trackId AND content_uri = :uri AND last_scanned_at = :generation")
+    suspend fun deleteObservedMediaLink(trackId: String, uri: String, generation: Long): Int
+
     @Query(
         """
         SELECT

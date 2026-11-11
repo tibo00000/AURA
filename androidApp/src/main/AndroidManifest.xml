@@ -16,6 +16,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Package visibility for UID/signing-certificate validation, never package-only trust. -->
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+        <package android:name="com.google.android.googlequicksearchbox" />
+    </queries>
+
 
     <application
         android:usesCleartextTraffic="true"

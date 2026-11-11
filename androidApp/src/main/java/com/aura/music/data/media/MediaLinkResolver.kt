@@ -40,7 +40,7 @@ object MediaLinkResolver {
                 fileSizeBytes = fileSizeBytes ?: existing.fileSizeBytes,
                 mimeType = mimeType ?: existing.mimeType,
                 availabilityStatus = "present",
-                lastScannedAt = now
+                lastScannedAt = maxOf(now, existing.lastScannedAt + 1)
             )
         }
 

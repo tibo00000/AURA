@@ -254,6 +254,13 @@ fun AuraApp() {
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            // Network work runs on IO inside the manager. Offline does not erase the account.
+            runCatching { application.container.authSessionManager.validSession() }
+            kotlinx.coroutines.awaitCancellation()
+        }
+    }
     LaunchedEffect(lifecycleOwner, downloadRepository) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             downloadRepository.resolutionAlertFlow.collect { alert ->

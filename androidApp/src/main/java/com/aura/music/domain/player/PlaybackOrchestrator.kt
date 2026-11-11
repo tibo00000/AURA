@@ -323,16 +323,25 @@ class PlaybackOrchestrator(
      * Évince le cache de flux de la piste et rafraîchit immédiatement ExoPlayer si la piste est en cours de lecture.
      */
     fun onAudioVersionReassigned(trackId: String) {
-        val ctrl = controller ?: return
-        val current = _uiState.value.currentTrack
-        MediaCacheManager.evictTrack(context, trackId)
-        if (current?.trackId == trackId) {
-            val currentPos = ctrl.currentPosition
-            val isPlaying = ctrl.isPlaying
-            ctrl.clearMediaItems()
-            syncExoPlayerPlaylist(currentPos)
-            if (isPlaying) {
-                ctrl.play()
+        scope.launch {
+            // Complete disk invalidation before reopening the source; never block the UI on cache I/O.
+            try {
+                MediaCacheManager.evictTrack(context, trackId)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                android.util.Log.w("PlaybackOrchestrator", "Invalidation du cache indisponible")
+                return@launch // Do not reopen a source whose old bytes could not be invalidated.
+            }
+            val ctrl = controller ?: return@launch
+            if (_uiState.value.currentTrack?.trackId == trackId) {
+                val currentPos = ctrl.currentPosition
+                val isPlaying = ctrl.isPlaying
+                ctrl.clearMediaItems()
+                syncExoPlayerPlaylist(currentPos)
+                if (isPlaying) {
+                    ctrl.play()
+                }
             }
         }
     }

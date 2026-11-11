@@ -5,13 +5,15 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import com.aura.music.data.repository.SyncRepository
 import java.io.File
+import java.net.URI
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.cache.Cache
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(UnstableApi::class)
 object MediaCacheManager {
@@ -28,45 +30,31 @@ object MediaCacheManager {
         return simpleCache!!
     }
 
-    @Synchronized
-    fun evictTrack(context: Context, trackId: String) {
-        try {
-            val cache = getCache(context)
-            val keys = cache.keys
-            for (key in keys) {
-                if (key.contains(trackId)) {
-                    try {
-                        cache.removeResource(key)
-                    } catch (e: Exception) {
-                        // ignore
-                    }
-                }
+    suspend fun evictTrack(context: Context, trackId: String) = withContext(Dispatchers.IO) {
+        PrivateStreamCache.evict(getCache(context), URI(com.aura.music.data.network.BuildConfig.API_BASE_URL),
+            trackId, PrivateCacheGenerationStore(context.applicationContext))
+    }
+
+    internal fun dataSourceFactory(context: Context, cache: Cache, auth: AuthSessionManager,
+        origin: URI, transport: DataSource.Factory = NoRedirectAudioDataSource.Factory(origin)): DataSource.Factory {
+        val local = DefaultDataSource.Factory(context, transport)
+        return DataSource.Factory {
+            PrivateCacheDataSource(auth, origin, cache, local, PrivateCacheGenerationStore(context.applicationContext)) { captured ->
+                SessionHttpDataSource(transport, auth, origin, captured)
             }
-        } catch (e: Exception) {
-            android.util.Log.w("MediaCacheManager", "Error evicting track $trackId from cache", e)
         }
     }
 
     fun createMediaSourceFactory(context: Context): DefaultMediaSourceFactory {
         val appContext = context.applicationContext
-        val httpDataSourceFactory = androidx.media3.datasource.DataSource.Factory {
-            val authHeader = AuthSessionManager.getInstance(appContext).getBearerHeader()
-            val baseFactory = DefaultHttpDataSource.Factory()
-                .setAllowCrossProtocolRedirects(true)
-                .setConnectTimeoutMs(15000)
-                .setReadTimeoutMs(20000)
-            if (authHeader.isNotBlank()) {
-                baseFactory.setDefaultRequestProperties(mapOf("Authorization" to authHeader))
-            }
-            baseFactory.createDataSource()
+        val streamOrigin = java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)
+        // Share the credential-free transport/pool; session headers remain per opening.
+        val baseFactory = NoRedirectAudioDataSource.Factory(streamOrigin)
+        // Media3 creates its upstream on the playback/loader thread, not during service onCreate.
+        val cacheDataSourceFactory = DataSource.Factory {
+            dataSourceFactory(appContext, getCache(appContext),
+                AuthSessionManager.getInstance(appContext), streamOrigin, baseFactory).createDataSource()
         }
-
-        val upstreamFactory = DefaultDataSource.Factory(appContext, httpDataSourceFactory)
-
-        val cacheDataSourceFactory = CacheDataSource.Factory()
-            .setCache(getCache(appContext))
-            .setUpstreamDataSourceFactory(upstreamFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
         return DefaultMediaSourceFactory(appContext)
             .setDataSourceFactory(cacheDataSourceFactory)
