@@ -26,8 +26,11 @@ class LocalMediaScanner(
     private val context: Context,
     private val onInvalidateSearchIndex: () -> Unit,
     private val inFlightCloudTrackIdsProvider: (() -> Set<String>)? = null,
+    private val mediaCoordinator: TrackMediaCoordinator = TrackMediaCoordinator.shared,
+    private val readMediaStore: suspend () -> MediaScanResult = { mediaStoreAudioDataSource.getLocalAudioFilesResult() },
 ) {
     suspend fun syncLocalMedia(): Int = withContext(Dispatchers.IO) {
+        val observedLinks = database.trackDao().getAllMediaLinks().associateBy { it.trackId }
         val now = System.currentTimeMillis()
         val scannedArtists = mutableMapOf<String, ArtistEntity>()
         val scannedAlbums = mutableMapOf<String, AlbumEntity>()
@@ -195,7 +198,7 @@ class LocalMediaScanner(
         }
 
         // 2. Scan MediaStore if permission is granted
-        val mediaScanResult = mediaStoreAudioDataSource.getLocalAudioFilesResult()
+        val mediaScanResult = readMediaStore()
         if (mediaScanResult.isComplete) {
             val mediaFiles = mediaScanResult.tracks
             for (media in mediaFiles) {
@@ -290,58 +293,42 @@ class LocalMediaScanner(
             }
         }
 
-        database.useWriterConnection { transactor ->
-            transactor.immediateTransaction {
-                val scannedIds = scannedTracks.map { it.id }.toSet()
-                val obsoleteIds = mutableListOf<String>()
-
-                // Purge obsolete MediaStore tracks ONLY if the MediaStore scan completed successfully
-                if (mediaScanResult.isComplete) {
-                    val existingLocalIds = database.trackDao().getLocalTrackIds()
-                    for (id in existingLocalIds) {
-                        if (id !in scannedIds) {
-                            obsoleteIds.add(id)
+        val linksByTrackId = scannedMediaLinks.associateBy { it.trackId }
+        // Metadata was collected without a writer lock. Re-read state under the per-track guard.
+        for (scanned in scannedTracks) {
+            mediaCoordinator.withTrack(scanned.id) {
+                val privateFile = downloadedFilesByTrackId[scanned.id]
+                if (privateFile != null && (!privateFile.isFile || privateFile.length() == 0L)) return@withTrack
+                val oldLink = database.trackDao().getMediaLinkByTrackId(scanned.id)
+                if (privateFile == null && oldLink != observedLinks[scanned.id]) return@withTrack
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    database.useWriterConnection { writer -> writer.immediateTransaction {
+                        scannedArtists[scanned.primaryArtistId]?.let { database.artistDao().insertArtistsIgnore(listOf(it)) }
+                        scannedAlbums[scanned.albumId]?.let { database.albumDao().insertAlbumsIgnore(listOf(it)) }
+                        val current = database.trackDao().getRawTrackById(scanned.id)
+                        val row = if (current != null && privateFile != null) current.copy(
+                            canonicalAudioSourceType = "downloaded", isDownloadedByAura = true) else scanned
+                        database.trackDao().upsertTrack(row)
+                        val link = linksByTrackId[scanned.id]
+                        if (link != null) {
+                            database.trackDao().upsertTrackMediaLinks(listOf(MediaLinkResolver.resolveOrCreateMediaLink(
+                                database, scanned.id, link.contentUri, privateFile?.length() ?: link.fileSizeBytes,
+                                link.mimeType, System.currentTimeMillis())))
                         }
-                    }
-                } else {
-                    Log.w("LocalMediaScanner", "MediaStore scan incomplete or permission missing. Skipped purging local MediaStore tracks to prevent data loss.")
+                    } }
                 }
-
-                // Purge obsolete downloaded tracks based on physical file scan
-                val existingDownloadedIds = database.trackDao().getDownloadedTrackIds()
-                val activeJobTrackIds = try {
-                    database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
-                } catch (e: Exception) {
-                    emptySet()
-                }
-                val inFlightCloudTrackIds = inFlightCloudTrackIdsProvider?.invoke() ?: emptySet()
-                for (id in existingDownloadedIds) {
-                    if (id !in downloadedFilesByTrackId.keys && id !in activeJobTrackIds && id !in inFlightCloudTrackIds) {
-                        obsoleteIds.add(id)
-                    }
-                }
-
-                if (obsoleteIds.isNotEmpty()) {
-                    // Les morceaux qui sont aimés ou présents dans une playlist sont préservés pour ne pas détruire
-                    // les métadonnées de l'utilisateur par cascade SQLite (onDelete = CASCADE).
-                    // On supprime uniquement leur lien média physique (track_media_links).
-                    val toDeleteCompletely = obsoleteIds.filter { it !in preservedTrackIds }
-                    val toDetachOnly = obsoleteIds.filter { it in preservedTrackIds }
-
-                    if (toDeleteCompletely.isNotEmpty()) {
-                        database.trackDao().deleteTracksByIds(toDeleteCompletely)
-                    }
-                    for (id in toDetachOnly) {
-                        database.trackDao().deleteTrackMediaLinksByTrackId(id)
-                    }
-                }
-
-                if (scannedTracks.isNotEmpty()) {
-                    database.artistDao().insertArtistsIgnore(scannedArtists.values.toList())
-                    database.albumDao().insertAlbumsIgnore(scannedAlbums.values.toList())
-                    database.trackDao().upsertTracks(scannedTracks)
-                    database.trackDao().upsertTrackMediaLinks(scannedMediaLinks)
-                }
+            }
+        }
+        // Only initial observations may be purged. The coordinator rechecks disk and generation.
+        val scannedIds = scannedTracks.map { it.id }.toSet()
+        val activeTrackIds = database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
+        if (mediaScanResult.isComplete) {
+            for ((id, observed) in observedLinks) {
+                if (id in scannedIds) continue
+                if (id in (inFlightCloudTrackIdsProvider?.invoke() ?: emptySet())) continue
+                if (id in activeTrackIds) continue
+                mediaCoordinator.purgeObserved(database, downloadsDir, observed,
+                    mediaStoreMissing = UriPathParser.isContentUri(observed.contentUri))
             }
         }
 

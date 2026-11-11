@@ -107,7 +107,7 @@ class TestSmartSongSearchMultiArtist(unittest.TestCase):
 
     @patch("app.services.download_service.supabase")
     @patch.object(DownloadService, "get_job")
-    @patch("app.services.download_service.asyncio.create_task")
+    @patch.object(DownloadService, "_start_download_task")
     def test_retry_job_allows_requires_resolution(self, mock_create_task, mock_get_job, mock_supabase):
         """
         Vérifie que retry_job accepte désormais le statut 'requires_resolution'
@@ -124,10 +124,13 @@ class TestSmartSongSearchMultiArtist(unittest.TestCase):
             updated_at=datetime.now(timezone.utc),
         )
         mock_get_job.return_value = mock_job
-        mock_supabase.table().update().eq().execute.return_value = MagicMock()
-        mock_create_task.side_effect = lambda coro: coro.close()
+        query = MagicMock()
+        query.eq.return_value = query
+        query.execute.return_value = MagicMock(data=[{**mock_job.to_dict(), 'status': 'queued', 'attempt_count': 2}])
+        mock_supabase.table().update.return_value = query
 
-        retried_job = self.service.retry_job(user_id="user_abc", job_id="job_test_resolution_123")
+        import asyncio
+        retried_job = asyncio.run(self.service.retry_job(user_id="user_abc", job_id="job_test_resolution_123"))
 
         self.assertEqual(retried_job.status, "queued")
         self.assertEqual(retried_job.attempt_count, 2)

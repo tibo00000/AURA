@@ -371,192 +371,42 @@ Les routes historiques `/test` ne font pas partie de l'application principale (H
   - `invalid_request`
   - `unauthorized`
 
-### `GET /me/playlists`
-- Usage : lister les playlists synchronisees de l'utilisateur.
-- Auth : requise.
-- Query params :
-  - `limit` optionnel, defaut 20, max 100
-  - `cursor` optionnel
-- Reponse `data` :
-```json
-{
-  "items": []
-}
-```
-- Reponse `meta` :
-```json
-{
-  "next_cursor": null
-}
-```
-- Les items utilisent la shape `PlaylistSummary`.
+### Playlists — contrat REST réellement exposé (SEC-002.2)
 
-### `POST /me/playlists`
-- Usage : creer une playlist synchronisee.
-- Auth : requise.
-- Body :
-```json
-{
-  "name": "Driving",
-  "is_pinned": false
-}
-```
-- Reponse `data` : `PlaylistSummary`
-- Erreurs attendues :
-  - `invalid_request`
-  - `unauthorized`
+Toutes ces routes exigent le JWT vérifié de l'utilisateur. L'enveloppe reste
+~~~
+{"data": ..., "error": null, "meta": null}
+~~~
+Succès 200 ; validation de schéma 422 ; authentification manquante/invalide 401.
+Les mutations sur une playlist absente ou étrangère donnent 404. Une erreur SQL donne
+500 avec message générique, sans détail privé.
 
-### `GET /me/playlists/{id}`
-- Usage : recuperer une playlist synchronisee avec ses items ordonnes.
-- Auth : requise.
-- Path params :
-  - `id` identifiant playlist
-- Reponse `data` :
-```json
-{
-  "id": "pl_123",
-  "name": "Driving",
-  "cover_uri": "https://...",
-  "item_count": 18,
-  "is_pinned": false,
-  "updated_at": "2026-04-02T10:00:00Z",
-  "items": [
-    {
-      "playlist_item_id": "pli_1",
-      "track": {
-        "id": "trk_aura_123",
-        "title": "The Giver",
-        "display_artist_name": "Chappell Roan",
-        "display_album_title": "Single",
-        "duration_ms": 202768,
-        "cover_uri": "https://...",
-        "is_explicit": false,
-        "is_liked": false,
-        "is_local_available": false,
-        "is_downloaded_by_aura": false
-      },
-      "position": 0,
-      "added_at": "2026-04-02T10:00:00Z"
-    }
-  ]
-}
-```
-- Erreurs attendues :
-  - `unauthorized`
-  - `not_found`
+| Route | Requête | Réponse data |
+|---|---|---|
+| GET /me/playlists | Aucun paramètre de pagination implémenté | Liste de PlaylistResponse, chacune avec ses items ordonnés par position |
+| POST /me/playlists | id et name requis ; cover_uri optionnel ; is_pinned=false par défaut | PlaylistResponse avec items vides |
+| PATCH /me/playlists/{id} | name, cover_uri, is_pinned optionnels | PlaylistResponse avec items |
+| DELETE /me/playlists/{id} | Aucun body | PlaylistResponse supprimée et ses items |
+| POST /me/playlists/{id}/tracks | id, track_id et position requis ; added_from_context_type/id optionnels | PlaylistItemResponse |
+| DELETE /me/playlists/{id}/tracks/{trackId} | Aucun body ni sélecteur d'occurrence | Liste des PlaylistItemResponse supprimés, vide si aucune occurrence |
 
-### `PATCH /me/playlists/{id}`
-- Usage : modifier le nom, l'etat epingle ou la cover d'une playlist synchronisee.
-- Auth : requise.
-- Body :
-```json
-{
-  "name": "Driving",
-  "is_pinned": true,
-  "cover_uri": "https://..."
-}
-```
-- Reponse `data` : `PlaylistSummary`
-- Erreurs attendues :
-  - `invalid_request`
-  - `unauthorized`
-  - `not_found`
+PlaylistResponse : id, user_id, name, cover_uri nullable, is_pinned, created_at, updated_at,
+items. PlaylistItemResponse : id, playlist_id, track_id, position, added_at,
+added_from_context_type/id nullables. Les dates sont des chaînes ISO 8601.
 
-### `DELETE /me/playlists/{id}`
-- Usage : supprimer une playlist synchronisee.
-- Auth : requise.
-- Body : aucun.
-- Reponse `data` :
-```json
-{
-  "deleted": true,
-  "id": "pl_123"
-}
-```
-- Erreurs attendues :
-  - `unauthorized`
-  - `not_found`
+Il n'existe pas de GET /me/playlists/{id} (405 pour cette méthode). Lire la liste puis
+chercher l'ID propre. Aucun PATCH REST /items/reorder n'est implémenté ; le réordonnancement
+utilise le transport batch existant décrit dans docs/server/sync-batch-api.md.
 
-### `POST /me/playlists/{id}/tracks`
-- Usage : ajouter une piste a une playlist synchronisee.
-- Auth : requise.
-- Body :
-```json
-{
-  "track_id": "trk_aura_123",
-  "position": 5,
-  "added_from_context_type": "album",
-  "added_from_context_id": "alb_aura_123"
-}
-```
-- Reponse `data` :
-```json
-{
-  "playlist_item_id": "pli_1",
-  "playlist_id": "pl_123",
-  "track_id": "trk_aura_123",
-  "position": 5
-}
-```
-- Erreurs attendues :
-  - `invalid_request`
-  - `unauthorized`
-  - `not_found`
-
-### `PATCH /me/playlists/{id}/items/reorder`
-- Usage : reordonner les items d'une playlist synchronisee.
-- Auth : requise.
-- Body :
-```json
-{
-  "items": [
-    {
-      "playlist_item_id": "pli_1",
-      "position": 0
-    },
-    {
-      "playlist_item_id": "pli_2",
-      "position": 1
-    }
-  ]
-}
-```
-- Reponse `data` :
-```json
-{
-  "playlist_id": "pl_123",
-  "updated_at": "2026-04-02T10:00:00Z"
-}
-```
-- Erreurs attendues :
-  - `invalid_request`
-  - `unauthorized`
-  - `not_found`
-  - `conflict`
-
-### `DELETE /me/playlists/{id}/tracks/{trackId}`
-- Usage : retirer une occurrence d'une piste d'une playlist synchronisee.
-- Auth : requise.
-- Path params :
-  - `id` identifiant playlist
-  - `trackId` identifiant piste
-- Query params :
-  - `playlist_item_id` optionnel mais recommande
-- Regle :
-  - si plusieurs occurrences du meme `trackId` existent et que `playlist_item_id` est absent, l'API renvoie `conflict`
-- Reponse `data` :
-```json
-{
-  "deleted": true,
-  "playlist_id": "pl_123",
-  "track_id": "trk_aura_123",
-  "playlist_item_id": "pli_1"
-}
-```
-- Erreurs attendues :
-  - `unauthorized`
-  - `not_found`
-  - `conflict`
+SEC-002.2 préserve les sémantiques implémentées : ajout REST sans décalage des positions
+(une position occupée échoue en 500, sans mutation), suppression de **toutes** les occurrences
+d'une piste sans compacter les positions, PATCH ignorant les null et conservant false.
+Ces trois mutations passent par une seule transaction RPC SECURITY INVOKER sous verrou du
+parent propriétaire, y compris son updated_at calculé dans PostgreSQL après verrou et
+strictement supérieur à sa valeur précédente. Les contrats batch et marqueurs restent inchangés.
+Une erreur SQL intermédiaire annule la mutation ; une perte de réponse réseau après COMMIT
+reste une issue inconnue pour le client. Migration et backend correspondants doivent être
+activés ensemble après les validations du runbook SEC-002.1/SEC-002.2, sans changement client.
 
 ### `PUT /me/tracks/{trackId}/like`
 - Usage : creer ou confirmer le like cloud d'une piste.
@@ -737,6 +587,17 @@ Les routes suivantes permettent aux utilisateurs de pousser (upload) et tirer (d
 - Path params :
   - `track_id` requis.
 - Body : `multipart/form-data` contenant la clé `file` (le fichier audio).
+- SEC-005 :50Mio audio maximum,51Mio avec enveloppe multipart, un seul fichier,
+  huit champs de64Kio ; authentification/admission avant spooling. Un upload
+  reste personnel et ne remplace pas l'audio partagé global.
+- Erreurs supplémentaires :413 dépassement effectif,429 troisième upload simultané
+  du même compte (`Retry-After: 10`),507 réserve disque insuffisante. Le compteur
+  ne se fonde pas sur Content-Length et les erreurs ne tronquent pas l'ancien audio.
+- En-tête informatif `X-Aura-Upload-Warnings` : codes séparés par virgule
+  `files_10m`, `bytes_24h` (>15 admissions/10min, >2Gio reçus/24h). Les avertissements
+  n'altèrent pas le201 ni l'enveloppe existante. Compteurs mémoire, fenêtres octets
+  par minute (approximation inférieure à60s), remis à zéro au redémarrage.
+  Exposé par CORS ; aucun affichage client nouveau n'est implémenté dans ce lot.
 - Reponse `data` :
 ```json
 {
@@ -860,6 +721,11 @@ fichier hors-ligne privé.
 ### `POST /downloads/{id}/retry`
 - Usage : relancer un job de telechargement echoue ou annule.
 - Auth : requise.
+- SEC-005.1 : un job `manual_reassign` reçoit HTTP400 sans mutation, car le
+  schéma ne conserve pas la vidéo choisie. Utiliser une nouvelle réassignation
+  explicite ou `POST /downloads/{id}/resolve` avec un `video_id` non vide ; cette
+  résolution conserve le remplacement global et son historique, sans ancien cache.
+  Une source perdue ne déclenche jamais une recherche implicite de remplacement.
 - Path params :
   - `id` identifiant job
 - Body : aucun.
@@ -875,6 +741,28 @@ fichier hors-ligne privé.
   - `unauthorized`
   - `not_found`
   - `conflict`
+
+### `DELETE /downloads/{id}`
+- Auth : JWT utilisateur vérifié, propriétaire obligatoire.
+- Succès : HTTP 204, corps vide. Le job est supprimé logiquement et sa tentative ne
+  peut plus publier. L'arrêt physique et le nettoyage privé peuvent se poursuivre
+  en arrière-plan ; aucun suivi HTTP 202 n'est introduit.
+- Un ID adverse et un ID absent produisent le même HTTP 404. Répéter DELETE après
+  suppression peut donc produire 404 sans effet supplémentaire.
+- ID dangereux : HTTP 400. Mutation concurrente incompatible : HTTP 409.
+- Indisponibilité SQL ou suppression non démontrée : HTTP 503, sans faux succès.
+- Les fichiers de travail sont ciblés exactement ; la bibliothèque personnelle et
+  le cache partagé ne sont pas supprimés.
+
+Pour create/retry/resolve/reassign, une représentation SQL non vérifiable donne
+503, même si son commit est ensuite confirmé. Le service conserve la supervision
+du travail confirmé ; le client peut relire la liste de jobs puis réessayer. Une
+issue SQL inconnue interdit une nouvelle tentative concurrente pour la même paire
+utilisateur/piste. Les formes des réponses de succès restent inchangées.
+
+Le GET fichier relit le propriétaire et l'état sous la même garde que DELETE.
+La sélection est sans backfill ni publication ; un flux autorisé avant DELETE
+peut se terminer. Une réponse 204 ne révoque pas les fichiers déjà synchronisés.
 
 ### `GET /jobs/{id}`
 - Usage : consulter l'etat d'un job asynchrone user-scoped.
@@ -897,6 +785,35 @@ fichier hors-ligne privé.
 - Erreurs attendues :
   - `unauthorized`
   - `not_found`
+
+## Historique collaboratif des remplacements audio — SEC-005
+
+`POST /downloads/reassign` conserve son contrat201/job existant et accepte en
+plus `reason` optionnel : `incorrect_audio`, `quality`, `wrong_version`, `other`.
+Le champ n'est pas du texte libre ; source_hint, tokens, URL source et email ne
+sont pas recopiés dans l'historique. L'acteur vient du JWT vérifié, jamais du payload.
+
+`GET /me/audio-replacements` exige un JWT valide. Cet historique des actions
+**globales partagées** est consultable par les membres authentifiés, y compris
+pour une action d'un autre membre ; il ne contient aucune bibliothèque privée.
+Filtres optionnels `track_id` (512 caractères max), `before` (séquence exclusive)
+et `limit` (1..100, défaut50). Enveloppe :
+
+```json
+{"data":{"items":[{"sequence":1,"event_id":"internal-attempt-id","job_id":"job_example","track_id":"trk_example","actor_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","operation":"shared_audio_replace","reason":"incorrect_audio","created_at":"2026-10-22T18:00:00+00:00","updated_at":"2026-10-22T18:00:10+00:00","old_sha256":"empreinte-SHA256-ancienne","new_sha256":"empreinte-SHA256-nouvelle","status":"succeeded"}],"next_cursor":null}}
+```
+
+Les empreintes sont nulles avant disponibilité des audios. États : `pending`
+(tentative engagée), `publishing` (intention durable avant effets), `succeeded`
+(audio/propagation/statut job confirmés), `failed` (pas d'effet établi), `partial`
+(effet incomplet), `cancelled`, `indeterminate` (interruption/confirmation manquante).
+Le statut d'échec d'un job ne signifie donc pas toujours absence de tout effet
+global : consulter l'événement partiel, ne pas réessayer aveuglément en supposant
+un rollback global. Une panne du journal avant publication interdit celle-ci.
+Une panne après effet ne produit jamais un faux événement de succès.
+Erreur503 si le journal est indisponible. Aucun endpoint de suppression de
+l'historique ou de restauration d'anciens fichiers n'est ajouté. Une interface
+future peut lire cette API et afficher les en-têtes ; aucun client n'est modifié.
 
 ## Hors perimetre explicite de cette API
 - la bibliotheque locale issue de `MediaStore`

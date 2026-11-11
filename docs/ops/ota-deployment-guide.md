@@ -26,6 +26,38 @@ Le système de mise à jour AURA repose sur 4 piliers normatifs :
 
 ## 2. Procédure Pas-à-Pas pour Publier une Mise à Jour
 
+### APK de validation locale sans publication
+
+Une préparation explicitement autorisée peut utiliser `:androidApp:assembleDebug`
+en conservant la version courante. Contrôler `apksigner verify --print-certs`, le
+package/version dans le manifeste compilé et le SHA-256 de la copie livrée.
+Comparer le certificat avec l'APK déjà installé/publié avant une installation
+par-dessus, sans désinstallation ni effacement des données. Une version identique
+ne déclenche pas de proposition OTA : ce binaire est destiné à une installation
+manuelle de validation. Sa préparation n'autorise ni publication, ni transfert
+VPS, ni installation sur un appareil réel.
+
+### Publication cohérente d'un APK versionné
+
+Pour une mise à jour sans interruption, utiliser un nom immuable, par exemple
+`aura-0.4.1.apk`, dans `download_url`. Vérifier avec `apksigner verify` que le
+certificat correspond à l'APK précédemment publié et contrôler l'identifiant
+`com.aura.music`, `versionCode` et `versionName` dans le manifeste compilé.
+Conserver l'ancien APK pour les téléchargements déjà engagés.
+
+Transférer le nouvel APK dans un staging privé, comparer son SHA-256 local et
+distant, puis le déposer dans `/app/downloads/updates/` sous un nom temporaire.
+Après vérification de cette copie, effectuer un renommage atomique vers son nom
+versionné. Sauvegarder le descripteur public précédent et remplacer `version.json`
+par renommage atomique dans ce même dossier, avec l'empreinte SHA-256 explicite.
+Ne pas changer le seuil `min_supported_version` sans rupture de compatibilité.
+
+La publication OTA n'exige ni recréation ni redémarrage du backend. Vérifier
+ensuite `/app/version` et retélécharger l'APK public pour comparer son empreinte.
+En cas d'échec, arrêter la publication ; si le descripteur a déjà été remplacé,
+son ancienne copie permet une restauration atomique sans toucher au backend.
+Les résultats et identités d'artefacts sont consignés dans `BUILD.md`.
+
 ### Étape 1 : Incrémenter la version dans Android Studio
 
 Dans [`androidApp/build.gradle.kts`](file:///c:/Users/thiba/Desktop/AURA-workspace/androidApp/build.gradle.kts) :
@@ -47,7 +79,7 @@ API_BASE_URL=https://aura-prod.duckdns.org
 Dans Android Studio :
 1. Menu **Build** $\rightarrow$ **Build Bundle(s) / APK(s)** $\rightarrow$ **Build APK(s)**.
 2. Une notification Android Studio apparaît : cliquer sur **locate** ou récupérer l'APK généré sous :
-   `androidApp\build\outputs\apk\debug\app-debug.apk`  
+   `androidApp\build\outputs\apk\debug\androidApp-debug.apk`
    *(Ou votre build release signée).*
 
 ---
@@ -56,7 +88,7 @@ Dans Android Studio :
 
 Depuis votre terminal local (PowerShell) :
 ```powershell
-scp "c:\Users\thiba\Desktop\AURA-workspace\androidApp\build\outputs\apk\debug\app-debug.apk" root@212.90.121.80:/tmp/latest.apk
+scp "c:\Users\thiba\Desktop\AURA-workspace\androidApp\build\outputs\apk\debug\androidApp-debug.apk" root@212.90.121.80:/tmp/latest.apk
 ```
 
 Puis sur le terminal du VPS :
@@ -137,7 +169,7 @@ Dans votre terminal local (PowerShell) :
 # Format Dossier Portable autonome
 ./gradlew :desktopApp:createDistributable
 ```
-Le fichier MSI est produit sous :  
+Le fichier MSI est produit sous :
 `desktopApp\build\compose\binaries\main\msi\AURA-1.0.0.msi`
 
 ### Étape 2 : Déposer le MSI sur le VPS

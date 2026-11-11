@@ -77,6 +77,11 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 63. `docs/server/providers/deezer.md`
 64. `docs/server/providers/streaming-bridge.md`
 65. `docs/server/security-and-secrets.md`
+    - `docs/server/security-lot2-isolation.md` : matrice avant/après, architecture JWT/RLS, migration préparée et limites de validation du lot 2.
+    - `docs/ops/security-lot2-validation.md` : SEC-002.1/SEC-002.2, corrections REST/RPC, inventaire et gates de maintenance.
+    - `docs/ops/security-lot2-isolated-integration.md` : SEC-002.3, projet Supabase dédié, backend HTTPS local, scripts et autorisations d'intégration A/B réelle.
+    - `docs/ops/security-lot2-deployment.md` : SEC-002.4, candidat autonome figé, preuves et runbook final M0–M8, sauvegarde/restauration et autorisations distinctes.
+    - `docs/ops/security-lot2-recovery.md` : SEC-002.5, une sauvegarde applicative chiffrée/restaurée, identités et dépendances nécessaires, heure T et perte ultérieure acceptée, autorisation M2-S.
 66. `docs/mcp/overview.md`
 67. `docs/mcp/resources.md`
 68. `docs/mcp/use-cases.md`
@@ -84,6 +89,12 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 70. `docs/ops/env-vars.md`
 71. `docs/ops/hosting-strategy.md`
 72. `docs/ops/security-lot1-intervention.md`
+73. `docs/ops/security-lot3-candidate.md`
+74. `docs/ops/security-lot3-preflight.md`
+75. `docs/ops/ota-deployment-guide.md`
+76. `docs/ops/security-lot5-local-validation.md`
+77. `docs/ops/security-lot5-candidate.md`
+78. `docs/ops/security-lot5-window-decisions.md`
 
 ## Rythme de mise a jour
 - Toute creation ou suppression d'un document impose une mise a jour de `llms.txt`.
@@ -94,3 +105,13 @@ Ce dossier contient la source de verite documentaire du projet AURA.
 ## Outils de verification
 
 - `server/scripts/verify_security_lot1_local.py` : sonde hors ligne Auth, streaming synthétique et journaux Uvicorn ; procédure et limites dans `docs/server/security-and-secrets.md` et `docs/ops/logging-observability.md`.
+
+- `server/scripts/test_user_isolation_postgres.py --download-cancellation` : assertions PostgreSQL jetables des lots2/3, sans réseau distant ni données réelles ; contrat et limites dans `docs/server/jobs.md`.
+
+- `server/tests/test_sec0032_regressions.py`, `test_download_admission_recovery.py` et `test_download_cache_provenance.py` : reproductions F1–F6, supervision, concurrence et provenance du cache ; invariants et limites dans `docs/server/jobs.md` et `docs/server/storage.md`.
+
+- `server/ops/sec0033/` : contexte allowlisté, recette hors réseau et vérification embarquée du candidat autonome SEC-003 ; contrôles R1/R2 dans `server/tests/test_sec0033_robustness.py`.
+
+- `server/ops/sec0034/` : préflight stdin à sortie expurgée et comptages SQL READ ONLY, sans exécution distante implicite ; tests préparatoires dans `server/ops_tests/test_sec0034_preflight.py`.
+
+- `server/ops/sec0052/` : contrôles de sauvegarde et de restauration, historique SQLite et validation synthétique du backend. La [procédure de déploiement](ops/security-lot5-candidate.md) indique les configurations et commandes à utiliser.

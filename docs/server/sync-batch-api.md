@@ -16,6 +16,27 @@ Definir les contrats HTTP batch concrets du moteur de synchronisation AURA entre
 - Les tokens de sync sont opaques et ne doivent jamais etre interpretes cote client.
 
 ## Endpoints
+
+### Autorisation et cohérence SEC-002
+
+Les trois endpoints créent un client Supabase propre à la requête avec le JWT déjà vérifié,
+sans fallback privilégié. L'identité ne vient jamais du payload. Les parents doivent
+appartenir au compte et tous les items d'un reorder à la même playlist, même si leur ID exact
+est fourni. Les données d'un autre compte ne sont pas retournées dans un conflit.
+
+Le batch reste séquentiel et **non atomique** : succès et conflits individuels sont conservés.
+Un échec d'accès au journal d'idempotence arrête le traitement ; un batch partiellement en
+échec n'est pas marqué terminé. Les marqueurs sont uniques par `(user_id,operation_id)` /
+`(user_id,batch_id)`. Mutation et marqueur restent deux appels HTTP : aucune garantie
+exactly-once globale nouvelle. Les mutations des positions d'une playlist sont atomiques
+dans la RPC `aura_mutate_playlist_items` ; un conflit final annule tous leurs déplacements.
+
+Les formes HTTP/payloads/statuts existantes restent inchangées. `pull-batch` conserve son
+périmètre actuel (settings, playlists/items, likes, snapshot), sans ajout de sessions/events.
+SQL et backend doivent être activés ensemble lors d'une fenêtre autorisée ; détails dans
+`docs/server/security-lot2-isolation.md`.
+
+### Routes
 - `POST /me/sync/bootstrap`
 - `POST /me/sync/push-batch`
 - `POST /me/sync/pull-batch`

@@ -25,8 +25,8 @@ android {
         applicationId = "com.aura.music"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.4.2"
 
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClientId\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -65,6 +65,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2") }
     }
 
     lint {
@@ -117,6 +119,8 @@ dependencies {
     // Ktor and serialization KMP
     implementation("io.ktor:ktor-client-core:3.0.0")
     implementation("io.ktor:ktor-client-okhttp:3.0.0")
+    implementation("io.ktor:ktor-client-content-negotiation:3.0.0")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Background Sync WorkManager
@@ -134,6 +138,9 @@ dependencies {
     // Unit Tests
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("io.ktor:ktor-client-mock:3.0.0")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.sqlite:sqlite-framework:2.7.0-alpha01")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

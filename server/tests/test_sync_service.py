@@ -19,6 +19,7 @@ for mod in ("yt_dlp", "ytmusicapi"):
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.auth import AuthenticatedUser, get_current_user
+from app.db.user_client import get_current_user_client
 from app.services.sync_service import (
     SyncService,
     compute_order_token,
@@ -85,7 +86,7 @@ class FakeQueryChain:
         return self
 
     def order(self, key: str, desc: bool = False):
-        self._rows.sort(key=lambda r: r.get(key) or "", reverse=desc)
+        self._rows.sort(key=lambda r: (r.get(key) is not None, r.get(key)), reverse=desc)
         return self
 
     def limit(self, n: int):
@@ -105,6 +106,63 @@ class InMemorySupabase:
     def __init__(self, initial_tables: dict[str, list[dict]] | None = None):
         self.tables: dict[str, list[dict]] = {k: list(v) for k, v in (initial_tables or {}).items()}
         self.mutations: list[tuple[str, str, object]] = []
+        self.user_id = "user_1"
+
+    def rpc(self, name, args):
+        from copy import deepcopy
+        from app.services.sync_service import compute_order_token
+        assert name == "aura_mutate_playlist_items"
+        parent = self
+        class Call:
+            def execute(inner):
+                before = deepcopy(parent.tables)
+                try:
+                    playlists = parent.tables.get("playlists", [])
+                    pl = next((r for r in playlists if r["id"] == args["p_playlist_id"] and r["user_id"] == parent.user_id), None)
+                    if pl is None:
+                        raise ValueError("Resource unavailable")
+                    rows = parent.tables.setdefault("playlist_items", [])
+                    action = args["p_action"]
+                    payload = args["p_payload"]
+                    stamp = datetime.now(timezone.utc).isoformat()
+                    if action == "reorder":
+                        if pl["updated_at"] != args["p_expected_updated_at"]:
+                            return MagicMock(data={"status": "conflict", "updated_at": pl["updated_at"]})
+                        items = payload["items"]
+                        ids = [x["playlist_item_id"] for x in items]
+                        positions = [x["position"] for x in items]
+                        assert len(set(ids)) == len(ids) and len(set(positions)) == len(positions)
+                        assert all(any(r["id"] == i and r["playlist_id"] == pl["id"] for r in rows) for i in ids)
+                        for item in items:
+                            next(r for r in rows if r["id"] == item["playlist_item_id"] and r["playlist_id"] == pl["id"])["position"] = item["position"]
+                        all_positions = [r["position"] for r in rows if r["playlist_id"] == pl["id"]]
+                        assert len(all_positions) == len(set(all_positions))
+                        pl["updated_at"] = stamp
+                        return MagicMock(data={"status": "applied", "updated_at": stamp})
+                    existing = next((r for r in rows if r["id"] == args["p_item_id"] and r["playlist_id"] == pl["id"]), None)
+                    if action == "delete":
+                        if existing:
+                            rows.remove(existing)
+                            pl["updated_at"] = stamp
+                        return MagicMock(data={"status": "applied" if existing else "ignored_duplicate", "entity": None})
+                    if existing:
+                        return MagicMock(data={"status": "ignored_duplicate", "entity": dict(existing)})
+                    if any(r["id"] == args["p_item_id"] for r in rows):
+                        raise ValueError("Unique collision")
+                    position = payload.get("position", 0)
+                    if any(r["playlist_id"] == pl["id"] and r["position"] == position for r in rows):
+                        for r in rows:
+                            if r["playlist_id"] == pl["id"] and r["position"] >= position:
+                                r["position"] += 1
+                    row = dict(id=args["p_item_id"], playlist_id=pl["id"], track_id=payload["track_id"], position=position, added_at=payload.get("added_at") or stamp)
+                    rows.append(row)
+                    pl["updated_at"] = stamp
+                    return MagicMock(data={"status": "applied", "entity": dict(row)})
+                except Exception:
+                    parent.tables.clear()
+                    parent.tables.update(before)
+                    raise
+        return Call()
 
     def table(self, name: str):
         rows = self.tables.setdefault(name, [])
@@ -186,8 +244,8 @@ class TestSyncServiceLogic(unittest.TestCase):
             }
         )
 
-        with patch("app.services.sync_service.supabase", fake_db):
-            service = SyncService()
+        with patch("app.api.routes.sync.get_current_user_client", return_value=fake_db):
+            service = SyncService(fake_db)
             resp = service.push_batch(
                 user_id="user_1",
                 device_id="dev_1",
@@ -215,7 +273,7 @@ class TestSyncServiceLogic(unittest.TestCase):
             {
                 "profiles": [{"id": "user_1", "display_name": "User 1"}],
                 "processed_batches": [],
-                "processed_operations": [{"operation_id": "op_already_done"}],
+                "processed_operations": [{"operation_id": "op_already_done", "user_id": "user_1"}],
                 "user_settings": [
                     {
                         "user_id": "user_1",
@@ -229,8 +287,8 @@ class TestSyncServiceLogic(unittest.TestCase):
             }
         )
 
-        with patch("app.services.sync_service.supabase", fake_db):
-            service = SyncService()
+        with patch("app.api.routes.sync.get_current_user_client", return_value=fake_db):
+            service = SyncService(fake_db)
             resp = service.push_batch(
                 user_id="user_1",
                 device_id="dev_1",
@@ -296,8 +354,8 @@ class TestSyncServiceLogic(unittest.TestCase):
             }
         )
 
-        with patch("app.services.sync_service.supabase", fake_db):
-            service = SyncService()
+        with patch("app.api.routes.sync.get_current_user_client", return_value=fake_db):
+            service = SyncService(fake_db)
 
             # 1. Mismatched base_order_token -> conflict (base_outdated)
             resp_conflict = service.push_batch(
@@ -381,8 +439,8 @@ class TestSyncServiceLogic(unittest.TestCase):
             }
         )
 
-        with patch("app.services.sync_service.supabase", fake_db):
-            service = SyncService()
+        with patch("app.api.routes.sync.get_current_user_client", return_value=fake_db):
+            service = SyncService(fake_db)
             resp = service.pull_batch(
                 user_id="user_1",
                 since_token=valid_since_token,
@@ -400,6 +458,7 @@ class TestSyncFastApiRoutes(unittest.TestCase):
             id="11111111-2222-3333-4444-555555555555",
             token="test_jwt",
         )
+        app.dependency_overrides[get_current_user_client] = lambda: InMemorySupabase()
         self.client = TestClient(app)
 
     def tearDown(self):
@@ -442,7 +501,8 @@ class TestSyncFastApiRoutes(unittest.TestCase):
                 "playback_snapshots": [],
             }
         )
-        with patch("app.services.sync_service.supabase", fake_db):
+        app.dependency_overrides[get_current_user_client] = lambda: fake_db
+        with patch("app.api.routes.sync.get_current_user_client", return_value=fake_db):
             response = self.client.post(
                 "/me/sync/bootstrap",
                 json={

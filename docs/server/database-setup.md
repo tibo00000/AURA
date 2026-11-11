@@ -114,7 +114,40 @@ The historical `server/app/db/migrations/` directory remains available for
 legacy backend migrations; new Supabase schema work belongs in
 `supabase/migrations/`.
 
-### Best Practices
+### SEC-002 — prepared migration, not remotely applied
+
+`20261017200822_secure_user_data_isolation.sql` requires PostgreSQL >=15, the tracked sync
+schema and catalog migrations. The legacy RLS migration outside this directory is tested
+for compatibility; SEC-002 also creates `processed_batches` if it is absent.
+
+Before an approved maintenance window, inventory deployed table/column grants and role
+inheritance, policies (`pg_policies`), views, callable functions and their callees, triggers
+and dependencies on the old idempotency primary keys. Compare with tracked migrations;
+local success does not prove the deployed schema matches. Confirm the public API key is
+configured and Supabase Python SDK >=2.33.0 will be installed in the future image.
+
+The migration aborts on privileged client roles, exposed public SECURITY DEFINER functions,
+privileged user-table triggers, inconsistent session ownership/orphans or unknown dependent
+constraints. It neither deletes nor reassigns existing data. Investigate aggregate failures
+without exporting personal rows. No automatic repair is authorized. PostgreSQL DDL and data
+checks run in one transaction, with 5s lock / 60s statement timeouts.
+
+Stop application writes during the future change: the old backend's single-column
+`on_conflict` is incompatible with the new marker keys. Apply reviewed SQL, then the corrected
+backend; keep containment if validation fails. Do not roll back publicly to the privileged
+backend. Any schema/data restoration needs its own reviewed, explicitly approved plan.
+
+Local reproducible checks (Docker local context only, no production credentials):
+
+```powershell
+server/.venv/Scripts/python.exe -B server/scripts/test_user_isolation_postgres.py
+```
+
+This creates and removes a disposable PostgreSQL container with no network/published ports.
+It tests real RLS/grants/FKs/RPC with synthetic claims, not the deployed Supabase Auth stack.
+See `docs/server/security-lot2-isolation.md` for the result and remaining deployment gates.
+
+### General practices
 
 1. **Naming**: Use a timestamp and descriptive name (`20261016214500_enable_catalog_rls.sql`)
 2. **Idempotency**: Use `IF NOT EXISTS` for table/index creation; use `IF EXISTS` for drops

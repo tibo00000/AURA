@@ -12,7 +12,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.supabase import supabase
+from app.db.user_client import get_current_user_client
 from app.schemas.me import (
     LikeResponse,
     PlaybackSnapshotResponse,
@@ -40,6 +40,7 @@ router = APIRouter(prefix="/me", tags=["user"])
 )
 async def get_user_settings(
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Retrieve settings for the authenticated user.
@@ -81,7 +82,7 @@ async def get_user_settings(
         logger.error("Failed to get/init settings for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -92,6 +93,7 @@ async def get_user_settings(
 async def patch_user_settings(
     payload: UserSettingsPatch,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Update partial fields of settings for the authenticated user.
@@ -132,7 +134,7 @@ async def patch_user_settings(
         logger.error("Failed to update settings for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -142,6 +144,7 @@ async def patch_user_settings(
 )
 async def get_playback_snapshot(
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Retrieve the last playback snapshot for the user.
@@ -167,7 +170,7 @@ async def get_playback_snapshot(
         logger.error("Failed to get playback snapshot for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -178,6 +181,7 @@ async def get_playback_snapshot(
 async def update_playback_snapshot(
     payload: PlaybackSnapshotResponse,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Upsert the playback snapshot for the user.
@@ -212,7 +216,7 @@ async def update_playback_snapshot(
         logger.error("Failed to update playback snapshot for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -222,6 +226,7 @@ async def update_playback_snapshot(
 )
 async def get_user_playlists(
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Get all playlists for the authenticated user, including their items.
@@ -267,7 +272,7 @@ async def get_user_playlists(
         logger.error("Failed to get playlists for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -277,6 +282,7 @@ async def get_user_playlists(
 )
 async def get_user_likes(
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Get all liked tracks (favorites) for the authenticated user.
@@ -300,11 +306,11 @@ async def get_user_likes(
         logger.error("Failed to get likes for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
-def ensure_profile(user_id: str):
+def ensure_profile(user_id: str, supabase):
     """Ensure user profile exists in profiles table to satisfy Foreign Key constraints."""
     try:
         prof_res = supabase.table("profiles").select("*").eq("id", user_id).execute()
@@ -327,12 +333,13 @@ async def like_track(
     trackId: str,
     payload: Optional[LikeRequest] = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Like a track for the authenticated user.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         now = datetime.now(timezone.utc).isoformat()
         source_context_type = payload.source_context_type if payload else None
@@ -357,7 +364,7 @@ async def like_track(
         logger.error("Failed to like track %s for user %s: %s", trackId, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -368,12 +375,13 @@ async def like_track(
 async def unlike_track(
     trackId: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Unlike a track for the authenticated user.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         now = datetime.now(timezone.utc).isoformat()
         res = supabase.table("likes").select("*").eq("user_id", user_id).eq("track_id", trackId).execute()
@@ -399,7 +407,7 @@ async def unlike_track(
         logger.error("Failed to unlike track %s for user %s: %s", trackId, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -409,12 +417,13 @@ async def unlike_track(
 )
 async def get_history(
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Get listen history for the authenticated user.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         response = supabase.table("history_items").select("*").eq("user_id", user_id).order("played_at", desc=True).execute()
         items_list = response.data or []
@@ -436,7 +445,7 @@ async def get_history(
         logger.error("Failed to get history for user %s: %s", user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -447,12 +456,13 @@ async def get_history(
 async def create_playlist(
     payload: PlaylistCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Create a new playlist.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         now = datetime.now(timezone.utc).isoformat()
         playlist_data = {
@@ -480,7 +490,7 @@ async def create_playlist(
         logger.error("Failed to create playlist %s for user %s: %s", payload.name, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -492,12 +502,13 @@ async def patch_playlist(
     id: str,
     payload: PlaylistUpdate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Update a playlist (name, cover, is_pinned).
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         pl_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
         if not pl_res.data:
@@ -505,8 +516,7 @@ async def patch_playlist(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Playlist with id {id} not found"
             )
-        now = datetime.now(timezone.utc).isoformat()
-        update_data = {"updated_at": now}
+        update_data = {}
         if payload.name is not None:
             update_data["name"] = payload.name
         if payload.cover_uri is not None:
@@ -514,11 +524,11 @@ async def patch_playlist(
         if payload.is_pinned is not None:
             update_data["is_pinned"] = payload.is_pinned
 
-        supabase.table("playlists").update(update_data).eq("user_id", user_id).eq("id", id).execute()
-
-        updated_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
-        updated_pl = updated_res.data[0]
-        items_res = supabase.table("playlist_items").select("*").eq("playlist_id", id).order("position").execute()
+        result = supabase.rpc("aura_mutate_playlist_items", {
+            "p_playlist_id": id, "p_item_id": None,
+            "p_action": "rest_patch", "p_payload": update_data,
+        }).execute().data
+        updated_pl = result["entity"]
         items = [
             PlaylistItemResponse(
                 id=item["id"],
@@ -529,7 +539,7 @@ async def patch_playlist(
                 added_from_context_type=item.get("added_from_context_type"),
                 added_from_context_id=item.get("added_from_context_id"),
             )
-            for item in (items_res.data or [])
+            for item in result["items"]
         ]
         return ResponseEnvelope(data=PlaylistResponse(
             id=id,
@@ -547,7 +557,7 @@ async def patch_playlist(
         logger.error("Failed to update playlist %s for user %s: %s", id, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -558,12 +568,13 @@ async def patch_playlist(
 async def delete_playlist(
     id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Delete a playlist.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         pl_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
         if not pl_res.data:
@@ -606,7 +617,7 @@ async def delete_playlist(
         logger.error("Failed to delete playlist %s for user %s: %s", id, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -618,12 +629,13 @@ async def append_track_to_playlist(
     id: str,
     payload: PlaylistItemCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Append a track to a playlist.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         pl_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
         if not pl_res.data:
@@ -632,37 +644,24 @@ async def append_track_to_playlist(
                 detail=f"Playlist with id {id} not found"
             )
         
-        now = datetime.now(timezone.utc).isoformat()
         item_data = {
-            "id": payload.id,
-            "playlist_id": id,
             "track_id": payload.track_id,
             "position": payload.position,
-            "added_at": now,
             "added_from_context_type": payload.added_from_context_type,
             "added_from_context_id": payload.added_from_context_id,
         }
-        supabase.table("playlist_items").insert(item_data).execute()
-        
-        # Update playlist updated_at
-        supabase.table("playlists").update({"updated_at": now}).eq("id", id).execute()
-        
-        return ResponseEnvelope(data=PlaylistItemResponse(
-            id=payload.id,
-            playlist_id=id,
-            track_id=payload.track_id,
-            position=payload.position,
-            added_at=now,
-            added_from_context_type=payload.added_from_context_type,
-            added_from_context_id=payload.added_from_context_id,
-        ))
+        result = supabase.rpc("aura_mutate_playlist_items", {
+            "p_playlist_id": id, "p_item_id": payload.id,
+            "p_action": "rest_insert", "p_payload": item_data,
+        }).execute().data
+        return ResponseEnvelope(data=PlaylistItemResponse(**result["entity"]))
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Failed to append track %s to playlist %s for user %s: %s", payload.track_id, id, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 
 
@@ -674,12 +673,13 @@ async def remove_track_from_playlist(
     id: str,
     trackId: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
 ):
     """
     Remove all occurrences of a track from a playlist.
     """
     user_id = current_user.id
-    ensure_profile(user_id)
+    ensure_profile(user_id, supabase)
     try:
         pl_res = supabase.table("playlists").select("*").eq("user_id", user_id).eq("id", id).execute()
         if not pl_res.data:
@@ -688,8 +688,10 @@ async def remove_track_from_playlist(
                 detail=f"Playlist with id {id} not found"
             )
         
-        items_res = supabase.table("playlist_items").select("*").eq("playlist_id", id).eq("track_id", trackId).execute()
-        items_list = items_res.data or []
+        result = supabase.rpc("aura_mutate_playlist_items", {
+            "p_playlist_id": id, "p_item_id": trackId,
+            "p_action": "rest_delete_track", "p_payload": {},
+        }).execute().data
         removed_items = [
             PlaylistItemResponse(
                 id=item["id"],
@@ -700,13 +702,8 @@ async def remove_track_from_playlist(
                 added_from_context_type=item.get("added_from_context_type"),
                 added_from_context_id=item.get("added_from_context_id"),
             )
-            for item in items_list
+            for item in result["entities"]
         ]
-        
-        supabase.table("playlist_items").delete().eq("playlist_id", id).eq("track_id", trackId).execute()
-        
-        now = datetime.now(timezone.utc).isoformat()
-        supabase.table("playlists").update({"updated_at": now}).eq("id", id).execute()
         
         return ResponseEnvelope(data=removed_items)
     except HTTPException:
@@ -715,6 +712,6 @@ async def remove_track_from_playlist(
         logger.error("Failed to remove track %s from playlist %s for user %s: %s", trackId, id, user_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
+            detail="Unable to complete user database request",
         )
 

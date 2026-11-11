@@ -1,0 +1,11 @@
+# Candidate only: import INSIDE the existing production site, retaining all SEC-001 logging.
+# This must follow the backend's default: 50 MiB audio + 1 MiB multipart envelope.
+@sec005_upload {
+    method POST
+    path /me/sync/files/*
+    not path /me/sync/files/batch-metadata
+}
+request_body @sec005_upload {
+    max_size 53477376
+}
+# Do not enable reverse_proxy request_buffers. Backend also counts real file bytes.

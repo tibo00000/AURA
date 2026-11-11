@@ -34,6 +34,7 @@ import java.io.FileOutputStream
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -45,6 +46,7 @@ class CloudFileRepository(
     private val apiService: AuraApiService,
     private val context: Context,
     private val downloadRepositoryProvider: (() -> DownloadRepository)? = null,
+    private val authTokenProvider: () -> String = { com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader() },
 ) {
     companion object {
         private const val TAG = "CloudFileRepository"
@@ -59,8 +61,11 @@ class CloudFileRepository(
     private val autoDownloadSemaphore = Semaphore(1)
     private val trackDownloadMutexes = ConcurrentHashMap<String, Mutex>()
     private val cloudDownloadSemaphore = Semaphore(1)
+    private val mediaCoordinator = com.aura.music.data.media.TrackMediaCoordinator.shared
+    private val _networkTransfers = MutableStateFlow<Set<String>>(emptySet())
+    val networkTransfers = _networkTransfers.asStateFlow()
 
-    private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
+    private fun getAuthToken(): String = authTokenProvider()
 
     private val _syncedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val syncedTrackIds = _syncedTrackIds.asStateFlow()
@@ -599,6 +604,7 @@ class CloudFileRepository(
     ): Flow<Result<File>> = flow {
         val mutex = trackDownloadMutexes.computeIfAbsent(trackId) { Mutex() }
         mutex.withLock {
+            var pendingFile: File? = null
             try {
                 // Dynamic disk space check: require at least 50MB of usable storage
                 val usableSpace = context.filesDir.usableSpace
@@ -614,13 +620,14 @@ class CloudFileRepository(
                 }
 
                 val targetFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-                val tempFile = File(downloadsDir, "${trackId.replace(':', ';')}.tmp")
+                val tempFile = File.createTempFile("aura-transfer-", ".tmp", downloadsDir).also { pendingFile = it }
 
                 // If file already exists physically with valid size & magic bytes, self-heal DB link and return immediately
                 if (targetFile.exists()) {
                     if (AudioIntegrityValidator.isValidAudioFile(targetFile, checkMetadata = false)) {
                         val trackRow = database.trackDao().getTrackById(trackId)
-                        if (trackRow?.contentUri.isNullOrBlank()) {
+                        val rawTrack = database.trackDao().getRawTrackById(trackId)
+                        if (trackRow?.contentUri != targetFile.toURI().toString() || rawTrack?.canonicalAudioSourceType != "downloaded") {
                             linkDownloadedTrack(
                                 trackId = trackId,
                                 targetFile = targetFile,
@@ -636,13 +643,6 @@ class CloudFileRepository(
                         Log.i(TAG, "Track $trackId already exists on disk (${targetFile.length()} bytes), skipping download.")
                         emit(Result.success(targetFile))
                         return@withLock
-                    } else {
-                        Log.w(TAG, "Existing track file for $trackId is corrupt or 0-byte. Deleting to re-download...")
-                        try {
-                            targetFile.delete()
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Could not delete corrupt file: ${targetFile.absolutePath}", e)
-                        }
                     }
                 }
 
@@ -650,18 +650,18 @@ class CloudFileRepository(
                     tempFile.delete()
                 }
 
+                _networkTransfers.update { it + trackId }
                 Log.i(TAG, "Downloading track $trackId from cloud...")
                 var downloadedFromCloud = false
                 var cloudHttpStatus = 0
 
                 cloudDownloadSemaphore.withPermit {
-                    val response = try {
-                        apiService.downloadSyncFile(getAuthToken(), trackId)
-                    } catch (e: Exception) {
-                        null
+                    val response = apiService.downloadSyncFile(getAuthToken(), trackId)
+                    if (response.status.value == 401 || response.status.value == 403) {
+                        throw com.aura.music.core.SessionUnavailableException()
                     }
 
-                    if (response != null && response.status.value in 200..299) {
+                    if (response.status.value in 200..299) {
                         try {
                             val channel = response.bodyAsChannel()
                             channel.toInputStream().use { inputStream ->
@@ -675,12 +675,12 @@ class CloudFileRepository(
                             }
 
                             if (AudioIntegrityValidator.isValidAudioFile(tempFile, checkMetadata = false)) {
-                                if (targetFile.exists()) {
-                                    targetFile.delete()
-                                }
-                                if (!tempFile.renameTo(targetFile)) {
-                                    tempFile.copyTo(targetFile, overwrite = true)
-                                    tempFile.delete()
+                                mediaCoordinator.withTrack(trackId) {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                                        mediaCoordinator.publish(tempFile, targetFile)
+                                        linkDownloadedTrackLocked(trackId, targetFile, title, artistName, albumTitle,
+                                            durationMs, artistId, albumId, coverUri)
+                                    }
                                 }
                                 downloadedFromCloud = true
                             } else {
@@ -807,14 +807,38 @@ class CloudFileRepository(
                 )
 
                 emit(Result.success(targetFile))
-            } catch (e: Exception) {
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
                 Log.e(TAG, "Failed to download track $trackId", e)
                 emit(Result.failure(e))
+            } finally {
+                pendingFile?.delete()
+                _networkTransfers.update { it - trackId }
             }
         }
     }.flowOn(Dispatchers.IO)
 
     private suspend fun linkDownloadedTrack(
+        trackId: String,
+        targetFile: File,
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+        durationMs: Long? = null,
+        artistId: String? = null,
+        albumId: String? = null,
+        coverUri: String? = null
+    ) {
+        mediaCoordinator.withTrack(trackId) {
+            check(AudioIntegrityValidator.isValidAudioFile(targetFile, checkMetadata = false))
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                linkDownloadedTrackLocked(trackId, targetFile, title, artistName, albumTitle, durationMs,
+                    artistId, albumId, coverUri)
+            }
+        }
+    }
+
+    private suspend fun linkDownloadedTrackLocked(
         trackId: String,
         targetFile: File,
         title: String? = null,
@@ -1087,64 +1111,66 @@ class CloudFileRepository(
     }.flowOn(Dispatchers.IO)
 
     suspend fun removeLocalFile(trackId: String) = withContext(Dispatchers.IO) {
-        try {
-            val trackRow = database.trackDao().getTrackById(trackId)
-            val uriStr = trackRow?.contentUri
+        mediaCoordinator.withTrack(trackId) {
+            try {
+                val trackRow = database.trackDao().getTrackById(trackId)
+                val uriStr = trackRow?.contentUri
 
-            // 1. Suppression physique du fichier s'il existe sur le disque
-            if (!uriStr.isNullOrBlank()) {
-                try {
-                    when {
-                        uriStr.startsWith("file:") -> {
-                            val path = try { java.net.URI.create(uriStr).path } catch (e: Exception) { uriStr.removePrefix("file://").removePrefix("file:") }
-                            val file = File(path)
-                            if (file.exists()) file.delete()
+                // 1. Suppression physique du fichier s'il existe sur le disque
+                if (!uriStr.isNullOrBlank()) {
+                    try {
+                        when {
+                            uriStr.startsWith("file:") -> {
+                                val path = try { java.net.URI.create(uriStr).path } catch (e: Exception) { uriStr.removePrefix("file://").removePrefix("file:") }
+                                val file = File(path)
+                                if (file.exists()) file.delete()
+                            }
+                            uriStr.startsWith("/") -> {
+                                val file = File(uriStr)
+                                if (file.exists()) file.delete()
+                            }
+                            uriStr.startsWith("content://") -> {
+                                try {
+                                    context.contentResolver.delete(Uri.parse(uriStr), null, null)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Could not delete content URI via resolver: $uriStr", e)
+                                }
+                            }
                         }
-                        uriStr.startsWith("/") -> {
-                            val file = File(uriStr)
-                            if (file.exists()) file.delete()
-                        }
-                        uriStr.startsWith("content://") -> {
-                            try {
-                                context.contentResolver.delete(Uri.parse(uriStr), null, null)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error deleting file from disk: $uriStr", e)
+                    }
+                }
+
+                // Supprimer également du dossier downloads si présent
+                val downloadsDir = File(context.filesDir, "downloads")
+                val localDownloadFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
+                if (localDownloadFile.exists()) {
+                    localDownloadFile.delete()
+                }
+
+                // 2. Nettoyage de la base de données Room
+                database.useWriterConnection { transactor ->
+                    transactor.immediateTransaction {
+                        database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
+
+                        val rawTrack = database.trackDao().getRawTrackById(trackId)
+                        if (rawTrack != null && !rawTrack.isLiked) {
+                            val inPlaylist = try {
+                                database.playlistDao().getAllPlaylistTrackIds().contains(trackId)
                             } catch (e: Exception) {
-                                Log.w(TAG, "Could not delete content URI via resolver: $uriStr", e)
+                                false
+                            }
+                            if (!inPlaylist) {
+                                database.trackDao().deleteTracksByIds(listOf(trackId))
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error deleting file from disk: $uriStr", e)
                 }
+                Log.i(TAG, "Successfully removed local file and links for track $trackId")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove local file for track $trackId", e)
             }
-
-            // Supprimer également du dossier downloads si présent
-            val downloadsDir = File(context.filesDir, "downloads")
-            val localDownloadFile = File(downloadsDir, "${trackId.replace(':', ';')}.mp3")
-            if (localDownloadFile.exists()) {
-                localDownloadFile.delete()
-            }
-
-            // 2. Nettoyage de la base de données Room
-            database.useWriterConnection { transactor ->
-                transactor.immediateTransaction {
-                    database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
-
-                    val rawTrack = database.trackDao().getRawTrackById(trackId)
-                    if (rawTrack != null && !rawTrack.isLiked) {
-                        val inPlaylist = try {
-                            database.playlistDao().getAllPlaylistTrackIds().contains(trackId)
-                        } catch (e: Exception) {
-                            false
-                        }
-                        if (!inPlaylist) {
-                            database.trackDao().deleteTracksByIds(listOf(trackId))
-                        }
-                    }
-                }
-            }
-            Log.i(TAG, "Successfully removed local file and links for track $trackId")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to remove local file for track $trackId", e)
-        }
+    }
     }
 }

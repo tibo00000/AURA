@@ -155,66 +155,12 @@ class LocalLibraryRepository(
      * Includes strict guards against unmounted or temporarily inaccessible storage to prevent false positive data loss.
      */
     suspend fun sweepCorruptOrMissingMediaLinks() = withContext(Dispatchers.IO) {
-        try {
-            val downloadsDir = java.io.File(context.filesDir, "downloads")
-            if (!downloadsDir.exists() || !downloadsDir.isDirectory) {
-                Log.w("LocalLibraryRepository", "Downloads directory is not accessible yet. Aborting sweep to prevent false-positive data loss.")
-                return@withContext
+        val downloads = java.io.File(context.filesDir, "downloads")
+        if (!downloads.isDirectory || !downloads.canRead()) return@withContext
+        for (observed in database.trackDao().getAllMediaLinks()) {
+            if (!UriPathParser.isContentUri(observed.contentUri)) {
+                com.aura.music.data.media.TrackMediaCoordinator.shared.purgeObserved(database, downloads, observed)
             }
-
-            val downloadedTracks = database.trackDao().getDownloadedTracks()
-            val deadTrackIds = mutableListOf<String>()
-
-            for (track in downloadedTracks) {
-                val uri = track.contentUri ?: continue
-                if (UriPathParser.isContentUri(uri)) {
-                    // Skip MediaStore Scoped Storage tracks (handled by MediaStore scanner)
-                    continue
-                }
-
-                val file = UriPathParser.parseLocalFile(uri)
-                if (file == null) continue
-
-                val parentDir = file.parentFile
-                if (parentDir == null || !parentDir.exists()) {
-                    Log.w("LocalLibraryRepository", "Parent directory missing/inaccessible for ${track.id} (${file.path}). Skipping sweep for this item.")
-                    continue
-                }
-
-                if (!file.exists() || file.length() == 0L) {
-                    deadTrackIds.add(track.id)
-                    if (file.exists() && file.length() == 0L) {
-                        try {
-                            file.delete()
-                        } catch (e: Exception) {
-                            Log.w("LocalLibraryRepository", "Could not delete 0-byte file: ${file.absolutePath}", e)
-                        }
-                    }
-                }
-            }
-
-            if (deadTrackIds.isNotEmpty()) {
-                Log.i("LocalLibraryRepository", "Cold-start sweep: cleaning ${deadTrackIds.size} missing/0-byte media links: $deadTrackIds")
-                database.useWriterConnection { transactor ->
-                    transactor.immediateTransaction {
-                        for (trackId in deadTrackIds) {
-                            database.trackDao().deleteTrackMediaLinksByTrackId(trackId)
-                            val rawTrack = database.trackDao().getRawTrackById(trackId)
-                            if (rawTrack != null && rawTrack.canonicalAudioSourceType == "downloaded") {
-                                database.trackDao().upsertTrack(
-                                    rawTrack.copy(
-                                        canonicalAudioSourceType = "cloud",
-                                        isDownloadedByAura = false,
-                                        updatedAt = System.currentTimeMillis()
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w("LocalLibraryRepository", "Failed sweeping corrupt media links on cold-start", e)
         }
     }
 
@@ -329,6 +275,8 @@ class LocalLibraryRepository(
 
     suspend fun getTrackById(trackId: String): TrackListRow? =
         withContext(Dispatchers.IO) { database.trackDao().getTrackById(trackId) }
+
+    fun observeLikedTracks() = database.trackDao().getLikedTracksFlow()
 
     suspend fun getLikedTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getLikedTracks() }
@@ -857,6 +805,7 @@ class LocalLibraryRepository(
         }
 
     suspend fun removeTrackFromDatabase(trackId: String) = withContext(Dispatchers.IO) {
+        com.aura.music.data.media.TrackMediaCoordinator.shared.withTrack(trackId) {
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
                 val isCloudSynced = cloudFileRepositoryProvider?.invoke()?.isCloudTrackSynced(trackId) == true
@@ -873,6 +822,7 @@ class LocalLibraryRepository(
                     database.trackDao().deleteTracksByIds(listOf(trackId))
                 }
             }
+        }
         }
         invalidateSearchIndex()
     }

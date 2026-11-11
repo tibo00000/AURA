@@ -1,0 +1,8 @@
+# Isolated test operator environment only, never a production/backend dependency.
+# Operator runtime only; versions already used for the local preparation tests, plus SQL driver.
+supabase==2.33.0
+httpx==0.28.1
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2
+python-dotenv==1.2.4
+psycopg[binary]==3.3.6

@@ -44,8 +44,10 @@ from app.services.download_service import (
     _get_track_key,
     _find_globally_cached_track,
     _link_cached_track_to_user,
-    _auto_register_in_sync_files,
+    _auto_register_in_sync_files as _raw_register,
 )
+
+from tests.native_cache_fixture import register_native as _auto_register_in_sync_files
 
 
 class TestGlobalTrackCache(unittest.TestCase):
@@ -178,8 +180,8 @@ class TestGlobalTrackCache(unittest.TestCase):
 
         asyncio.run(run_lock_test())
 
-    def test_orphan_eviction_under_lock(self):
-        """Vérifie que cleanup_orphaned_cache supprime les fichiers orphelins sans références."""
+    def test_orphan_eviction_disabled_without_shared_coordination(self):
+        """Une entrée orpheline reste intacte tant que l’éviction est neutralisée."""
         async def run_eviction_test():
             from app.services.download_service import DownloadService, _get_global_cache_dir
             svc = object.__new__(DownloadService)
@@ -198,51 +200,23 @@ class TestGlobalTrackCache(unittest.TestCase):
 
             # Exécuter l'éviction
             pruned = await svc.cleanup_orphaned_cache(max_age_days=1)
-            self.assertEqual(pruned, 1)
-            self.assertFalse(orphan_audio.exists())
-            self.assertFalse(orphan_json.exists())
+            self.assertEqual(pruned, 0)
+            self.assertEqual(orphan_audio.read_bytes(), b"ORPHAN_DATA")
+            self.assertTrue(orphan_json.exists())
 
         asyncio.run(run_eviction_test())
 
     def test_existing_track_backfill_from_user_folder(self):
-        """
-        Vérifie qu'un morceau déjà présent dans le dossier d'un utilisateur historique
-        (téléchargé avant l'existence du _global_cache) est automatiquement indexé
-        dans le cache global dès qu'il est recherché.
-        """
-        track_id = "trk_deezer_historical_song"
-        track_key = _get_track_key(track_id)
-        owner_user_id = "12345678-1234-1234-1234-1234567890ab"
-        safe_owner = hashlib.sha256(owner_user_id.encode("utf-8")).hexdigest()
-
-        # Simuler un fichier téléchargé dans le passé uniquement dans le dossier de l'owner
-        owner_dir = self.test_dir / safe_owner
-        owner_dir.mkdir(parents=True, exist_ok=True)
-        historical_audio = owner_dir / f"{track_key}.audio"
-        historical_json = owner_dir / f"{track_key}.json"
-
-        content = b"HISTORICAL_AUDIO_FILE_ON_VPS"
-        historical_audio.write_bytes(content)
-        historical_json.write_text(json.dumps({
-            "track_id": track_id,
-            "title": "Historical Hit",
-            "artist_name": "Legend",
-        }), encoding="utf-8")
-
-        # Vérifier que le cache global ne l'a pas au départ
-        cache_dir = _get_global_cache_dir()
-        self.assertFalse((cache_dir / f"{track_key}.audio").exists())
-
-        # Appel de _find_globally_cached_track : doit le trouver et le backfiller
-        cached = _find_globally_cached_track(track_id)
-        self.assertIsNotNone(cached)
-        cached_path, metadata = cached
-
-        # Vérifier qu'il est maintenant dans le cache global
-        self.assertTrue(cached_path.exists())
-        self.assertEqual(cached_path.read_bytes(), content)
-        self.assertEqual(metadata.get("title"), "Historical Hit")
-        self.assertEqual(metadata.get("artist_name"), "Legend")
+        track_id = 'trk_deezer_historical_song'
+        key = _get_track_key(track_id)
+        personal = self.test_dir / hashlib.sha256(b'historical_owner').hexdigest()
+        personal.mkdir()
+        witness = personal / (key + '.audio')
+        witness.write_bytes(b'HISTORICAL-PRIVATE-AUDIO')
+        (personal / (key + '.json')).write_text(json.dumps({'track_id': track_id}))
+        self.assertIsNone(_find_globally_cached_track(track_id))
+        self.assertEqual(witness.read_bytes(), b'HISTORICAL-PRIVATE-AUDIO')
+        self.assertFalse((_get_global_cache_dir() / (key + '.audio')).exists())
 
     def test_cross_alias_cache_hit(self):
         """
@@ -357,31 +331,14 @@ class TestGlobalTrackCache(unittest.TestCase):
         asyncio.run(run_endpoint_test())
 
     def test_backfill_from_downloads_dir(self):
-        """Vérifie le backfill automatique direct depuis DOWNLOADS_DIR vers le global cache."""
         import app.services.download_service as ds
-        from unittest.mock import patch
-
-        temp_downloads = self.test_dir / "downloads_mock"
-        temp_downloads.mkdir(parents=True, exist_ok=True)
-
-        track_id = "trk_deezer_777123"
-        mock_file = temp_downloads / f"{track_id}.mp3"
-        content = b"AUDIO_DATA_FROM_LEGACY_DOWNLOADS_DIR"
-        mock_file.write_bytes(content)
-
-        with patch.object(ds, "DOWNLOADS_DIR", temp_downloads):
-            # Le fichier doit être détecté, lié dans _global_cache, et renvoyé instantanément
-            cached = _find_globally_cached_track(track_id)
-            self.assertIsNotNone(cached)
-            cached_audio, meta = cached
-            self.assertTrue(cached_audio.exists())
-            self.assertEqual(cached_audio.read_bytes(), content)
-            self.assertEqual(meta.get("track_id"), track_id)
-
-            # Une deuxième requête doit frapper directement le _global_cache (hit 0s)
-            cached_second = _find_globally_cached_track(track_id)
-            self.assertIsNotNone(cached_second)
-            self.assertEqual(cached_second[0].read_bytes(), content)
+        folder = self.test_dir / 'downloads'
+        folder.mkdir()
+        witness = folder / 'trk_deezer_777123.mp3'
+        witness.write_bytes(b'LEGACY-WITNESS')
+        with patch.object(ds, 'DOWNLOADS_DIR', folder):
+            self.assertIsNone(_find_globally_cached_track('trk_deezer_777123'))
+        self.assertEqual(witness.read_bytes(), b'LEGACY-WITNESS')
 
     def test_is_track_in_global_cache_in_memory(self):
         """Vérifie que is_track_in_global_cache détecte en RAM O(1) les pistes et alias."""
@@ -396,7 +353,9 @@ class TestGlobalTrackCache(unittest.TestCase):
         key = _get_track_key(track_id)
         cache_dir = _get_global_cache_dir()
         audio_file = cache_dir / f"{key}.audio"
-        audio_file.write_bytes(b"TEST_AUDIO_CONTENT")
+        source = self.test_dir / 'source.mp3'
+        source.write_bytes(b'TEST_AUDIO_CONTENT')
+        self.assertTrue(_auto_register_in_sync_files('native_owner', track_id, source))
 
         # Forcer le rafraîchissement
         ds._cached_global_keys_last_refresh = 0.0
@@ -420,8 +379,9 @@ class TestGlobalTrackCache(unittest.TestCase):
         cache_dir = _get_global_cache_dir()
         audio_file = cache_dir / f"{key}.audio"
         json_file = cache_dir / f"{key}.json"
-        audio_file.write_bytes(b"STREAM_AUDIO_BYTES")
-        json_file.write_text(json.dumps({"track_id": track_id, "title": "Ephemeral Song"}), encoding="utf-8")
+        source = self.test_dir / 'source.mp3'
+        source.write_bytes(b'STREAM_AUDIO_BYTES')
+        self.assertTrue(_auto_register_in_sync_files('native_owner', track_id, source, title='Ephemeral Song'))
 
         test_user = AuthenticatedUser(id="user_friend_uuid", token="test_token_123")
         user_personal_dir = _user_dir(test_user.id)
@@ -443,50 +403,21 @@ class TestGlobalTrackCache(unittest.TestCase):
         self.assertFalse(personal_json.exists())
 
     def test_is_track_in_global_cache_by_metadata_doublet(self):
-        """Vérifie que les uploads de pistes locales sont reconnus lors d'une recherche Deezer par Titre + Artiste."""
-        from app.services.download_service import (
-            is_track_in_global_cache,
-            _get_track_key,
-            _get_global_cache_dir,
-        )
-        import app.services.download_service as ds
-
-        # Simuler un upload utilisateur avec un ID local Android
-        local_track_id = "track:local:1000081054"
-        local_key = _get_track_key(local_track_id)
-        cache_dir = _get_global_cache_dir()
-        audio_file = cache_dir / f"{local_key}.audio"
-        json_file = cache_dir / f"{local_key}.json"
-        audio_file.write_bytes(b"LUV_RESVAL_HADES_AUDIO_DATA")
-        json_file.write_text(json.dumps({
-            "track_id": local_track_id,
-            "title": "Hadès",
-            "artist_name": "Luv Resval"
-        }), encoding="utf-8")
-
-        # Forcer le rafraîchissement
-        ds._cached_global_keys_last_refresh = 0.0
-
-        # Recherche Deezer pour "Hades" par "Luv Resval" avec un identifiant Deezer opaque
-        deezer_track_id = "trk_v1:track:deezer:1397669462"
-        deezer_key = _get_track_key(deezer_track_id)
-
-        # Avant matching, la clé Deezer n'existe pas
-        self.assertFalse((cache_dir / f"{deezer_key}.audio").exists())
-
-        # Détection via is_track_in_global_cache avec titre et artiste (accent vs sans accent)
-        found = is_track_in_global_cache(deezer_track_id, title="Hades", artist_name="Luv Resval")
-        self.assertTrue(found)
-
-        # Après matching, l'auto-aliasing a créé le lien vers la clé Deezer pour streaming direct
-        self.assertTrue((cache_dir / f"{deezer_key}.audio").exists())
-        self.assertEqual((cache_dir / f"{deezer_key}.audio").read_bytes(), b"LUV_RESVAL_HADES_AUDIO_DATA")
+        from app.services.download_service import is_track_in_global_cache
+        track = 'track:local:1000081054'
+        folder = self.test_dir / hashlib.sha256(b'private_owner').hexdigest()
+        folder.mkdir()
+        key = _get_track_key(track)
+        (folder / (key + '.audio')).write_bytes(b'PRIVATE-AUDIO')
+        (folder / (key + '.json')).write_text(json.dumps({'track_id': track,
+            'title': 'Song', 'artist_name': 'Artist'}))
+        self.assertFalse(is_track_in_global_cache('trk_deezer_1397669462', title='Song', artist_name='Artist'))
+        self.assertFalse((_get_global_cache_dir() / (_get_track_key('trk_deezer_1397669462') + '.audio')).exists())
 
     def test_client_track_deezer_prefix_alias_resolution(self):
         """Vérifie que le préfixe client Android 'track:deezer:12345' réconcilie avec deezer:12345 et le cache global."""
         from app.core.aura_id_codec import get_track_id_aliases
         from app.services.download_service import (
-            _auto_register_in_sync_files,
             _find_globally_cached_track,
         )
 
@@ -547,8 +478,8 @@ class TestGlobalTrackCache(unittest.TestCase):
         # La recherche globale doit détecter l'invalidité, purger le fichier et renvoyer None (Cache MISS)
         cached = _find_globally_cached_track(track_id)
         self.assertIsNone(cached)
-        self.assertFalse(corrupt_audio.exists())
-        self.assertFalse(corrupt_json.exists())
+        self.assertTrue(corrupt_audio.exists())
+        self.assertTrue(corrupt_json.exists())
 
     @classmethod
     def tearDownClass(cls):

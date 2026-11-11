@@ -1,0 +1,28 @@
+# Render via prepare_sec002_environment.py. Never merge with any existing Compose project.
+name: aura-sec0023-isolated
+services:
+  backend:
+    image: ${AURA_SEC0023_IMAGE:?Set the verified local immutable image ID}
+    pull_policy: never
+    platform: linux/amd64
+    env_file: [./backend.env]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    ports: ["127.0.0.1:18443:8443"]
+    read_only: true
+    tmpfs: [/tmp, /app/downloads, /app/sync_files, /app/updates]
+    volumes:
+      - type: bind
+        source: <APP_SOURCE>
+        target: /app/app
+        read_only: true
+      - ./loopback.crt:/isolated/loopback.crt:ro
+      - ./loopback.key:/isolated/loopback.key:ro
+    entrypoint: []
+    command: [uvicorn, "app.core.operational_logging:create_app", --factory, --host, "0.0.0.0", --port, "8443", --ssl-certfile, /isolated/loopback.crt, --ssl-keyfile, /isolated/loopback.key, --log-config, /app/app/core/security-logging.json]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: "no"

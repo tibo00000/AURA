@@ -428,6 +428,14 @@ Strategie :
 - aucune resolution de conflit canonique n'est definie pour cette entite
 
 ## Regles de deduplication
+- SEC-002 : tous les contrôles ci-dessous sont limités au propriétaire issu du JWT vérifié.
+  La déduplication de B ne retourne jamais son entité à A. Un ID global déjà pris par B
+  ne peut pas devenir une mise à jour ou une réattribution à A.
+- L'historique reste additif, accepte une session absente ; si fournie, elle doit appartenir
+  au même compte. Les événements exigent une session possédée. `started_at` d'une session
+  déjà possédée reste immuable. Les IDs de contexte sont informatifs et ne donnent aucun accès.
+- Un reorder valide tous les items/positions et l'appartenance au même parent avant écriture,
+  puis vérifie à nouveau la version du parent sous verrou dans la transaction SQL.
 - Une operation deja vue via `operation_id` doit repondre `ignored_duplicate`.
 - Une entite additive deja connue via `entity_id` doit etre ignoree sans erreur.
 - Une suppression d'entite deja supprimee repond `ignored_duplicate`.

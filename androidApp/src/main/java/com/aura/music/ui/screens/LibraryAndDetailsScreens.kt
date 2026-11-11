@@ -626,10 +626,8 @@ fun FavoritesScreen(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    var localTracksList by remember { mutableStateOf<List<TrackListRow>?>(null) }
-    LaunchedEffect(repository, refreshTick, refreshToken) {
-        localTracksList = repository.getLikedTracks()
-    }
+    val localTracksList by remember(repository) { repository.observeLikedTracks() }
+        .collectAsState(initial = null)
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null) }
     var pendingDuplicatePrompt by remember { mutableStateOf<AddToPlaylistResult.AlreadyExists?>(null) }
@@ -642,7 +640,6 @@ fun FavoritesScreen(
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             pendingDeleteTrackId?.let { trackId ->
-                localTracksList = localTracksList?.filter { it.id != trackId }
                 scope.launch {
                     repository.removeTrackFromDatabase(trackId)
                     pendingDeleteTrackId = null
@@ -671,6 +668,7 @@ fun FavoritesScreen(
         }
     }
     val cloudFileRepository = appContainer.cloudFileRepository
+    val networkTransfers by cloudFileRepository.networkTransfers.collectAsState()
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
         cloudFileRepository.listCloudFiles().collect { res ->
@@ -727,26 +725,16 @@ fun FavoritesScreen(
             var isBatchDownloading by remember { mutableStateOf(false) }
 
             // Auto-téléchargement persistant dès que l'option est active et que la connectivité est disponible
-            LaunchedEffect(isAutoDownloadFavorites, isOnline) {
+            val isNetworkDownloading = tracks.any { it.id in networkTransfers }
+            LaunchedEffect(repository, isAutoDownloadFavorites, isOnline) {
                 if (isAutoDownloadFavorites && isOnline) {
-                    val toDownload = tracks.filter { it.contentUri.isNullOrBlank() }
-                    if (toDownload.isNotEmpty() && !isBatchDownloading) {
+                    repository.observeLikedTracks().collect { current ->
                         isBatchDownloading = true
                         try {
-                            toDownload.forEach { track ->
-                                try {
-                                    cloudFileRepository.autoDownloadFavoriteTrack(track.id)
-                                } catch (e: kotlinx.coroutines.CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    android.util.Log.e("FavoritesScreen", "Erreur lors du téléchargement auto du favori ${track.id}", e)
-                                }
+                            current.filter { it.contentUri.isNullOrBlank() }.forEach {
+                                cloudFileRepository.autoDownloadFavoriteTrack(it.id)
                             }
-                        } finally {
-                            isBatchDownloading = false
-                            repository.refreshLocalMediaIndex()
-                            refreshTick++
-                        }
+                        } finally { isBatchDownloading = false }
                     }
                 }
             }
@@ -862,8 +850,8 @@ fun FavoritesScreen(
                         // Commutateur de synchronisation Hors-ligne direct avec icône intégrée dans le thumb
                         Switch(
                             checked = isAutoDownloadFavorites,
-                            enabled = !isBatchDownloading && isOnline,
-                            thumbContent = if (isBatchDownloading) {
+                            enabled = isOnline,
+                            thumbContent = if (isNetworkDownloading) {
                                 {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(12.dp),
@@ -890,40 +878,9 @@ fun FavoritesScreen(
                                     )
                                 }
                             },
-                            onCheckedChange = { shouldEnableAutoDownload ->
-                                isAutoDownloadFavorites = shouldEnableAutoDownload
-                                sharedPrefs.edit().putBoolean("auto_download_favorites", shouldEnableAutoDownload).apply()
-                                if (shouldEnableAutoDownload) {
-                                    scope.launch {
-                                        val toDownload = tracks.filter { it.contentUri.isNullOrBlank() }
-                                        if (toDownload.isNotEmpty()) {
-                                            isBatchDownloading = true
-                                            snackbarHostState.showSnackbar("Téléchargement automatique des favoris activé (${toDownload.size} pistes)...")
-                                            try {
-                                                toDownload.forEach { track ->
-                                                    try {
-                                                        cloudFileRepository.autoDownloadFavoriteTrack(track.id)
-                                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                                        throw e
-                                                    } catch (e: Exception) {
-                                                        android.util.Log.e("FavoritesScreen", "Erreur auto-téléchargement favori ${track.id}: ${e.message}", e)
-                                                    }
-                                                }
-                                            } finally {
-                                                isBatchDownloading = false
-                                                repository.refreshLocalMediaIndex()
-                                                refreshTick++
-                                                snackbarHostState.showSnackbar("Favoris synchronisés sur l'appareil !")
-                                            }
-                                        } else {
-                                            snackbarHostState.showSnackbar("Téléchargement automatique des favoris activé !")
-                                        }
-                                    }
-                                } else {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Téléchargement automatique désactivé. Vos morceaux restent sur l'appareil.")
-                                    }
-                                }
+                            onCheckedChange = { enabled ->
+                                sharedPrefs.edit().putBoolean("auto_download_favorites", enabled).apply()
+                                isAutoDownloadFavorites = enabled
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
@@ -953,7 +910,6 @@ fun FavoritesScreen(
                     val onAddToQueueClick = remember(track.id) { { playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) } }
                     val onUnlikeClick = remember(track.id) {
                         {
-                            localTracksList = localTracksList?.filter { it.id != track.id }
                             scope.launch {
                                 repository.toggleLike(track.id, currentlyLiked = true, contextType = "favorites")
                                 refreshTick++
@@ -1164,7 +1120,6 @@ fun FavoritesScreen(
                 val t = trackToDeleteLocal!!
                 trackToDeleteLocal = null
                 if (isPresentInCloud) {
-                    localTracksList = localTracksList?.map { if (it.id == t.id) it.copy(contentUri = null) else it }
                     scope.launch {
                         cloudFileRepository.removeLocalFile(t.id)
                         repository.refreshLocalMediaIndex()
@@ -1174,8 +1129,7 @@ fun FavoritesScreen(
                 } else {
                     val trackId = t.id
                     pendingDeleteTrackId = trackId
-                    localTracksList = localTracksList?.filter { it.id != trackId }
-                    scope.launch {
+                        scope.launch {
                         val pendingIntent = repository.deleteTrack(trackId)
                         if (pendingIntent != null) {
                             try {
@@ -1205,7 +1159,6 @@ fun FavoritesScreen(
             onConfirm = {
                 val t = trackToDeleteFromCloud!!
                 trackToDeleteFromCloud = null
-                localTracksList = localTracksList?.filter { it.id != t.id }
                 scope.launch {
                     cloudFileRepository.deleteSyncFile(t.id).collect { res ->
                         res.onSuccess {

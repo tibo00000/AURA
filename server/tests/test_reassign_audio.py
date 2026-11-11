@@ -32,7 +32,6 @@ from app.services.download_service import (
     DOWNLOADS_DIR,
     DownloadService,
     _auto_register_in_sync_files,
-    _cleanup_orphaned_job_files,
     _find_globally_cached_track,
     _get_global_cache_dir,
     _get_sync_base,
@@ -102,37 +101,17 @@ class TestReassignAudio(unittest.TestCase):
         self.assertFalse(_check_candidates_rate_limit(user_id, limit=15, window_seconds=60.0))
 
     def test_reassign_track_audio_supersedes_and_creates_job(self):
-        """Vérifie que reassign_track_audio passe les anciens jobs à 'superseded' et crée le nouveau job."""
-        service = DownloadService()
-        user_id = "user_reassign_test"
-        track_id = "trk_test_12345"
-
-        with patch("app.services.download_service.supabase") as mock_supabase, \
-             patch("app.services.download_service.asyncio.create_task") as mock_create_task, \
-             patch.object(service, "_run_download_job", new=MagicMock()) as mock_run_job:
-
-            mock_supabase.table().update().eq().in_().execute.return_value = MagicMock(data=[])
-            mock_supabase.table().insert().execute.return_value = MagicMock(data=[])
-
-            async def run_test():
-                return await service.reassign_track_audio(
-                    user_id=user_id,
-                    track_id=track_id,
-                    video_id="new_yt_video_id",
-                    source_hint={"title": "Custom Title"},
-                )
-
-            job = asyncio.run(run_test())
-
-            self.assertEqual(job.status, "queued")
-            self.assertEqual(job.track_id, track_id)
-            self.assertEqual(job.user_id, user_id)
-            self.assertEqual(job.operation_type, "manual_reassign")
-            mock_create_task.assert_called_once()
-            mock_run_job.assert_called_once()
-
-            # Vérifie que les anciens jobs ont été passés à superseded
-            mock_supabase.table("download_jobs").update.assert_called()
+        from tests.test_download_job_security import Database, row, A, B
+        db = Database([row('job_own', A), row('job_foreign', B)])
+        service = DownloadService(supabase_client=db)
+        with patch.object(service, '_start_download_task') as start:
+            job = asyncio.run(service.reassign_track_audio(A, 'trk_shared', 'new_yt_video_id'))
+        self.assertEqual(job.status, 'queued')
+        self.assertEqual(job.user_id, A)
+        self.assertEqual(job.operation_type, 'manual_reassign')
+        self.assertEqual(db.rows[0]['status'], 'superseded')
+        self.assertEqual(db.rows[1]['status'], 'queued')
+        start.assert_called_once()
 
     def test_download_job_defaults_operation_type_for_legacy_rows(self):
         """Les jobs antérieurs à la migration restent des téléchargements standard."""
@@ -150,104 +129,57 @@ class TestReassignAudio(unittest.TestCase):
         self.assertEqual(job.to_dict()["operation_type"], "download")
 
     def test_run_download_job_impl_bypasses_cache_on_manual_reassign(self):
-        """Vérifie que _run_download_job_impl ignore le cache global quand trigger='manual_reassign'."""
-        service = DownloadService()
-        user_id = "user_cache_bypass"
-        track_id = "trk_existing_cached_999"
-
-        # Simuler un fichier déjà présent dans le cache global
-        cache_dir = _get_global_cache_dir()
-        track_key = _get_track_key(track_id)
-        cached_audio = cache_dir / f"{track_key}.audio"
-        cached_audio.write_bytes(b"OLD_AUDIO_CONTENT")
-
-        fake_job = DownloadJob(
-            id="job_bypass_1",
-            user_id=user_id,
-            track_id=track_id,
-            provider_name="youtube",
-            status="queued",
-        )
-
-        with patch("app.services.download_service.supabase") as mock_supabase, \
-             patch.object(service, "_execute_download_workflow") as mock_exec:
-
-            mock_supabase.table().select().eq().execute.return_value = MagicMock(data=[fake_job.to_dict()])
-
-            async def run_test():
-                # Appel avec manual_reassign
-                await service._run_download_job_impl("job_bypass_1", source_hint={"trigger": "manual_reassign"})
-
-            asyncio.run(run_test())
-
-            # _execute_download_workflow DOIT avoir été appelé malgré la présence dans le cache
-            mock_exec.assert_called_once()
+        from tests.test_download_job_security import Database, row
+        from app.services.download_lifecycle import DownloadAttempt
+        job_row = row('job_bypass_1', operation_type='manual_reassign')
+        service = DownloadService(supabase_client=Database([job_row]))
+        attempt = DownloadAttempt(DownloadJob.from_dict(job_row))
+        service._attempts[attempt.job.id] = attempt
+        with patch.object(service, '_execute_download_workflow') as execute, \
+             patch('app.services.download_service._find_globally_cached_track') as cache:
+            asyncio.run(service._run_download_job_impl(attempt, {'resolved_video_id': 'explicit_video'}))
+        execute.assert_awaited_once()
+        cache.assert_not_called()
 
     def test_propagate_reassigned_track_to_all_users(self):
         """Vérifie que _propagate_reassigned_track_to_all_users met à jour les répertoires utilisateurs."""
-        sync_base = _get_sync_base()
-        user_a = sync_base / "user_a"
-        user_b = sync_base / "user_b"
-        user_a.mkdir(parents=True, exist_ok=True)
-        user_b.mkdir(parents=True, exist_ok=True)
-
-        track_id = "trk_shared_123"
-        track_key = _get_track_key(track_id)
-
-        # Créer les anciens fichiers
-        (user_a / f"{track_key}.audio").write_bytes(b"OLD_AUDIO_USER_A")
-        (user_a / f"{track_key}.json").write_text(json.dumps({"title": "Old Title A"}), encoding="utf-8")
-
-        (user_b / f"{track_key}.audio").write_bytes(b"OLD_AUDIO_USER_B")
-        (user_b / f"{track_key}.json").write_text(json.dumps({"title": "Old Title B"}), encoding="utf-8")
-
-        # Fichier nouvellement téléchargé
-        new_audio = self.test_dir / "new_download.mp3"
-        new_audio.write_bytes(b"BRAND_NEW_HIGH_QUALITY_AUDIO")
-
-        _propagate_reassigned_track_to_all_users(
-            track_id=track_id,
-            cached_audio=new_audio,
-            title="New Reassigned Title",
-            artist_name="New Artist",
-        )
-
-        # Vérifier que user_a et user_b ont reçu le nouvel audio
-        self.assertEqual((user_a / f"{track_key}.audio").read_bytes(), b"BRAND_NEW_HIGH_QUALITY_AUDIO")
-        self.assertEqual((user_b / f"{track_key}.audio").read_bytes(), b"BRAND_NEW_HIGH_QUALITY_AUDIO")
-
-        # Vérifier que les métadonnées ont été mises à jour
-        meta_a = json.loads((user_a / f"{track_key}.json").read_text(encoding="utf-8"))
-        self.assertEqual(meta_a.get("title"), "New Reassigned Title")
-        self.assertEqual(meta_a.get("artist_name"), "New Artist")
+        from tests.native_cache_fixture import register_native
+        from app.services.download_service import _link_cached_track_to_user
+        track_id = 'trk_shared_123'
+        old = self.test_dir / 'old.mp3'
+        old.write_bytes(b'ID3-ORIGINAL-NATIVE-AUDIO')
+        self.assertTrue(register_native('user_a', track_id, old))
+        trusted = _find_globally_cached_track(track_id)
+        self.assertTrue(_link_cached_track_to_user('user_b', track_id, *trusted))
+        private = _get_sync_base() / hashlib.sha256(b'private_owner').hexdigest()
+        private.mkdir()
+        key = _get_track_key(track_id)
+        (private / (key + '.audio')).write_bytes(b'PRIVATE-UPLOAD-WITNESS')
+        (private / (key + '.json')).write_text('{}')
+        new_audio = self.test_dir / 'new.mp3'
+        new_audio.write_bytes(b'ID3-BRAND-NEW-HIGH-QUALITY-AUDIO')
+        self.assertTrue(register_native('user_a', track_id, new_audio, title='New Reassigned Title', artist_name='New Artist'))
+        _propagate_reassigned_track_to_all_users(track_id, _find_globally_cached_track(track_id)[0],
+                                               title='New Reassigned Title', artist_name='New Artist')
+        for user in ('user_a', 'user_b'):
+            folder = _get_sync_base() / hashlib.sha256(user.encode()).hexdigest()
+            self.assertEqual((folder / (key + '.audio')).read_bytes(), new_audio.read_bytes())
+            self.assertEqual(json.loads((folder / (key + '.json')).read_text())['title'], 'New Reassigned Title')
+        self.assertEqual((private / (key + '.audio')).read_bytes(), b'PRIVATE-UPLOAD-WITNESS')
 
     def test_cleanup_orphaned_job_files(self):
-        """Vérifie la suppression des fichiers temporaires résiduels job_{old_id}.mp3."""
-        downloads_dir = DOWNLOADS_DIR
-        downloads_dir.mkdir(parents=True, exist_ok=True)
+        from tests.test_download_job_security import Database, row, A
+        keep_id, old_id = 'job_keep_active', 'job_old_to_delete'
+        db = Database([row(keep_id, A, 'succeeded'), row(old_id, A, 'failed')])
+        service = DownloadService(supabase_client=db)
+        old_file = DOWNLOADS_DIR / (old_id + '.mp3')
+        keep_file = DOWNLOADS_DIR / (keep_id + '.mp3')
+        old_file.write_bytes(b'OLD_TEMP')
+        keep_file.write_bytes(b'KEEP_THIS')
+        asyncio.run(service._cleanup_orphaned_job_files(DownloadJob.from_dict(db.rows[0])))
+        self.assertFalse(old_file.exists())
+        self.assertTrue(keep_file.exists())
 
-        track_id = "trk_clean_orphans"
-        old_job_id = "job_old_to_delete"
-        keep_job_id = "job_keep_active"
-
-        # Créer des fichiers dans downloads
-        old_file = downloads_dir / f"{old_job_id}.mp3"
-        old_part = downloads_dir / f"{old_job_id}.part"
-        keep_file = downloads_dir / f"{keep_job_id}.mp3"
-        old_file.write_bytes(b"OLD_TEMP")
-        old_part.write_bytes(b"OLD_PART")
-        keep_file.write_bytes(b"KEEP_THIS")
-
-        with patch("app.services.download_service.supabase") as mock_supabase:
-            mock_supabase.table().select().eq().execute.return_value = MagicMock(
-                data=[{"id": old_job_id}, {"id": keep_job_id}]
-            )
-
-            _cleanup_orphaned_job_files(track_id=track_id, keep_job_id=keep_job_id)
-
-            self.assertFalse(old_file.exists())
-            self.assertFalse(old_part.exists())
-            self.assertTrue(keep_file.exists())
 
 
 if __name__ == "__main__":

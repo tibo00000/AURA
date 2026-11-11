@@ -16,6 +16,11 @@
 - `APP_DEBUG` : false en production ; le Compose de confinement impose false sans modifier `.env`.
 - `ENABLE_STARTUP_RECOVERY`, `ENABLE_CACHE_BACKFILL` : routines d'écriture au démarrage ; le
   confinement les suspend explicitement, leur reprise demande une décision séparée.
+- `UPLOAD_MAX_FILE_BYTES` : SEC-005,50Mio par défaut, octets audio comptés pendant la réception.
+  L'enveloppe multipart et la limite Caddy doivent autoriser1Mio de plus ; pas un quota total.
+- `UPLOAD_MIN_FREE_BYTES` :10Gio par défaut ; `UPLOAD_MIN_FREE_RATIO` :0.10 par défaut.
+  La réserve vaut le maximum des deux sur le volume réel, après réservations concurrentes.
+  Exemple `server/.env.example`, décisions et limites dans `security-lot5-local-validation.md`.
 
 ## Sélecteurs Compose opérationnels
 

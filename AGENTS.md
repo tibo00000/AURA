@@ -69,6 +69,20 @@ Prefere `val` et des data classes immuables pour les modeles UI.
 - Utilise des messages de commit clairs et descriptifs.
 - Demande toujours l'autorisation avant un `git push`.
 
+### Git Branching Workflow
+- **`main`** : branche stable représentant le code validé destiné à la production.
+- **Branches de travail** (créées depuis `main`) :
+  - `feat/<nom>` : nouvelles fonctionnalités.
+  - `fix/<nom>` : corrections de bugs.
+  - `perf/<nom>` : optimisations de performance.
+  - `security/<nom>` : correctifs de sécurité.
+- **Cycle par évolution** :
+  1. Créer une branche dédiée depuis `main`.
+  2. Développer et committer sur cette branche.
+  3. Exécuter les tests ciblés sur les composants impactés.
+  4. Fusionner dans `main` une fois la modification validée (les Pull Requests sont facultatives pour les travaux personnels, tout en conservant les protections GitHub et la CI existantes).
+  5. Ne supprimer une branche terminée qu'après accord explicite si elle contient encore des travaux utiles (pas de GitFlow ni de branches `release` permanentes).
+
 ## Delivery And Deployment Impact
 - A la fin de chaque changement, indiquer explicitement les actions externes requises avant que le changement soit effectif : redéploiement backend, migration de base de données, mise à jour de configuration, build ou installation client.
 - Nommer les artefacts précis à appliquer (par exemple une migration SQL) sans jamais afficher de secret. Si aucune action externe n'est requise, l'indiquer explicitement.

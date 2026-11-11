@@ -24,7 +24,11 @@ async def lifespan(app: FastAPI):
             download_service._backfill_global_cache()
         except Exception as e:
             logger.warning("Startup global cache backfill failed: %s", e)
-    yield
+    try:
+        yield
+    finally:
+        from app.api.routes.downloads import download_service
+        await download_service.shutdown()
 
 
 app = FastAPI(
@@ -52,6 +56,7 @@ app.add_middleware(
         "Content-Length",
         "ETag",
         "Content-Type",
+        "X-Aura-Upload-Warnings",
     ],
 )
 
