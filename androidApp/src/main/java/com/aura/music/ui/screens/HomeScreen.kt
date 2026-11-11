@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
@@ -33,7 +34,6 @@ import com.aura.music.data.local.AlbumBrowseRow
 import com.aura.music.data.local.ArtistBrowseRow
 import com.aura.music.data.local.PlaylistListRow
 import com.aura.music.data.local.TrackListRow
-import com.aura.music.data.repository.LibraryDashboardSummary
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.theme.*
@@ -42,6 +42,10 @@ import androidx.compose.material.icons.rounded.Favorite
 import com.aura.music.ui.components.ShimmerTrackList
 import com.aura.music.ui.components.ShimmerCard
 import com.aura.music.ui.components.rememberShimmerBrush
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 
 sealed interface ResumeItem {
     object Favorites : ResumeItem
@@ -49,6 +53,13 @@ sealed interface ResumeItem {
     data class Album(val album: AlbumBrowseRow) : ResumeItem
     data class Artist(val artist: ArtistBrowseRow) : ResumeItem
 }
+
+@Immutable
+private data class HomeScreenData(
+    val resumeItems: List<ResumeItem>,
+    val likedCount: Int,
+    val recentDownloadedTracks: List<TrackListRow>,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,33 +76,36 @@ fun HomeScreen(
     onOpenCloudSync: () -> Unit,
     onOpenFavorites: () -> Unit,
 ) {
-    val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken) {
-        value = repository.getLibraryDashboardSummary()
+    val hasAudioPermission = remember(repository, refreshToken) {
+        repository.hasAudioPermission()
     }
-    val recentDownloadedTracksState = produceState<List<TrackListRow>?>(initialValue = null, repository, refreshToken) {
-        value = repository.getDownloadedTracks().take(4)
-    }
-    val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken) {
-        value = repository.getPlaylists().take(8)
-    }
-    val albumsState = produceState(initialValue = emptyList<AlbumBrowseRow>(), repository, refreshToken) {
-        value = repository.getBrowseAlbums(limit = 8)
-    }
-    val artistsState = produceState(initialValue = emptyList<ArtistBrowseRow>(), repository, refreshToken) {
-        value = repository.getBrowseArtists(limit = 8)
-    }
-    val likedCountState = produceState(initialValue = 0, repository, refreshToken) {
-        value = repository.getLikedTracks().size
-    }
+    val homeDataState = produceState<HomeScreenData?>(initialValue = null, repository, refreshToken) {
+        value = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val playlistsDeferred = async { repository.getPlaylists(limit = 8) }
+                val albumsDeferred = async { repository.getBrowseAlbums(limit = 8) }
+                val artistsDeferred = async { repository.getBrowseArtists(limit = 8) }
+                val likedCountDeferred = async { repository.getLikedTrackCount() }
+                val recentTracksDeferred = async { repository.getRecentDownloadedTracks(limit = 4) }
 
-    val resumeItems = remember(playlistsState.value, albumsState.value, artistsState.value) {
-        val items = mutableListOf<ResumeItem>()
-        items.add(ResumeItem.Favorites)
-        playlistsState.value.forEach { items.add(ResumeItem.Playlist(it)) }
-        albumsState.value.forEach { items.add(ResumeItem.Album(it)) }
-        artistsState.value.forEach { items.add(ResumeItem.Artist(it)) }
-        items
+                val playlists = playlistsDeferred.await()
+                val albums = albumsDeferred.await()
+                val artists = artistsDeferred.await()
+                val resumeItems = buildList(1 + playlists.size + albums.size + artists.size) {
+                    add(ResumeItem.Favorites)
+                    playlists.forEach { add(ResumeItem.Playlist(it)) }
+                    albums.forEach { add(ResumeItem.Album(it)) }
+                    artists.forEach { add(ResumeItem.Artist(it)) }
+                }
+                HomeScreenData(
+                    resumeItems = resumeItems,
+                    likedCount = likedCountDeferred.await(),
+                    recentDownloadedTracks = recentTracksDeferred.await(),
+                )
+            }
+        }
     }
+    val homeData = homeDataState.value
 
     RouteScaffold(
         topBar = {
@@ -130,14 +144,14 @@ fun HomeScreen(
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
             item {
-                HomeHeader(summaryState.value, onRequestAudioPermission)
+                HomeHeader(hasAudioPermission = hasAudioPermission, onRequestAudioPermission = onRequestAudioPermission)
             }
             
             item {
                 ResumeRail(
-                    items = resumeItems,
-                    likedCount = likedCountState.value,
-                    isLoading = summaryState.value == null,
+                    items = homeData?.resumeItems ?: emptyList(),
+                    likedCount = homeData?.likedCount ?: 0,
+                    isLoading = homeData == null,
                     onOpenPlaylist = onOpenPlaylist,
                     onOpenAlbum = onOpenAlbum,
                     onOpenArtist = onOpenArtist,
@@ -147,7 +161,7 @@ fun HomeScreen(
             
             item {
                 RecentTracksSection(
-                    tracks = recentDownloadedTracksState.value, 
+                    tracks = homeData?.recentDownloadedTracks, 
                     onPlayTrackInList = onPlayTrackInList
                 )
             }
@@ -162,12 +176,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(summary: LibraryDashboardSummary?, onRequestAudioPermission: () -> Unit) {
+private fun HomeHeader(hasAudioPermission: Boolean, onRequestAudioPermission: () -> Unit) {
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (summary != null && !summary.hasAudioPermission) {
+        if (!hasAudioPermission) {
             Button(
                 onClick = onRequestAudioPermission, 
                 colors = ButtonDefaults.buttonColors(containerColor = BlazeOrange, contentColor = TextOnAccent)

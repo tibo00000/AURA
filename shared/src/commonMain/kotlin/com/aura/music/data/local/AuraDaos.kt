@@ -578,6 +578,15 @@ interface TrackDao {
 
     @Query(
         """
+        SELECT COUNT(*)
+        FROM tracks
+        INNER JOIN track_likes ON track_likes.track_id = tracks.id
+        """,
+    )
+    suspend fun getLikedTrackCount(): Int
+
+    @Query(
+        """
         SELECT
             tracks.id AS id,
             tracks.primary_artist_id AS artist_id,
@@ -644,6 +653,30 @@ interface TrackDao {
         """
     )
     suspend fun getDownloadedTracks(): List<TrackListRow>
+
+    @Query(
+        """
+        SELECT
+            tracks.id AS id,
+            tracks.primary_artist_id AS artist_id,
+            tracks.album_id AS album_id,
+            tracks.title AS title,
+            tracks.display_artist_name AS artist_name,
+            tracks.display_album_title AS album_title,
+            track_media_links.content_uri AS content_uri,
+            tracks.duration_ms AS duration_ms,
+            tracks.cover_uri AS cover_uri,
+            tracks.is_liked AS is_liked,
+            tracks.created_at AS created_at,
+            tracks.updated_at AS updated_at
+        FROM tracks
+        LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
+        WHERE track_media_links.content_uri IS NOT NULL AND track_media_links.content_uri != ''
+        ORDER BY tracks.updated_at DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getRecentDownloadedTracks(limit: Int): List<TrackListRow>
 }
 
 @Dao
@@ -690,6 +723,23 @@ interface PlaylistDao {
         """,
     )
     suspend fun getPlaylists(): List<PlaylistListRow>
+
+    @Query(
+        """
+        SELECT
+            playlists.id AS id,
+            playlists.name AS name,
+            playlists.is_pinned AS is_pinned,
+            COUNT(playlist_items.id) AS item_count,
+            playlists.updated_at AS updated_at
+        FROM playlists
+        LEFT JOIN playlist_items ON playlist_items.playlist_id = playlists.id
+        GROUP BY playlists.id
+        ORDER BY is_pinned DESC, updated_at DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getPlaylists(limit: Int): List<PlaylistListRow>
 
     @Query(
         """

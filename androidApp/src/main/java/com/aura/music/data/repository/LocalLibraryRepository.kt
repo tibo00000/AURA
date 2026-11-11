@@ -200,30 +200,35 @@ class LocalLibraryRepository(
         }
     }
 
-    suspend fun getTrackCount(): Int = database.trackDao().getTrackCount()
+    fun hasAudioPermission(): Boolean = mediaStoreAudioDataSource.hasReadPermission()
 
-    suspend fun getLibraryDashboardSummary(): LibraryDashboardSummary = coroutineScope {
-        val hasPermission = mediaStoreAudioDataSource.hasReadPermission()
-        val roomTrackCountDeferred = async { database.trackDao().getTrackCount() }
-        val playlistCountDeferred = async { database.playlistDao().getPlaylistCount() }
-        val recentSearchCountDeferred = async { database.recentSearchDao().getRecentSearchCount() }
-        val snapshotDeferred = async { database.playbackSnapshotDao().getActiveSnapshot() }
-        val mediaCountDeferred = async {
-            if (hasPermission) {
-                mediaStoreAudioDataSource.getLocalAudioFiles().size
-            } else {
-                0
+    suspend fun getTrackCount(): Int =
+        withContext(Dispatchers.IO) { database.trackDao().getTrackCount() }
+
+    suspend fun getLibraryDashboardSummary(): LibraryDashboardSummary = withContext(Dispatchers.IO) {
+        coroutineScope {
+            val hasPermission = mediaStoreAudioDataSource.hasReadPermission()
+            val roomTrackCountDeferred = async { database.trackDao().getTrackCount() }
+            val playlistCountDeferred = async { database.playlistDao().getPlaylistCount() }
+            val recentSearchCountDeferred = async { database.recentSearchDao().getRecentSearchCount() }
+            val snapshotDeferred = async { database.playbackSnapshotDao().getActiveSnapshot() }
+            val mediaCountDeferred = async {
+                if (hasPermission) {
+                    mediaStoreAudioDataSource.getLocalAudioFiles().size
+                } else {
+                    0
+                }
             }
-        }
 
-        LibraryDashboardSummary(
-            hasAudioPermission = hasPermission,
-            roomTrackCount = roomTrackCountDeferred.await(),
-            mediaStoreTrackCount = mediaCountDeferred.await(),
-            playlistCount = playlistCountDeferred.await(),
-            recentSearchCount = recentSearchCountDeferred.await(),
-            activeSnapshot = snapshotDeferred.await(),
-        )
+            LibraryDashboardSummary(
+                hasAudioPermission = hasPermission,
+                roomTrackCount = roomTrackCountDeferred.await(),
+                mediaStoreTrackCount = mediaCountDeferred.await(),
+                playlistCount = playlistCountDeferred.await(),
+                recentSearchCount = recentSearchCountDeferred.await(),
+                activeSnapshot = snapshotDeferred.await(),
+            )
+        }
     }
 
     suspend fun getRecentTracks(limit: Int = 12): List<TrackListRow> =
@@ -278,11 +283,17 @@ class LocalLibraryRepository(
 
     fun observeLikedTracks() = database.trackDao().getLikedTracksFlow()
 
+    suspend fun getLikedTrackCount(): Int =
+        withContext(Dispatchers.IO) { database.trackDao().getLikedTrackCount() }
+
     suspend fun getLikedTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getLikedTracks() }
 
     suspend fun getDownloadedTracks(): List<TrackListRow> =
         withContext(Dispatchers.IO) { database.trackDao().getDownloadedTracks() }
+
+    suspend fun getRecentDownloadedTracks(limit: Int = 4): List<TrackListRow> =
+        withContext(Dispatchers.IO) { database.trackDao().getRecentDownloadedTracks(limit) }
 
     suspend fun searchLocalTracks(query: String, limit: Int = 12): List<TrackListRow> =
         withContext(Dispatchers.Default) {
@@ -391,6 +402,9 @@ class LocalLibraryRepository(
 
     suspend fun getPlaylists(): List<PlaylistListRow> =
         withContext(Dispatchers.IO) { database.playlistDao().getPlaylists() }
+
+    suspend fun getPlaylists(limit: Int): List<PlaylistListRow> =
+        withContext(Dispatchers.IO) { database.playlistDao().getPlaylists(limit) }
 
     suspend fun getPlaylistCoverPreviews(playlistId: String): List<String> =
         withContext(Dispatchers.IO) { database.playlistDao().getPlaylistCoverPreviews(playlistId) }

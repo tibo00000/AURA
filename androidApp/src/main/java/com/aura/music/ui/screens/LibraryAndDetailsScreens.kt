@@ -208,8 +208,8 @@ fun LibraryScreen(
     val cloudFiles = cloudFilesState.value
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val summaryState = produceState<LibraryDashboardSummary?>(initialValue = null, repository, refreshToken, refreshTick) {
-        value = repository.getLibraryDashboardSummary()
+    val trackCountState = produceState<Int?>(initialValue = null, repository, refreshToken, refreshTick) {
+        value = repository.getTrackCount()
     }
     val playlistsState = produceState(initialValue = emptyList<PlaylistListRow>(), repository, refreshToken, refreshTick) {
         value = repository.getPlaylists()
@@ -218,7 +218,7 @@ fun LibraryScreen(
         value = repository.getBrowseArtists(8)
     }
     val favoritesCountState = produceState(initialValue = 0, repository, refreshToken, refreshTick) {
-        value = repository.getLikedTracks().size
+        value = repository.getLikedTrackCount()
     }
     var query by remember { mutableStateOf("") }
     var trackToEditMetadata by remember { mutableStateOf<TrackListRow?>(null) }
@@ -291,7 +291,7 @@ fun LibraryScreen(
 
             if (!isSearchActive) {
                 item {
-                    if (summaryState.value == null) {
+                    if (trackCountState.value == null) {
                         ShimmerGrid(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             rowCount = 1,
@@ -305,7 +305,7 @@ fun LibraryScreen(
                                 .padding(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            LibraryGridItem("Titres", "${summaryState.value?.roomTrackCount ?: 0} morceaux", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
+                            LibraryGridItem("Titres", "${trackCountState.value ?: 0} morceaux", Icons.Rounded.MusicNote, onOpenTracks, Modifier.weight(1f))
                             LibraryGridItem("Favoris", "${favoritesCountState.value} favoris", Icons.Rounded.Favorite, onOpenFavorites, Modifier.weight(1f))
                         }
                     }
