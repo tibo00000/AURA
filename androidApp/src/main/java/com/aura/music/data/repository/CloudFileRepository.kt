@@ -14,12 +14,15 @@ import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.SyncedFileResponseData
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -47,14 +50,19 @@ class CloudFileRepository(
     private val context: Context,
     private val downloadRepositoryProvider: (() -> DownloadRepository)? = null,
     private val authTokenProvider: () -> String = { com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader() },
+    private val authSessionManagerProvider: () -> com.aura.music.core.AuthSessionManager = { com.aura.music.core.AuthSessionManager.getInstance(context) },
 ) {
     companion object {
         private const val TAG = "CloudFileRepository"
     }
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var ongoingRefreshDeferred: Deferred<Unit>? = null
     private val refreshLock = Any()
+    private val reconcileMutex = Mutex()
+    private var ongoingFetchDeferred: CompletableDeferred<Result<List<SyncedFileResponseData>>>? = null
+    private var fetchGeneration: Long = 0L
+    private var cachedScope: com.aura.music.core.AuthSessionManager.Scope? = null
+    private var hasCachedCloudFiles: Boolean = false
 
     private val inFlightAutoDownloads = ConcurrentHashMap.newKeySet<String>()
     val inFlightTrackIds: Set<String> get() = inFlightAutoDownloads
@@ -70,16 +78,45 @@ class CloudFileRepository(
     private val _syncedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val syncedTrackIds = _syncedTrackIds.asStateFlow()
 
-    private val _cachedCloudFiles = MutableStateFlow<List<com.aura.music.data.network.SyncedFileResponseData>>(emptyList())
+    private val _cachedCloudFiles = MutableStateFlow<List<SyncedFileResponseData>>(emptyList())
     val cachedCloudFiles = _cachedCloudFiles.asStateFlow()
 
-    fun getCachedCloudFile(trackId: String): com.aura.music.data.network.SyncedFileResponseData? {
+    init {
+        repositoryScope.launch {
+            runCatching { authSessionManagerProvider() }.getOrNull()?.sessionScope?.collect { newScope ->
+                synchronized(refreshLock) {
+                    syncCacheScopeLocked(newScope)
+                }
+            }
+        }
+    }
+
+    private fun syncCacheScopeLocked(currentScope: com.aura.music.core.AuthSessionManager.Scope?) {
+        if (currentScope != cachedScope) {
+            _syncedTrackIds.value = emptySet()
+            _cachedCloudFiles.value = emptyList()
+            hasCachedCloudFiles = false
+            cachedScope = currentScope
+            ongoingFetchDeferred = null
+        }
+    }
+
+    private fun ensureScopeCurrent() {
+        val currentScope = runCatching { authSessionManagerProvider().sessionScope.value }.getOrNull()
+        synchronized(refreshLock) {
+            syncCacheScopeLocked(currentScope)
+        }
+    }
+
+    fun getCachedCloudFile(trackId: String): SyncedFileResponseData? {
+        ensureScopeCurrent()
         val list = _cachedCloudFiles.value
         return list.firstOrNull { it.trackId == trackId }
             ?: list.firstOrNull { com.aura.music.ui.screens.isDeezerTrackMatch(it.trackId, trackId) }
     }
 
     fun isCloudTrackSynced(trackId: String): Boolean {
+        ensureScopeCurrent()
         val ids = _syncedTrackIds.value
         if (ids.contains(trackId)) return true
         val cleanId = trackId.removePrefix("deezer:").removePrefix("ytm:")
@@ -88,189 +125,233 @@ class CloudFileRepository(
         }
     }
 
-    suspend fun refreshSyncedTrackIds() {
-        val deferred = synchronized(refreshLock) {
-            val existing = ongoingRefreshDeferred
-            if (existing != null && existing.isActive) {
-                existing
-            } else {
-                val newDeferred = repositoryScope.async {
-                    try {
-                        doRefreshSyncedTrackIds()
-                    } finally {
-                        synchronized(refreshLock) {
-                            if (ongoingRefreshDeferred === this) {
-                                ongoingRefreshDeferred = null
-                            }
-                        }
+    suspend fun getOrFetchCloudFiles(forceRefresh: Boolean = false): Result<List<SyncedFileResponseData>> {
+        var forceThresholdGen: Long? = null
+
+        while (true) {
+            val authManager = runCatching { authSessionManagerProvider() }.getOrNull()
+            val requestScope = authManager?.sessionScope?.value
+            if (authManager != null && !authManager.isLoggedIn.value) {
+                synchronized(refreshLock) {
+                    syncCacheScopeLocked(requestScope)
+                    _syncedTrackIds.value = emptySet()
+                    _cachedCloudFiles.value = emptyList()
+                    hasCachedCloudFiles = false
+                }
+                return Result.success(emptyList())
+            }
+
+            var joinExisting: Deferred<Result<List<SyncedFileResponseData>>>? = null
+            var startedByMe: CompletableDeferred<Result<List<SyncedFileResponseData>>>? = null
+            var joinedGen = 0L
+
+            synchronized(refreshLock) {
+                syncCacheScopeLocked(requestScope)
+                val stillNeedsForce = forceRefresh &&
+                    (forceThresholdGen == null || fetchGeneration <= forceThresholdGen!!)
+                if (!stillNeedsForce && hasCachedCloudFiles) {
+                    return Result.success(_cachedCloudFiles.value)
+                }
+
+                val existing = ongoingFetchDeferred
+                if (existing != null && existing.isActive) {
+                    joinedGen = fetchGeneration
+                    if (stillNeedsForce && forceThresholdGen == null) {
+                        forceThresholdGen = joinedGen
+                    }
+                    joinExisting = existing
+                } else {
+                    fetchGeneration += 1L
+                    val created = CompletableDeferred<Result<List<SyncedFileResponseData>>>()
+                    ongoingFetchDeferred = created
+                    startedByMe = created
+                }
+            }
+
+            if (joinExisting != null) {
+                val res = joinExisting!!.await()
+                val currentAuthScope = runCatching { authSessionManagerProvider().sessionScope.value }.getOrNull()
+                if (currentAuthScope != requestScope) {
+                    // Scope changed while waiting; loop to observe or fetch for the new session.
+                    forceThresholdGen = null
+                    continue
+                }
+                val mustFollowUp = forceRefresh &&
+                    (forceThresholdGen != null && joinedGen <= forceThresholdGen!!)
+                if (!mustFollowUp) {
+                    return res
+                }
+                // A forced refresh arrived while an older fetch was in-flight; loop so a post-threshold fetch executes.
+                continue
+            }
+
+            val deferred = startedByMe!!
+            val result = try {
+                doFetchAndReconcileCloudFiles(requestScope)
+            } catch (e: CancellationException) {
+                synchronized(refreshLock) {
+                    if (ongoingFetchDeferred === deferred) {
+                        ongoingFetchDeferred = null
                     }
                 }
-                ongoingRefreshDeferred = newDeferred
-                newDeferred
+                deferred.cancel(e)
+                throw e
+            } catch (t: Throwable) {
+                Result.failure(t)
+            } finally {
+                synchronized(refreshLock) {
+                    if (ongoingFetchDeferred === deferred) {
+                        ongoingFetchDeferred = null
+                    }
+                }
             }
-        }
-        try {
-            deferred.await()
-        } catch (e: CancellationException) {
-            throw e
+            deferred.complete(result)
+            return result
         }
     }
 
-    private suspend fun doRefreshSyncedTrackIds() {
-        val authManager = com.aura.music.core.AuthSessionManager.getInstance(context)
-        if (!authManager.isLoggedIn.value) {
-            _syncedTrackIds.value = emptySet()
-            _cachedCloudFiles.value = emptyList()
-            return
+    suspend fun refreshSyncedTrackIds() {
+        val force = synchronized(refreshLock) {
+            ongoingFetchDeferred?.isActive != true
         }
+        getOrFetchCloudFiles(forceRefresh = force)
+    }
+
+    private suspend fun doFetchAndReconcileCloudFiles(
+        requestScope: com.aura.music.core.AuthSessionManager.Scope?
+    ): Result<List<SyncedFileResponseData>> = withContext(Dispatchers.IO) {
+        val authManager = runCatching { authSessionManagerProvider() }.getOrNull()
+        if (authManager != null && (!authManager.isLoggedIn.value || authManager.sessionScope.value != requestScope)) {
+            synchronized(refreshLock) {
+                syncCacheScopeLocked(authManager.sessionScope.value)
+            }
+            return@withContext Result.success(emptyList())
+        }
+
         try {
             val response = apiService.listSyncFiles(getAuthToken())
-            val data = response.data
-            if (response.error == null && data != null) {
-                _syncedTrackIds.value = data.items.map { it.trackId }.toSet()
-                _cachedCloudFiles.value = data.items
-                reconcileCloudTracksWithDatabase(data.items)
-                Log.i(TAG, "Refreshed synced track IDs: ${_syncedTrackIds.value.size} tracks")
+            val postNetworkAuth = runCatching { authSessionManagerProvider() }.getOrNull()
+            if (postNetworkAuth != null && (!postNetworkAuth.isLoggedIn.value || postNetworkAuth.sessionScope.value != requestScope)) {
+                Log.i(TAG, "Ignoring cloud file list response: auth session changed during request")
+                synchronized(refreshLock) {
+                    syncCacheScopeLocked(postNetworkAuth.sessionScope.value)
+                }
+                return@withContext Result.success(emptyList())
             }
+
+            val data = response.data
+            if (response.error != null || data == null) {
+                val errorMsg = response.error?.message ?: "Erreur inconnue de l'API cloud list"
+                Log.w(TAG, "Failed to fetch cloud files: $errorMsg")
+                return@withContext Result.failure(Exception(errorMsg))
+            }
+
+            val items = data.items
+            var scopeRemainsCurrent = true
+            synchronized(refreshLock) {
+                val liveScope = runCatching { authSessionManagerProvider().sessionScope.value }.getOrNull()
+                if (authManager != null && (!authManager.isLoggedIn.value || liveScope != requestScope)) {
+                    syncCacheScopeLocked(liveScope)
+                    scopeRemainsCurrent = false
+                } else {
+                    cachedScope = requestScope
+                    _syncedTrackIds.value = items.map { it.trackId }.toSet()
+                    _cachedCloudFiles.value = items
+                    hasCachedCloudFiles = true
+                }
+            }
+            if (!scopeRemainsCurrent) {
+                return@withContext Result.success(emptyList())
+            }
+
+            reconcileCloudTracksWithDatabase(items)
+            Log.i(TAG, "Refreshed synced track IDs: ${items.size} tracks")
+            Result.success(items)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            Log.e(TAG, "Failed to refresh synced track IDs", e)
+            Log.e(TAG, "Failed to refresh cloud files", e)
+            Result.failure(e)
         }
     }
 
-    suspend fun reconcileCloudTracksWithDatabase(items: List<com.aura.music.data.network.SyncedFileResponseData>) = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        try {
-            val serverCloudIds = items.map { it.trackId }.toSet()
+    suspend fun reconcileCloudTracksWithDatabase(items: List<SyncedFileResponseData>) = withContext(Dispatchers.IO) {
+        reconcileMutex.withLock {
+            val now = System.currentTimeMillis()
+            try {
+                val serverCloudIds = items.map { it.trackId }.toSet()
 
-            // 1. Purge any orphan cloud-only tracks from Room that are no longer on the Cloud server
-            val allTracks = database.trackDao().getAllTracks()
-            val activeJobTrackIds = try {
-                database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
-            } catch (e: Exception) {
-                emptySet()
-            }
-            val playlistTrackIds = try {
-                database.playlistDao().getAllPlaylistTrackIds().toSet()
-            } catch (e: Exception) {
-                emptySet()
-            }
-            val orphanIds = allTracks.filter { track ->
-                track.contentUri.isNullOrBlank() &&
-                track.id !in serverCloudIds &&
-                track.id !in activeJobTrackIds &&
-                track.id !in playlistTrackIds &&
-                !track.isLiked &&
-                !serverCloudIds.any { com.aura.music.ui.screens.isDeezerTrackMatch(it, track.id) }
-            }.map { it.id }
-            if (orphanIds.isNotEmpty()) {
-                database.trackDao().deleteTracksByIds(orphanIds)
-                Log.i(TAG, "Purged ${orphanIds.size} orphan Cloud tracks from Room: $orphanIds")
-            }
+                // 1. Purge any orphan cloud-only tracks from Room that are no longer on the Cloud server
+                val allTracks = database.trackDao().getAllTracks()
+                val activeJobTrackIds = try {
+                    database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
+                } catch (e: Exception) {
+                    emptySet()
+                }
+                val playlistTrackIds = try {
+                    database.playlistDao().getAllPlaylistTrackIds().toSet()
+                } catch (e: Exception) {
+                    emptySet()
+                }
 
-            // 2. Reconcile / insert missing Cloud tracks
-            for (item in items) {
-                val existingTrack = database.trackDao().getRawTrackById(item.trackId)
-                if (existingTrack == null) {
-                    val fileTitle = item.title ?: "Piste Cloud ${item.trackId}"
-                    val artist = item.artistName ?: "Artiste Inconnu"
-                    val album = item.albumTitle ?: "Album Inconnu"
-                    val duration = item.durationMs ?: 0L
-                    val artistId = item.artistId
-                    val albumId = item.albumId
+                val candidateOrphanIds = allTracks.filter { track ->
+                    track.contentUri.isNullOrBlank() &&
+                    track.id !in serverCloudIds &&
+                    track.id !in activeJobTrackIds &&
+                    track.id !in playlistTrackIds &&
+                    !track.isLiked &&
+                    !serverCloudIds.any { com.aura.music.ui.screens.isDeezerTrackMatch(it, track.id) }
+                }.map { it.id }
 
-                    if (artistId != null) {
-                        val placeholderArtist = com.aura.music.data.local.ArtistEntity(
-                            id = artistId,
-                            name = artist,
-                            normalizedName = artist.lowercase().trim(),
-                            pictureUri = item.coverUri,
-                            artworkOrigin = null,
-                            artworkLastResolvedAt = null,
-                            summary = null,
-                            createdAt = now,
-                            updatedAt = now
-                        )
-                        database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
-                    }
-
-                    if (albumId != null) {
-                        val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
-                            id = albumId,
-                            primaryArtistId = artistId,
-                            title = album,
-                            normalizedTitle = album.lowercase().trim(),
-                            coverUri = item.coverUri,
-                            artworkOrigin = null,
-                            artworkLastResolvedAt = null,
-                            releaseDate = null,
-                            trackCount = null,
-                            createdAt = now,
-                            updatedAt = now
-                        )
-                        database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
-                    }
-
-                    val newTrack = com.aura.music.data.local.TrackEntity(
-                        id = item.trackId,
-                        primaryArtistId = artistId,
-                        albumId = albumId,
-                        title = fileTitle,
-                        normalizedTitle = fileTitle.lowercase().trim(),
-                        displayArtistName = artist,
-                        displayAlbumTitle = album,
-                        durationMs = duration,
-                        coverUri = item.coverUri,
-                        canonicalAudioSourceType = "cloud",
-                        isLiked = false,
-                        isDownloadedByAura = false,
-                        isExplicit = false,
-                        popularity = 0,
-                        genresJson = null,
-                        createdAt = now,
-                        updatedAt = now
-                    )
-                    database.trackDao().upsertTrack(newTrack)
-                    Log.d(TAG, "Reconciled missing Cloud TrackEntity in Room for ${item.trackId} - $fileTitle")
+                val orphanIds = if (candidateOrphanIds.isEmpty()) {
+                    emptyList()
                 } else {
-                    var updated = false
-                    var trackToUpdate = existingTrack
+                    candidateOrphanIds.filter { id ->
+                        val raw = database.trackDao().getRawTrackById(id)
+                        raw != null &&
+                            raw.canonicalAudioSourceType != "downloaded" &&
+                            raw.canonicalAudioSourceType != "local" &&
+                            !raw.isDownloadedByAura
+                    }
+                }
 
-                    val isPlaceholder = existingTrack.title.startsWith("Piste Cloud ") ||
-                            existingTrack.title.isBlank() ||
-                            existingTrack.title == "Titre inconnu" ||
-                            existingTrack.displayArtistName.isBlank() ||
-                            existingTrack.displayArtistName.equals("Artiste Inconnu", ignoreCase = true)
+                // 2. Collect inserts and genuine metadata updates in memory first
+                val artistsToInsert = linkedMapOf<String, com.aura.music.data.local.ArtistEntity>()
+                val albumsToInsert = linkedMapOf<String, com.aura.music.data.local.AlbumEntity>()
+                val tracksToUpsert = mutableListOf<com.aura.music.data.local.TrackEntity>()
+                val existingById = mutableMapOf<String, com.aura.music.data.local.TrackEntity>()
 
-                    if (isPlaceholder && !item.title.isNullOrBlank()) {
-                        val realTitle = item.title!!
-                        val realArtist = item.artistName ?: existingTrack.displayArtistName
-                        val realAlbum = item.albumTitle ?: existingTrack.displayAlbumTitle
-                        val realArtistId = item.artistId ?: existingTrack.primaryArtistId
-                        val realAlbumId = item.albumId ?: existingTrack.albumId
+                for (item in items) {
+                    val existingTrack = database.trackDao().getRawTrackById(item.trackId)
+                    if (existingTrack == null) {
+                        val fileTitle = item.title?.takeIf { it.isNotBlank() } ?: "Piste Cloud ${item.trackId}"
+                        val artist = item.artistName?.takeIf { it.isNotBlank() } ?: "Artiste Inconnu"
+                        val album = item.albumTitle?.takeIf { it.isNotBlank() } ?: "Album Inconnu"
+                        val duration = item.durationMs ?: 0L
+                        val artistId = item.artistId
+                        val albumId = item.albumId
 
-                        if (realArtistId != null) {
-                            val placeholderArtist = com.aura.music.data.local.ArtistEntity(
-                                id = realArtistId,
-                                name = realArtist,
-                                normalizedName = realArtist.lowercase().trim(),
-                                pictureUri = item.coverUri ?: existingTrack.coverUri,
+                        if (artistId != null && !artistsToInsert.containsKey(artistId)) {
+                            artistsToInsert[artistId] = com.aura.music.data.local.ArtistEntity(
+                                id = artistId,
+                                name = artist,
+                                normalizedName = artist.lowercase().trim(),
+                                pictureUri = item.coverUri,
                                 artworkOrigin = null,
                                 artworkLastResolvedAt = null,
                                 summary = null,
                                 createdAt = now,
                                 updatedAt = now
                             )
-                            database.artistDao().insertArtistsIgnore(listOf(placeholderArtist))
                         }
 
-                        if (realAlbumId != null && realAlbum != null) {
-                            val placeholderAlbum = com.aura.music.data.local.AlbumEntity(
-                                id = realAlbumId,
-                                primaryArtistId = realArtistId,
-                                title = realAlbum,
-                                normalizedTitle = realAlbum.lowercase().trim(),
-                                coverUri = item.coverUri ?: existingTrack.coverUri,
+                        if (albumId != null && !albumsToInsert.containsKey(albumId)) {
+                            albumsToInsert[albumId] = com.aura.music.data.local.AlbumEntity(
+                                id = albumId,
+                                primaryArtistId = artistId,
+                                title = album,
+                                normalizedTitle = album.lowercase().trim(),
+                                coverUri = item.coverUri,
                                 artworkOrigin = null,
                                 artworkLastResolvedAt = null,
                                 releaseDate = null,
@@ -278,37 +359,181 @@ class CloudFileRepository(
                                 createdAt = now,
                                 updatedAt = now
                             )
-                            database.albumDao().insertAlbumsIgnore(listOf(placeholderAlbum))
                         }
 
-                        val itemDuration = item.durationMs
-                        trackToUpdate = trackToUpdate.copy(
-                            title = realTitle,
-                            normalizedTitle = realTitle.lowercase().trim(),
-                            displayArtistName = realArtist,
-                            displayAlbumTitle = realAlbum,
-                            primaryArtistId = realArtistId,
-                            albumId = realAlbumId,
-                            durationMs = if (itemDuration != null && itemDuration > 0L) itemDuration else trackToUpdate.durationMs
+                        tracksToUpsert.add(
+                            com.aura.music.data.local.TrackEntity(
+                                id = item.trackId,
+                                primaryArtistId = artistId,
+                                albumId = albumId,
+                                title = fileTitle,
+                                normalizedTitle = fileTitle.lowercase().trim(),
+                                displayArtistName = artist,
+                                displayAlbumTitle = album,
+                                durationMs = duration,
+                                coverUri = item.coverUri,
+                                canonicalAudioSourceType = "cloud",
+                                isLiked = false,
+                                isDownloadedByAura = false,
+                                isExplicit = false,
+                                popularity = 0,
+                                genresJson = null,
+                                createdAt = now,
+                                updatedAt = now
+                            )
                         )
-                        updated = true
-                    }
+                    } else {
+                        existingById[existingTrack.id] = existingTrack
+                        var trackToUpdate = existingTrack
 
-                    if (existingTrack.coverUri.isNullOrBlank() && !item.coverUri.isNullOrBlank()) {
-                        trackToUpdate = trackToUpdate.copy(coverUri = item.coverUri)
-                        updated = true
-                    }
-                    if (trackToUpdate.canonicalAudioSourceType != "downloaded" && trackToUpdate.canonicalAudioSourceType != "local" && trackToUpdate.canonicalAudioSourceType != "cloud") {
-                        trackToUpdate = trackToUpdate.copy(canonicalAudioSourceType = "cloud")
-                        updated = true
-                    }
-                    if (updated) {
-                        database.trackDao().upsertTrack(trackToUpdate.copy(updatedAt = now))
+                        val isPlaceholderTitle = existingTrack.title.startsWith("Piste Cloud ") ||
+                            existingTrack.title.isBlank() ||
+                            existingTrack.title == "Titre inconnu"
+                        val isPlaceholderArtist = existingTrack.displayArtistName.isBlank() ||
+                            existingTrack.displayArtistName.equals("Artiste Inconnu", ignoreCase = true)
+                        val isPlaceholderAlbum = existingTrack.displayAlbumTitle.isNullOrBlank() ||
+                            existingTrack.displayAlbumTitle.equals("Album Inconnu", ignoreCase = true)
+
+                        val itemTitle = item.title?.takeIf { it.isNotBlank() }
+                        val itemArtist = item.artistName?.takeIf { it.isNotBlank() }
+                        val itemAlbum = item.albumTitle?.takeIf { it.isNotBlank() }
+
+                        val resolvedTitle = if (isPlaceholderTitle && itemTitle != null) itemTitle else trackToUpdate.title
+                        val resolvedArtist = if ((isPlaceholderTitle || isPlaceholderArtist) && itemArtist != null) itemArtist else trackToUpdate.displayArtistName
+                        val resolvedAlbum = if ((isPlaceholderTitle || isPlaceholderAlbum) && itemAlbum != null) itemAlbum else trackToUpdate.displayAlbumTitle
+                        val resolvedArtistId = if ((isPlaceholderTitle || isPlaceholderArtist) && item.artistId != null) item.artistId else trackToUpdate.primaryArtistId
+                        val resolvedAlbumId = if ((isPlaceholderTitle || isPlaceholderAlbum) && item.albumId != null) item.albumId else trackToUpdate.albumId
+                        val itemDuration = item.durationMs
+                        val resolvedDuration = if ((trackToUpdate.durationMs == null || trackToUpdate.durationMs == 0L || isPlaceholderTitle) && itemDuration != null && itemDuration > 0L) {
+                            itemDuration
+                        } else {
+                            trackToUpdate.durationMs
+                        }
+
+                        if (resolvedTitle != trackToUpdate.title ||
+                            resolvedArtist != trackToUpdate.displayArtistName ||
+                            resolvedAlbum != trackToUpdate.displayAlbumTitle ||
+                            resolvedArtistId != trackToUpdate.primaryArtistId ||
+                            resolvedAlbumId != trackToUpdate.albumId ||
+                            resolvedDuration != trackToUpdate.durationMs
+                        ) {
+                            if (resolvedArtistId != null && !artistsToInsert.containsKey(resolvedArtistId)) {
+                                artistsToInsert[resolvedArtistId] = com.aura.music.data.local.ArtistEntity(
+                                    id = resolvedArtistId,
+                                    name = resolvedArtist,
+                                    normalizedName = resolvedArtist.lowercase().trim(),
+                                    pictureUri = item.coverUri ?: existingTrack.coverUri,
+                                    artworkOrigin = null,
+                                    artworkLastResolvedAt = null,
+                                    summary = null,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            }
+                            if (resolvedAlbumId != null && resolvedAlbum != null && !albumsToInsert.containsKey(resolvedAlbumId)) {
+                                albumsToInsert[resolvedAlbumId] = com.aura.music.data.local.AlbumEntity(
+                                    id = resolvedAlbumId,
+                                    primaryArtistId = resolvedArtistId,
+                                    title = resolvedAlbum,
+                                    normalizedTitle = resolvedAlbum.lowercase().trim(),
+                                    coverUri = item.coverUri ?: existingTrack.coverUri,
+                                    artworkOrigin = null,
+                                    artworkLastResolvedAt = null,
+                                    releaseDate = null,
+                                    trackCount = null,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            }
+
+                            trackToUpdate = trackToUpdate.copy(
+                                title = resolvedTitle,
+                                normalizedTitle = resolvedTitle.lowercase().trim(),
+                                displayArtistName = resolvedArtist,
+                                displayAlbumTitle = resolvedAlbum,
+                                primaryArtistId = resolvedArtistId,
+                                albumId = resolvedAlbumId,
+                                durationMs = resolvedDuration
+                            )
+                        }
+
+                        if (trackToUpdate.coverUri.isNullOrBlank() && !item.coverUri.isNullOrBlank()) {
+                            trackToUpdate = trackToUpdate.copy(coverUri = item.coverUri)
+                        }
+                        if (trackToUpdate.canonicalAudioSourceType != "downloaded" &&
+                            trackToUpdate.canonicalAudioSourceType != "local" &&
+                            trackToUpdate.canonicalAudioSourceType != "cloud"
+                        ) {
+                            trackToUpdate = trackToUpdate.copy(canonicalAudioSourceType = "cloud")
+                        }
+
+                        if (trackToUpdate != existingTrack) {
+                            tracksToUpsert.add(trackToUpdate.copy(updatedAt = now))
+                        }
                     }
                 }
+
+                if (orphanIds.isEmpty() &&
+                    artistsToInsert.isEmpty() &&
+                    albumsToInsert.isEmpty() &&
+                    tracksToUpsert.isEmpty()
+                ) {
+                    Log.d(TAG, "Cloud reconciliation: 0 changes across ${items.size} items, skipping DB write")
+                    return@withLock
+                }
+
+                // 3. Apply all mutations atomically in a single immediate transaction
+                withContext(NonCancellable) {
+                    database.useWriterConnection { transactor ->
+                        transactor.immediateTransaction {
+                            if (orphanIds.isNotEmpty()) {
+                                val safeOrphans = orphanIds.filter { id ->
+                                    val live = database.trackDao().getRawTrackById(id)
+                                    live != null &&
+                                        !live.isLiked &&
+                                        live.canonicalAudioSourceType != "downloaded" &&
+                                        live.canonicalAudioSourceType != "local" &&
+                                        !live.isDownloadedByAura
+                                }
+                                if (safeOrphans.isNotEmpty()) {
+                                    database.trackDao().deleteTracksByIds(safeOrphans)
+                                    Log.i(TAG, "Purged ${safeOrphans.size} orphan Cloud tracks from Room: $safeOrphans")
+                                }
+                            }
+                            if (artistsToInsert.isNotEmpty()) {
+                                database.artistDao().insertArtistsIgnore(artistsToInsert.values.toList())
+                            }
+                            if (albumsToInsert.isNotEmpty()) {
+                                database.albumDao().insertAlbumsIgnore(albumsToInsert.values.toList())
+                            }
+                            if (tracksToUpsert.isNotEmpty()) {
+                                val safeTracks = tracksToUpsert.map { candidate ->
+                                    val live = database.trackDao().getRawTrackById(candidate.id)
+                                    if (live == null) {
+                                        candidate
+                                    } else {
+                                        candidate.copy(
+                                            isLiked = candidate.isLiked || live.isLiked,
+                                            canonicalAudioSourceType = if (live.canonicalAudioSourceType == "downloaded" || live.canonicalAudioSourceType == "local") {
+                                                live.canonicalAudioSourceType
+                                            } else {
+                                                candidate.canonicalAudioSourceType
+                                            },
+                                            isDownloadedByAura = candidate.isDownloadedByAura || live.isDownloadedByAura
+                                        )
+                                    }
+                                }
+                                database.trackDao().upsertTracks(safeTracks)
+                                Log.d(TAG, "Batch-reconciled ${safeTracks.size} Cloud TrackEntity rows in single transaction")
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reconcile cloud tracks with database", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to reconcile cloud tracks with database", e)
         }
     }
 
@@ -962,24 +1187,8 @@ class CloudFileRepository(
     /**
      * Retrieves all files synchronized on the cloud server.
      */
-    fun listCloudFiles(): Flow<Result<List<SyncedFileResponseData>>> = flow {
-        try {
-            val response = apiService.listSyncFiles(getAuthToken())
-            val data = response.data
-            if (response.error != null || data == null) {
-                val errorMsg = response.error?.message ?: "Erreur inconnue de l'API cloud list"
-                emit(Result.failure(Exception(errorMsg)))
-                return@flow
-            }
-            val items = data.items
-            _syncedTrackIds.value = items.map { it.trackId }.toSet()
-            _cachedCloudFiles.value = items
-            reconcileCloudTracksWithDatabase(items)
-            emit(Result.success(items))
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to list cloud files", e)
-            emit(Result.failure(e))
-        }
+    fun listCloudFiles(forceRefresh: Boolean = false): Flow<Result<List<SyncedFileResponseData>>> = flow {
+        emit(getOrFetchCloudFiles(forceRefresh = forceRefresh))
     }.flowOn(Dispatchers.IO)
 
     /**
@@ -1006,15 +1215,41 @@ class CloudFileRepository(
                 return@flow
             }
             Log.i(TAG, "Successfully deleted track $trackId from cloud")
-            _syncedTrackIds.value = _syncedTrackIds.value - trackId
+            synchronized(refreshLock) {
+                _syncedTrackIds.value = _syncedTrackIds.value - trackId
+                _cachedCloudFiles.value = _cachedCloudFiles.value.filterNot { it.trackId == trackId }
+            }
 
-            val trackRow = database.trackDao().getTrackById(trackId)
-            if (trackRow == null || trackRow.contentUri.isNullOrBlank()) {
-                database.trackDao().deleteTracksByIds(listOf(trackId))
-                Log.i(TAG, "Deleted cloud-only track $trackId from Room database")
+            reconcileMutex.withLock {
+                val rawTrack = database.trackDao().getRawTrackById(trackId)
+                val trackRow = database.trackDao().getTrackById(trackId)
+                val inPlaylist = try {
+                    database.playlistDao().getAllPlaylistTrackIds().contains(trackId)
+                } catch (e: Exception) {
+                    false
+                }
+                val isActiveJob = try {
+                    database.downloadJobDao().getActiveJobs().any { it.trackId == trackId }
+                } catch (e: Exception) {
+                    false
+                }
+                if (rawTrack != null &&
+                    !rawTrack.isLiked &&
+                    !rawTrack.isDownloadedByAura &&
+                    rawTrack.canonicalAudioSourceType != "downloaded" &&
+                    rawTrack.canonicalAudioSourceType != "local" &&
+                    !inPlaylist &&
+                    !isActiveJob &&
+                    (trackRow == null || trackRow.contentUri.isNullOrBlank())
+                ) {
+                    database.trackDao().deleteTracksByIds(listOf(trackId))
+                    Log.i(TAG, "Deleted unliked cloud-only track $trackId from Room database")
+                }
             }
 
             emit(Result.success(Unit))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete cloud file $trackId", e)
             emit(Result.failure(e))

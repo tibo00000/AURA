@@ -697,13 +697,13 @@ fun FavoritesScreen(
     val cloudFileRepository = appContainer.cloudFileRepository
     val networkTransfersState = cloudFileRepository.networkTransfers.collectAsState()
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
-    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
-        cloudFileRepository.listCloudFiles().collect { res ->
-            res.onSuccess { value = it }
+    val cloudFiles by cloudFileRepository.cachedCloudFiles.collectAsState()
+    val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
+    LaunchedEffect(cloudFileRepository, refreshTick, refreshToken, isOnline) {
+        if (isOnline) {
+            cloudFileRepository.getOrFetchCloudFiles(forceRefresh = refreshTick > 0 || refreshToken > 0)
         }
     }
-    val cloudFiles = cloudFilesState.value
-    val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val lookupIndex by produceState(
         initialValue = remember { TrackLookupIndex.EMPTY },
