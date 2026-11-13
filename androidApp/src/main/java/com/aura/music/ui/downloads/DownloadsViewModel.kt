@@ -64,7 +64,9 @@ class DownloadsViewModel(
         userToken: String
     ) : this(downloadRepository, { userToken })
 
-    private val userToken: String get() = tokenProvider()
+    private suspend fun resolveUserToken(): String = withContext(Dispatchers.IO) {
+        tokenProvider()
+    }
 
     private val _selectedTab = MutableStateFlow("En cours")
     val selectedTab = _selectedTab.asStateFlow()
@@ -124,7 +126,8 @@ class DownloadsViewModel(
                 return@launch
             }
 
-            val jobCandidates = downloadRepository.getCandidatesForJob(jobId, userToken)
+            val token = resolveUserToken()
+            val jobCandidates = downloadRepository.getCandidatesForJob(jobId, token)
             if (jobCandidates != null) {
                 _candidates.value = _candidates.value.toMutableMap().apply {
                     put(jobId, jobCandidates)
@@ -139,7 +142,8 @@ class DownloadsViewModel(
         viewModelScope.launch {
             _errorMessage.value = null
             try {
-                downloadRepository.resolveJob(jobId, videoId, userToken)
+                val token = resolveUserToken()
+                downloadRepository.resolveJob(jobId, videoId, token)
                 _candidates.value = _candidates.value.toMutableMap().apply {
                     remove(jobId)
                 }
@@ -160,7 +164,8 @@ class DownloadsViewModel(
     init {
         // Automatically sync active states on screen init
         viewModelScope.launch {
-            downloadRepository.syncActiveJobs(userToken)
+            val token = resolveUserToken()
+            downloadRepository.syncActiveJobs(token)
         }
     }
 
@@ -176,7 +181,8 @@ class DownloadsViewModel(
             _isSyncing.value = true
             _errorMessage.value = null
             try {
-                downloadRepository.syncActiveJobs(userToken)
+                val token = resolveUserToken()
+                downloadRepository.syncActiveJobs(token)
             } catch (e: Exception) {
                 _errorMessage.value = "Erreur de rafraîchissement réseau."
             } finally {
@@ -193,7 +199,8 @@ class DownloadsViewModel(
         viewModelScope.launch {
             _errorMessage.value = null
             try {
-                downloadRepository.retryJob(jobId, userToken)
+                val token = resolveUserToken()
+                downloadRepository.retryJob(jobId, token)
             } catch (e: Exception) {
                 _errorMessage.value = "Impossible de relancer le téléchargement."
             }

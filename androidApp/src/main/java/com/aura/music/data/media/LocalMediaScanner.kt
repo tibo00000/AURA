@@ -35,7 +35,7 @@ class LocalMediaScanner(
         val scannedArtists = mutableMapOf<String, ArtistEntity>()
         val scannedAlbums = mutableMapOf<String, AlbumEntity>()
         val scannedTracks = mutableListOf<TrackEntity>()
-        val scannedMediaLinks = mutableListOf<TrackMediaLinkEntity>()
+        val scannedMediaLinks = mutableListOf<ScannedLinkMeta>()
         val resolvedArtistIds = mutableMapOf<String, String>()
         val resolvedAlbumIds = mutableMapOf<String, String>()
 
@@ -55,7 +55,8 @@ class LocalMediaScanner(
                 !file.name.endsWith(".part", ignoreCase = true) &&
                 !file.name.endsWith(".ytdl", ignoreCase = true) &&
                 !file.name.endsWith(".tmp", ignoreCase = true) &&
-                file.extension.lowercase() in validAudioExtensions
+                file.extension.lowercase() in validAudioExtensions &&
+                AudioIntegrityValidator.isValidAudioFile(file, checkMetadata = false)
             } ?: emptyArray()
 
             for (file in audioFiles) {
@@ -182,13 +183,11 @@ class LocalMediaScanner(
                     }
 
                     scannedMediaLinks.add(
-                        MediaLinkResolver.resolveOrCreateMediaLink(
-                            database = database,
+                        ScannedLinkMeta(
                             trackId = trackId,
                             contentUri = fileUri,
                             fileSizeBytes = file.length(),
-                            mimeType = mimeType,
-                            now = now
+                            mimeType = mimeType
                         )
                     )
                 } catch (e: Exception) {
@@ -269,50 +268,102 @@ class LocalMediaScanner(
                         canonicalAudioSourceType = "local",
                         isLiked = existingTrack?.isLiked == true || likedTrackIds.contains(trackId),
                         isDownloadedByAura = false,
-                        isExplicit = null,
-                        popularity = null,
-                        genresJson = null,
+                        isExplicit = existingTrack?.isExplicit,
+                        popularity = existingTrack?.popularity,
+                        genresJson = existingTrack?.genresJson,
                         createdAt = existingTrack?.createdAt ?: (media.dateModifiedEpochMs ?: now),
                         updatedAt = existingTrack?.updatedAt ?: (media.dateModifiedEpochMs ?: now),
                     )
                 )
 
                 scannedMediaLinks.add(
-                    TrackMediaLinkEntity(
-                        id = "media-link:${media.mediaStoreId}",
+                    ScannedLinkMeta(
                         trackId = trackId,
-                        mediaStoreId = media.mediaStoreId,
                         contentUri = media.contentUri,
                         fileSizeBytes = media.fileSizeBytes,
-                        mimeType = media.mimeType,
-                        dateModifiedEpochMs = media.dateModifiedEpochMs,
-                        availabilityStatus = "present",
-                        lastScannedAt = now,
+                        mimeType = media.mimeType
                     )
                 )
             }
         }
 
         val linksByTrackId = scannedMediaLinks.associateBy { it.trackId }
+        val insertedArtistIds = HashSet<String>()
+        val insertedAlbumIds = HashSet<String>()
+        var anyMutated = false
         // Metadata was collected without a writer lock. Re-read state under the per-track guard.
         for (scanned in scannedTracks) {
             mediaCoordinator.withTrack(scanned.id) {
                 val privateFile = downloadedFilesByTrackId[scanned.id]
-                if (privateFile != null && (!privateFile.isFile || privateFile.length() == 0L)) return@withTrack
+                if (privateFile != null && !AudioIntegrityValidator.isValidAudioFile(privateFile, checkMetadata = false)) return@withTrack
                 val oldLink = database.trackDao().getMediaLinkByTrackId(scanned.id)
                 if (privateFile == null && oldLink != observedLinks[scanned.id]) return@withTrack
+
+                val current = database.trackDao().getRawTrackById(scanned.id)
+                val targetTrack = if (current != null && privateFile != null) {
+                    current.copy(
+                        canonicalAudioSourceType = "downloaded",
+                        isDownloadedByAura = true
+                    )
+                } else if (current != null) {
+                    val liveIsLiked = current.isLiked ||
+                        (likedTrackIds.contains(scanned.id) && database.trackLikeDao().isTrackLiked(scanned.id))
+                    scanned.copy(
+                        isLiked = liveIsLiked,
+                        isExplicit = scanned.isExplicit ?: current.isExplicit,
+                        popularity = scanned.popularity ?: current.popularity,
+                        genresJson = scanned.genresJson ?: current.genresJson,
+                        createdAt = current.createdAt,
+                        updatedAt = current.updatedAt
+                    )
+                } else {
+                    scanned
+                }
+
+                val link = linksByTrackId[scanned.id]
+                val expectedFileSize = privateFile?.length() ?: link?.fileSizeBytes
+                val trackChanged = current == null || targetTrack != current
+                val linkChanged = link != null && !hasSameMediaLinkData(
+                    existing = oldLink,
+                    trackId = scanned.id,
+                    contentUri = link.contentUri,
+                    fileSizeBytes = expectedFileSize,
+                    mimeType = link.mimeType
+                )
+                if (!trackChanged && !linkChanged) {
+                    return@withTrack
+                }
+
+                anyMutated = true
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     database.useWriterConnection { writer -> writer.immediateTransaction {
-                        scannedArtists[scanned.primaryArtistId]?.let { database.artistDao().insertArtistsIgnore(listOf(it)) }
-                        scannedAlbums[scanned.albumId]?.let { database.albumDao().insertAlbumsIgnore(listOf(it)) }
-                        val current = database.trackDao().getRawTrackById(scanned.id)
-                        val row = if (current != null && privateFile != null) current.copy(
-                            canonicalAudioSourceType = "downloaded", isDownloadedByAura = true) else scanned
-                        database.trackDao().upsertTrack(row)
-                        val link = linksByTrackId[scanned.id]
-                        if (link != null) {
+                        if (trackChanged) {
+                            targetTrack.primaryArtistId?.let { artistId ->
+                                if (artistId !in insertedArtistIds) {
+                                    scannedArtists[artistId]?.let {
+                                        database.artistDao().insertArtistsIgnore(listOf(it))
+                                        insertedArtistIds.add(artistId)
+                                    }
+                                }
+                            }
+                            targetTrack.albumId?.let { albumId ->
+                                if (albumId !in insertedAlbumIds) {
+                                    scannedAlbums[albumId]?.let {
+                                        database.albumDao().insertAlbumsIgnore(listOf(it))
+                                        insertedAlbumIds.add(albumId)
+                                    }
+                                }
+                            }
+                            val trackToWrite = if (current != null) {
+                                targetTrack.copy(updatedAt = System.currentTimeMillis())
+                            } else {
+                                targetTrack
+                            }
+                            database.trackDao().upsertTrack(trackToWrite)
+                        }
+                        if (linkChanged) {
                             database.trackDao().upsertTrackMediaLinks(listOf(MediaLinkResolver.resolveOrCreateMediaLink(
-                                database, scanned.id, link.contentUri, privateFile?.length() ?: link.fileSizeBytes,
+                                database, scanned.id, link!!.contentUri, expectedFileSize,
                                 link.mimeType, System.currentTimeMillis())))
                         }
                     } }
@@ -327,13 +378,39 @@ class LocalMediaScanner(
                 if (id in scannedIds) continue
                 if (id in (inFlightCloudTrackIdsProvider?.invoke() ?: emptySet())) continue
                 if (id in activeTrackIds) continue
-                mediaCoordinator.purgeObserved(database, downloadsDir, observed,
-                    mediaStoreMissing = UriPathParser.isContentUri(observed.contentUri))
+                if (mediaCoordinator.purgeObserved(database, downloadsDir, observed,
+                        mediaStoreMissing = UriPathParser.isContentUri(observed.contentUri))) {
+                    anyMutated = true
+                }
             }
         }
 
-        onInvalidateSearchIndex()
+        if (anyMutated) {
+            onInvalidateSearchIndex()
+        }
         scannedTracks.size
+    }
+
+    private data class ScannedLinkMeta(
+        val trackId: String,
+        val contentUri: String,
+        val fileSizeBytes: Long?,
+        val mimeType: String?
+    )
+
+    private fun hasSameMediaLinkData(
+        existing: TrackMediaLinkEntity?,
+        trackId: String,
+        contentUri: String,
+        fileSizeBytes: Long?,
+        mimeType: String?
+    ): Boolean {
+        if (existing == null) return false
+        return existing.trackId == trackId &&
+            existing.contentUri == contentUri &&
+            existing.fileSizeBytes == fileSizeBytes &&
+            existing.mimeType == mimeType &&
+            existing.availabilityStatus == "present"
     }
 
     private suspend fun resolveArtistId(artistName: String, sessionCache: MutableMap<String, String>): String {
