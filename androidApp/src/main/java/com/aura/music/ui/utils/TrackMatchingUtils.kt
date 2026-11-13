@@ -1,10 +1,16 @@
 package com.aura.music.ui.utils
 
+import androidx.compose.runtime.Immutable
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.data.network.SyncedFileResponseData
 import com.aura.music.ui.screens.TrackDownloadStatus
 import java.util.Base64
+import kotlin.coroutines.coroutineContext
 import kotlin.math.round
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 /**
  * Moteur de mémoïsation thread-safe pour le décodage d'identifiants Deezer (Base64 / token URL safe).
@@ -99,6 +105,7 @@ data class NormalizedDoubletKey(
  *
  * Résout les collisions en privilégiant systématiquement les fichiers téléchargés (contentUri != null).
  */
+@Immutable
 class TrackLookupIndex(
     private val localByExactId: Map<String, List<TrackListRow>>,
     private val localByDeezerId: Map<String, List<TrackListRow>>,
@@ -241,10 +248,45 @@ class TrackLookupIndex(
             cloudFilesByDoublet = emptyMap()
         )
 
+        fun buildCloudOnly(
+            cloudFiles: List<SyncedFileResponseData> = emptyList(),
+            syncedCloudTrackIds: Set<String> = emptySet()
+        ): TrackLookupIndex = build(
+            allLibraryTracks = emptyList(),
+            cloudFiles = cloudFiles,
+            syncedCloudTrackIds = syncedCloudTrackIds
+        )
+
+        suspend fun buildAsync(
+            allLibraryTracks: List<TrackListRow> = emptyList(),
+            cloudFiles: List<SyncedFileResponseData> = emptyList(),
+            syncedCloudTrackIds: Set<String> = emptySet(),
+            dispatcher: CoroutineDispatcher = Dispatchers.Default
+        ): TrackLookupIndex = withContext(dispatcher) {
+            buildInternal(
+                allLibraryTracks = allLibraryTracks,
+                cloudFiles = cloudFiles,
+                syncedCloudTrackIds = syncedCloudTrackIds,
+                checkActive = { kotlin.coroutines.coroutineContext.ensureActive() }
+            )
+        }
+
         fun build(
             allLibraryTracks: List<TrackListRow>,
             cloudFiles: List<SyncedFileResponseData> = emptyList(),
             syncedCloudTrackIds: Set<String> = emptySet()
+        ): TrackLookupIndex = buildInternal(
+            allLibraryTracks = allLibraryTracks,
+            cloudFiles = cloudFiles,
+            syncedCloudTrackIds = syncedCloudTrackIds,
+            checkActive = {}
+        )
+
+        private inline fun buildInternal(
+            allLibraryTracks: List<TrackListRow>,
+            cloudFiles: List<SyncedFileResponseData>,
+            syncedCloudTrackIds: Set<String>,
+            checkActive: () -> Unit
         ): TrackLookupIndex {
             val localByExactId = mutableMapOf<String, MutableList<TrackListRow>>()
             val localByDeezerId = mutableMapOf<String, MutableList<TrackListRow>>()
@@ -252,6 +294,7 @@ class TrackLookupIndex(
             val localByDoublet = mutableMapOf<NormalizedDoubletKey, MutableList<TrackListRow>>()
 
             for (track in allLibraryTracks) {
+                checkActive()
                 localByExactId.getOrPut(track.id) { mutableListOf() }.add(track)
                 val deezerId = DeezerIdMemoizer.extractDeezerId(track.id)
                 if (deezerId != null) {
@@ -273,6 +316,7 @@ class TrackLookupIndex(
             val syncedCloudExactIds = HashSet<String>(syncedCloudTrackIds)
             val syncedCloudDeezerIds = HashSet<String>()
             for (id in syncedCloudTrackIds) {
+                checkActive()
                 val deezerId = DeezerIdMemoizer.extractDeezerId(id)
                 if (deezerId != null) {
                     syncedCloudDeezerIds.add(deezerId)
@@ -284,6 +328,7 @@ class TrackLookupIndex(
             val cloudFilesByDoublet = mutableMapOf<NormalizedDoubletKey, MutableList<SyncedFileResponseData>>()
 
             for (cloud in cloudFiles) {
+                checkActive()
                 val deezerId = DeezerIdMemoizer.extractDeezerId(cloud.trackId)
                 if (deezerId != null) {
                     cloudFilesByDeezerId.getOrPut(deezerId) { mutableListOf() }.add(cloud)

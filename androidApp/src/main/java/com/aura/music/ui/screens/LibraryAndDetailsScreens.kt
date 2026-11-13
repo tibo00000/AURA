@@ -119,6 +119,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -152,6 +153,9 @@ import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.trackList
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.toQueuedTrack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -615,6 +619,23 @@ fun LibraryScreen(
     }
 }
 
+internal fun buildFavoritesPlayTrackEvent(
+    tracks: List<TrackListRow>,
+    selectedTrackId: String
+): PlayerEvent.PlayTrack? {
+    if (tracks.isEmpty()) return null
+    val index = tracks.indexOfFirst { it.id == selectedTrackId }
+    if (index < 0) return null
+    val contextTracks = tracks.map { it.toQueuedTrack() }
+    return PlayerEvent.PlayTrack(
+        trackId = selectedTrackId,
+        contextType = "favorites",
+        contextId = "favorites",
+        contextTracks = contextTracks,
+        startIndex = index
+    )
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(
@@ -660,15 +681,21 @@ fun FavoritesScreen(
     val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
     var isAutoDownloadFavorites by remember { mutableStateOf(sharedPrefs.getBoolean("auto_download_favorites", false)) }
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
-    val allJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
-    val activeJobsByTrackId by remember(allJobs) {
-        derivedStateOf {
-            allJobs.filter { it.status in setOf("queued", "running", "requires_resolution", "downloading") }
-                .associateBy { it.trackId }
-        }
+    val activeJobsFlow = remember(appContainer.downloadRepository) {
+        appContainer.downloadRepository.getAllJobs()
+            .map { jobs ->
+                jobs.filter {
+                    it.status == "queued" ||
+                        it.status == "running" ||
+                        it.status == "requires_resolution" ||
+                        it.status == "downloading"
+                }.associateBy { it.trackId }
+            }
+            .distinctUntilChanged()
     }
+    val activeJobsByTrackId by activeJobsFlow.collectAsState(initial = emptyMap())
     val cloudFileRepository = appContainer.cloudFileRepository
-    val networkTransfers by cloudFileRepository.networkTransfers.collectAsState()
+    val networkTransfersState = cloudFileRepository.networkTransfers.collectAsState()
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
         cloudFileRepository.listCloudFiles().collect { res ->
@@ -678,8 +705,29 @@ fun FavoritesScreen(
     val cloudFiles = cloudFilesState.value
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
-    val lookupIndex = remember(localTracksList, cloudFiles, syncedCloudTrackIds) {
-        TrackLookupIndex.build(localTracksList ?: emptyList(), cloudFiles, syncedCloudTrackIds)
+    val lookupIndex by produceState(
+        initialValue = remember { TrackLookupIndex.EMPTY },
+        key1 = cloudFiles,
+        key2 = syncedCloudTrackIds
+    ) {
+        value = TrackLookupIndex.buildAsync(
+            allLibraryTracks = emptyList(),
+            cloudFiles = cloudFiles,
+            syncedCloudTrackIds = syncedCloudTrackIds,
+            dispatcher = Dispatchers.Default
+        )
+    }
+
+    val currentPlayerViewModel by rememberUpdatedState(playerViewModel)
+    val currentOnOpenArtist by rememberUpdatedState(onOpenArtist)
+    val currentOnOpenAlbum by rememberUpdatedState(onOpenAlbum)
+    val onOfflineBlockedLambda = remember(snackbarHostState) {
+        {
+            scope.launch {
+                snackbarHostState.showSnackbar("Ce titre est sur le Cloud. Connexion Internet requise pour le streamer.")
+            }
+            Unit
+        }
     }
 
     RouteScaffold(
@@ -713,28 +761,24 @@ fun FavoritesScreen(
                 message = "Appuie sur le cœur dans le player pour retrouver tes pistes ici.",
             )
         } else {
-            val contextTracks = remember(tracks) {
-                tracks.map { it.toQueuedTrack() }
+            val currentTracks by rememberUpdatedState(tracks)
+            val isAllDownloaded = remember(tracks) {
+                tracks.isNotEmpty() && tracks.all { !it.contentUri.isNullOrBlank() }
             }
-            val notDownloadedTracks = remember(tracks) {
-                tracks.filter { it.contentUri.isNullOrBlank() }
-            }
-            val isAllDownloaded = remember(tracks, notDownloadedTracks) {
-                tracks.isNotEmpty() && notDownloadedTracks.isEmpty()
-            }
-            var isBatchDownloading by remember { mutableStateOf(false) }
 
             // Auto-téléchargement persistant dès que l'option est active et que la connectivité est disponible
-            val isNetworkDownloading = tracks.any { it.id in networkTransfers }
+            val isNetworkDownloading by remember(tracks) {
+                derivedStateOf {
+                    val activeTransfers = networkTransfersState.value
+                    activeTransfers.isNotEmpty() && tracks.any { it.id in activeTransfers }
+                }
+            }
             LaunchedEffect(repository, isAutoDownloadFavorites, isOnline) {
                 if (isAutoDownloadFavorites && isOnline) {
                     repository.observeLikedTracks().collect { current ->
-                        isBatchDownloading = true
-                        try {
-                            current.filter { it.contentUri.isNullOrBlank() }.forEach {
-                                cloudFileRepository.autoDownloadFavoriteTrack(it.id)
-                            }
-                        } finally { isBatchDownloading = false }
+                        current.filter { it.contentUri.isNullOrBlank() }.forEach {
+                            cloudFileRepository.autoDownloadFavoriteTrack(it.id)
+                        }
                     }
                 }
             }
@@ -791,16 +835,12 @@ fun FavoritesScreen(
                             // Bouton Play Principal (Symbole circulaire BlazeOrange)
                             IconButton(
                                 onClick = {
-                                    if (tracks.isNotEmpty()) {
-                                        playerViewModel.onEvent(
-                                            PlayerEvent.PlayTrack(
-                                                trackId = tracks.first().id,
-                                                contextType = "favorites",
-                                                contextId = "favorites",
-                                                contextTracks = contextTracks,
-                                                startIndex = 0,
-                                            )
-                                        )
+                                    val snapshot = currentTracks
+                                    val first = snapshot.firstOrNull()
+                                    if (first != null) {
+                                        buildFavoritesPlayTrackEvent(snapshot, first.id)?.let { event ->
+                                            currentPlayerViewModel.onEvent(event)
+                                        }
                                     }
                                 },
                                 modifier = Modifier
@@ -819,10 +859,10 @@ fun FavoritesScreen(
                             // Bouton Shuffle (Symbole circulaire DarkGraphite)
                             IconButton(
                                 onClick = {
-                                    val shuffled = tracks.shuffled()
+                                    val shuffled = currentTracks.shuffled()
                                     if (shuffled.isNotEmpty()) {
                                         val shuffledContext = shuffled.map { it.toQueuedTrack() }
-                                        playerViewModel.onEvent(
+                                        currentPlayerViewModel.onEvent(
                                             PlayerEvent.PlayTrack(
                                                 trackId = shuffled.first().id,
                                                 contextType = "favorites",
@@ -896,18 +936,24 @@ fun FavoritesScreen(
                     items = tracks,
                     key = { _, track -> track.id },
                     contentType = { _, _ -> "track_row" }
-                ) { index, track ->
-                    val playEvent = remember(track.id, index, contextTracks) {
-                        PlayerEvent.PlayTrack(
-                            trackId = track.id,
-                            contextType = "favorites",
-                            contextId = "favorites",
-                            contextTracks = contextTracks,
-                            startIndex = index,
-                        )
+                ) { _, track ->
+                    val currentTrack by rememberUpdatedState(track)
+                    val subtitle = remember(track.artistName, track.albumTitle) {
+                        listOfNotNull(track.artistName, track.albumTitle).joinToString(" • ")
                     }
-                    val onPlayClick = remember(playEvent) { { playerViewModel.onEvent(playEvent) } }
-                    val onAddToQueueClick = remember(track.id) { { playerViewModel.onEvent(PlayerEvent.AddToQueue(track.toQueuedTrack())) } }
+                    val onPlayClick = remember(track.id) {
+                        {
+                            buildFavoritesPlayTrackEvent(currentTracks, track.id)?.let { event ->
+                                currentPlayerViewModel.onEvent(event)
+                            }
+                            Unit
+                        }
+                    }
+                    val onAddToQueueClick = remember(track.id) {
+                        {
+                            currentPlayerViewModel.onEvent(PlayerEvent.AddToQueue(currentTrack.toQueuedTrack()))
+                        }
+                    }
                     val onUnlikeClick = remember(track.id) {
                         {
                             scope.launch {
@@ -917,25 +963,31 @@ fun FavoritesScreen(
                             Unit
                         }
                     }
-                    val onAddToPlaylistClick = remember(track.id) { { activeTrackForPlaylist = track } }
+                    val onAddToPlaylistClick = remember(track.id) {
+                        { activeTrackForPlaylist = currentTrack }
+                    }
                     val onViewArtistClick = remember(track.artistId) {
-                        track.artistId?.let { artistId -> { onOpenArtist(artistId) } }
+                        track.artistId?.let { artistId -> { currentOnOpenArtist(artistId) } }
                     }
                     val onViewAlbumClick = remember(track.albumId) {
-                        track.albumId?.let { albumId -> { onOpenAlbum(albumId) } }
+                        track.albumId?.let { albumId -> { currentOnOpenAlbum(albumId) } }
                     }
 
-                    val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
+                    val isLocalScanned = remember(track.contentUri) {
+                        val uri = track.contentUri
+                        uri?.startsWith("content://") == true || uri?.startsWith("file://") == true || uri?.startsWith("/") == true
+                    }
                     val isPresentInCloud = lookupIndex.isCloudSynced(track.id, track.title, track.artistName, track.albumTitle)
                     val isAlreadySynced = isPresentInCloud
                     val onUploadToCloudLambda = remember(track.id, isLocalScanned, isAlreadySynced) {
                         if (isLocalScanned && !isAlreadySynced) {
                             {
+                                val t = currentTrack
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Upload lancé pour : ${track.title}")
-                                    cloudFileRepository.uploadTrack(track.id).collect { res ->
+                                    snackbarHostState.showSnackbar("Upload lancé pour : ${t.title}")
+                                    cloudFileRepository.uploadTrack(t.id).collect { res ->
                                         res.onSuccess {
-                                            snackbarHostState.showSnackbar("Upload réussi : ${track.title}")
+                                            snackbarHostState.showSnackbar("Upload réussi : ${t.title}")
                                             cloudFileRepository.refreshSyncedTrackIds()
                                         }.onFailure { err ->
                                             snackbarHostState.showSnackbar("Échec de l'upload : ${err.message}")
@@ -951,20 +1003,21 @@ fun FavoritesScreen(
                     val onDownloadFromCloudLambda = remember(track.id, isCloudOnly) {
                         if (isCloudOnly) {
                             {
+                                val t = currentTrack
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${track.title}")
+                                    snackbarHostState.showSnackbar("Téléchargement cloud lancé pour : ${t.title}")
                                     cloudFileRepository.downloadTrack(
-                                        trackId = track.id,
-                                        title = track.title,
-                                        artistName = track.artistName,
-                                        albumTitle = track.albumTitle,
-                                        durationMs = track.durationMs,
-                                        artistId = track.artistId,
-                                        albumId = track.albumId,
-                                        coverUri = track.coverUri
+                                        trackId = t.id,
+                                        title = t.title,
+                                        artistName = t.artistName,
+                                        albumTitle = t.albumTitle,
+                                        durationMs = t.durationMs,
+                                        artistId = t.artistId,
+                                        albumId = t.albumId,
+                                        coverUri = t.coverUri
                                     ).collect { res ->
                                         res.onSuccess {
-                                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${track.title}")
+                                            snackbarHostState.showSnackbar("Téléchargement cloud réussi : ${t.title}")
                                             repository.refreshLocalMediaIndex()
                                             refreshTick++
                                         }.onFailure { err ->
@@ -984,7 +1037,7 @@ fun FavoritesScreen(
                     val onDeleteDownloadLambda = remember(track.id, isDownloadedLocally) {
                         if (isDownloadedLocally) {
                             {
-                                trackToDeleteLocal = track
+                                trackToDeleteLocal = currentTrack
                                 Unit
                             }
                         } else null
@@ -993,41 +1046,50 @@ fun FavoritesScreen(
                     val onDeleteFromCloudLambda = remember(track.id, isPresentInCloud) {
                         if (isPresentInCloud) {
                             {
-                                trackToDeleteFromCloud = track
+                                trackToDeleteFromCloud = currentTrack
                                 Unit
                             }
                         } else null
                     }
 
-                    val reassignAudioCallback = com.aura.music.ui.components.LocalReassignAudio.current
-                    val onChangeAudioVersionLambda = remember(track.id, reassignAudioCallback != null) {
-                        if (reassignAudioCallback != null) {
+                    val reassignAudioCallback by rememberUpdatedState(com.aura.music.ui.components.LocalReassignAudio.current)
+                    val hasReassignAudio = reassignAudioCallback != null
+                    val onChangeAudioVersionLambda = remember(track.id, hasReassignAudio) {
+                        if (hasReassignAudio) {
                             {
-                                reassignAudioCallback(
+                                val t = currentTrack
+                                reassignAudioCallback?.invoke(
                                     com.aura.music.ui.components.ReassignAudioTarget(
-                                        trackId = track.id,
-                                        title = track.title,
-                                        artist = track.artistName ?: "Artiste inconnu",
-                                        album = track.albumTitle,
-                                        coverUri = track.coverUri
+                                        trackId = t.id,
+                                        title = t.title,
+                                        artist = t.artistName ?: "Artiste inconnu",
+                                        album = t.albumTitle,
+                                        coverUri = t.coverUri
                                     )
                                 )
+                                Unit
                             }
                         } else null
                     }
 
+                    val onEditMetadataLambda = remember(track.id) {
+                        { trackToEditMetadata = currentTrack }
+                    }
+
                     val activeJob = activeJobsByTrackId[track.id]
-                    val effectiveDownloadStatus = when {
-                        isDownloadedLocally -> com.aura.music.ui.screens.TrackDownloadStatus.Downloaded
-                        activeJob?.status == "requires_resolution" -> com.aura.music.ui.screens.TrackDownloadStatus.RequiresResolution(activeJob.id)
-                        activeJob?.status == "running" || activeJob?.status == "downloading" -> com.aura.music.ui.screens.TrackDownloadStatus.Downloading((activeJob.progressPercent ?: 0f) / 100f)
-                        activeJob?.status == "queued" -> com.aura.music.ui.screens.TrackDownloadStatus.Queued
-                        else -> com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded
+                    val effectiveDownloadStatus = remember(isDownloadedLocally, activeJob) {
+                        when {
+                            isDownloadedLocally -> com.aura.music.ui.screens.TrackDownloadStatus.Downloaded
+                            activeJob?.status == "requires_resolution" -> com.aura.music.ui.screens.TrackDownloadStatus.RequiresResolution(activeJob.id)
+                            activeJob?.status == "running" || activeJob?.status == "downloading" -> com.aura.music.ui.screens.TrackDownloadStatus.Downloading((activeJob.progressPercent ?: 0f) / 100f)
+                            activeJob?.status == "queued" -> com.aura.music.ui.screens.TrackDownloadStatus.Queued
+                            else -> com.aura.music.ui.screens.TrackDownloadStatus.NotDownloaded
+                        }
                     }
 
                     SharedTrackRowItem(
                         title = track.title,
-                        subtitle = listOfNotNull(track.artistName, track.albumTitle).joinToString(" • "),
+                        subtitle = subtitle,
                         onClick = onPlayClick,
                         coverUri = track.coverUri,
                         contextType = "favorites",
@@ -1035,11 +1097,7 @@ fun FavoritesScreen(
                         downloadStatus = effectiveDownloadStatus,
                         isCloudOnly = isCloudOnlyTrack,
                         isOfflineDisabled = isOfflineBlocked,
-                        onOfflineBlocked = {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Ce titre est sur le Cloud. Connexion Internet requise pour le streamer.")
-                            }
-                        },
+                        onOfflineBlocked = onOfflineBlockedLambda,
                         onAddToQueue = onAddToQueueClick,
                         onUnlike = onUnlikeClick,
                         onAddToPlaylist = onAddToPlaylistClick,
@@ -1049,7 +1107,7 @@ fun FavoritesScreen(
                         onUploadToCloud = onUploadToCloudLambda,
                         onDownloadFromCloud = onDownloadFromCloudLambda,
                         onDeleteFromCloud = onDeleteFromCloudLambda,
-                        onEditMetadata = { trackToEditMetadata = track },
+                        onEditMetadata = onEditMetadataLambda,
                         onChangeAudioVersion = onChangeAudioVersionLambda
                     )
                 }

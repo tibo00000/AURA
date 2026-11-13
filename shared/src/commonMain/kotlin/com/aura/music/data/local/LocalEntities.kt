@@ -1,5 +1,6 @@
 package com.aura.music.data.local
 
+import androidx.compose.runtime.Immutable
 import androidx.room3.ColumnInfo
 import androidx.room3.Entity
 import androidx.room3.ForeignKey
@@ -213,6 +214,7 @@ data class UserSettingsEntity(
     @ColumnInfo(name = "sync_token") val syncToken: String? = null,
 )
 
+@Immutable
 data class TrackListRow(
     val id: String,
     @ColumnInfo(name = "artist_id") val artistId: String?,
@@ -228,6 +230,7 @@ data class TrackListRow(
     @ColumnInfo(name = "updated_at") val updatedAt: Long = 0,
 )
 
+@Immutable
 data class PlaylistListRow(
     val id: String,
     val name: String,
@@ -262,6 +265,7 @@ data class PlaylistTrackRow(
     @ColumnInfo(name = "is_liked") val isLiked: Boolean = false,
 )
 
+@Immutable
 data class ArtistBrowseRow(
     val id: String,
     val name: String,
@@ -278,6 +282,7 @@ data class ArtistDetailRow(
     val summary: String?,
 )
 
+@Immutable
 data class AlbumBrowseRow(
     val id: String,
     val title: String,

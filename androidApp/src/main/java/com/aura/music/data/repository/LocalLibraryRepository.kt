@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.aura.music.domain.search.LocalSearchEngine
@@ -281,7 +282,7 @@ class LocalLibraryRepository(
     suspend fun getTrackById(trackId: String): TrackListRow? =
         withContext(Dispatchers.IO) { database.trackDao().getTrackById(trackId) }
 
-    fun observeLikedTracks() = database.trackDao().getLikedTracksFlow()
+    fun observeLikedTracks() = database.trackDao().getLikedTracksFlow().distinctUntilChanged()
 
     suspend fun getLikedTrackCount(): Int =
         withContext(Dispatchers.IO) { database.trackDao().getLikedTrackCount() }
