@@ -41,6 +41,13 @@ Un snapshot plus ancien que le dernier inventaire observé ne change ni les
 entrées ni les acquittements. Une absence ne supprime qu’une playlist dont
 une révision précédente a effectivement été appliquée pour le même compte.
 
+L’actualisation fournisseur applique uniquement des ajouts en fin de liste.
+Elle vérifie la révision d’association sous le verrou de la playlist, puis
+relit les identités et les exclusions avant de décider. Les exclusions
+portent sur une identité fournisseur exacte ou un rattachement confirmé.
+Une ressemblance de métadonnées peut ouvrir une confirmation utilisateur.
+Elle ne fusionne ni ne remplace deux identités à elle seule.
+
 ## Entites server-authoritative
 Le client ne doit pas envoyer de mutation directe pour :
 - `artists`

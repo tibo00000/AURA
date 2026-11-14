@@ -50,6 +50,11 @@ Un curseur hérité sans compte provoque une nouvelle hydratation.
 La migration 6 → 7 conserve la référence Spotify/Deezer et sa révision dans
 l’état de synchronisation de la playlist. Les playlists sans association
 commencent à la révision 0.
+La migration 7 → 8 ajoute le dernier bilan d’actualisation confirmé à cet
+état. Les métadonnées d’une nouvelle occurrence alimentent les champs
+manquants de `tracks`. Les liens média restent locaux.
+La même migration garde temporairement la demande d’actualisation préparée.
+Un accusé perdu est rejoué avec le même identifiant et le même inventaire.
 
 ### `artists`
 

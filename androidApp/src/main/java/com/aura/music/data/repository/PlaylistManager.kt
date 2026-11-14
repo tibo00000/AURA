@@ -208,18 +208,20 @@ class PlaylistManager(
     }
 
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = withContext(Dispatchers.IO) {
-        val outboxOp = syncRepository.createOutboxEntity(
-            entityType = "playlist_item",
-            entityId = playlistItemId,
-            operationType = "delete",
-            payload = mapOf(
-                "playlist_id" to playlistId
-            )
-        )
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
                 val item = database.playlistDao().getPlaylistItem(playlistItemId)
                 if (item?.playlistId != playlistId) return@immediateTransaction
+                val track = database.trackDao().getRawTrackById(item.trackId)
+                val outboxOp = syncRepository.createOutboxEntity(
+                    entityType = "playlist_item",
+                    entityId = playlistItemId,
+                    operationType = "delete",
+                    payload = mapOf(
+                        "playlist_id" to playlistId, "track_id" to item.trackId,
+                        "removed_title" to track?.title, "removed_artist" to track?.displayArtistName,
+                    ),
+                )
                 database.playlistDao().deletePlaylistItem(playlistItemId)
                 normalizePlaylistPositions(playlistId)
                 database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())

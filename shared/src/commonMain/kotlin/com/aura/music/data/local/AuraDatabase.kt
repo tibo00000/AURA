@@ -27,7 +27,7 @@ import androidx.sqlite.execSQL
         TrackMediaLinkEntity::class,
         UserSettingsEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 @ConstructedBy(AuraDatabaseConstructor::class)
@@ -191,6 +191,13 @@ abstract class AuraDatabase : RoomDatabase() {
                 connection.execSQL("ALTER TABLE playlist_sync_state ADD COLUMN source_provider TEXT")
                 connection.execSQL("ALTER TABLE playlist_sync_state ADD COLUMN source_external_id TEXT")
                 connection.execSQL("ALTER TABLE playlist_sync_state ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE playlist_sync_state ADD COLUMN last_refresh_json TEXT")
+                connection.execSQL("ALTER TABLE playlist_sync_state ADD COLUMN pending_refresh_json TEXT")
             }
         }
 

@@ -203,6 +203,7 @@ class DesktopPlaylistManager(
             transactor.immediateTransaction {
                 val item = database.playlistDao().getPlaylistItem(playlistItemId)
                 if (item?.playlistId != playlistId) return@immediateTransaction
+                val track = database.trackDao().getRawTrackById(item.trackId)
                 database.playlistDao().deletePlaylistItem(playlistItemId)
                 database.playlistDao().touchPlaylist(playlistId, now)
                 database.syncOutboxDao().insert(
@@ -211,7 +212,12 @@ class DesktopPlaylistManager(
                         entityType = "playlist_item",
                         entityId = playlistItemId,
                         operationType = "delete",
-                        payloadJson = buildJsonObject { put("playlist_id", playlistId) }.toString(),
+                        payloadJson = buildJsonObject {
+                            put("playlist_id", playlistId)
+                            put("track_id", item.trackId)
+                            put("removed_title", track?.title)
+                            put("removed_artist", track?.displayArtistName)
+                        }.toString(),
                         status = "pending",
                         createdAt = now,
                         updatedAt = now,

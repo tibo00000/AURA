@@ -447,7 +447,8 @@ data class PlaylistItemResponse(
     @SerialName("position") val position: Int,
     @SerialName("added_at") val addedAt: String,
     @SerialName("added_from_context_type") val addedFromContextType: String? = null,
-    @SerialName("added_from_context_id") val addedFromContextId: String? = null
+    @SerialName("added_from_context_id") val addedFromContextId: String? = null,
+    @SerialName("source_metadata") val sourceMetadata: PlaylistTrackMetadata? = null,
 )
 
 @Serializable
@@ -487,6 +488,7 @@ data class PlaylistSnapshotEntry(
     @SerialName("source_provider") val sourceProvider: String? = null,
     @SerialName("source_external_id") val sourceExternalId: String? = null,
     @SerialName("source_revision") val sourceRevision: Long = 0,
+    @SerialName("last_refresh") val lastRefresh: PlaylistRefreshResult? = null,
 )
 
 @Serializable
@@ -501,6 +503,39 @@ data class PlaylistSourceResponse(
     val provider: String?,
     @SerialName("external_id") val externalId: String?,
     @SerialName("source_revision") val sourceRevision: Long,
+)
+
+@Serializable
+data class PlaylistTrackMetadata(
+    val provider: String,
+    @SerialName("provider_id") val providerId: String,
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("cover_uri") val coverUri: String? = null,
+    @SerialName("requires_confirmation") val requiresConfirmation: Boolean = false,
+    @SerialName("track_id") val trackId: String? = null,
+)
+
+@Serializable
+data class PlaylistRefreshRequest(
+    @SerialName("request_id") val requestId: String,
+    @SerialName("source_revision") val sourceRevision: Long,
+    val tracks: List<PlaylistTrackMetadata>,
+    @SerialName("confirmed_distinct") val confirmedDistinct: List<String> = emptyList(),
+    @SerialName("confirmed_links") val confirmedLinks: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+data class PlaylistRefreshResult(
+    @SerialName("request_id") val requestId: String,
+    @SerialName("source_revision") val sourceRevision: Long,
+    @SerialName("completed_at") val completedAt: String,
+    @SerialName("added_count") val addedCount: Int,
+    @SerialName("excluded_count") val excludedCount: Int,
+    @SerialName("present_count") val presentCount: Int,
+    val uncertain: List<PlaylistTrackMetadata> = emptyList(),
 )
 
 @Serializable

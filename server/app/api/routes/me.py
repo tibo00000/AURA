@@ -21,6 +21,8 @@ from app.schemas.me import (
     PlaylistSnapshotResponse,
     PlaylistSourceRequest,
     PlaylistSourceResponse,
+    PlaylistRefreshRequest,
+    PlaylistRefreshResult,
     PlaylistItemResponse,
     UserSettingsPatch,
     UserSettingsResponse,
@@ -33,6 +35,7 @@ from app.schemas.me import (
 )
 from app.schemas.responses import ResponseEnvelope
 from app.services.sync_service import compute_order_token
+from app.core.aura_id_codec import build_aura_id
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +112,44 @@ async def set_playlist_source(
     except Exception as exc:
         logger.warning("Playlist association unavailable (%s)", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Playlist association unavailable") from None
+
+
+@router.post("/playlists/{playlist_id}/refresh", response_model=ResponseEnvelope[PlaylistRefreshResult])
+async def commit_playlist_refresh(
+    playlist_id: str,
+    payload: PlaylistRefreshRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
+):
+    tracks = [
+        track.model_dump(exclude_none=True) | {
+            "track_id": build_aura_id("track", track.provider, track.provider_id),
+        }
+        for track in payload.tracks
+    ]
+    try:
+        result = await anyio.to_thread.run_sync(lambda: supabase.rpc("aura_commit_playlist_refresh", {
+            "p_playlist_id": playlist_id,
+            "p_request_id": str(payload.request_id),
+            "p_source_revision": payload.source_revision,
+            "p_tracks": tracks,
+            "p_confirmed_distinct": payload.confirmed_distinct,
+            "p_confirmed_links": payload.confirmed_links,
+        }).execute().data)
+        if result["status"] == "applied":
+            return ResponseEnvelope(data=PlaylistRefreshResult.model_validate(result))
+        if result["status"] == "not_found":
+            raise HTTPException(status_code=404, detail="Playlist unavailable")
+        if result["status"] == "conflict":
+            raise HTTPException(status_code=409, detail="Playlist source changed on another device")
+        raise ValueError("Unexpected refresh outcome")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if getattr(exc, "code", None) == "22023":
+            raise HTTPException(status_code=422, detail="Invalid source inventory") from None
+        logger.warning("Playlist refresh unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Playlist refresh unavailable") from None
 
 
 @router.get(

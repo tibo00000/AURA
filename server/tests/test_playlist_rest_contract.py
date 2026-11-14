@@ -51,6 +51,32 @@ def test_playlist_source_uses_canonical_reference_and_scoped_rpc(provider, exter
         assert response.json()["data"]["source_revision"] == 2
 
 
+def test_playlist_refresh_passes_canonical_track_identity_and_stable_request_to_sql():
+    from app.core.aura_id_codec import build_aura_id
+
+    request_id = "00000000-0000-0000-0000-000000010031"
+    db = MagicMock()
+    db.rpc.return_value.execute.return_value.data = {
+        "status": "applied", "request_id": request_id, "source_revision": 1,
+        "completed_at": "2026-11-14T10:30:00Z", "added_count": 1,
+        "excluded_count": 0, "present_count": 0, "uncertain": [],
+    }
+    api = FastAPI()
+    api.include_router(me.router)
+    api.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(id="owner", token="synthetic")
+    api.dependency_overrides[get_current_user_client] = lambda: db
+    response = TestClient(api).post("/me/playlists/playlist:original/refresh", json={
+        "request_id": request_id, "source_revision": 1,
+        "tracks": [{"provider": "deezer", "provider_id": "789", "title": "Title", "artist": "Artist"}],
+    })
+    assert response.status_code == 200
+    assert response.json()["data"]["request_id"] == request_id
+    name, args = db.rpc.call_args.args
+    assert name == "aura_commit_playlist_refresh"
+    assert args["p_request_id"] == request_id
+    assert args["p_tracks"][0]["track_id"] == build_aura_id("track", "deezer", "789")
+
+
 @pytest.fixture
 def document():
     app=FastAPI()

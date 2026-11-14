@@ -56,6 +56,7 @@ class DesktopUpdateManagerTest {
         override suspend fun getPlaylists(token: String) = throw NotImplementedError()
         override suspend fun getPlaylistSnapshot(token: String) = throw NotImplementedError()
         override suspend fun setPlaylistSource(token: String, id: String, request: com.aura.music.data.network.PlaylistSourceRequest) = throw NotImplementedError()
+        override suspend fun commitPlaylistRefresh(token: String, id: String, request: com.aura.music.data.network.PlaylistRefreshRequest) = throw NotImplementedError()
         override suspend fun getLikes(token: String) = throw NotImplementedError()
         override suspend fun likeTrack(token: String, trackId: String, sourceContextType: String?, sourceContextId: String?) = throw NotImplementedError()
         override suspend fun unlikeTrack(token: String, trackId: String) = throw NotImplementedError()

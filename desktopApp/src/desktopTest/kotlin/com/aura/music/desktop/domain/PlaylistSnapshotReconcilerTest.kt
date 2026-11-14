@@ -6,6 +6,7 @@ import com.aura.music.data.local.createAuraDatabase
 import com.aura.music.data.network.PlaylistItemResponse
 import com.aura.music.data.network.PlaylistSnapshotEntry
 import com.aura.music.data.network.PlaylistSnapshotResponse
+import com.aura.music.data.network.PlaylistTrackMetadata
 import com.aura.music.data.playlist.PlaylistSnapshotReconciler
 import java.time.Instant
 import java.sql.DriverManager
@@ -207,6 +208,36 @@ class PlaylistSnapshotReconcilerTest {
                 assertEquals(2L, detached?.sourceRevision)
                 assertEquals(entries, other.playlistDao().getPlaylistItems("playlist"))
             }
+        }
+    }
+
+    @Test
+    fun newOccurrenceCarriesUsableMetadataAndNeverReplacesLocalMedia() = runBlocking {
+        val base = snapshot("a")
+        val metadata = PlaylistTrackMetadata(
+            provider = "deezer", providerId = "123", title = "Verified recording", artist = "Performer",
+            album = "Album", durationMs = 220000, coverUri = "https://cdn-images.dzcdn.net/cover.jpg",
+        )
+        val incoming = base.copy(playlists = base.playlists.map { playlist ->
+            playlist.copy(items = playlist.items.map { it.copy(sourceMetadata = metadata) })
+        })
+        createAuraDatabase(temporary.newFile("metadata.db")).usingDatabase { db ->
+            val sync = PlaylistSnapshotReconciler(db) { Instant.parse(it).toEpochMilli() }
+            sync.apply(incoming, user, { true })
+            val track = requireNotNull(db.trackDao().getRawTrackById("recording"))
+            assertEquals("Verified recording", track.title)
+            assertEquals("Performer", track.displayArtistName)
+            assertEquals("Album", track.displayAlbumTitle)
+            assertEquals(220000L, track.durationMs)
+            assertEquals(metadata.coverUri, track.coverUri)
+            val link = TrackMediaLinkEntity("fixture-link", track.id, 42, "content://media/42",
+                availabilityStatus = "available", lastScannedAt = 1)
+            db.trackDao().upsertTrackMediaLinks(listOf(link))
+            val edited = track.copy(title = "My version", coverUri = "file:///local.jpg")
+            db.trackDao().upsertTrack(edited)
+            sync.apply(incoming.copy(revision = 2), user, { true })
+            assertEquals(edited, db.trackDao().getRawTrackById(track.id))
+            assertEquals(link, db.trackDao().getMediaLinkByTrackId(track.id))
         }
     }
 }

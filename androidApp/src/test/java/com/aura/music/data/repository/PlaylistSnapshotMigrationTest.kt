@@ -39,7 +39,9 @@ class PlaylistSnapshotMigrationTest {
         context = RuntimeEnvironment.getApplication(),
         name = file.absolutePath,
         factory = { AuraDatabaseConstructor.initialize() },
-    ).setDriver(AndroidSQLiteDriver()).addMigrations(AuraDatabase.MIGRATION_5_6, AuraDatabase.MIGRATION_6_7).build()
+    ).setDriver(AndroidSQLiteDriver()).addMigrations(
+        AuraDatabase.MIGRATION_5_6, AuraDatabase.MIGRATION_6_7, AuraDatabase.MIGRATION_7_8,
+    ).build()
 
     @Test
     fun migratedLegacyPlaylistAndPendingOccurrenceSurviveAnEmptyInventory() = runBlocking {

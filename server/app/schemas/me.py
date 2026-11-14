@@ -4,6 +4,7 @@ Pydantic schemas for the /me endpoints.
 
 import re
 from typing import Optional, List, Literal
+from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -36,6 +37,42 @@ class PlaybackSnapshotResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
+class PlaylistTrackMetadata(BaseModel):
+    provider: Literal["spotify", "deezer"]
+    provider_id: str = Field(min_length=1, max_length=22)
+    title: str = Field(min_length=1, max_length=512)
+    artist: str = Field(min_length=1, max_length=512)
+    album: str | None = Field(default=None, max_length=512)
+    duration_ms: int | None = Field(default=None, ge=0, le=999999999)
+    cover_uri: str | None = Field(default=None, max_length=1200)
+
+
+class PlaylistRefreshTrack(PlaylistTrackMetadata):
+    requires_confirmation: bool = False
+
+
+class PlaylistRefreshRequest(BaseModel):
+    request_id: UUID
+    source_revision: int = Field(ge=1, le=9223372036854775807)
+    tracks: list[PlaylistRefreshTrack] = Field(max_length=10000)
+    confirmed_distinct: list[str] = Field(default_factory=list, max_length=10000)
+    confirmed_links: dict[str, str] = Field(default_factory=dict, max_length=10000)
+
+
+class PlaylistUncertainTrack(PlaylistTrackMetadata):
+    track_id: str
+
+
+class PlaylistRefreshResult(BaseModel):
+    request_id: UUID
+    source_revision: int
+    completed_at: str
+    added_count: int
+    excluded_count: int
+    present_count: int
+    uncertain: list[PlaylistUncertainTrack] = Field(default_factory=list)
+
+
 class PlaylistItemResponse(BaseModel):
     """Playlist item model."""
     id: str
@@ -45,6 +82,7 @@ class PlaylistItemResponse(BaseModel):
     added_at: str
     added_from_context_type: Optional[str] = None
     added_from_context_id: Optional[str] = None
+    source_metadata: PlaylistTrackMetadata | None = None
 
 
 class PlaylistResponse(BaseModel):
@@ -66,6 +104,7 @@ class PlaylistSnapshotEntry(PlaylistResponse):
     source_provider: Literal["spotify", "deezer"] | None = None
     source_external_id: str | None = None
     source_revision: int = Field(default=0, ge=0)
+    last_refresh: PlaylistRefreshResult | None = None
 
 
 class PlaylistSourceResponse(BaseModel):

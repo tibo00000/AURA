@@ -9,19 +9,33 @@ import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.AuraResponse
 import com.aura.music.data.network.PlaylistSourceRequest
 import com.aura.music.data.network.PlaylistSourceResponse
+import com.aura.music.data.network.PlaylistRefreshRequest
+import com.aura.music.data.network.PlaylistRefreshResult
 import com.aura.music.data.repository.SyncRepository
+import com.aura.music.domain.search.SearchNormalizer
 import io.ktor.client.call.body
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import java.net.URI
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 data class PlaylistSourceReference(val provider: String, val externalId: String) {
+    fun isCanonical(): Boolean = when (provider) {
+        "spotify" -> spotifyId.matches(externalId)
+        "deezer" -> deezerId.matches(externalId)
+        else -> false
+    }
+
     companion object {
         private val spotifyId = Regex("[A-Za-z0-9]{22}")
         private val deezerId = Regex("[1-9][0-9]{0,19}")
@@ -48,18 +62,132 @@ data class PlaylistSourceReference(val provider: String, val externalId: String)
     }
 }
 
-class PlaylistSourceRepository(
+class PlaylistSourceRepository internal constructor(
     private val database: AuraDatabase,
     private val api: AuraApiService,
     private val auth: AuthSessionManager,
     private val sync: SyncRepository,
+    private val sourceReader: PlaylistSourceReader,
 ) {
+    private val refreshMutex = Mutex()
+
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observe(playlistId: String) = auth.sessionScope.map { it?.userId }.distinctUntilChanged()
         .flatMapLatest { owner ->
             if (owner == null) flowOf(null)
             else database.playlistDao().observePlaylistSyncState(playlistId, owner)
         }
+
+    suspend fun refresh(
+        playlistId: String,
+        deviceId: String,
+        confirmedDistinct: List<String> = emptyList(),
+        confirmedLinks: Map<String, String> = emptyMap(),
+    ): PlaylistRefreshResult = refreshMutex.withLock {
+        if (!auth.isLoggedIn.value) throw PlaylistSourceReadException("Connecte-toi à Aura pour actualiser cette playlist.")
+        val scope = auth.captureScope()
+        val dao = database.playlistDao()
+        val state = dao.getPlaylistSyncState(playlistId)
+        val provider = state?.sourceProvider
+        val externalId = state?.sourceExternalId
+        if (state == null || state.userId != scope.userId || provider == null || externalId == null) {
+            throw PlaylistSourceReadException("Associe une source à cette playlist avant de l’actualiser.")
+        }
+        val pending = state.pendingRefreshJson?.let { Json.decodeFromString<PlaylistRefreshRequest>(it) }
+        if (pending != null && (confirmedDistinct.isNotEmpty() || confirmedLinks.isNotEmpty())) {
+            throw PlaylistSourceReadException("Rejoue d’abord l’actualisation précédente pour confirmer son résultat.")
+        }
+        val tracks = pending?.tracks ?: sourceReader.read(PlaylistSourceReference(provider, externalId))
+        if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+        // A pending manual removal must reach the server before automatic additions.
+        if (!sync.performSync(deviceId, force = true)) {
+            throw PlaylistSourceReadException("Synchronise les modifications locales avant de réessayer.")
+        }
+        val current = dao.getPlaylistSyncState(playlistId)
+        if (current?.userId != scope.userId || current.sourceRevision != state.sourceRevision) {
+            throw PlaylistSourceReadException("La source de la playlist a changé. Réessaie.")
+        }
+        val localIdentities = dao.getPlaylistTracks(playlistId).mapTo(mutableSetOf()) { row ->
+            SearchNormalizer.normalize(row.title) to SearchNormalizer.normalize(row.artistName.orEmpty())
+        }
+        val request = pending ?: PlaylistRefreshRequest(
+            requestId = UUID.randomUUID().toString(),
+            sourceRevision = state.sourceRevision,
+            tracks = tracks.map {
+                val key = SearchNormalizer.normalize(it.title) to SearchNormalizer.normalize(it.artist)
+                it.copy(requiresConfirmation = key in localIdentities)
+            },
+            confirmedDistinct = confirmedDistinct,
+            confirmedLinks = confirmedLinks,
+        )
+        database.useWriterConnection { writer ->
+            writer.immediateTransaction {
+                if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+                val latest = dao.getPlaylistSyncState(playlistId)
+                if (latest?.userId != scope.userId || latest.sourceRevision != request.sourceRevision) {
+                    throw PlaylistSourceReadException("La source de la playlist a changé. Réessaie.")
+                }
+                val unresolved = database.syncOutboxDao().getUnresolvedPlaylistOperations()
+                if (pending == null && unresolved.any { operation ->
+                    (operation.userId == null || operation.userId == scope.userId) && (
+                        operation.entityId == playlistId ||
+                            runCatching { Json.parseToJsonElement(operation.payloadJson) }
+                                .getOrNull()?.let { (it as? kotlinx.serialization.json.JsonObject)?.get("playlist_id") }
+                                == kotlinx.serialization.json.JsonPrimitive(playlistId)
+                        )
+                }) throw PlaylistSourceReadException("Une modification locale de cette playlist est encore en attente.")
+                val serialized = Json.encodeToString(request)
+                if (latest.pendingRefreshJson != serialized) {
+                    dao.upsertPlaylistSyncState(latest.copy(pendingRefreshJson = serialized))
+                }
+            }
+        }
+        val response = api.commitPlaylistRefresh(auth.validSession(scope = scope).bearer, playlistId, request)
+        if (response.status == HttpStatusCode.Conflict) {
+            clearPendingRefresh(playlistId, scope, request)
+            sync.triggerManualSync()
+            throw PlaylistSourceReadException("La source a changé sur un autre appareil. Réessaie après la synchronisation.")
+        }
+        if (response.status == HttpStatusCode.UnprocessableEntity) {
+            clearPendingRefresh(playlistId, scope, request)
+            throw PlaylistSourceReadException("Le fournisseur a renvoyé des données que la playlist ne peut pas importer.")
+        }
+        if (!response.status.isSuccess()) throw PlaylistSourceReadException("Aura n’a pas pu confirmer l’actualisation.")
+        val result = response.body<AuraResponse<PlaylistRefreshResult>>().data
+        if (result == null || result.requestId != request.requestId || result.sourceRevision != state.sourceRevision) {
+            throw PlaylistSourceReadException("Aura n’a pas pu confirmer l’actualisation.")
+        }
+        database.useWriterConnection { writer ->
+            writer.immediateTransaction {
+                if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+                val latest = dao.getPlaylistSyncState(playlistId)
+                if (latest?.userId == scope.userId && latest.sourceRevision == state.sourceRevision) {
+                    dao.upsertPlaylistSyncState(latest.copy(
+                        lastRefreshJson = Json.encodeToString(result), pendingRefreshJson = null,
+                    ))
+                }
+                if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+            }
+        }
+        sync.triggerManualSync()
+        result
+    }
+
+    private suspend fun clearPendingRefresh(
+        playlistId: String, scope: AuthSessionManager.Scope, request: PlaylistRefreshRequest,
+    ) {
+        database.useWriterConnection { writer ->
+            writer.immediateTransaction {
+                if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+                val dao = database.playlistDao()
+                val state = dao.getPlaylistSyncState(playlistId)
+                if (state?.userId == scope.userId && state.pendingRefreshJson == Json.encodeToString(request)) {
+                    dao.upsertPlaylistSyncState(state.copy(pendingRefreshJson = null))
+                }
+                if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+            }
+        }
+    }
 
     suspend fun set(
         playlistId: String,
@@ -120,5 +248,7 @@ class PlaylistSourceRepository(
         sourceProvider = source.provider,
         sourceExternalId = source.externalId,
         sourceRevision = source.sourceRevision,
+        lastRefreshJson = lastRefreshJson.takeIf { source.sourceRevision == sourceRevision },
+        pendingRefreshJson = pendingRefreshJson.takeIf { source.sourceRevision == sourceRevision },
     )
 }

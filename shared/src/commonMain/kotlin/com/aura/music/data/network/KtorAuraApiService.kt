@@ -174,6 +174,14 @@ class KtorAuraApiService(
             setBody(request)
         }
 
+    override suspend fun commitPlaylistRefresh(token: String, id: String, request: PlaylistRefreshRequest): HttpResponse =
+        client.post("$cleanBaseUrl/me/playlists") {
+            url { appendPathSegments(id, "refresh", encodeSlash = true) }
+            header("Authorization", token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+
     override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = client.get("$cleanBaseUrl/me/likes") {
         header("Authorization", token)
     }.body()

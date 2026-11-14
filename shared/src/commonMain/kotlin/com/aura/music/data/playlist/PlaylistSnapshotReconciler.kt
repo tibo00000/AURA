@@ -12,6 +12,8 @@ import com.aura.music.data.network.PlaylistSnapshotResponse
 import com.aura.music.domain.search.SearchNormalizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import com.aura.music.data.network.PlaylistRefreshResult
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -42,10 +44,13 @@ class PlaylistSnapshotReconciler(
             require(playlist.itemCount == playlist.items.size)
             require(playlist.sourceRevision >= 0)
             require((playlist.sourceProvider == null) == (playlist.sourceExternalId == null))
+            require(playlist.lastRefresh == null || playlist.lastRefresh.sourceRevision == playlist.sourceRevision)
             var previousPosition = -1
             for (item in playlist.items) {
                 require(item.playlistId == playlist.id && item.id.isNotBlank() && item.trackId.isNotBlank())
                 require(item.position > previousPosition && itemIds.add(item.id))
+                require(item.sourceMetadata == null ||
+                    (item.sourceMetadata.title.isNotBlank() && item.sourceMetadata.artist.isNotBlank()))
                 previousPosition = item.position
                 parseTimestamp(item.addedAt)
             }
@@ -82,23 +87,35 @@ class PlaylistSnapshotReconciler(
                     val synced = playlistDao.getPlaylistSyncState(remote.id)
                     require(synced == null || synced.userId == userId) { "Conflicting playlist owner" }
                     val newerSource = synced?.takeIf { it.sourceRevision > remote.sourceRevision }
+                    val localRefresh = synced?.lastRefreshJson
+                        ?.takeIf { synced.sourceRevision == remote.sourceRevision }
+                        ?.let { Json.decodeFromString<PlaylistRefreshResult>(it) }
+                    val remoteRefresh = remote.lastRefresh
+                    val retainLocalRefresh = localRefresh != null &&
+                        (remoteRefresh == null || parseTimestamp(localRefresh.completedAt) > parseTimestamp(remoteRefresh.completedAt))
                     val state = PlaylistSyncStateEntity(
                         remote.id, userId, remote.updatedAt, remote.orderToken, snapshot.revision,
                         if (newerSource != null) newerSource.sourceProvider else remote.sourceProvider,
                         if (newerSource != null) newerSource.sourceExternalId else remote.sourceExternalId,
                         newerSource?.sourceRevision ?: remote.sourceRevision,
+                        if (newerSource != null || retainLocalRefresh) synced?.lastRefreshJson
+                        else remoteRefresh?.let { Json.encodeToString(it) },
+                        synced?.pendingRefreshJson?.takeIf { synced.sourceRevision >= remote.sourceRevision },
                     )
                     if (remote.id in protectedPlaylists) {
                         // A matching server parent proves ownership even while a legacy edit
                         // keeps its local contents protected from this snapshot.
                         if (synced == null && playlistDao.getPlaylistEntity(remote.id) != null) {
                             playlistDao.upsertPlaylistSyncState(state.copy(appliedRevision = null))
-                        } else if (synced != null && remote.sourceRevision > synced.sourceRevision) {
-                            playlistDao.upsertPlaylistSyncState(synced.copy(
+                        } else if (synced != null && remote.sourceRevision >= synced.sourceRevision) {
+                            val updatedSource = synced.copy(
                                 sourceProvider = remote.sourceProvider,
                                 sourceExternalId = remote.sourceExternalId,
                                 sourceRevision = remote.sourceRevision,
-                            ))
+                                lastRefreshJson = state.lastRefreshJson,
+                                pendingRefreshJson = state.pendingRefreshJson,
+                            )
+                            if (synced != updatedSource) playlistDao.upsertPlaylistSyncState(updatedSource)
                         }
                         continue
                     }
@@ -139,29 +156,45 @@ class PlaylistSnapshotReconciler(
                         while (temporaryPosition in occupied) temporaryPosition--
                         playlistDao.updatePlaylistItemPosition(item.id, temporaryPosition--)
                     }
-                    for (item in desired) {
-                        if (item == previousById[item.id]) continue
+                    for ((index, item) in desired.withIndex()) {
+                        val metadata = remote.items[index].sourceMetadata
+                        if (item == previousById[item.id] && metadata == null) continue
                         val existing = playlistDao.getPlaylistItem(item.id)
                         require(existing == null || existing.playlistId == remote.id) { "Conflicting playlist item ID" }
-                        if (database.trackDao().getRawTrackById(item.trackId) == null) {
-                            val title = "Morceau synchronisé"
-                            database.trackDao().upsertTrack(
-                                TrackEntity(
+                        val trackDao = database.trackDao()
+                        val track = trackDao.getRawTrackById(item.trackId)
+                        val updatedTrack = if (track == null) {
+                            val title = metadata?.title ?: "Morceau synchronisé"
+                            TrackEntity(
                                     id = item.trackId,
                                     primaryArtistId = null,
                                     albumId = null,
                                     title = title,
                                     normalizedTitle = SearchNormalizer.normalize(title),
-                                    displayArtistName = "Artiste inconnu",
+                                    displayArtistName = metadata?.artist ?: "Artiste inconnu",
+                                    displayAlbumTitle = metadata?.album,
+                                    durationMs = metadata?.durationMs,
+                                    coverUri = metadata?.coverUri,
                                     canonicalAudioSourceType = "online",
                                     isLiked = false,
                                     isDownloadedByAura = false,
                                     createdAt = item.addedAt,
                                     updatedAt = item.addedAt,
-                                ),
                             )
-                        }
-                        playlistDao.upsertPlaylistItem(item)
+                        } else if (metadata != null) {
+                            val title = if (track.title in setOf("Morceau synchronisé", "Unknown Title")) metadata.title else track.title
+                            track.copy(
+                                title = title,
+                                normalizedTitle = if (title == track.title) track.normalizedTitle else SearchNormalizer.normalize(title),
+                                displayArtistName = if (track.displayArtistName in setOf("Artiste inconnu", "Unknown artist", ""))
+                                    metadata.artist else track.displayArtistName,
+                                displayAlbumTitle = track.displayAlbumTitle ?: metadata.album,
+                                durationMs = track.durationMs?.takeIf { it > 0 } ?: metadata.durationMs,
+                                coverUri = track.coverUri ?: metadata.coverUri,
+                            )
+                        } else track
+                        if (updatedTrack != track) trackDao.upsertTrack(updatedTrack)
+                        if (item != previousById[item.id]) playlistDao.upsertPlaylistItem(item)
                     }
                     if (synced != state) playlistDao.upsertPlaylistSyncState(state)
                 }

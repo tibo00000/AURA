@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,6 +38,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import kotlinx.coroutines.sync.withPermit
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
@@ -61,6 +63,8 @@ import com.aura.music.data.repository.AddToPlaylistResult
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.data.repository.PlaylistDetail
 import com.aura.music.data.playlist.PlaylistSourceReference
+import com.aura.music.data.playlist.PlaylistSourceReadException
+import com.aura.music.data.network.PlaylistRefreshResult
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.theme.BlazeOrange
@@ -72,6 +76,8 @@ import com.aura.music.ui.theme.TextSecondary
 import com.aura.music.ui.screens.PlaylistMosaicCover
 import com.aura.music.ui.toQueuedTrack
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.Json
 
 @Composable
 fun PlaylistDetailScreenNew(
@@ -117,6 +123,12 @@ fun PlaylistDetailScreenNew(
     }
     var sourceEditRevision by remember(playlistId) { mutableStateOf<Long?>(null) }
     var isSavingSource by remember(playlistId) { mutableStateOf(false) }
+    var isRefreshingSource by remember(playlistId) { mutableStateOf(false) }
+    var showUncertainTracks by remember(playlistId) { mutableStateOf(false) }
+    var trackToLink by remember(playlistId) { mutableStateOf<com.aura.music.data.network.PlaylistTrackMetadata?>(null) }
+    val lastRefresh = remember(sourceState?.lastRefreshJson) {
+        sourceState?.lastRefreshJson?.let { runCatching { Json.decodeFromString<PlaylistRefreshResult>(it) }.getOrNull() }
+    }
     val cloudFileRepository = appContainer.cloudFileRepository
     val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
@@ -128,15 +140,34 @@ fun PlaylistDetailScreenNew(
     }
     val cloudFiles = cloudFilesState.value
     val snackbarHostState = remember { SnackbarHostState() }
+    fun currentDeviceId(): String = android.provider.Settings.Secure.getString(
+        context.contentResolver, android.provider.Settings.Secure.ANDROID_ID,
+    ) ?: "android_pixel_device"
+
+    fun refreshSource(confirmed: List<String> = emptyList(), links: Map<String, String> = emptyMap()) {
+        if (isRefreshingSource) return
+        isRefreshingSource = true
+        scope.launch {
+            try {
+                val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, links)
+                snackbarHostState.showSnackbar("${result.addedCount} titre(s) ajouté(s) · ${result.uncertain.size} à vérifier")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                snackbarHostState.showSnackbar(
+                    (failure as? PlaylistSourceReadException)?.message ?: "L’actualisation n’a pas pu être confirmée.",
+                )
+            } finally {
+                isRefreshingSource = false
+            }
+        }
+    }
     fun saveSource(reference: PlaylistSourceReference?, revision: Long) {
         if (isSavingSource) return
         isSavingSource = true
         scope.launch {
             try {
-                val deviceId = android.provider.Settings.Secure.getString(
-                    context.contentResolver, android.provider.Settings.Secure.ANDROID_ID,
-                ) ?: "android_pixel_device"
-                val error = sourceRepository.set(playlistId, deviceId, reference, revision)
+                val error = sourceRepository.set(playlistId, currentDeviceId(), reference, revision)
                 snackbarHostState.showSnackbar(error ?: "Source de la playlist mise à jour.")
             } finally {
                 isSavingSource = false
@@ -196,6 +227,25 @@ fun PlaylistDetailScreenNew(
                         )
                         if (sourceName != null) {
                             Text("Source · $sourceName", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                        if (isRefreshingSource) Text("Actualisation en cours…", style = MaterialTheme.typography.bodySmall)
+                        if (lastRefresh != null) {
+                            val completed = remember(lastRefresh.completedAt) {
+                                runCatching {
+                                    java.time.Instant.parse(lastRefresh.completedAt)
+                                        .atZone(java.time.ZoneId.systemDefault())
+                                        .format(java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT))
+                                }.getOrNull()
+                            }
+                            if (completed != null) {
+                                Text("Dernière actualisation · $completed", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
+                            Text("${lastRefresh.addedCount} ajouté(s) · ${lastRefresh.excludedCount} exclu(s)", style = MaterialTheme.typography.bodySmall)
+                            if (lastRefresh.uncertain.isNotEmpty()) {
+                                TextButton(onClick = { showUncertainTracks = true }, enabled = !isRefreshingSource) {
+                                    Text("Vérifier ${lastRefresh.uncertain.size} correspondance(s)")
+                                }
+                            }
                         }
                     }
                 }
@@ -403,6 +453,14 @@ fun PlaylistDetailScreenNew(
                                     )
                                     if (sourceName != null) {
                                         DropdownMenuItem(
+                                            text = { Text("Actualiser depuis $sourceName") },
+                                            enabled = !isSavingSource && !isRefreshingSource,
+                                            onClick = {
+                                                showMenuOpen = false
+                                                refreshSource()
+                                            },
+                                        )
+                                        DropdownMenuItem(
                                             text = { Text("Retirer la source") },
                                             enabled = !isSavingSource,
                                             onClick = {
@@ -520,6 +578,50 @@ fun PlaylistDetailScreenNew(
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
+    }
+
+    if (showUncertainTracks && lastRefresh != null) {
+        AlertDialog(
+            onDismissRequest = { showUncertainTracks = false },
+            title = { Text("Correspondances à vérifier") },
+            text = {
+                LazyColumn(Modifier.height(220.dp)) {
+                    itemsIndexed(lastRefresh.uncertain, key = { index, track -> track.trackId ?: index }) { _, track ->
+                        Column {
+                            Text("${track.title} · ${track.artist}")
+                            TextButton(onClick = {
+                                showUncertainTracks = false
+                                track.trackId?.let { refreshSource(listOf(it)) }
+                            }, enabled = track.trackId != null) { Text("Ajouter comme titre distinct") }
+                            TextButton(onClick = {
+                                showUncertainTracks = false
+                                trackToLink = track
+                            }, enabled = track.trackId != null) { Text("Associer à une occurrence") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showUncertainTracks = false }) { Text("Fermer") } },
+        )
+    }
+
+    val linkCandidate = trackToLink
+    if (linkCandidate != null && detail != null) {
+        AlertDialog(
+            onDismissRequest = { trackToLink = null },
+            title = { Text("Occurrence pour ${linkCandidate.title}") },
+            text = {
+                LazyColumn(Modifier.height(260.dp)) {
+                    itemsIndexed(detail.tracks, key = { _, track -> track.playlistItemId }) { index, track ->
+                        TextButton(onClick = {
+                            trackToLink = null
+                            linkCandidate.trackId?.let { refreshSource(links = mapOf(it to track.playlistItemId)) }
+                        }) { Text("${index + 1}. ${track.title} · ${track.artistName.orEmpty()}") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { trackToLink = null }) { Text("Annuler") } },
+        )
     }
 
     sourceEditRevision?.let { revision ->

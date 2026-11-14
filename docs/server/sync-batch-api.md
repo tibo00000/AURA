@@ -65,6 +65,13 @@ idempotent. Une révision périmée en conflit ne peut remplacer l'association.
 Le snapshot inclut `source_provider`, `source_external_id` et
 `source_revision`. Une playlist jamais associée a la révision 0.
 
+Le commit d’actualisation est identifié par une demande stable et la révision
+d’association. Il persiste son bilan ainsi que les métadonnées des occurrences
+ajoutées et les intentions audio de ces ajouts, dans la même transaction.
+Un rejeu retourne le bilan persistant. Le lecteur du fournisseur ne soumet
+un commit qu’après la lecture complète. Une révision devenue obsolète
+pendant la lecture provoque un conflit sans mutation.
+
 Le curseur retourné par un pull départage les changements d'un même
 horodatage par identifiant stable. Les anciens curseurs temporels sont
 encore acceptés. Une page vide conserve le curseur reçu. Le client reprend
