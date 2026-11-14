@@ -14,6 +14,7 @@ Le chantier de démarrage Android et les protections de session intégrés
 | D | `17a276f0` | Traitement serveur et reprise des intentions |
 | E | `eb4fc2a7` | Menu, bilans, file éligible et identifiants d’occurrence |
 | F | Ce dossier | Tests croisés, inventaire et retour arrière |
+| Suivi E/F | `c770f98f` | Répétition Media3 par occurrence et invalidation cloud au changement de compte |
 
 ## Ordre de livraison proposé
 
@@ -118,7 +119,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 154 sur 155. Test d’indexation des 50 000 titres au-dessus de son seuil de 3 s sur la branche (4,27 s) et sur le commit de départ (5,31 s). Le code de recherche et le seuil sont identiques. |
+| Suite Android complète | 159 sur 159. Indexation des 50 000 titres en 2,84 s après suppression des normalisations redondantes, contre 4,27 s dans le rejeu précédent du candidat et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
 | PostgreSQL | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique et reprise dans deux processus vérifiés. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage

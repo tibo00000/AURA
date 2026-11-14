@@ -64,13 +64,13 @@ class LocalSearchIndex(
             albums: List<AlbumBrowseRow>
         ): LocalSearchIndex {
             // 1. Indexation des Titres
-            val indexedTracks = tracks.mapIndexed { idx, track ->
+            val indexedTracks = tracks.map { track ->
                 val normTitle = SearchNormalizer.normalize(track.title)
-                val titleTokens = SearchNormalizer.tokenize(track.title).toTypedArray()
+                val titleTokens = SearchNormalizer.tokenizeNormalized(normTitle).toTypedArray()
                 val normArtist = SearchNormalizer.normalize(track.artistName)
-                val artistTokens = SearchNormalizer.tokenize(track.artistName).toTypedArray()
+                val artistTokens = SearchNormalizer.tokenizeNormalized(normArtist).toTypedArray()
                 val normAlbum = SearchNormalizer.normalize(track.albumTitle)
-                val albumTokens = SearchNormalizer.tokenize(track.albumTitle).toTypedArray()
+                val albumTokens = SearchNormalizer.tokenizeNormalized(normAlbum).toTypedArray()
 
                 val allTokens = (titleTokens.toList() + artistTokens.toList() + albumTokens.toList())
                     .distinct()
@@ -111,7 +111,7 @@ class LocalSearchIndex(
             // 2. Indexation des Artistes
             val indexedArtists = artists.map { artist ->
                 val normName = SearchNormalizer.normalize(artist.name)
-                val nameTokens = SearchNormalizer.tokenize(artist.name).toTypedArray()
+                val nameTokens = SearchNormalizer.tokenizeNormalized(normName).toTypedArray()
                 IndexedArtist(
                     id = artist.id,
                     artist = artist,
@@ -141,9 +141,9 @@ class LocalSearchIndex(
             // 3. Indexation des Albums
             val indexedAlbums = albums.map { album ->
                 val normTitle = SearchNormalizer.normalize(album.title)
-                val titleTokens = SearchNormalizer.tokenize(album.title).toTypedArray()
+                val titleTokens = SearchNormalizer.tokenizeNormalized(normTitle).toTypedArray()
                 val normArtist = SearchNormalizer.normalize(album.artistName)
-                val artistTokens = SearchNormalizer.tokenize(album.artistName).toTypedArray()
+                val artistTokens = SearchNormalizer.tokenizeNormalized(normArtist).toTypedArray()
                 val allTokens = (titleTokens.toList() + artistTokens.toList()).distinct().toTypedArray()
 
                 IndexedAlbum(

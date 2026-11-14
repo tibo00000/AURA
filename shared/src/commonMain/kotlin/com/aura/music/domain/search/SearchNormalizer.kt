@@ -22,6 +22,7 @@ object SearchNormalizer {
     private val PARENTHESIS_NOISE_REGEX = Regex("(?i)\\s*[\\[(](feat|ft|featuring|prod|remix|version|edit|official|clip|video|audio).*?[\\])]")
     private val DECORATIVE_PUNCTUATION_REGEX = Regex("[\\p{Punct}&&[^'\\$@!]]+")
     private val MULTI_WHITESPACE_REGEX = Regex("\\s+")
+    private val RHYTHM_AND_BLUES_REGEX = Regex("(?i)\\br\\s*&\\s*b\\b")
 
     /**
      * Normalise une chaîne de recherche ou de métadonnée :
@@ -42,7 +43,7 @@ object SearchNormalizer {
         cleaned = stripDiacritics(cleaned)
 
         // 3. Gestion des acronymes avec '&' (ex: "R&B" -> "rnb", "Simon & Garfunkel" -> "simon and garfunkel")
-        cleaned = cleaned.replace(Regex("(?i)\\br\\s*&\\s*b\\b"), "rnb")
+        cleaned = RHYTHM_AND_BLUES_REGEX.replace(cleaned, "rnb")
         cleaned = cleaned.replace("&", " and ")
 
         // 4. Suppression des apostrophes et séparation de la ponctuation décorative (ex: "Blink-182" -> "Blink 182")
@@ -69,8 +70,9 @@ object SearchNormalizer {
      * Découpe un texte normalisé en tokens utiles pour la recherche.
      * Filtre les tokens de longueur <= 1 (sauf si la requête entière fait 1 caractère).
      */
-    fun tokenize(text: String?): List<String> {
-        val normalized = normalize(text)
+    fun tokenize(text: String?): List<String> = tokenizeNormalized(normalize(text))
+
+    internal fun tokenizeNormalized(normalized: String): List<String> {
         if (normalized.isBlank()) return emptyList()
 
         val tokens = normalized.split(" ").filter { it.isNotBlank() }
