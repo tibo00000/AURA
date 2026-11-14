@@ -1191,7 +1191,7 @@ fun FavoritesScreen(
                 } else {
                     val trackId = t.id
                     pendingDeleteTrackId = trackId
-                        scope.launch {
+                    scope.launch {
                         val pendingIntent = repository.deleteTrack(trackId)
                         if (pendingIntent != null) {
                             try {

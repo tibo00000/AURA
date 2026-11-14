@@ -320,14 +320,9 @@ class PlaybackService : MediaLibraryService() {
                         "favorites" -> repository.getLikedTracks()
                         "downloads" -> repository.getDownloadedTracks()
                         "tracks" -> repository.getAllTracks()
-                        else -> {
-                            if (folderId.startsWith("album:")) {
-                                val albumId = folderId.substringAfter("album:")
-                                repository.getTracksForAlbum(albumId)
-                            } else {
-                                emptyList()
-                            }
-                        }
+                        else -> if (folderId.startsWith("album:")) {
+                            repository.getTracksForAlbum(folderId.substringAfter("album:"))
+                        } else emptyList()
                     }
                 }
 
