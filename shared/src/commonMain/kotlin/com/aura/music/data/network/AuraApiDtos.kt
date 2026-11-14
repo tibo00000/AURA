@@ -357,7 +357,8 @@ data class SyncOperationResultDto(
     @SerialName("status") val status: String, // "applied", "merged", "conflict", "ignored_duplicate"
     @SerialName("server_updated_at") val serverUpdatedAt: String,
     @SerialName("resolved_entity") val resolvedEntity: JsonObject? = null,
-    @SerialName("conflict") val conflict: JsonObject? = null
+    @SerialName("conflict") val conflict: JsonObject? = null,
+    @SerialName("playlist_revision") val playlistRevision: Long? = null,
 )
 
 @Serializable
@@ -459,6 +460,30 @@ data class PlaylistResponse(
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
     @SerialName("items") val items: List<PlaylistItemResponse> = emptyList()
+)
+
+@Serializable
+data class PlaylistSnapshotResponse(
+    @SerialName("user_id") val userId: String,
+    @SerialName("playlist_count") val playlistCount: Int,
+    @SerialName("item_count") val itemCount: Int,
+    val playlists: List<PlaylistSnapshotEntry>,
+    val revision: Long,
+    @SerialName("contract_version") val contractVersion: Int,
+)
+
+@Serializable
+data class PlaylistSnapshotEntry(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    val name: String,
+    @SerialName("cover_uri") val coverUri: String? = null,
+    @SerialName("is_pinned") val isPinned: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("order_token") val orderToken: String,
+    val items: List<PlaylistItemResponse>,
+    @SerialName("item_count") val itemCount: Int,
 )
 
 @Serializable

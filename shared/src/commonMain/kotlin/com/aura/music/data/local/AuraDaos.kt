@@ -681,23 +681,68 @@ interface TrackDao {
 
 @Dao
 interface PlaylistDao {
+    @Query("SELECT * FROM playlists WHERE id = :playlistId")
+    suspend fun getPlaylistEntity(playlistId: String): PlaylistEntity?
+
+    @Query("SELECT * FROM playlist_items WHERE playlist_id = :playlistId ORDER BY position")
+    suspend fun getPlaylistItems(playlistId: String): List<PlaylistItemEntity>
+
+    @Query("SELECT * FROM playlist_sync_state WHERE playlist_id = :playlistId")
+    suspend fun getPlaylistSyncState(playlistId: String): PlaylistSyncStateEntity?
+
+    @Query("SELECT * FROM playlist_sync_state WHERE user_id = :userId")
+    suspend fun getPlaylistSyncStates(userId: String): List<PlaylistSyncStateEntity>
+
+    @Upsert
+    suspend fun upsertPlaylistSyncState(entity: PlaylistSyncStateEntity)
+
+    @Query("SELECT revision FROM playlist_snapshot_state WHERE user_id = :userId")
+    suspend fun getSnapshotRevision(userId: String): Long?
+
+    @Upsert
+    suspend fun upsertSnapshotState(entity: PlaylistSnapshotStateEntity)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPlaylist(entity: PlaylistEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertPlaylist(entity: PlaylistEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertPlaylists(entities: List<PlaylistEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPlaylistItem(entity: PlaylistItemEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertPlaylistItem(entity: PlaylistItemEntity)
+    @Query(
+        """
+        INSERT INTO playlist_items(id, playlist_id, track_id, position, added_at, added_from_context_type, added_from_context_id)
+        VALUES (:id, :playlistId, :trackId, :position, :addedAt, :contextType, :contextId)
+        ON CONFLICT(id) DO UPDATE SET
+            playlist_id = excluded.playlist_id,
+            track_id = excluded.track_id,
+            position = excluded.position,
+            added_at = excluded.added_at,
+            added_from_context_type = excluded.added_from_context_type,
+            added_from_context_id = excluded.added_from_context_id
+        """,
+    )
+    suspend fun upsertPlaylistItemById(
+        id: String,
+        playlistId: String,
+        trackId: String,
+        position: Int,
+        addedAt: Long,
+        contextType: String?,
+        contextId: String?,
+    )
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertPlaylistItems(entities: List<PlaylistItemEntity>)
+    suspend fun upsertPlaylistItem(entity: PlaylistItemEntity) = upsertPlaylistItemById(
+        id = entity.id,
+        playlistId = entity.playlistId,
+        trackId = entity.trackId,
+        position = entity.position,
+        addedAt = entity.addedAt,
+        contextType = entity.addedFromContextType,
+        contextId = entity.addedFromContextId,
+    )
 
     @Query("UPDATE playlists SET name = :name, updated_at = :updatedAt WHERE id = :playlistId")
     suspend fun renamePlaylist(playlistId: String, name: String, updatedAt: Long): Int
@@ -788,6 +833,9 @@ interface PlaylistDao {
         """,
     )
     suspend fun getPlaylistDetail(playlistId: String): PlaylistDetailRow?
+
+    @Query("SELECT * FROM playlists WHERE id = :playlistId")
+    fun observePlaylist(playlistId: String): Flow<PlaylistEntity?>
 
     @Query(
         """
@@ -967,8 +1015,8 @@ interface UserSettingsDao {
     @Query("UPDATE user_settings SET stats_sync_network_policy = :policy WHERE id = 'default'")
     suspend fun updateStatsSyncNetworkPolicy(policy: String): Int
 
-    @Query("UPDATE user_settings SET sync_token = :token, last_sync_at = :lastSyncAt WHERE id = 'default'")
-    suspend fun updateSyncToken(token: String?, lastSyncAt: Long): Int
+    @Query("UPDATE user_settings SET sync_token = :token, sync_token_user_id = :userId, last_sync_at = :lastSyncAt WHERE id = 'default'")
+    suspend fun updateSyncToken(token: String, userId: String, lastSyncAt: Long): Int
 }
 
 // ---------------------------------------------------------------------------
@@ -1089,6 +1137,18 @@ interface SyncOutboxDao {
 
     @Query("SELECT * FROM sync_outbox WHERE status = 'pending' ORDER BY rowid ASC")
     suspend fun getPendingOperations(): List<SyncOutboxEntity>
+
+    @Query("SELECT * FROM sync_outbox WHERE entity_type IN ('playlist', 'playlist_item', 'playlist_reorder') ORDER BY rowid ASC")
+    suspend fun getUnresolvedPlaylistOperations(): List<SyncOutboxEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM sync_outbox WHERE user_id = :userId AND status = 'conflict' AND entity_type IN ('playlist', 'playlist_item', 'playlist_reorder'))")
+    fun observePlaylistConflict(userId: String): Flow<Boolean>
+
+    @Query("UPDATE sync_outbox SET status = 'conflict', user_id = :userId, attempt_count = attempt_count + 1, updated_at = :now WHERE id = :id AND (user_id = :userId OR user_id IS NULL)")
+    suspend fun markPlaylistConflict(id: String, userId: String, now: Long)
+
+    @Query("UPDATE sync_outbox SET user_id = :userId WHERE id = :id AND user_id IS NULL")
+    suspend fun assignLegacyPlaylistOperation(id: String, userId: String)
 
     @Query("UPDATE sync_outbox SET status = :status, attempt_count = attempt_count + 1, updated_at = :now WHERE id = :id")
     suspend fun updateStatus(id: String, status: String, now: Long)

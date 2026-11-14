@@ -43,6 +43,11 @@ Regles importantes :
 
 ## Tables
 
+La migration 5 → 6 ajoute l’identité de compte de l’outbox et du curseur
+batch, ainsi que `playlist_sync_state` (dernière révision appliquée à chaque
+playlist) et `playlist_snapshot_state` (dernière révision observée par compte).
+Un curseur hérité sans compte provoque une nouvelle hydratation.
+
 ### `artists`
 
 | Column | Type | Null | Key | Notes |
@@ -217,6 +222,21 @@ Rule:
 Constraints:
 - `UNIQUE(playlist_id, position)`
 - un meme `track_id` peut apparaitre plusieurs fois dans une playlist.
+- La synchronisation met à jour les playlists et les occurrences par leur clé primaire. Une collision sur `(playlist_id, position)` doit échouer ou être résolue dans la transaction de réconciliation. Un remplacement SQLite ne doit jamais supprimer une occurrence ou un parent pour résoudre cette collision.
+
+### `playlist_sync_state`
+
+La migration 5 vers 6 ajoute un état local pour chaque playlist confirmée
+par le serveur. La ligne garde l'identifiant de playlist, le propriétaire,
+l'horodatage serveur, le jeton d'ordre opaque et la révision appliquée.
+Une attribution obtenue avant résolution d'une opération historique ne
+constitue pas à elle seule une confirmation d'application. Une playlist
+locale sans révision appliquée reste conservée si elle est absente. La
+suppression de la playlist supprime uniquement son état et ses occurrences.
+Les nouvelles opérations de playlist dans `sync_outbox` portent le compte
+qui les a créées lorsque la session est connue. Le dépilement conserve les
+opérations des autres comptes. Une opération historique dépourvue de
+propriétaire reste protégée tant que sa cible ne peut pas être attribuée.
 
 ### `playback_snapshots`
 

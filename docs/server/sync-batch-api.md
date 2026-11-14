@@ -27,11 +27,11 @@ est fourni. Les données d'un autre compte ne sont pas retournées dans un confl
 Le batch reste séquentiel et **non atomique** : succès et conflits individuels sont conservés.
 Un échec d'accès au journal d'idempotence arrête le traitement ; un batch partiellement en
 échec n'est pas marqué terminé. Les marqueurs sont uniques par `(user_id,operation_id)` /
-`(user_id,batch_id)`. Mutation et marqueur restent deux appels HTTP : aucune garantie
-exactly-once globale nouvelle. Les mutations des positions d'une playlist sont atomiques
+`(user_id,batch_id)`. Pour les opérations historiques, mutation et marqueur restent deux
+appels HTTP. Les mutations des positions d'une playlist sont atomiques
 dans la RPC `aura_mutate_playlist_items` ; un conflit final annule tous leurs déplacements.
 
-Les formes HTTP/payloads/statuts existantes restent inchangées. `pull-batch` conserve son
+Les formes HTTP/payloads/statuts historiques restent disponibles. `pull-batch` conserve son
 périmètre actuel (settings, playlists/items, likes, snapshot), sans ajout de sessions/events.
 SQL et backend doivent être activés ensemble lors d'une fenêtre autorisée ; détails dans
 `docs/server/security-lot2-isolation.md`.
@@ -40,6 +40,35 @@ SQL et backend doivent être activés ensemble lors d'une fenêtre autorisée ; 
 - `POST /me/sync/bootstrap`
 - `POST /me/sync/push-batch`
 - `POST /me/sync/pull-batch`
+
+### Snapshot de playlists
+
+`GET /me/playlists/snapshot` renvoie un inventaire complet du compte depuis
+une seule lecture PostgreSQL. L'enveloppe `data` contient `user_id`,
+`contract_version`, `revision`, `playlist_count`, `item_count` et `playlists`. Chaque playlist contient
+ses entrées dans l'ordre `position`, avec l'identifiant de chaque occurrence
+et le jeton opaque `order_token`. Les compteurs couvrent le résultat entier.
+Une erreur de lecture n'est jamais représentée par un inventaire vide.
+La révision de compte avance dans la transaction de chaque écriture de playlist ou
+d’occurrence, y compris sur les routes historiques, et reste présente après suppression
+de la dernière playlist. L’inventaire et cette révision proviennent du même snapshot MVCC.
+Ce snapshot est indépendant du curseur batch. La route historique
+`GET /me/playlists` conserve son contrat.
+La capacité bootstrap `playlist_snapshot` omet la lecture historique des
+playlists pour un client qui a déjà chargé cet inventaire.
+
+Le curseur retourné par un pull départage les changements d'un même
+horodatage par identifiant stable. Les anciens curseurs temporels sont
+encore acceptés. Une page vide conserve le curseur reçu. Le client reprend
+depuis le dernier pull appliqué et conserve le curseur dans la transaction
+locale qui applique la page.
+Les opérations `playlist`, `playlist_item` et `playlist_reorder` utilisent
+`payload.playlist_sync_version = 2` pour réserver leur marqueur dans la
+transaction de mutation. La création d'une occurrence l'ajoute après la
+dernière position du serveur. Un déplacement v2 fournit `item_id`,
+`anchor_id` et `side` (`before` ou `after`). Le client attend un snapshot
+cohérent couvrant la `playlist_revision` de l’acquittement avant de retirer
+l’opération de l’outbox. Le rejeu renvoie la révision d’origine, par opération.
 
 ## Enveloppe de reponse canonique
 ```json

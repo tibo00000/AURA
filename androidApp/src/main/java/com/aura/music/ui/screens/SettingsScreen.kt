@@ -132,6 +132,9 @@ fun SettingsScreen(
     var isSyncing by remember { mutableStateOf(false) }
     var syncResultStatus by remember { mutableStateOf<String?>(null) }
     var isSyncSuccess by remember { mutableStateOf<Boolean?>(null) }
+    val hasPlaylistSyncConflict by remember(syncRepository) {
+        syncRepository.observePlaylistSyncConflict()
+    }.collectAsState(initial = false)
 
     var isIndexing by remember { mutableStateOf(false) }
     var indexResult by remember { mutableStateOf<String?>(null) }
@@ -278,6 +281,13 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Medium
                             )
                         }
+                        if (hasPlaylistSyncConflict) {
+                            Text(
+                                text = "Une modification de playlist est en conflit. Elle est conservée sur cet appareil.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SemanticError,
+                            )
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -301,8 +311,8 @@ fun SettingsScreen(
                                                 isSyncSuccess = true
                                                 refreshTick++
                                             } else {
-                                                syncResultStatus = "Aucune mise à jour requise."
-                                                isSyncSuccess = true
+                                                syncResultStatus = "Synchronisation non confirmée. Réessaie dans un instant."
+                                                isSyncSuccess = false
                                             }
                                         } catch (e: Exception) {
                                             syncResultStatus = "Erreur : ${e.localizedMessage}"

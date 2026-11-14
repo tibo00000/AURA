@@ -4,6 +4,7 @@ import androidx.room3.immediateTransaction
 import androidx.room3.useWriterConnection
 import com.aura.music.data.local.*
 import com.aura.music.data.network.*
+import com.aura.music.data.playlist.PlaylistSnapshotReconciler
 import com.aura.music.domain.search.SearchNormalizer
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
@@ -12,12 +13,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Gestionnaire de synchronisation Cloud pour le client Desktop.
@@ -26,12 +33,15 @@ import kotlinx.serialization.json.Json
 class DesktopCloudSyncManager(
     private val database: AuraDatabase,
     private val apiService: AuraApiService,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val currentUserId: (() -> String?)? = null,
 ) {
+    fun getUserId(): String? = currentUserId?.invoke()
     var apiToken: String? = null
     var autoSyncEnabled: Boolean = true
 
     private val isSyncing = AtomicBoolean(false)
+    private val outboxMutex = Mutex()
     private var syncJob: Job? = null
 
     private val _isSyncingState = MutableStateFlow(false)
@@ -71,7 +81,7 @@ class DesktopCloudSyncManager(
     fun triggerFlush() {
         val token = apiToken ?: return
         scope.launch(Dispatchers.IO) {
-            flushSyncOutbox(token)
+            performCloudSync(token)
         }
     }
 
@@ -81,13 +91,15 @@ class DesktopCloudSyncManager(
         _lastSyncError.value = null
         try {
             System.out.println("Starting background Cloud Metadata Sync...")
-            flushSyncOutbox(token)
-            syncCloudMetadata(token)
+            val acknowledged = flushSyncOutbox(token)
+            syncCloudMetadata(token, acknowledged)
             DesktopTrackHydrator.hydrateTrackStubs(database)
             withContext(Dispatchers.Main) {
                 onFinished?.invoke()
             }
             System.out.println("Background Cloud Metadata Sync finished.")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _lastSyncError.value = e.message
             System.err.println("Cloud sync failed: ${e.message}")
@@ -98,14 +110,72 @@ class DesktopCloudSyncManager(
         }
     }
 
-    suspend fun flushSyncOutbox(token: String) = withContext(Dispatchers.IO) {
+    suspend fun flushSyncOutbox(token: String): Map<String, Long> = withContext(Dispatchers.IO) {
+        outboxMutex.withLock { pushOutbox(token) }
+    }
+
+    private suspend fun pushOutbox(token: String): Map<String, Long> {
         val pendingOps = database.syncOutboxDao().getPendingOperations()
-        if (pendingOps.isEmpty()) return@withContext
+        val acknowledged = mutableMapOf<String, Long>()
+        val userId = getUserId()
+        if (currentUserId != null && (userId == null || apiToken != token)) return acknowledged
 
         System.out.println("Flushing ${pendingOps.size} pending outbox operations...")
         for (op in pendingOps) {
+            if (currentUserId != null && (getUserId() != userId || apiToken != token)) break
+            if (op.userId != null && op.userId != userId) continue
             try {
                 var success = false
+                val playlistPayload = when (op.entityType) {
+                    "playlist" -> buildJsonObject {
+                        if (op.operationType != "delete") put("name", parsePlaylistName(op.payloadJson))
+                    }
+                    "playlist_item", "playlist_reorder" -> if (op.payloadJson.trimStart().startsWith("{")) {
+                        Json.decodeFromString<JsonObject>(op.payloadJson)
+                    } else {
+                        database.syncOutboxDao().updateStatus(op.id, "conflict", System.currentTimeMillis())
+                        continue
+                    }
+                    else -> null
+                }
+                if (playlistPayload != null) {
+                    if (currentUserId != null && op.userId == null) {
+                        val id = if (op.entityType == "playlist_item") {
+                            playlistPayload["playlist_id"]?.toString()?.trim('"')
+                        } else op.entityId
+                        if (id == null || database.playlistDao().getPlaylistSyncState(id)?.userId != userId) continue
+                    }
+                    val operation = SyncOperationDto(
+                        operationId = op.id,
+                        entityType = op.entityType,
+                        entityId = op.entityId,
+                        operationType = op.operationType,
+                        deviceId = "desktop",
+                        occurredAt = java.time.Instant.ofEpochMilli(op.createdAt).toString(),
+                        payload = JsonObject(playlistPayload + ("playlist_sync_version" to JsonPrimitive(2))),
+                    )
+                    val request = PushBatchRequestDto(
+                        deviceId = "desktop",
+                        batchId = "desktop:${op.id}",
+                        sentAt = java.time.Instant.now().toString(),
+                        operations = listOf(operation),
+                    )
+                    val response = apiService.pushBatch(token, request)
+                    val result = response.data?.takeIf { it.batchId == request.batchId }?.results?.singleOrNull()
+                    if (response.error != null || result?.operationId != op.id ||
+                        result.entityId != op.entityId || result.entityType != op.entityType
+                    ) break
+                    when (result.status) {
+                        "applied", "merged", "ignored_duplicate" -> acknowledged[op.id] = result.playlistRevision ?: break
+                        "conflict" -> {
+                            if (result.conflict?.get("retryable") == JsonPrimitive(true)) break
+                            database.syncOutboxDao().updateStatus(op.id, "conflict", System.currentTimeMillis())
+                            _lastSyncError.value = "Une modification de playlist est en conflit. Elle est conservée sur cet appareil."
+                        }
+                        else -> break
+                    }
+                    continue
+                }
                 when (op.entityType) {
                     "track_like" -> {
                         if (op.operationType == "set" || op.operationType == "create") {
@@ -116,54 +186,6 @@ class DesktopCloudSyncManager(
                             if (resp.error == null) success = true
                         }
                     }
-                    "playlist" -> {
-                        if (op.operationType == "create") {
-                            val resp = apiService.createPlaylist(
-                                token = token,
-                                request = PlaylistCreate(
-                                    id = op.entityId,
-                                    name = parsePlaylistName(op.payloadJson).ifBlank { "Nouvelle Playlist" }
-                                )
-                            )
-                            if (resp.error == null) success = true
-                        } else if (op.operationType == "update") {
-                            val newName = parsePlaylistName(op.payloadJson)
-                            val resp = apiService.updatePlaylist(
-                                token = token,
-                                id = op.entityId,
-                                request = PlaylistUpdate(name = newName)
-                            )
-                            if (resp.error == null) success = true
-                        } else if (op.operationType == "delete") {
-                            val resp = apiService.deletePlaylist(token, op.entityId)
-                            if (resp.error == null) success = true
-                        }
-                    }
-                    "playlist_item" -> {
-                        if (op.operationType == "create" || op.operationType == "append") {
-                            val playlistId = op.entityId
-                            val trackId = op.payloadJson
-                            val resp = apiService.appendTrackToPlaylist(
-                                token = token,
-                                id = playlistId,
-                                request = PlaylistItemCreate(
-                                    id = op.id,
-                                    trackId = trackId,
-                                    position = 0
-                                )
-                            )
-                            if (resp.error == null) success = true
-                        } else if (op.operationType == "delete") {
-                            val playlistId = op.entityId
-                            val trackId = op.payloadJson
-                            val resp = apiService.removeTrackFromPlaylist(
-                                token = token,
-                                id = playlistId,
-                                trackId = trackId
-                            )
-                            if (resp.error == null) success = true
-                        }
-                    }
                 }
 
                 if (success) {
@@ -171,15 +193,23 @@ class DesktopCloudSyncManager(
                 } else {
                     database.syncOutboxDao().updateStatus(op.id, "failed", System.currentTimeMillis())
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 System.err.println("Failed to process outbox op ${op.id}: ${e.message}")
-                database.syncOutboxDao().updateStatus(op.id, "failed", System.currentTimeMillis())
+                if (op.entityType !in setOf("playlist_item", "playlist", "playlist_reorder")) {
+                    database.syncOutboxDao().updateStatus(op.id, "failed", System.currentTimeMillis())
+                }
                 break // Stop on network error to preserve strict FIFO order
             }
         }
+        return acknowledged
     }
 
-    suspend fun syncCloudMetadata(token: String) = withContext(Dispatchers.IO) {
+    suspend fun syncCloudMetadata(token: String, acknowledged: Map<String, Long> = emptyMap()) = withContext(Dispatchers.IO) {
+        val startingToken = apiToken
+        val startingUser = getUserId()
+        if (currentUserId != null && (startingUser == null || startingToken != token)) return@withContext
         val filesResp = apiService.listSyncFiles(token)
         val cloudFiles = filesResp.data?.items ?: emptyList()
         val now = System.currentTimeMillis()
@@ -364,74 +394,22 @@ class DesktopCloudSyncManager(
             System.err.println("Failed to sync remote likes: ${e.message}")
         }
 
-        // 3. Synchronisation des Playlists (avec réconciliation atomique)
-        try {
-            val playlistsResp = apiService.getPlaylists(token)
-            val playlists = playlistsResp.data ?: emptyList()
-            val cloudPlaylistIds = playlists.map { it.id }.toSet()
-
-            database.useWriterConnection { transactor ->
-                transactor.immediateTransaction {
-                    // Suppression locale des playlists supprimées du Cloud
-                    val localPlaylists = database.playlistDao().getPlaylists()
-                    for (localPl in localPlaylists) {
-                        if (localPl.id !in cloudPlaylistIds) {
-                            database.playlistDao().deletePlaylist(localPl.id)
-                        }
-                    }
-
-                    for (pl in playlists) {
-                        val plCreatedAt = try { java.time.Instant.parse(pl.createdAt).toEpochMilli() } catch (e: Exception) { now }
-                        val plUpdatedAt = try { java.time.Instant.parse(pl.updatedAt).toEpochMilli() } catch (e: Exception) { now }
-                        database.playlistDao().upsertPlaylist(
-                            PlaylistEntity(
-                                id = pl.id,
-                                name = pl.name,
-                                coverUri = pl.coverUri,
-                                isPinned = pl.isPinned,
-                                createdAt = plCreatedAt,
-                                updatedAt = plUpdatedAt
-                            )
-                        )
-                        for (item in pl.items) {
-                            val existingTrack = database.trackDao().getRawTrackById(item.trackId)
-                            if (existingTrack == null) {
-                                database.trackDao().upsertTrack(
-                                    TrackEntity(
-                                        id = item.trackId,
-                                        primaryArtistId = null,
-                                        albumId = null,
-                                        title = "Piste ${item.trackId.takeLast(6)}",
-                                        normalizedTitle = SearchNormalizer.normalize("Piste ${item.trackId.takeLast(6)}"),
-                                        displayArtistName = "Artiste inconnu",
-                                        displayAlbumTitle = null,
-                                        durationMs = 0L,
-                                        coverUri = null,
-                                        canonicalAudioSourceType = "cloud",
-                                        isLiked = false,
-                                        isDownloadedByAura = false,
-                                        createdAt = now,
-                                        updatedAt = now
-                                    )
-                                )
-                            }
-                            val itemAddedAt = try { java.time.Instant.parse(item.addedAt).toEpochMilli() } catch (e: Exception) { now }
-                            database.playlistDao().upsertPlaylistItem(
-                                PlaylistItemEntity(
-                                    id = item.id,
-                                    playlistId = pl.id,
-                                    trackId = item.trackId,
-                                    position = item.position,
-                                    addedAt = itemAddedAt
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            System.err.println("Failed to sync remote playlists: ${e.message}")
+        if (startingToken != null && startingToken != token) return@withContext
+        val response = apiService.getPlaylistSnapshot(token)
+        val snapshot = response.data
+        check(response.error == null && response.meta?.partialFailure != true && snapshot != null) {
+            "Snapshot de playlists incomplet"
         }
+        PlaylistSnapshotReconciler(
+                database,
+                parseTimestamp = { java.time.Instant.parse(it).toEpochMilli() },
+            )
+            .apply(
+                snapshot,
+                startingUser ?: snapshot.userId,
+                isCurrentSession = { apiToken == startingToken && getUserId() == startingUser },
+                acknowledgedOperations = acknowledged,
+            )
     }
 
     suspend fun cacheCloudStream(

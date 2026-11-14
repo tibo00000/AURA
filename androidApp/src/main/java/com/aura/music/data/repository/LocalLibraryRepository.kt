@@ -32,6 +32,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.aura.music.domain.search.LocalSearchEngine
@@ -502,6 +504,16 @@ class LocalLibraryRepository(
 
     suspend fun getPlaylistDetail(playlistId: String): PlaylistDetail? =
         playlistManager.getPlaylistDetail(playlistId)
+
+    fun observePlaylistDetail(playlistId: String): Flow<PlaylistDetail?> =
+        combine(
+            database.playlistDao().observePlaylist(playlistId),
+            database.playlistDao().getPlaylistTracksFlow(playlistId),
+        ) { parent, tracks ->
+            parent?.let {
+                PlaylistDetail(PlaylistDetailRow(it.id, it.name, it.coverUri, it.isPinned, tracks.size, it.updatedAt), tracks)
+            }
+        }.distinctUntilChanged()
 
     suspend fun createPlaylist(name: String): String =
         playlistManager.createPlaylist(name)

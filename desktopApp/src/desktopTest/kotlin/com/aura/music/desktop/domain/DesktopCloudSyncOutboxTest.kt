@@ -99,38 +99,19 @@ class DesktopCloudSyncOutboxTest {
         var failOnPlaylistItem = true
 
         val fakeApi = object : StubAuraApiService() {
-            override suspend fun createPlaylist(token: String, request: PlaylistCreate): AuraResponse<PlaylistResponse> {
-                executedLog.add("create_playlist:${request.id}:${request.name}")
-                return AuraResponse(
-                    data = PlaylistResponse(
-                        id = request.id,
-                        userId = "usr_1",
-                        name = request.name,
-                        isPinned = false,
-                        createdAt = "2026-10-16T00:00:00Z",
-                        updatedAt = "2026-10-16T00:00:00Z"
-                    )
-                )
-            }
-
-            override suspend fun appendTrackToPlaylist(
-                token: String,
-                id: String,
-                request: PlaylistItemCreate
-            ): AuraResponse<PlaylistItemResponse> {
-                executedLog.add("append_item:$id:${request.trackId}")
-                if (failOnPlaylistItem) {
-                    throw RuntimeException("Simulated network timeout")
+            override suspend fun pushBatch(token: String, request: PushBatchRequestDto): AuraResponse<PushBatchResponseDto> {
+                val op = request.operations.single()
+                if (op.entityType == "playlist") {
+                    executedLog.add("create_playlist:${op.entityId}:Roadtrip")
+                } else {
+                    executedLog.add("append_item:pl_100:trk_55")
+                    if (failOnPlaylistItem) throw RuntimeException("Simulated network timeout")
                 }
-                return AuraResponse(
-                    data = PlaylistItemResponse(
-                        id = request.id,
-                        playlistId = id,
-                        trackId = request.trackId,
-                        position = request.position,
-                        addedAt = "2026-10-16T00:00:00Z"
-                    )
-                )
+                return AuraResponse(data = PushBatchResponseDto(
+                    request.batchId,
+                    listOf(SyncOperationResultDto(op.operationId, op.entityType, op.entityId, "applied", "2026-10-16T00:00:00Z", playlistRevision = 1)),
+                    SyncTokenDto("cursor", "2026-10-16T00:00:00Z"),
+                ))
             }
 
             override suspend fun likeTrack(
@@ -154,7 +135,7 @@ class DesktopCloudSyncOutboxTest {
             SyncOutboxEntity("op_1", "playlist", "pl_100", "create", "Roadtrip", "pending", 0, now, now)
         )
         database.syncOutboxDao().insert(
-            SyncOutboxEntity("op_2", "playlist_item", "pl_100", "create", "trk_55", "pending", 0, now, now)
+            SyncOutboxEntity("op_2", "playlist_item", "occurrence", "create", """{"playlist_id":"pl_100","track_id":"trk_55","position":0}""", "pending", 0, now, now)
         )
         database.syncOutboxDao().insert(
             SyncOutboxEntity("op_3", "track_like", "trk_55", "set", "", "pending", 0, now, now)
@@ -165,12 +146,12 @@ class DesktopCloudSyncOutboxTest {
 
         syncManager.flushSyncOutbox("jwt_token")
 
-        // op_1 succeeded and was deleted; op_2 threw network exception and halted the loop; op_3 was NOT executed yet
+        // op_1 is acknowledged but remains local until a snapshot is applied.
         assertEquals(listOf("create_playlist:pl_100:Roadtrip", "append_item:pl_100:trk_55"), executedLog)
 
-        // op_3 must still be pending in outbox
+        // The interrupted operation and the operations behind it stay pending.
         val remainingPending = database.syncOutboxDao().getPendingOperations()
-        assertEquals(listOf("op_3"), remainingPending.map { it.id })
+        assertEquals(listOf("op_1", "op_2", "op_3"), remainingPending.map { it.id })
     }
 
     @Test
@@ -228,6 +209,7 @@ class DesktopCloudSyncOutboxTest {
         override suspend fun pushBatch(token: String, request: PushBatchRequestDto): AuraResponse<PushBatchResponseDto> = throw UnsupportedOperationException()
         override suspend fun pullBatch(token: String, request: PullBatchRequestDto): AuraResponse<PullBatchResponseDto> = throw UnsupportedOperationException()
         override suspend fun getPlaylists(token: String): AuraResponse<List<PlaylistResponse>> = throw UnsupportedOperationException()
+        override suspend fun getPlaylistSnapshot(token: String): AuraResponse<PlaylistSnapshotResponse> = throw UnsupportedOperationException()
         override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = throw UnsupportedOperationException()
         override suspend fun likeTrack(token: String, trackId: String, sourceContextType: String?, sourceContextId: String?): AuraResponse<LikeResponse> = throw UnsupportedOperationException()
         override suspend fun unlikeTrack(token: String, trackId: String): AuraResponse<LikeResponse> = throw UnsupportedOperationException()

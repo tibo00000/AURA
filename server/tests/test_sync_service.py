@@ -36,6 +36,8 @@ class FakeQueryChain:
         self._filters = []
         self._op = "select"
         self._payload = None
+        self._orders = []
+        self._limit = 1000
 
     def select(self, *_args, **_kwargs):
         self._op = "select"
@@ -86,17 +88,19 @@ class FakeQueryChain:
         return self
 
     def order(self, key: str, desc: bool = False):
-        self._rows.sort(key=lambda r: (r.get(key) is not None, r.get(key)), reverse=desc)
+        self._orders.append((key, desc))
         return self
 
     def limit(self, n: int):
-        self._rows = self._rows[:n]
+        self._limit = min(n, 1000)
         return self
 
     def execute(self):
         matched = [r for r in self._rows if all(f(r) for f in self._filters)]
+        for key, desc in reversed(self._orders):
+            matched.sort(key=lambda r: (r.get(key) is not None, r.get(key)), reverse=desc)
         resp = MagicMock()
-        resp.data = matched
+        resp.data = matched[:self._limit]
         return resp
 
 
@@ -432,7 +436,7 @@ class TestSyncServiceLogic(unittest.TestCase):
                     {
                         "user_id": "user_1",
                         "track_id": "trk_new_2",
-                        "liked_at": "2026-10-16T11:30:00+00:00",
+                        "liked_at": "2026-10-16T11:00:00+00:00",
                     },
                 ],
                 "playback_snapshots": [],
@@ -449,6 +453,28 @@ class TestSyncServiceLogic(unittest.TestCase):
             self.assertTrue(resp["has_more"])
             self.assertEqual(len(resp["changes"]), 1)
             self.assertEqual(resp["changes"][0]["entity_id"], "trk_new_1")
+            second = service.pull_batch("user_1", resp["next_pull_token"]["value"], limit=1)
+            self.assertFalse(second["has_more"])
+            self.assertEqual(second["changes"][0]["entity_id"], "trk_new_2")
+            empty = service.pull_batch("user_1", second["next_pull_token"]["value"], limit=1)
+            self.assertEqual(empty["changes"], [])
+            self.assertEqual(empty["next_pull_token"], second["next_pull_token"])
+
+    def test_pull_passes_data_api_cap_with_equal_timestamps_and_unsorted_rows(self):
+        rows = [
+            {"user_id": "user_1", "track_id": f"trk_{index:04d}",
+             "liked_at": "2026-10-16T11:00:00+00:00"}
+            for index in reversed(range(1120))
+        ]
+        db = InMemorySupabase({"likes": rows})
+        cursor = "st_" + base64.b64encode(b"2026-10-16T10:00:00+00:00").decode()
+        collected = []
+        for _ in range(6):
+            page = SyncService(db).pull_batch("user_1", cursor, 200, ["track_like"])
+            collected.extend(change["entity_id"] for change in page["changes"])
+            cursor = page["next_pull_token"]["value"]
+        self.assertFalse(page["has_more"])
+        self.assertEqual(collected, [f"trk_{index:04d}" for index in range(1120)])
 
 
 class TestSyncFastApiRoutes(unittest.TestCase):
@@ -463,6 +489,30 @@ class TestSyncFastApiRoutes(unittest.TestCase):
 
     def tearDown(self):
         app.dependency_overrides.clear()
+
+    def test_v2_playlist_replay_returns_original_revision_even_when_batch_is_processed(self):
+        db = InMemorySupabase()
+        calls = []
+
+        def playlist_rpc(name, args):
+            calls.append((name, args["p_operation_id"]))
+            result = {"status": "applied" if len(calls) == 1 else "ignored_duplicate", "playlist_revision": 12}
+            return MagicMock(execute=lambda: MagicMock(data=result))
+
+        db.rpc = playlist_rpc
+        app.dependency_overrides[get_current_user_client] = lambda: db
+        stamp = "2026-11-14T10:00:00+00:00"
+        request = {"device_id": "desktop", "batch_id": "batch-v2", "sent_at": stamp, "operations": [{
+            "operation_id": "stable-op", "entity_type": "playlist_item", "entity_id": "occurrence",
+            "operation_type": "create", "device_id": "desktop", "occurred_at": stamp,
+            "payload": {"playlist_sync_version": 2, "playlist_id": "playlist", "track_id": "title"},
+        }]}
+        for status in ("applied", "ignored_duplicate"):
+            response = self.client.post("/me/sync/push-batch", json=request)
+            self.assertEqual(response.status_code, 200)
+            outcome = response.json()["data"]["results"][0]
+            self.assertEqual((outcome["status"], outcome["playlist_revision"]), (status, 12))
+        self.assertEqual(calls, [("aura_apply_playlist_operation", "stable-op")] * 2)
 
     def test_health_endpoint(self):
         response = self.client.get("/health")

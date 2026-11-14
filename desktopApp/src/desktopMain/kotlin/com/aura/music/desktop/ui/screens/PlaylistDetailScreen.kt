@@ -238,7 +238,7 @@ fun PlaylistDetailScreen(
             },
             onToggleLike = onToggleLike,
             keyProvider = { index, track ->
-                playlistTracks.getOrNull(index)?.let { "${it.playlistId}_${it.trackId}_${it.position}" } ?: "${track.id}_$index"
+                playlistTracks.getOrNull(index)?.playlistItemId ?: "${track.id}_$index"
             }
         )
     }

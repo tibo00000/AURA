@@ -59,6 +59,7 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `Voir l'album`
 - `Modifier les informations` (pour les pistes locales physiques)
 - `Retirer de cette playlist`
+- `Monter dans la playlist` et `Descendre dans la playlist` ciblent une occurrence et synchronisent le déplacement vers les autres appareils.
 - `Telecharger` ou `Supprimer le telechargement` selon l'etat local
 
 ## Etats

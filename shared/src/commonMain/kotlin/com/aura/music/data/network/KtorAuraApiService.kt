@@ -160,6 +160,11 @@ class KtorAuraApiService(
         header("Authorization", token)
     }.body()
 
+    override suspend fun getPlaylistSnapshot(token: String): AuraResponse<PlaylistSnapshotResponse> =
+        client.get("$cleanBaseUrl/me/playlists/snapshot") {
+            header("Authorization", token)
+        }.body()
+
     override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = client.get("$cleanBaseUrl/me/likes") {
         header("Authorization", token)
     }.body()

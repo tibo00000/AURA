@@ -585,13 +585,15 @@ fun SharedTrackRowItem(
     onDeleteFromCloud: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
     onChangeAudioVersion: (() -> Unit)? = null,
+    onMovePlaylistItemUp: (() -> Unit)? = null,
+    onMovePlaylistItemDown: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var menuPage by remember { mutableStateOf(0) } // 0 = Principal, 1 = Avancé (Fichiers & Données)
 
     val hasAdvancedItems = onRemoveFromPlaylist != null || onDownload != null || onDeleteDownload != null ||
             onUploadToCloud != null || onDownloadFromCloud != null || onDeleteFromCloud != null || onEditMetadata != null ||
-            onChangeAudioVersion != null
+            onChangeAudioVersion != null || onMovePlaylistItemUp != null || onMovePlaylistItemDown != null
 
     val hasMenu = onAddToQueue != null || onAddToPlaylist != null ||
             onViewArtist != null || onViewAlbum != null || hasAdvancedItems
@@ -898,6 +900,18 @@ fun SharedTrackRowItem(
                                     onClick = { menuPage = 0 },
                                     leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = BlazeOrange) }
                                 )
+                                listOfNotNull(
+                                    onMovePlaylistItemUp?.let { "Monter dans la playlist" to it },
+                                    onMovePlaylistItemDown?.let { "Descendre dans la playlist" to it },
+                                ).forEach { (label, action) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            action()
+                                        },
+                                    )
+                                }
                                 if (onRemoveFromPlaylist != null) {
                                     DropdownMenuItem(
                                         text = { Text("Retirer de la playlist") },

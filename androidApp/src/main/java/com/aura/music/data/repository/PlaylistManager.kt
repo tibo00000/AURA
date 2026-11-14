@@ -136,36 +136,36 @@ class PlaylistManager(
         coverUri: String? = null,
     ): AddToPlaylistResult = withContext(Dispatchers.IO) {
         try {
-            val playlistSummary = database.playlistDao().getPlaylistDetail(playlistId)
-            val playlistName = playlistSummary?.name ?: "Playlist"
-
-            val alreadyInPlaylist = database.playlistDao().isTrackInPlaylist(playlistId, trackId)
-            if (alreadyInPlaylist && !allowDuplicate) {
-                return@withContext AddToPlaylistResult.AlreadyExists(
-                    trackId = trackId,
-                    playlistId = playlistId,
-                    playlistName = playlistName
-                )
-            }
-
-            val nextPosition = database.playlistDao().getNextPlaylistPosition(playlistId)
-            val now = System.currentTimeMillis()
-            val itemId = "playlist-item:${UUID.randomUUID()}"
-            val outboxOp = syncRepository.createOutboxEntity(
-                entityType = "playlist_item",
-                entityId = itemId,
-                operationType = "create",
-                payload = mapOf(
-                    "playlist_id" to playlistId,
-                    "track_id" to trackId,
-                    "position" to nextPosition,
-                    "added_at" to LocalLibraryRepository.formatMillisToIsoDate(now),
-                    "added_from_context_type" to contextType,
-                    "added_from_context_id" to playlistId
-                )
-            )
-            database.useWriterConnection { transactor ->
+            val result = database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
+                    val playlistSummary = database.playlistDao().getPlaylistDetail(playlistId)
+                    val playlistName = playlistSummary?.name ?: "Playlist"
+
+                    val alreadyInPlaylist = database.playlistDao().isTrackInPlaylist(playlistId, trackId)
+                    if (alreadyInPlaylist && !allowDuplicate) {
+                        return@immediateTransaction AddToPlaylistResult.AlreadyExists(
+                            trackId = trackId,
+                            playlistId = playlistId,
+                            playlistName = playlistName
+                        )
+                    }
+
+                    val nextPosition = database.playlistDao().getNextPlaylistPosition(playlistId)
+                    val now = System.currentTimeMillis()
+                    val itemId = "playlist-item:${UUID.randomUUID()}"
+                    val outboxOp = syncRepository.createOutboxEntity(
+                        entityType = "playlist_item",
+                        entityId = itemId,
+                        operationType = "create",
+                        payload = mapOf(
+                            "playlist_id" to playlistId,
+                            "track_id" to trackId,
+                            "position" to nextPosition,
+                            "added_at" to LocalLibraryRepository.formatMillisToIsoDate(now),
+                            "added_from_context_type" to contextType,
+                            "added_from_context_id" to playlistId
+                        )
+                    )
                     ensureTrackExists?.invoke(trackId, title, artistName, albumTitle, durationMs, coverUri, contextType)
                     database.playlistDao().insertPlaylistItem(
                         PlaylistItemEntity(
@@ -180,8 +180,10 @@ class PlaylistManager(
                     )
                     database.playlistDao().touchPlaylist(playlistId, now)
                     database.syncOutboxDao().insert(outboxOp)
+                    AddToPlaylistResult.Success(playlistName)
                 }
             }
+            if (result !is AddToPlaylistResult.Success) return@withContext result
             syncRepository.triggerManualSync()
 
             // Trigger auto-download if the playlist has auto-download enabled
@@ -198,7 +200,7 @@ class PlaylistManager(
                 }
             }
 
-            AddToPlaylistResult.Success(playlistName)
+            result
         } catch (e: Exception) {
             Log.e("PlaylistManager", "Failed to add track $trackId to playlist $playlistId", e)
             AddToPlaylistResult.Error(e.message ?: "Erreur lors de l'ajout à la playlist")
@@ -216,6 +218,8 @@ class PlaylistManager(
         )
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
+                val item = database.playlistDao().getPlaylistItem(playlistItemId)
+                if (item?.playlistId != playlistId) return@immediateTransaction
                 database.playlistDao().deletePlaylistItem(playlistItemId)
                 normalizePlaylistPositions(playlistId)
                 database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
@@ -280,36 +284,25 @@ class PlaylistManager(
         playlistItemId: String,
         moveBy: Int,
     ) = withContext(Dispatchers.IO) {
-        var baseOrderToken = ""
-        val itemsToReorder = mutableListOf<Map<String, Any?>>()
-        
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
                 val items = database.playlistDao().getPlaylistTracks(playlistId).toMutableList()
-                val pl = database.playlistDao().getPlaylistDetail(playlistId)
-                if (pl != null) {
-                    val updatedStr = LocalLibraryRepository.formatMillisToIsoDate(pl.updatedAt)
-                    val digest = java.security.MessageDigest.getInstance("MD5").digest(updatedStr.toByteArray(Charsets.UTF_8))
-                    val hex = digest.joinToString("") { "%02x".format(it) }
-                    baseOrderToken = "ord_${hex.take(8)}"
-                }
-
                 val currentIndex = items.indexOfFirst { it.playlistItemId == playlistItemId }
                 if (currentIndex == -1) return@immediateTransaction
                 val targetIndex = (currentIndex + moveBy).coerceIn(0, items.lastIndex)
                 if (currentIndex == targetIndex) return@immediateTransaction
 
+                val anchor = items[targetIndex]
                 val item = items.removeAt(currentIndex)
                 items.add(targetIndex, item)
 
-                items.forEachIndexed { index, row ->
-                    database.playlistDao().updatePlaylistItemPosition(row.playlistItemId, index)
-                    itemsToReorder.add(
-                        mapOf(
-                            "playlist_item_id" to row.playlistItemId,
-                            "position" to index
-                        )
-                    )
+                val affected = minOf(currentIndex, targetIndex)..maxOf(currentIndex, targetIndex)
+                for (index in affected) {
+                    database.playlistDao().updatePlaylistItemPosition(items[index].playlistItemId, -index - 1)
+                }
+                val sortedPositions = items.map { it.position }.sorted()
+                for (index in affected) {
+                    database.playlistDao().updatePlaylistItemPosition(items[index].playlistItemId, sortedPositions[index])
                 }
                 database.playlistDao().touchPlaylist(playlistId, System.currentTimeMillis())
 
@@ -318,8 +311,10 @@ class PlaylistManager(
                     entityId = playlistId,
                     operationType = "update",
                     payload = mapOf(
-                        "base_order_token" to baseOrderToken,
-                        "items" to itemsToReorder
+                        "playlist_sync_version" to 2,
+                        "item_id" to item.playlistItemId,
+                        "anchor_id" to anchor.playlistItemId,
+                        "side" to if (targetIndex < currentIndex) "before" else "after",
                     )
                 )
                 database.syncOutboxDao().insert(outboxOp)

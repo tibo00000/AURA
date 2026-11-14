@@ -7,6 +7,7 @@ as defined in docs/server/sync-conflict-resolution.md.
 
 import base64
 import hashlib
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
@@ -52,12 +53,14 @@ class SyncService:
     def __init__(self, client: Client):
         self.db = client
 
-    def bootstrap(self, user_id: str, device_id: str) -> dict:
+    def bootstrap(self, user_id: str, device_id: str, use_playlist_snapshot: bool = False) -> dict:
         """
         Compile initial client hydration snapshot containing user settings,
         playlists (with items), track likes, and the last playback snapshot.
         """
         logger.info("Sync Bootstrap requested for user %s on device %s", user_id, device_id)
+        started_at = datetime.now(timezone.utc)
+        token_val = "st_" + base64.b64encode(started_at.isoformat().encode()).decode()
         
         # Ensure user profile exists in profiles table to satisfy Foreign Key constraints
         try:
@@ -97,8 +100,9 @@ class SyncService:
                 }
 
             # 2. Playlists & Playlist Items
-            playlists_res = self.db.table("playlists").select("*").eq("user_id", user_id).execute()
-            playlists_list = playlists_res.data or []
+            playlists_list = []
+            if not use_playlist_snapshot:
+                playlists_list = self.db.table("playlists").select("*").eq("user_id", user_id).execute().data or []
             playlists = []
             
             for pl in playlists_list:
@@ -127,8 +131,17 @@ class SyncService:
                 })
 
             # 3. Track Likes (Favorites)
-            likes_res = self.db.table("likes").select("*").eq("user_id", user_id).execute()
-            likes_list = likes_res.data or []
+            likes_list = []
+            last_track_id = None
+            while True:
+                query = self.db.table("likes").select("*").eq("user_id", user_id).order("track_id").limit(200)
+                if last_track_id is not None:
+                    query = query.gt("track_id", last_track_id)
+                page = query.execute().data or []
+                likes_list.extend(page)
+                if len(page) < 200:
+                    break
+                last_track_id = page[-1]["track_id"]
             track_likes = [
                 {
                     "track_id": lk["track_id"],
@@ -155,11 +168,10 @@ class SyncService:
                     "updated_at": snap.get("updated_at"),
                 }
 
-            token_val = generate_sync_token()
             return {
                 "sync_token": {
                     "value": token_val,
-                    "issued_at": datetime.now(timezone.utc).isoformat(),
+                    "issued_at": started_at.isoformat(),
                 },
                 "snapshot": {
                     "user_settings": settings,
@@ -179,11 +191,17 @@ class SyncService:
         """
         logger.info("Sync Push Batch %s received with %d operations for user %s", batch_id, len(operations), user_id)
         
-        # 0. Batch-Level Idempotency Check
+        def is_playlist_v2(op):
+            return (
+                op.get("entity_type") in ("playlist", "playlist_item", "playlist_reorder")
+                and (op.get("payload") or {}).get("playlist_sync_version") == 2
+            )
+
+        # Playlist v2 replays must fetch the original per-operation revision.
         if batch_id:
             try:
                 batch_res = self.db.table("processed_batches").select("*").eq("batch_id", batch_id).eq("user_id", user_id).execute()
-                if batch_res.data:
+                if batch_res.data and not any(is_playlist_v2(op) for op in operations):
                     logger.info("Batch %s already processed for user %s. Returning idempotent duplicate response.", batch_id, user_id)
                     return {
                         "batch_id": batch_id,
@@ -224,7 +242,7 @@ class SyncService:
         ops_to_record = []
 
         # Bulk idempotency pre-fetch to avoid N round-trips to Supabase
-        all_op_ids = [op.get("operation_id") for op in operations if op.get("operation_id")]
+        all_op_ids = [op["operation_id"] for op in operations if op.get("operation_id") and not is_playlist_v2(op)]
         already_processed_ids = set()
         if all_op_ids:
             try:
@@ -243,13 +261,14 @@ class SyncService:
             op_type = op.get("operation_type")
             occurred_at_str = op.get("occurred_at")
             payload = op.get("payload") or {}
+            playlist_v2 = is_playlist_v2(op)
 
             if not op_id or not entity_type or not entity_id or not op_type:
                 logger.warning("Malformed operation omitted: %r", op)
                 continue
 
             # 1. Idempotency Check (Fast in-memory set)
-            if op_id in already_processed_ids:
+            if not playlist_v2 and op_id in already_processed_ids:
                 results.append({
                     "operation_id": op_id,
                     "entity_type": entity_type,
@@ -265,9 +284,23 @@ class SyncService:
             status = "applied"
             conflict = None
             resolved_entity = None
+            playlist_revision = None
 
             try:
-                if entity_type == "user_settings":
+                if playlist_v2:
+                    result = self.db.rpc("aura_apply_playlist_operation", {
+                        "p_operation_id": op_id,
+                        "p_entity_type": entity_type,
+                        "p_entity_id": entity_id,
+                        "p_operation_type": op_type,
+                        "p_payload": payload,
+                    }).execute().data
+                    status = result["status"]
+                    if status == "conflict":
+                        conflict = {"reason": "playlist_changed", "retryable": False}
+                    else:
+                        playlist_revision = result["playlist_revision"]
+                elif entity_type == "user_settings":
                     status, resolved_entity = self._handle_user_settings_sync(user_id, occurred_at_str, payload)
                 
                 elif entity_type == "playlist":
@@ -307,10 +340,11 @@ class SyncService:
                 # 3. Stage operation for bulk idempotency recording
                 if status in ("applied", "merged", "ignored_duplicate"):
                     already_processed_ids.add(op_id)
-                    ops_to_record.append({
-                        "operation_id": op_id,
-                        "user_id": user_id,
-                    })
+                    if not playlist_v2:
+                        ops_to_record.append({
+                            "operation_id": op_id,
+                            "user_id": user_id,
+                        })
 
             except Exception as e:
                 logger.error("Error processing operation %s (%s): %s", op_id, entity_type, e, exc_info=True)
@@ -330,6 +364,7 @@ class SyncService:
                 "server_updated_at": datetime.now(timezone.utc).isoformat(),
                 "resolved_entity": resolved_entity,
                 "conflict": conflict,
+                "playlist_revision": playlist_revision,
             })
 
         # Bulk record all successful operations in idempotency table
@@ -365,15 +400,44 @@ class SyncService:
         Pull all server-side changes (upsert or delete) occurred since the SyncToken cursor timestamp.
         """
         logger.info("Sync Pull Batch requested since token %r for user %s", since_token, user_id)
-        since_time = parse_sync_token(since_token)
+        if limit is None:
+            limit = 200
+        if not 1 <= limit <= 200:
+            raise BadRequest("Sync page size must be between 1 and 200")
+        since_id = None
+        if since_token.startswith("st_v2."):
+            try:
+                stamp, since_id = json.loads(base64.urlsafe_b64decode(since_token.removeprefix("st_v2.")))
+                since_time = datetime.fromisoformat(stamp)
+                if since_time.tzinfo is None or not isinstance(since_id, str) or not since_id:
+                    raise ValueError("Invalid cursor")
+            except (TypeError, ValueError) as exc:
+                raise BadRequest("Invalid sync cursor") from exc
+        else:
+            since_time = parse_sync_token(since_token)
         since_iso = since_time.isoformat()
+
+        def changes_since(query, column, key, prefix):
+            """Fetch only the candidates needed to merge each entity into the next page."""
+            candidates = []
+            if since_id is not None and (since_id.startswith(prefix) or prefix > since_id):
+                tied = query().eq(column, since_iso)
+                if since_id.startswith(prefix):
+                    tied = tied.gt(key, since_id[len(prefix):])
+                candidates = tied.order(key).limit(limit + 1).execute().data or []
+            slots = limit + 1 - len(candidates)
+            if slots:
+                later = query().gt(column, since_iso).order(column).order(key).limit(slots).execute()
+                candidates += later.data or []
+            return candidates
 
         changes = []
         try:
             # 1. user_settings
             if not entity_types or "user_settings" in entity_types:
-                res = self.db.table("user_settings").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
-                for item in (res.data or []):
+                rows = changes_since(lambda: self.db.table("user_settings").select("*").eq("user_id", user_id),
+                                     "updated_at", "user_id", "chg_set_")
+                for item in rows:
                     changes.append({
                         "change_id": f"chg_set_{item['user_id']}",
                         "entity_type": "user_settings",
@@ -391,8 +455,9 @@ class SyncService:
 
             # 2. playlists
             if not entity_types or "playlist" in entity_types:
-                res = self.db.table("playlists").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
-                for item in (res.data or []):
+                rows = changes_since(lambda: self.db.table("playlists").select("*").eq("user_id", user_id),
+                                     "updated_at", "id", "chg_pl_")
+                for item in rows:
                     changes.append({
                         "change_id": f"chg_pl_{item['id']}",
                         "entity_type": "playlist",
@@ -410,33 +475,34 @@ class SyncService:
 
             # 3. playlist_items
             if not entity_types or "playlist_item" in entity_types:
-                # Find modifications using joined query or items whose playlist belongs to user
-                playlists_res = self.db.table("playlists").select("id").eq("user_id", user_id).execute()
-                pl_ids = [p["id"] for p in (playlists_res.data or [])]
-                if pl_ids:
-                    res = self.db.table("playlist_items").select("*").in_("playlist_id", pl_ids).gt("added_at", since_iso).execute()
-                    for item in (res.data or []):
-                        changes.append({
-                            "change_id": f"chg_pli_{item['id']}",
-                            "entity_type": "playlist_item",
-                            "entity_id": item["id"],
-                            "change_type": "upsert",
-                            "server_updated_at": item["added_at"],
-                            "payload": {
-                                "id": item["id"],
-                                "playlist_id": item["playlist_id"],
-                                "track_id": item["track_id"],
-                                "position": item["position"],
-                                "added_at": item["added_at"],
-                                "added_from_context_type": item.get("added_from_context_type"),
-                                "added_from_context_id": item.get("added_from_context_id"),
-                            }
-                        })
+                rows = changes_since(
+                    lambda: self.db.table("playlist_items").select("*,playlists!inner(user_id)")
+                    .eq("playlists.user_id", user_id),
+                    "added_at", "id", "chg_pli_",
+                )
+                for item in rows:
+                    changes.append({
+                        "change_id": f"chg_pli_{item['id']}",
+                        "entity_type": "playlist_item",
+                        "entity_id": item["id"],
+                        "change_type": "upsert",
+                        "server_updated_at": item["added_at"],
+                        "payload": {
+                            "id": item["id"],
+                            "playlist_id": item["playlist_id"],
+                            "track_id": item["track_id"],
+                            "position": item["position"],
+                            "added_at": item["added_at"],
+                            "added_from_context_type": item.get("added_from_context_type"),
+                            "added_from_context_id": item.get("added_from_context_id"),
+                        }
+                    })
 
             # 4. track_like (likes)
             if not entity_types or "track_like" in entity_types:
-                res = self.db.table("likes").select("*").eq("user_id", user_id).gt("liked_at", since_iso).execute()
-                for item in (res.data or []):
+                rows = changes_since(lambda: self.db.table("likes").select("*").eq("user_id", user_id),
+                                     "liked_at", "track_id", "chg_lk_")
+                for item in rows:
                     changes.append({
                         "change_id": f"chg_lk_{item['track_id']}",
                         "entity_type": "track_like",
@@ -454,8 +520,9 @@ class SyncService:
 
             # 5. playback_snapshot
             if not entity_types or "playback_snapshot" in entity_types:
-                res = self.db.table("playback_snapshots").select("*").eq("user_id", user_id).gt("updated_at", since_iso).execute()
-                for item in (res.data or []):
+                rows = changes_since(lambda: self.db.table("playback_snapshots").select("*").eq("user_id", user_id),
+                                     "updated_at", "user_id", "chg_snap_")
+                for item in rows:
                     changes.append({
                         "change_id": f"chg_snap_{item['user_id']}",
                         "entity_type": "playback_snapshot",
@@ -475,19 +542,29 @@ class SyncService:
                     })
 
             # Sort all changes chronologically
-            changes.sort(key=lambda c: c["server_updated_at"])
+            def change_key(change):
+                return datetime.fromisoformat(change["server_updated_at"]), change["change_id"]
+
+            if since_id is not None:
+                changes = [change for change in changes if change_key(change) > (since_time, since_id)]
+            changes.sort(key=change_key)
 
             # Paginate according to limit
             has_more = len(changes) > limit
             paginated_changes = changes[:limit]
 
-            next_token_time = paginated_changes[-1]["server_updated_at"] if paginated_changes else datetime.now(timezone.utc).isoformat()
-            encoded_next = base64.b64encode(next_token_time.encode("utf-8")).decode("utf-8")
+            next_token_time = since_iso
+            next_token = since_token
+            if paginated_changes:
+                last = paginated_changes[-1]
+                next_token_time = last["server_updated_at"]
+                cursor = json.dumps([next_token_time, last["change_id"]]).encode("utf-8")
+                next_token = "st_v2." + base64.urlsafe_b64encode(cursor).decode("ascii")
             
             return {
                 "changes": paginated_changes,
                 "next_pull_token": {
-                    "value": f"st_{encoded_next}",
+                    "value": next_token,
                     "issued_at": next_token_time,
                 },
                 "has_more": has_more,

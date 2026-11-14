@@ -18,6 +18,8 @@ import androidx.sqlite.execSQL
         PlaybackSnapshotEntity::class,
         PlaylistEntity::class,
         PlaylistItemEntity::class,
+        PlaylistSyncStateEntity::class,
+        PlaylistSnapshotStateEntity::class,
         RecentSearchEntity::class,
         SyncOutboxEntity::class,
         TrackEntity::class,
@@ -25,7 +27,7 @@ import androidx.sqlite.execSQL
         TrackMediaLinkEntity::class,
         UserSettingsEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @ConstructedBy(AuraDatabaseConstructor::class)
@@ -158,6 +160,29 @@ abstract class AuraDatabase : RoomDatabase() {
             override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_updated_at` ON `tracks` (`updated_at`)")
                 connection.execSQL("CREATE INDEX IF NOT EXISTS `index_download_jobs_updated_at` ON `download_jobs` (`updated_at`)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE sync_outbox ADD COLUMN user_id TEXT")
+                connection.execSQL("ALTER TABLE user_settings ADD COLUMN sync_token_user_id TEXT")
+                connection.execSQL(
+                    """
+                    CREATE TABLE playlist_sync_state (
+                        playlist_id TEXT NOT NULL PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        server_updated_at TEXT NOT NULL,
+                        order_token TEXT NOT NULL,
+                        applied_revision INTEGER,
+                        FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                connection.execSQL("CREATE INDEX index_playlist_sync_state_user_id ON playlist_sync_state(user_id)")
+                connection.execSQL(
+                    "CREATE TABLE playlist_snapshot_state (user_id TEXT NOT NULL PRIMARY KEY, revision INTEGER NOT NULL)",
+                )
             }
         }
 

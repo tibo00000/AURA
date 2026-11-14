@@ -150,6 +150,32 @@ data class PlaylistEntity(
 )
 
 @Entity(
+    tableName = "playlist_sync_state",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlaylistEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["playlist_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["user_id"])],
+)
+data class PlaylistSyncStateEntity(
+    @PrimaryKey @ColumnInfo(name = "playlist_id") val playlistId: String,
+    @ColumnInfo(name = "user_id") val userId: String,
+    @ColumnInfo(name = "server_updated_at") val serverUpdatedAt: String,
+    @ColumnInfo(name = "order_token") val orderToken: String,
+    @ColumnInfo(name = "applied_revision") val appliedRevision: Long?,
+)
+
+@Entity(tableName = "playlist_snapshot_state")
+data class PlaylistSnapshotStateEntity(
+    @PrimaryKey @ColumnInfo(name = "user_id") val userId: String,
+    val revision: Long,
+)
+
+@Entity(
     tableName = "playlist_items",
     foreignKeys = [
         ForeignKey(
@@ -212,6 +238,7 @@ data class UserSettingsEntity(
     @ColumnInfo(name = "stats_sync_network_policy") val statsSyncNetworkPolicy: String,
     @ColumnInfo(name = "last_sync_at") val lastSyncAt: Long? = null,
     @ColumnInfo(name = "sync_token") val syncToken: String? = null,
+    @ColumnInfo(name = "sync_token_user_id") val syncTokenUserId: String? = null,
 )
 
 @Immutable
@@ -459,6 +486,7 @@ data class SyncOutboxEntity(
     @ColumnInfo(name = "attempt_count") val attemptCount: Int = 0,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "user_id") val userId: String? = null,
 )
 
 

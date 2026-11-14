@@ -8,10 +8,11 @@ import com.aura.music.data.local.PlaylistEntity
 import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.SyncOutboxEntity
 import com.aura.music.data.local.TrackEntity
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Gestionnaire des playlists pour le client Desktop.
@@ -37,7 +38,7 @@ class DesktopPlaylistManager(
                         coverUri = null,
                         isPinned = false,
                         createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
                     )
                 )
                 database.syncOutboxDao().insert(
@@ -49,7 +50,8 @@ class DesktopPlaylistManager(
                         payloadJson = cleanName,
                         status = "pending",
                         createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
+                        userId = cloudSyncManager?.getUserId(),
                     )
                 )
             }
@@ -77,7 +79,8 @@ class DesktopPlaylistManager(
                         payloadJson = payload,
                         status = "pending",
                         createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
+                        userId = cloudSyncManager?.getUserId(),
                     )
                 )
             }
@@ -102,7 +105,8 @@ class DesktopPlaylistManager(
                         payloadJson = "",
                         status = "pending",
                         createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
+                        userId = cloudSyncManager?.getUserId(),
                     )
                 )
             }
@@ -112,12 +116,13 @@ class DesktopPlaylistManager(
     }
 
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
-        val nextPos = database.playlistDao().getNextPlaylistPosition(playlistId)
         val now = System.currentTimeMillis()
         val opId = "outbox_pli_${UUID.randomUUID().toString().take(12)}"
 
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
+                val nextPos = database.playlistDao().getNextPlaylistPosition(playlistId)
+                val itemId = UUID.randomUUID().toString()
                 val existingTrack = database.trackDao().getRawTrackById(trackId)
                 if (existingTrack == null) {
                     val artistId = "artist:unknown-artist"
@@ -130,7 +135,7 @@ class DesktopPlaylistManager(
                                 pictureUri = null,
                                 summary = null,
                                 createdAt = now,
-                                updatedAt = now
+                                updatedAt = now,
                             )
                         )
                     )
@@ -152,14 +157,14 @@ class DesktopPlaylistManager(
                             popularity = null,
                             genresJson = null,
                             createdAt = now,
-                            updatedAt = now
+                            updatedAt = now,
                         )
                     )
                 }
 
                 database.playlistDao().insertPlaylistItem(
                     PlaylistItemEntity(
-                        id = UUID.randomUUID().toString(),
+                        id = itemId,
                         playlistId = playlistId,
                         trackId = trackId,
                         position = nextPos,
@@ -171,12 +176,17 @@ class DesktopPlaylistManager(
                     SyncOutboxEntity(
                         id = opId,
                         entityType = "playlist_item",
-                        entityId = playlistId,
+                        entityId = itemId,
                         operationType = "create",
-                        payloadJson = trackId,
+                        payloadJson = buildJsonObject {
+                            put("playlist_id", playlistId)
+                            put("track_id", trackId)
+                            put("position", nextPos)
+                        }.toString(),
                         status = "pending",
                         createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
+                        userId = cloudSyncManager?.getUserId(),
                     )
                 )
             }
@@ -185,24 +195,27 @@ class DesktopPlaylistManager(
         cloudSyncManager?.triggerFlush()
     }
 
-    suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
+    suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val opId = "outbox_pli_del_${UUID.randomUUID().toString().take(12)}"
 
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
-                database.playlistDao().deletePlaylistItemByTrack(playlistId, trackId)
+                val item = database.playlistDao().getPlaylistItem(playlistItemId)
+                if (item?.playlistId != playlistId) return@immediateTransaction
+                database.playlistDao().deletePlaylistItem(playlistItemId)
                 database.playlistDao().touchPlaylist(playlistId, now)
                 database.syncOutboxDao().insert(
                     SyncOutboxEntity(
                         id = opId,
                         entityType = "playlist_item",
-                        entityId = playlistId,
+                        entityId = playlistItemId,
                         operationType = "delete",
-                        payloadJson = trackId,
+                        payloadJson = buildJsonObject { put("playlist_id", playlistId) }.toString(),
                         status = "pending",
                         createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
+                        userId = cloudSyncManager?.getUserId(),
                     )
                 )
             }
@@ -240,12 +253,13 @@ class DesktopPlaylistManager(
                         SyncOutboxEntity(
                             id = opId,
                             entityType = "playlist_item",
-                            entityId = playlistId,
+                            entityId = item.playlistItemId,
                             operationType = "delete",
-                            payloadJson = item.trackId,
+                            payloadJson = buildJsonObject { put("playlist_id", playlistId) }.toString(),
                             status = "pending",
                             createdAt = now,
-                            updatedAt = now
+                            updatedAt = now,
+                            userId = cloudSyncManager?.getUserId(),
                         )
                     )
                 }

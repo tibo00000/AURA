@@ -1,5 +1,7 @@
 package com.aura.music.data.repository
 
+import androidx.room3.immediateTransaction
+import androidx.room3.useWriterConnection
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -12,8 +14,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.aura.music.data.local.AuraDatabase
-import com.aura.music.data.local.PlaylistEntity
-import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.SyncOutboxEntity
 import com.aura.music.data.local.TrackLikeEntity
 import com.aura.music.data.local.UserSettingsEntity
@@ -22,9 +22,17 @@ import com.aura.music.data.network.BootstrapRequestDto
 import com.aura.music.data.network.PullBatchRequestDto
 import com.aura.music.data.network.PushBatchRequestDto
 import com.aura.music.data.network.SyncOperationDto
-import com.aura.music.data.network.SyncTokenDto
 import com.aura.music.data.network.ServerChangeDto
 import com.aura.music.data.sync.SyncWorker
+import com.aura.music.data.playlist.PlaylistSnapshotReconciler
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -40,17 +48,21 @@ class SyncRepository(
 ) {
     companion object {
         private const val TAG = "SyncRepository"
-        const val AUTH_TOKEN = "Bearer 12345678-1234-1234-1234-1234567890ab"
         private const val WORK_NAME_PERIODIC = "aura_periodic_sync"
         private const val WORK_NAME_ONETIME = "aura_onetime_sync"
     }
 
-    private fun getAuthToken(): String {
-        val userToken = authSessionManager?.getBearerHeader().orEmpty().trim()
-        return if (userToken.isNotEmpty()) userToken else AUTH_TOKEN
-    }
+    private val syncMutex = Mutex()
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observePlaylistSyncConflict(): Flow<Boolean> = authSessionManager?.sessionScope
+        ?.map { it?.userId }
+        ?.distinctUntilChanged()
+        ?.flatMapLatest { userId ->
+            if (userId == null) flowOf(false) else database.syncOutboxDao().observePlaylistConflict(userId)
+        } ?: flowOf(false)
 
     private fun Map<String, Any?>.toJsonObject(): JsonObject {
         val map = mapValues { (_, value) ->
@@ -92,7 +104,8 @@ class SyncRepository(
             status = "pending",
             attemptCount = 0,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            userId = authSessionManager?.getUserId()?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -180,61 +193,70 @@ class SyncRepository(
      * Exécuter la routine complète de synchronisation.
      */
     suspend fun performSync(deviceId: String, force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        syncMutex.withLock { syncOnce(deviceId, force) }
+    }
+
+    private suspend fun syncOnce(deviceId: String, force: Boolean): Boolean {
         Log.i(TAG, "Starting sync routine for device $deviceId (force=$force)")
         
         val settings = database.userSettingsDao().getSettings()
         if (settings == null) {
             Log.w(TAG, "User settings are not initialized yet. Skipping sync.")
-            return@withContext false
+            return false
         }
 
         if (!settings.syncEnabled) {
             Log.d(TAG, "Sync is disabled in settings. Skipping.")
-            return@withContext false
-        }
-
-        if (authSessionManager != null && !authSessionManager.isLoggedIn.value) {
-            Log.d(TAG, "Sync: user not logged in via Supabase Auth, proceeding with single-owner transitional mode.")
+            return false
         }
 
         if (!force && !isNetworkAllowed(settings.statsSyncNetworkPolicy)) {
             Log.d(TAG, "Sync skipped due to network policy constraints (Wifi only required).")
-            return@withContext false
+            return false
         }
 
-        var success = false
-
-        try {
-            val syncToken = settings.syncToken
-            if (syncToken.isNullOrEmpty()) {
-                Log.i(TAG, "No sync token found. Performing Bootstrap Sync...")
-                success = performBootstrap(deviceId)
-            } else {
-                Log.i(TAG, "Sync token found: $syncToken. Performing Incremental Sync...")
-                success = performIncrementalSync(deviceId, syncToken)
-            }
+        val auth = authSessionManager ?: return false
+        if (!auth.isLoggedIn.value) return false
+        return try {
+            val scope = auth.captureScope()
+            val token = auth.validSession(scope = scope).bearer
+            val isCurrent = { auth.isCurrent(scope) }
+            val acknowledged = pushOutbox(deviceId, token, scope.userId, isCurrent) ?: return false
+            val response = apiService.getPlaylistSnapshot(token)
+            val snapshot = response.data
+            if (response.error != null || response.meta?.partialFailure == true || snapshot == null) return false
+            PlaylistSnapshotReconciler(
+                database,
+                parseTimestamp = { java.time.Instant.parse(it).toEpochMilli() },
+            )
+                .apply(snapshot, scope.userId, isCurrent, acknowledged)
+            val cursor = settings.syncToken.takeIf { settings.syncTokenUserId == scope.userId }
+            if (cursor.isNullOrEmpty()) performBootstrap(deviceId, token, scope.userId, isCurrent)
+            else pullChanges(deviceId, token, scope.userId, cursor, isCurrent)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Sync routine failed: ${e.message}", e)
-            success = false
+            false
         }
-
-        return@withContext success
     }
 
     /**
      * BOOTSTRAP SYNC : Première synchronisation d'hydratation.
      */
-    private suspend fun performBootstrap(deviceId: String): Boolean {
+    private suspend fun performBootstrap(
+        deviceId: String, token: String, userId: String, isCurrent: () -> Boolean,
+    ): Boolean {
         val request = BootstrapRequestDto(
             deviceId = deviceId,
-            capabilities = mapOf("supports_batch_push" to "true")
+            capabilities = mapOf("supports_batch_push" to "true", "playlist_snapshot" to "true")
         )
         
-        val response = apiService.bootstrap(getAuthToken(), request)
+        val response = apiService.bootstrap(token, request)
         val error = response.error
         val data = response.data
-        if (error != null) {
-            Log.e(TAG, "Bootstrap endpoint failed: ${error.message}")
+        if (error != null || response.meta?.partialFailure == true) {
+            Log.e(TAG, "Bootstrap endpoint failed: ${error?.message}")
             return false
         }
         if (data == null) {
@@ -245,144 +267,74 @@ class SyncRepository(
         val snapshot = data.snapshot
         val serverToken = data.syncToken.value
 
-        // Flush pending outbox operations to server so local mutations made offline are never lost
-        val pendingOps = database.syncOutboxDao().getPendingOperations()
-        if (pendingOps.isNotEmpty()) {
-            Log.i(TAG, "Bootstrap: detected ${pendingOps.size} pending outbox operations. Flushing before applying snapshot...")
-            try {
-                val chunks = pendingOps.chunked(30)
-                for (chunk in chunks) {
-                    val syncOps = chunk.map { op ->
-                        SyncOperationDto(
-                            operationId = op.id,
-                            entityType = op.entityType,
-                            entityId = op.entityId,
-                            operationType = op.operationType,
-                            deviceId = deviceId,
-                            occurredAt = formatMillisToIsoDate(op.createdAt),
-                            payload = json.decodeFromString<JsonObject>(op.payloadJson)
+        if (!isCurrent()) return false
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                if (!isCurrent()) throw CancellationException("Sync session changed")
+                // 1. Process server snapshot settings
+                val userSettingsMap = snapshot["user_settings"] as? JsonObject
+                if (userSettingsMap != null) {
+                    val localSettings = database.userSettingsDao().getSettings()
+                    if (localSettings != null) {
+                        val updatedSettings = localSettings.copy(
+                            onlineSearchEnabled = userSettingsMap.boolean("online_search_enabled") ?: localSettings.onlineSearchEnabled,
+                            onlineSearchNetworkPolicy = userSettingsMap.string("online_search_network_policy") ?: localSettings.onlineSearchNetworkPolicy,
+                            statsSyncNetworkPolicy = userSettingsMap.string("stats_sync_network_policy") ?: localSettings.statsSyncNetworkPolicy
                         )
-                    }
-                    val request = PushBatchRequestDto(
-                        deviceId = deviceId,
-                        batchId = "batch_boot_${UUID.randomUUID()}",
-                        sentAt = formatMillisToIsoDate(System.currentTimeMillis()),
-                        operations = syncOps
-                    )
-                    val pushResponse = apiService.pushBatch(getAuthToken(), request)
-                    val pushData = pushResponse.data
-                    if (pushData != null) {
-                        for (res in pushData.results) {
-                            if (res.status in listOf("applied", "merged", "ignored_duplicate", "conflict")) {
-                                database.syncOutboxDao().deleteOperation(res.operationId)
-                            }
-                        }
+                        database.userSettingsDao().insertOrReplace(updatedSettings)
                     }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Pre-bootstrap outbox flush warning: ${e.message}. Pending operations retained.")
-            }
-        }
 
-        // 1. Process server snapshot settings
-        val userSettingsMap = snapshot["user_settings"] as? JsonObject
-        if (userSettingsMap != null) {
-            val localSettings = database.userSettingsDao().getSettings()
-            if (localSettings != null) {
-                val updatedSettings = localSettings.copy(
-                    onlineSearchEnabled = userSettingsMap.boolean("online_search_enabled") ?: localSettings.onlineSearchEnabled,
-                    onlineSearchNetworkPolicy = userSettingsMap.string("online_search_network_policy") ?: localSettings.onlineSearchNetworkPolicy,
-                    statsSyncNetworkPolicy = userSettingsMap.string("stats_sync_network_policy") ?: localSettings.statsSyncNetworkPolicy
-                )
-                database.userSettingsDao().insertOrReplace(updatedSettings)
-            }
-        }
+                // 2. Process server snapshot likes (favorites)
+                val trackLikesList = snapshot["track_likes"] as? JsonArray
+                if (trackLikesList != null) {
+                    for (likeElement in trackLikesList) {
+                        val likeMap = likeElement as? JsonObject ?: continue
+                        val trackId = likeMap.string("track_id") ?: continue
+                        val likedAtStr = likeMap.string("liked_at")
+                        val likedAt = parseIsoDateToMillis(likedAtStr)
 
-        // 2. Process server snapshot likes (favorites)
-        val trackLikesList = snapshot["track_likes"] as? JsonArray
-        if (trackLikesList != null) {
-            for (likeElement in trackLikesList) {
-                val likeMap = likeElement as? JsonObject ?: continue
-                val trackId = likeMap.string("track_id") ?: continue
-                val likedAtStr = likeMap.string("liked_at")
-                val likedAt = parseIsoDateToMillis(likedAtStr)
-                
-                ensureTrackStub(trackId)
-                
-                database.trackLikeDao().insertLike(
-                    TrackLikeEntity(
-                        trackId = trackId,
-                        likedAt = likedAt,
-                        sourceContextType = likeMap.string("source_context_type"),
-                        sourceContextId = likeMap.string("source_context_id")
-                    )
-                )
-                database.trackLikeDao().setTrackIsLiked(trackId, true, likedAt)
-            }
-        }
-
-        // 3. Process server snapshot playlists & items
-        val playlistsList = snapshot["playlists"] as? JsonArray
-        if (playlistsList != null) {
-            for (plElement in playlistsList) {
-                val plMap = plElement as? JsonObject ?: continue
-                val plId = plMap.string("id") ?: continue
-                val name = plMap.string("name") ?: "Unnamed Playlist"
-                val coverUri = plMap.string("cover_uri")
-                val isPinned = plMap.boolean("is_pinned") ?: false
-                val createdStr = plMap.string("created_at")
-                val updatedStr = plMap.string("updated_at")
-                
-                val plEntity = PlaylistEntity(
-                    id = plId,
-                    name = name,
-                    coverUri = coverUri,
-                    isPinned = isPinned,
-                    createdAt = parseIsoDateToMillis(createdStr),
-                    updatedAt = parseIsoDateToMillis(updatedStr)
-                )
-                database.playlistDao().upsertPlaylist(plEntity)
-
-                // Process items
-                val itemsList = plMap["items"] as? JsonArray
-                if (itemsList != null) {
-                    for (itemElement in itemsList) {
-                        val itemMap = itemElement as? JsonObject ?: continue
-                        val itemId = itemMap.string("id") ?: continue
-                        val trackId = itemMap.string("track_id") ?: continue
-                        val position = itemMap.int("position") ?: 0
-                        val addedStr = itemMap.string("added_at")
-                        
                         ensureTrackStub(trackId)
-                        
-                        val itemEntity = PlaylistItemEntity(
-                            id = itemId,
-                            playlistId = plId,
-                            trackId = trackId,
-                            position = position,
-                            addedAt = parseIsoDateToMillis(addedStr),
-                            addedFromContextType = itemMap.string("added_from_context_type"),
-                            addedFromContextId = itemMap.string("added_from_context_id")
+
+                        database.trackLikeDao().insertLike(
+                            TrackLikeEntity(
+                                trackId = trackId,
+                                likedAt = likedAt,
+                                sourceContextType = likeMap.string("source_context_type"),
+                                sourceContextId = likeMap.string("source_context_id")
+                            )
                         )
-                        database.playlistDao().upsertPlaylistItem(itemEntity)
+                        database.trackLikeDao().setTrackIsLiked(trackId, true, likedAt)
                     }
                 }
+
+                if (!isCurrent()) throw CancellationException("Sync session changed")
+                database.userSettingsDao().updateSyncToken(serverToken, userId, System.currentTimeMillis())
             }
         }
-
-        // Save token
-        database.userSettingsDao().updateSyncToken(serverToken, System.currentTimeMillis())
-        Log.i(TAG, "Bootstrap Sync successfully applied. Initial token saved.")
+        Log.i(TAG, "Bootstrap Sync successfully applied")
         return true
     }
 
     /**
      * INCREMENTAL SYNC : Push local outbox mutations, then pull server deltas.
      */
-    private suspend fun performIncrementalSync(deviceId: String, currentToken: String): Boolean {
+    private suspend fun pushOutbox(
+        deviceId: String,
+        token: String,
+        userId: String,
+        isCurrent: () -> Boolean,
+    ): Map<String, Long>? {
         // --- 1. PUSH PHASE ---
-        val pendingOps = database.syncOutboxDao().getPendingOperations()
-        var activeToken = currentToken
+        val pendingOps = database.syncOutboxDao().getPendingOperations().filter { op ->
+            if (op.userId != null) return@filter op.userId == userId
+            if (op.entityType !in setOf("playlist", "playlist_item", "playlist_reorder")) return@filter true
+            val playlistId = if (op.entityType == "playlist_item") {
+                json.decodeFromString<JsonObject>(op.payloadJson).string("playlist_id")
+            } else op.entityId
+            playlistId != null && database.playlistDao().getPlaylistSyncState(playlistId)?.userId == userId
+        }
+        val acknowledgedPlaylists = mutableMapOf<String, Long>()
 
         val activeSnapshot = database.playbackSnapshotDao().getActiveSnapshot()
 
@@ -393,6 +345,7 @@ class SyncRepository(
             for ((chunkIndex, chunk) in chunks.withIndex()) {
                 val isLastChunk = chunkIndex == chunks.size - 1
                 val syncOps = chunk.map { op ->
+                    val payload = json.decodeFromString<JsonObject>(op.payloadJson)
                     SyncOperationDto(
                         operationId = op.id,
                         entityType = op.entityType,
@@ -400,7 +353,9 @@ class SyncRepository(
                         operationType = op.operationType,
                         deviceId = deviceId,
                         occurredAt = formatMillisToIsoDate(op.createdAt),
-                        payload = json.decodeFromString<JsonObject>(op.payloadJson)
+                        payload = if (
+                            op.entityType in setOf("playlist", "playlist_item", "playlist_reorder")
+                        ) JsonObject(payload + ("playlist_sync_version" to JsonPrimitive(2))) else payload,
                     )
                 }.toMutableList()
 
@@ -436,66 +391,69 @@ class SyncRepository(
                     operations = syncOps
                 )
 
-                val response = apiService.pushBatch(getAuthToken(), request)
-                val error = response.error
+                if (!isCurrent()) return null
+                val response = apiService.pushBatch(token, request)
+                if (!isCurrent()) return null
                 val data = response.data
-                if (error != null) {
-                    Log.e(TAG, "Push batch failed on chunk $chunkIndex/${chunks.size}: ${error.message}")
-                    return false
-                }
-                if (data == null) {
-                    Log.e(TAG, "Push batch failed on chunk $chunkIndex/${chunks.size}: response data is null")
-                    return false
-                }
-
-                activeToken = data.nextPullToken.value
-
-                // Delete successfully processed operations immediately from local outbox
-                for (res in data.results) {
-                    if (res.status in listOf("applied", "merged", "ignored_duplicate")) {
-                        database.syncOutboxDao().deleteOperation(res.operationId)
-                        Log.d(TAG, "Sync operation ${res.operationId} successfully synchronized & deleted from local outbox.")
-                    } else if (res.status == "conflict") {
-                        Log.w(TAG, "Sync operation ${res.operationId} got conflict: ${res.conflict}")
-                        // On conflict, let's delete it so the server pull phase overrides it with authority
-                        database.syncOutboxDao().deleteOperation(res.operationId)
+                if (response.error != null || data == null || data.batchId != request.batchId) return null
+                val sentById = chunk.associateBy { it.id }
+                val returnedIds = data.results.mapTo(mutableSetOf()) { it.operationId }
+                if (returnedIds.size != data.results.size || returnedIds != syncOps.map { it.operationId }.toSet()) return null
+                for (result in data.results) {
+                    val operation = sentById[result.operationId] ?: continue
+                    if (result.entityId != operation.entityId || result.entityType != operation.entityType) return null
+                    if (result.status in setOf("applied", "merged", "ignored_duplicate")) {
+                        if (operation.entityType in setOf("playlist", "playlist_item", "playlist_reorder")) {
+                            val revision = result.playlistRevision ?: return null
+                            acknowledgedPlaylists[operation.id] = revision
+                        } else {
+                            database.syncOutboxDao().deleteOperation(operation.id)
+                        }
+                    } else if (result.status == "conflict" && operation.entityType in
+                        setOf("playlist", "playlist_item", "playlist_reorder")
+                    ) {
+                        if (result.conflict?.boolean("retryable") != false) return null
+                        database.syncOutboxDao().markPlaylistConflict(operation.id, userId, System.currentTimeMillis())
                     }
                 }
             }
         }
+        return acknowledgedPlaylists
+    }
 
-        // --- 2. PULL PHASE ---
-        Log.i(TAG, "Pulling server changes since token $activeToken...")
-        val pullRequest = PullBatchRequestDto(
-            deviceId = deviceId,
-            sinceToken = activeToken,
-            limit = 200
-        )
-
-        val pullResponse = apiService.pullBatch(getAuthToken(), pullRequest)
-        val error = pullResponse.error
-        val pullData = pullResponse.data
-        if (error != null) {
-            Log.e(TAG, "Pull batch failed: ${error.message}")
-            return false
-        }
-        if (pullData == null) {
-            Log.e(TAG, "Pull batch failed: response data is null")
-            return false
-        }
-
-        val changes = pullData.changes
-        Log.i(TAG, "Received ${changes.size} changes from server.")
-
-        for (change in changes) {
-            applyServerChange(change)
-        }
-
-        // Rotate token & update last_sync_at
-        val nextToken = pullData.nextPullToken.value
-        database.userSettingsDao().updateSyncToken(nextToken, System.currentTimeMillis())
-        Log.i(TAG, "Incremental Sync completed successfully. Saved new token: $nextToken")
-
+    private suspend fun pullChanges(
+        deviceId: String,
+        token: String,
+        userId: String,
+        currentToken: String,
+        isCurrent: () -> Boolean,
+    ): Boolean {
+        var cursor = currentToken
+        val seenCursors = mutableSetOf(cursor)
+        do {
+            if (!isCurrent()) return false
+            val response = apiService.pullBatch(
+                token,
+                PullBatchRequestDto(
+                    deviceId = deviceId,
+                    sinceToken = cursor,
+                    entityTypes = listOf("user_settings", "track_like", "playback_snapshot"),
+                ),
+            )
+            val data = response.data
+            if (response.error != null || response.meta?.partialFailure == true || data == null) return false
+            val next = data.nextPullToken.value
+            if (next.isBlank() || (data.hasMore && !seenCursors.add(next))) return false
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    if (!isCurrent()) throw CancellationException("Sync session changed")
+                    for (change in data.changes) applyServerChange(change)
+                    if (!isCurrent()) throw CancellationException("Sync session changed")
+                    database.userSettingsDao().updateSyncToken(next, userId, System.currentTimeMillis())
+                }
+            }
+            cursor = next
+        } while (data.hasMore)
         return true
     }
 
@@ -506,114 +464,62 @@ class SyncRepository(
         val payload = change.payload
         val entityId = change.entityId
         
-        try {
-            when (change.entityType) {
-                "user_settings" -> {
-                    val localSettings = database.userSettingsDao().getSettings()
-                    if (localSettings != null) {
-                        val updated = localSettings.copy(
-                            onlineSearchEnabled = payload.boolean("online_search_enabled") ?: localSettings.onlineSearchEnabled,
-                            onlineSearchNetworkPolicy = payload.string("online_search_network_policy") ?: localSettings.onlineSearchNetworkPolicy,
-                            statsSyncNetworkPolicy = payload.string("stats_sync_network_policy") ?: localSettings.statsSyncNetworkPolicy
-                        )
-                        database.userSettingsDao().insertOrReplace(updated)
-                    }
-                }
-                "playlist" -> {
-                    if (change.changeType == "delete") {
-                        database.playlistDao().deletePlaylist(entityId)
-                        Log.d(TAG, "Pulled DELETE playlist $entityId")
-                    } else {
-                        val name = payload.string("name") ?: "Unnamed Playlist"
-                        val isPinned = payload.boolean("is_pinned") ?: false
-                        val coverUri = payload.string("cover_uri")
-                        val createdStr = payload.string("created_at")
-                        val updatedStr = payload.string("updated_at")
-                        
-                        val pl = PlaylistEntity(
-                            id = entityId,
-                            name = name,
-                            coverUri = coverUri,
-                            isPinned = isPinned,
-                            createdAt = parseIsoDateToMillis(createdStr),
-                            updatedAt = parseIsoDateToMillis(updatedStr)
-                        )
-                        database.playlistDao().upsertPlaylist(pl)
-                        Log.d(TAG, "Pulled UPSERT playlist $entityId")
-                    }
-                }
-                "playlist_item" -> {
-                    if (change.changeType == "delete") {
-                        database.playlistDao().deletePlaylistItem(entityId)
-                        Log.d(TAG, "Pulled DELETE playlist_item $entityId")
-                    } else {
-                        val playlistId = payload.string("playlist_id") ?: return
-                        val trackId = payload.string("track_id") ?: return
-                        val position = payload.int("position") ?: (payload.double("position")?.toInt() ?: 0)
-                        val addedStr = payload.string("added_at")
-                        
-                        ensureTrackStub(trackId)
-                        
-                        val item = PlaylistItemEntity(
-                            id = entityId,
-                            playlistId = playlistId,
-                            trackId = trackId,
-                            position = position,
-                            addedAt = parseIsoDateToMillis(addedStr),
-                            addedFromContextType = payload.string("added_from_context_type"),
-                            addedFromContextId = payload.string("added_from_context_id")
-                        )
-                        database.playlistDao().upsertPlaylistItem(item)
-                        Log.d(TAG, "Pulled UPSERT playlist_item $entityId (pos $position)")
-                    }
-                }
-                "track_like" -> {
-                    val trackId = entityId
-                    if (change.changeType == "delete" || (payload.boolean("is_liked") == false)) {
-                        database.trackLikeDao().deleteLike(trackId)
-                        database.trackLikeDao().setTrackIsLiked(trackId, false, System.currentTimeMillis())
-                        Log.d(TAG, "Pulled DELETE track_like $trackId")
-                    } else {
-                        val likedAtStr = payload.string("liked_at")
-                        val likedAt = parseIsoDateToMillis(likedAtStr)
-                        
-                        ensureTrackStub(trackId)
-                        
-                        val like = TrackLikeEntity(
-                            trackId = trackId,
-                            likedAt = likedAt,
-                            sourceContextType = payload.string("source_context_type"),
-                            sourceContextId = payload.string("source_context_id")
-                        )
-                        database.trackLikeDao().insertLike(like)
-                        database.trackLikeDao().setTrackIsLiked(trackId, true, likedAt)
-                        Log.d(TAG, "Pulled UPSERT track_like $trackId")
-                    }
-                }
-                "playback_snapshot" -> {
-                    // Update the active playback snapshot
-                    val currentTrackId = payload.string("current_track_id")
-                    val positionMs = payload.long("position_ms") ?: (payload.double("position_ms")?.toLong() ?: 0L)
-                    val shuffleEnabled = payload.boolean("shuffle_enabled") ?: false
-                    val repeatMode = payload.string("repeat_mode") ?: "none"
-                    
-                    val snapshot = com.aura.music.data.local.PlaybackSnapshotEntity(
-                        id = "active",
-                        currentTrackId = currentTrackId,
-                        playbackContextType = payload.string("playback_context_type"),
-                        playbackContextId = payload.string("playback_context_id"),
-                        playbackContextIndex = payload.int("playback_context_index") ?: payload.double("playback_context_index")?.toInt(),
-                        positionMs = positionMs,
-                        shuffleEnabled = shuffleEnabled,
-                        repeatMode = repeatMode,
-                        updatedAt = System.currentTimeMillis()
+        when (change.entityType) {
+            "user_settings" -> {
+                val localSettings = database.userSettingsDao().getSettings()
+                if (localSettings != null) {
+                    val updated = localSettings.copy(
+                        onlineSearchEnabled = payload.boolean("online_search_enabled") ?: localSettings.onlineSearchEnabled,
+                        onlineSearchNetworkPolicy = payload.string("online_search_network_policy") ?: localSettings.onlineSearchNetworkPolicy,
+                        statsSyncNetworkPolicy = payload.string("stats_sync_network_policy") ?: localSettings.statsSyncNetworkPolicy
                     )
-                    database.playbackSnapshotDao().upsert(snapshot)
-                    Log.d(TAG, "Pulled playback snapshot update")
+                    database.userSettingsDao().insertOrReplace(updated)
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error applying server change: ${e.message}", e)
+            "track_like" -> {
+                val trackId = entityId
+                if (change.changeType == "delete" || (payload.boolean("is_liked") == false)) {
+                    database.trackLikeDao().deleteLike(trackId)
+                    database.trackLikeDao().setTrackIsLiked(trackId, false, System.currentTimeMillis())
+                    Log.d(TAG, "Pulled DELETE track_like $trackId")
+                } else {
+                    val likedAtStr = payload.string("liked_at")
+                    val likedAt = parseIsoDateToMillis(likedAtStr)
+
+                    ensureTrackStub(trackId)
+
+                    val like = TrackLikeEntity(
+                        trackId = trackId,
+                        likedAt = likedAt,
+                        sourceContextType = payload.string("source_context_type"),
+                        sourceContextId = payload.string("source_context_id")
+                    )
+                    database.trackLikeDao().insertLike(like)
+                    database.trackLikeDao().setTrackIsLiked(trackId, true, likedAt)
+                    Log.d(TAG, "Pulled UPSERT track_like $trackId")
+                }
+            }
+            "playback_snapshot" -> {
+                // Update the active playback snapshot
+                val currentTrackId = payload.string("current_track_id")
+                val positionMs = payload.long("position_ms") ?: (payload.double("position_ms")?.toLong() ?: 0L)
+                val shuffleEnabled = payload.boolean("shuffle_enabled") ?: false
+                val repeatMode = payload.string("repeat_mode") ?: "none"
+
+                val snapshot = com.aura.music.data.local.PlaybackSnapshotEntity(
+                    id = "active",
+                    currentTrackId = currentTrackId,
+                    playbackContextType = payload.string("playback_context_type"),
+                    playbackContextId = payload.string("playback_context_id"),
+                    playbackContextIndex = payload.int("playback_context_index") ?: payload.double("playback_context_index")?.toInt(),
+                    positionMs = positionMs,
+                    shuffleEnabled = shuffleEnabled,
+                    repeatMode = repeatMode,
+                    updatedAt = System.currentTimeMillis()
+                )
+                database.playbackSnapshotDao().upsert(snapshot)
+                Log.d(TAG, "Pulled playback snapshot update")
+            }
         }
     }
 

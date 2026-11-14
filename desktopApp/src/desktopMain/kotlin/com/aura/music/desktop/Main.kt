@@ -68,11 +68,12 @@ fun main() {
     val apiService = remember { KtorAuraApiService.createDefault() }
     val coroutineScope = rememberCoroutineScope()
 
-    val cloudSyncManager = remember { DesktopCloudSyncManager(database, apiService, coroutineScope) }
+    val authSessionManager = remember { DesktopAuthSessionManager(secureStorage, coroutineScope) }
+    val cloudSyncManager = remember {
+        DesktopCloudSyncManager(database, apiService, coroutineScope, authSessionManager::getUserId)
+    }
     val downloadManager = remember { DesktopDownloadManager(database, apiService, coroutineScope) }
     val playlistManager = remember { DesktopPlaylistManager(database, cloudSyncManager) }
-
-    val authSessionManager = remember { DesktopAuthSessionManager(secureStorage, coroutineScope) }
 
     val orchestrator = remember {
         DesktopPlaybackOrchestrator(

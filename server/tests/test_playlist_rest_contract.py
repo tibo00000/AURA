@@ -4,9 +4,13 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 import pytest
+from unittest.mock import MagicMock
 
 from app.api.routes import me, sync, sync_files
+from app.core.auth import AuthenticatedUser, get_current_user
+from app.db.user_client import get_current_user_client
 from app.schemas.sync import PullBatchRequest, PushBatchRequest, BootstrapRequest
 from app.services.sync_service import generate_sync_token
 
@@ -58,3 +62,52 @@ def test_runner_request_shapes_match_actual_batch_schemas():
         "operations":[{"operation_id":"op","entity_type":"playlist","entity_id":"own","operation_type":"update",
                        "device_id":"synthetic","occurred_at":"date","payload":{"name":"new"}}]})
     assert request.operations[0].payload == {"name":"new"}
+
+
+@pytest.mark.parametrize("returned_owner,count,expected_status", [
+    ("owner", 1, 200),
+    ("owner", 2, 503),
+    ("foreign", 1, 503),
+])
+def test_playlist_snapshot_requires_a_complete_inventory_for_the_authenticated_owner(
+    returned_owner, count, expected_status,
+):
+    stamp = "2026-11-14T10:30:00+00:00"
+    aggregate = {
+        "user_id": returned_owner,
+        "contract_version": 1,
+        "revision": 9,
+        "playlist_count": 1,
+        "item_count": count,
+        "playlists": [{
+            "id": "playlist",
+            "user_id": returned_owner,
+            "name": "Mix",
+            "is_pinned": False,
+            "created_at": stamp,
+            "updated_at": stamp,
+            "item_count": 1,
+            "items": [{
+                "id": "occurrence",
+                "playlist_id": "playlist",
+                "track_id": "track",
+                "position": 0,
+                "added_at": stamp,
+            }],
+        }],
+    }
+    db = MagicMock()
+    db.rpc.return_value.execute.return_value.data = aggregate
+    api = FastAPI()
+    api.include_router(me.router)
+    api.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(id="owner", token="synthetic")
+    api.dependency_overrides[get_current_user_client] = lambda: db
+    response = TestClient(api).get("/me/playlists/snapshot")
+    assert response.status_code == expected_status
+    db.rpc.assert_called_once_with("aura_playlist_snapshot", {})
+    if expected_status == 200:
+        assert response.headers["Cache-Control"] == "private, no-store"
+        assert response.json()["data"]["revision"] == 9
+        assert response.json()["data"]["playlists"][0]["order_token"].startswith("ord_")
+    else:
+        assert "playlists" not in response.json()

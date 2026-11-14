@@ -1071,7 +1071,7 @@ class DesktopPlaybackOrchestrator(
     suspend fun renamePlaylist(id: String, newName: String) = playlistManager?.renamePlaylist(id, newName)
     suspend fun deletePlaylist(id: String) = playlistManager?.deletePlaylist(id)
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) = playlistManager?.addTrackToPlaylist(playlistId, trackId)
-    suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String) = playlistManager?.removeTrackFromPlaylist(playlistId, trackId)
+    suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) = playlistManager?.removeTrackFromPlaylist(playlistId, playlistItemId)
     suspend fun deduplicatePlaylist(playlistId: String): Int = playlistManager?.deduplicatePlaylist(playlistId) ?: 0
 
     fun triggerTrackDownload(track: TrackSummary) {

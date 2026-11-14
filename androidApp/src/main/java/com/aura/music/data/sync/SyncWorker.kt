@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.aura.music.AuraApplication
+import kotlinx.coroutines.CancellationException
 
 class SyncWorker(
     context: Context,
@@ -31,6 +32,8 @@ class SyncWorker(
                 Log.w("SyncWorker", "Sync background job skipped or failed")
                 Result.retry()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("SyncWorker", "Sync background job crashed: ${e.message}", e)
             Result.failure()

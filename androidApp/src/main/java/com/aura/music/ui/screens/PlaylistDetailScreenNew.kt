@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -83,8 +83,8 @@ fun PlaylistDetailScreenNew(
     onOpenAlbum: (String) -> Unit,
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
-    val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId, refreshTick, refreshToken) {
-        value = repository.getPlaylistDetail(playlistId)
+    val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId) {
+        repository.observePlaylistDetail(playlistId).collect { value = it }
     }
     val scope = rememberCoroutineScope()
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -429,11 +429,11 @@ fun PlaylistDetailScreenNew(
                         )
                     }
                 } else {
-                    items(
+                    itemsIndexed(
                         items = detail.tracks,
-                        key = { it.playlistItemId },
-                        contentType = { "track_row" }
-                    ) { track ->
+                        key = { _, track -> track.playlistItemId },
+                        contentType = { _, _ -> "track_row" }
+                    ) { index, track ->
                         val onPlayTrackClick = remember(track.trackId, detail.tracks) {
                             {
                                 val tracks = detail.tracks.map { it.toTrackListRow() }
@@ -457,6 +457,8 @@ fun PlaylistDetailScreenNew(
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
                             onAddToQueue = onAddToQueueClick,
+                            canMoveUp = index > 0,
+                            canMoveDown = index < detail.tracks.lastIndex,
                             cloudFileRepository = cloudFileRepository,
                             syncedCloudTrackIds = syncedCloudTrackIds,
                             cloudFiles = cloudFiles,
@@ -583,6 +585,8 @@ private fun PlaylistTrackRowItem(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onAddToQueue: () -> Unit,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
     syncedCloudTrackIds: Set<String>,
     cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
@@ -745,7 +749,23 @@ private fun PlaylistTrackRowItem(
         onUploadToCloud = onUploadToCloudLambda,
         onDownloadFromCloud = onDownloadFromCloudLambda,
         onEditMetadata = if (onEditMetadata != null) { { onEditMetadata(track.toTrackListRow()) } } else null,
-        onChangeAudioVersion = onChangeAudioVersionLambda
+        onChangeAudioVersion = onChangeAudioVersionLambda,
+        onMovePlaylistItemUp = if (canMoveUp) {
+            {
+                scope.launch {
+                    repository.movePlaylistItem(playlistId, track.playlistItemId, -1)
+                    onRefresh()
+                }
+            }
+        } else null,
+        onMovePlaylistItemDown = if (canMoveDown) {
+            {
+                scope.launch {
+                    repository.movePlaylistItem(playlistId, track.playlistItemId, 1)
+                    onRefresh()
+                }
+            }
+        } else null,
     )
 }
 

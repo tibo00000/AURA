@@ -23,6 +23,24 @@ Definir la strategie canonique de synchronisation entre le client Android et le 
 - `entity_id` est toujours une chaine opaque ; le client ne doit jamais en deduire une structure metier.
 - Les IDs locaux derives de `MediaStore` ou des slugs Android ne doivent pas etre promus comme IDs cloud de catalogue sans mapping serveur explicite.
 
+Pour le contrat playlist v2, un déplacement manuel identifie une occurrence
+et une ancre, avec un placement avant ou après l'ancre. Le serveur applique
+ce déplacement à l'ordre courant sous le verrou de la playlist. Il préserve
+l'ordre relatif des autres occurrences. Si l'occurrence ou l'ancre manque,
+il signale un conflit et le client garde l'opération locale.
+
+Le marqueur d'idempotence d'une mutation playlist v2 est réservé et validé
+dans la même transaction que son effet. Un conflit annule la réservation.
+Les anciens payloads de réordonnancement restent pris en charge par le
+contrat batch historique.
+
+Un snapshot ne consomme un acquittement que si sa révision couvre celle de
+l’opération. La transaction Room relit ensuite les mutations non résolues.
+Une playlist ayant une mutation encore en attente conserve son état local.
+Un snapshot plus ancien que le dernier inventaire observé ne change ni les
+entrées ni les acquittements. Une absence ne supprime qu’une playlist dont
+une révision précédente a effectivement été appliquée pour le même compte.
+
 ## Entites server-authoritative
 Le client ne doit pas envoyer de mutation directe pour :
 - `artists`

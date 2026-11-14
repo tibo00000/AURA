@@ -171,8 +171,16 @@ Resultat attendu :
 ## Code Work Board
 
 ### Android
+
 | ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
 |---|---|---|---|---|---|---|
+| PLAYLIST-SYNC-A | android, desktop, backend | Réconcilier les playlists Aura par snapshot et préserver les mutations locales | completed | AND-012, SRV-007, DSK-010 | `docs/server/sync-batch-api.md`, `docs/android/room-schema.md` | PostgreSQL 17 isolé, 62 tests backend, 12 Desktop et migration Android v5 validés. Validation physique au lot F. |
+| PLAYLIST-SYNC-B | android, backend | Associer une source externe à une playlist Aura et synchroniser le lien | not_started | PLAYLIST-SYNC-A | `docs/android/screens/playlists.md`, `docs/server/sync-batch-api.md` | Association facultative |
+| PLAYLIST-SYNC-C | android, backend | Actualiser la source et appliquer les exclusions manuelles | not_started | PLAYLIST-SYNC-B, PLAYLIST-SYNC-D1 | `docs/android/screens/playlists.md`, `docs/server/sync-conflict-resolution.md` | Ajouts uniquement |
+| PLAYLIST-SYNC-D1 | backend | Persister les intentions audio avec les mutations de playlist | not_started | PLAYLIST-SYNC-A | `docs/server/jobs.md`, `docs/server/sync-batch-api.md` | Prérequis au commit d'actualisation |
+| PLAYLIST-SYNC-D | backend, android | Reprendre les acquisitions cloud et vérifier la disponibilité | not_started | PLAYLIST-SYNC-D1 | `docs/server/jobs.md`, `docs/server/api-contract.md` | Acquisition réelle soumise à validation de la source |
+| PLAYLIST-SYNC-E | android | Intégrer les actions de playlist et filtrer la file Media3 | not_started | PLAYLIST-SYNC-C, PLAYLIST-SYNC-D | `docs/android/screens/playlists.md`, `docs/android/player/queue-rules.md` | Android Auto et restauration inclus |
+| PLAYLIST-SYNC-F | ops | Valider le candidat et préparer le dossier de livraison | not_started | PLAYLIST-SYNC-E | `docs/ops/ota-deployment-guide.md` | Environnement isolé |
 | AND-APK-041-RC | android | Préparer le candidat local sessions/favoris et SEC-004/004.1 | completed | AND-SESSION-MEDIA-041, SEC-004.1 | `docs/android/player/architecture.md`, `docs/ops/ota-deployment-guide.md` | Réserves corrigées ;77 ciblés,38 ciblés figés et126 Android réussis ; APK debug0.4.1/code5 signé comme l'OTA précédente, SHA01701615 ;161 entrées figées,43 entrées de patch rejouées, GO test manuel seulement ; aucune installation/OTA/version/production/commit |
 | SEC-005 | backend | Protéger les uploads et tracer les remplacements audio collaboratifs | completed | SEC-003.3, SEC-002.4 | `docs/server/storage.md`, `docs/server/api-contract.md`, `docs/ops/security-lot5-local-validation.md` | 354 backend Linux/Python3.12,107 assertions PG et3 gates réussis ; Caddy2.8.4 adapté localement. Hardlinks audio déjà protégés ; réception/stockage coopératif et journal SQLite durable, spool tronqué corrigé. GO revue locale, seuils réels/proxy actif à confirmer ; aucun client/production/migration distante/commit |
 | SEC-005.1 | backend | Préserver les remplacements partagés dans les reprises retry/resolve | completed | SEC-005 | `docs/server/jobs.md`, `docs/server/storage.md`, `docs/server/api-contract.md`, `docs/ops/security-lot5-local-validation.md` | Autorité operation_type SQL ; retry manuel sans source persistée refusé, resolve explicite partagé et audité ;24 scénarios,216 ciblés puis378 backend Linux/Python3.12 réussis,0 ignoré ; GO revue locale, aucun geste externe |
@@ -362,6 +370,9 @@ Resultat attendu :
 - Résolution des crashs SQLite sur les likes/playlists et fiabilisation de la synchronisation des données distantes.
 
 ## Journal des changements
+
+- 2026-11-14T13:27:35+01:00 | code, schema, api, docs | `docs/server/sync-batch-api.md`, `docs/server/sync-conflict-resolution.md`, `docs/android/room-schema.md` | PLAYLIST-SYNC-A démarré depuis `03133655` avec snapshot cohérent, écriture Room par occurrence et contrats de mutation v2 testés sur PostgreSQL 17 isolé, validation client en cours.
+- 2026-11-14T13:56:00+01:00 | code, schema, api, test | `docs/server/sync-batch-api.md`, `docs/android/room-schema.md` | PLAYLIST-SYNC-A validé localement. Révision d’inventaire et du commit v2, bootstrap et curseur par compte, réordonnancement visible sur Android et migration Room 5 → 6 testée sur les deux plateformes. 62 tests backend, 12 Desktop, scénario PostgreSQL et migration Android sous JDK x64. L’essai complémentaire PERF-FAV a échoué par timeout sur un test de coalescence lors de deux exécutions, dont l’attribution est à vérifier sur le commit de départ. Aucun déploiement.
 
 - 2026-11-14T12:49:45+01:00 | release, android | `androidApp/build.gradle.kts`, `BUILD.md`, `llms-full.txt` | AND-OTA-043 : fusion de `perf/startup-shimmer` (`PERF-001`, `PERF-002`, `PERF-FAV-001`..`003`, durcissement `R1-R4`) dans `main` et publication OTA facultative de `0.4.3`/code `7`. 158 tests passés (`12` `:shared` + `146` `:androidApp`, 0 échec, 0 ignoré), signature v2 identique à `0.4.2`, retéléchargé en HTTPS avec SHA-256 conforme (`7967b5f5ecb070755af442fd8bcf255e0108208e26d7cd0d131226410c0f719f`, `92022841` octets). Backend SEC-005.2 sain et inchangé, ancien APK `aura-0.4.2.apk` conservé et seuil minimal `2`.
 

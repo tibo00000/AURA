@@ -9,7 +9,8 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import anyio
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.user_client import get_current_user_client
@@ -17,6 +18,7 @@ from app.schemas.me import (
     LikeResponse,
     PlaybackSnapshotResponse,
     PlaylistResponse,
+    PlaylistSnapshotResponse,
     PlaylistItemResponse,
     UserSettingsPatch,
     UserSettingsResponse,
@@ -28,10 +30,55 @@ from app.schemas.me import (
     PlaylistUpdate,
 )
 from app.schemas.responses import ResponseEnvelope
+from app.services.sync_service import compute_order_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/me", tags=["user"])
+
+
+@router.get("/playlists/snapshot", response_model=ResponseEnvelope[PlaylistSnapshotResponse])
+async def get_playlist_snapshot(
+    response: Response,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
+):
+    try:
+        raw = await anyio.to_thread.run_sync(
+            lambda: supabase.rpc("aura_playlist_snapshot", {}).execute().data
+        )
+        if raw["user_id"] != current_user.id:
+            raise ValueError("Unexpected snapshot owner")
+        playlists = [
+            {**playlist, "order_token": compute_order_token(playlist["updated_at"])}
+            for playlist in raw["playlists"]
+        ]
+        snapshot = PlaylistSnapshotResponse.model_validate({**raw, "playlists": playlists})
+        if snapshot.playlist_count != len(playlists) or snapshot.item_count != sum(
+            len(playlist.items) for playlist in snapshot.playlists
+        ):
+            raise ValueError("Incomplete playlist snapshot")
+        playlist_ids = {playlist.id for playlist in snapshot.playlists}
+        item_ids: set[str] = set()
+        if len(playlist_ids) != len(playlists):
+            raise ValueError("Repeated playlist ID")
+        for playlist in snapshot.playlists:
+            if playlist.user_id != current_user.id:
+                raise ValueError("Unexpected playlist owner")
+            if playlist.item_count != len(playlist.items):
+                raise ValueError("Incomplete playlist entries")
+            positions = [item.position for item in playlist.items]
+            if positions != sorted(set(positions)) or any(position < 0 for position in positions):
+                raise ValueError("Repeated playlist position")
+            for item in playlist.items:
+                if item.playlist_id != playlist.id or item.id in item_ids:
+                    raise ValueError("Invalid playlist item identity")
+                item_ids.add(item.id)
+        response.headers["Cache-Control"] = "private, no-store"
+        return ResponseEnvelope(data=snapshot)
+    except Exception as exc:
+        logger.warning("Playlist snapshot unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Playlist snapshot unavailable") from None
 
 
 @router.get(

@@ -47,6 +47,7 @@ async def bootstrap(
             lambda: SyncService(user_client).bootstrap(
                 user_id=current_user.id,
                 device_id=request.device_id,
+                use_playlist_snapshot=(request.capabilities or {}).get("playlist_snapshot") in (True, "true"),
             )
         )
         return ResponseEnvelope(data=BootstrapResponse(

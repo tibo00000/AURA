@@ -58,6 +58,7 @@ class SyncOperationResult(BaseModel):
     server_updated_at: str
     resolved_entity: Optional[Dict[str, Any]] = None
     conflict: Optional[Dict[str, Any]] = None
+    playlist_revision: Optional[int] = Field(default=None, ge=0)
 
 
 class PushBatchResponse(BaseModel):

@@ -58,6 +58,21 @@ class PlaylistResponse(BaseModel):
     items: List[PlaylistItemResponse] = Field(default_factory=list)
 
 
+class PlaylistSnapshotEntry(PlaylistResponse):
+    order_token: str
+    item_count: int = Field(ge=0)
+    items: List[PlaylistItemResponse]
+
+
+class PlaylistSnapshotResponse(BaseModel):
+    user_id: str
+    contract_version: int = Field(ge=1, le=1)
+    revision: int = Field(ge=0)
+    playlist_count: int = Field(ge=0)
+    item_count: int = Field(ge=0)
+    playlists: List[PlaylistSnapshotEntry]
+
+
 class LikeResponse(BaseModel):
     """Like / Favorite model."""
     track_id: str
