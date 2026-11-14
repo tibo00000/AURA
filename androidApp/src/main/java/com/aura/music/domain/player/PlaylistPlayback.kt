@@ -21,6 +21,12 @@ internal const val PLAYLIST_OCCURRENCE_KEY = "aura.playlist.occurrence"
 
 internal fun MediaItem.occurrenceId(): String? = mediaMetadata.extras?.getString(PLAYLIST_OCCURRENCE_KEY)
 
+internal fun MediaItem.matchesQueueTrack(track: QueuedTrack): Boolean {
+    if (mediaId != track.trackId) return false
+    val occurrence = occurrenceId()
+    return if (occurrence == null) track.playlistCloudAvailable == null else occurrence == track.internalId
+}
+
 internal fun MediaMetadata.Builder.withOccurrence(id: String?): MediaMetadata.Builder = apply {
     if (id != null) setExtras(Bundle().apply { putString(PLAYLIST_OCCURRENCE_KEY, id) })
 }

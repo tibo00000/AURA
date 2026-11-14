@@ -134,11 +134,7 @@ class QueueManager {
             }
 
             if (current.repeatMode == RepeatMode.All) {
-                val restartIndex = if (current.shuffledContextIndices != null) {
-                    current.shuffledContextIndices.firstOrNull() ?: 0
-                } else {
-                    0
-                }
+                val restartIndex = repeatStartIndex(current)
                 val updatedContext = context.copy(currentIndex = restartIndex)
                 val nextTrack = updatedContext.currentTrack
                 result = nextTrack
@@ -382,6 +378,30 @@ class QueueManager {
         _state.update { it.copy(shuffleEnabled = shuffleEnabled, repeatMode = repeatMode) }
     }
 
+    /** Drop the playlist sources confirmed under a previous Aura account. */
+    fun invalidatePlaylistCloudSources() {
+        _state.update { state ->
+            fun QueuedTrack.needsCloud() = playlistCloudAvailable == true && contentUri == null
+            fun QueuedTrack.withoutCloud() = if (playlistCloudAvailable == true) copy(playlistCloudAvailable = false) else this
+
+            val active = state.currentTrack
+            val context = state.context
+            val remainingIndices = context?.tracks?.indices?.filter { !context.tracks[it].needsCloud() }.orEmpty()
+            val remappedIndices = remainingIndices.withIndex().associate { (index, original) -> original to index }
+            val remappedCurrent = context?.currentIndex?.let(remappedIndices::get)
+            val updatedContext = if (context != null && remappedCurrent != null && active?.needsCloud() != true) {
+                context.copy(tracks = remainingIndices.map { context.tracks[it].withoutCloud() }, currentIndex = remappedCurrent)
+            } else null
+            state.copy(
+                currentTrack = active?.takeUnless { it.needsCloud() }?.withoutCloud(),
+                context = updatedContext,
+                shuffledContextIndices = if (updatedContext != null) state.shuffledContextIndices?.mapNotNull(remappedIndices::get) else null,
+                priorityQueue = state.priorityQueue.filterNot { it.needsCloud() }.map { it.withoutCloud() },
+                history = state.history.filterNot { it.needsCloud() }.map { it.withoutCloud() },
+            )
+        }
+    }
+
     /**
      * Reinitialise completement l'etat de la file d'attente (vide le contexte, la queue de priorite, etc.).
      */
@@ -418,13 +438,16 @@ class QueueManager {
 
     /**
      * Inspecte la prochaine piste en lecture pure sans avancer le curseur (Règle #4).
+     * La répétition du titre courant reste gérée par le lecteur natif.
      */
     fun peekNext(): QueuedTrack? {
         val s = state.value
+        if (s.repeatMode == RepeatMode.One) return null
         val nextInPriority = s.priorityQueue.firstOrNull()
         if (nextInPriority != null) return nextInPriority
         val context = s.context ?: return null
-        val nextIndex = resolveNextContextIndex(s) ?: return null
+        val nextIndex = resolveNextContextIndex(s)
+            ?: if (s.repeatMode == RepeatMode.All) repeatStartIndex(s) else return null
         return context.tracks.getOrNull(nextIndex)
     }
 
@@ -516,6 +539,8 @@ class QueueManager {
             if (nextIndex < context.tracks.size) nextIndex else null
         }
     }
+
+    private fun repeatStartIndex(state: QueueState): Int = state.shuffledContextIndices?.firstOrNull() ?: 0
 
     private fun buildShuffledIndices(size: Int, currentIndex: Int): List<Int> {
         if (size <= 1) return listOf(currentIndex).take(size)

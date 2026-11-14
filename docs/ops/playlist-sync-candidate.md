@@ -115,6 +115,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | --- | --- |
 | Python | 399 réussites |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
+| Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 154 sur 155. Test d’indexation des 50 000 titres au-dessus de son seuil de 3 s sur la branche (4,27 s) et sur le commit de départ (5,31 s). Le code de recherche et le seuil sont identiques. |

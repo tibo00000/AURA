@@ -49,4 +49,30 @@ class PlaylistPlaybackTest {
         assertEquals(emptyList<QueuedTrack>(), manager.getUpcomingContextTracks())
         assertEquals("local", manager.state.value.currentTrack?.internalId)
     }
+
+    @Test
+    fun accountChangeDropsCloudEntriesAndKeepsTheActiveLocalOccurrenceAndShuffleOrder() {
+        val rows = listOf(
+            row("cloud-first", "one"),
+            row("local", "two", "content://media/42"),
+            row("cloud-next", "three"),
+            row("local-repeat", "two", "content://media/42"),
+            row("other-local", "four", "content://media/43"),
+        )
+        val tracks = buildPlaylistQueue(rows, setOf("one", "two", "three"))
+        val manager = QueueManager()
+        manager.setContext("playlist", "mix", tracks, 1)
+        manager.toggleShuffle()
+        manager.addToQueue(tracks[2])
+        val localUpcoming = manager.getUpcomingContextTracks().filter { it.contentUri != null }.map { it.internalId }
+
+        manager.invalidatePlaylistCloudSources()
+
+        val state = manager.state.value
+        assertEquals("local", state.currentTrack?.internalId)
+        assertEquals(false, state.currentTrack?.playlistCloudAvailable)
+        assertTrue(state.priorityQueue.isEmpty())
+        assertTrue(state.history.isEmpty())
+        assertEquals(localUpcoming, manager.getUpcomingContextTracks().map { it.internalId })
+    }
 }

@@ -150,8 +150,7 @@ class PlaybackOrchestrator(
             android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: queueManager currentTrack=${currentTrack?.trackId}")
             
             if (currentTrack == null || !transitionedItem.matchesQueueTrack(currentTrack)) {
-                val targetNextTrack = queueManager.state.value.priorityQueue.firstOrNull()
-                    ?: queueManager.getUpcomingContextTracks().firstOrNull()
+                val targetNextTrack = queueManager.peekNext()
                 val targetPrevTrack = queueManager.state.value.history.lastOrNull()
                 
                 android.util.Log.d("PlaybackOrchestrator", "onMediaItemTransition: mismatch! transitioned=$transitionedTrackIdResolved, targetNext=${targetNextTrack?.trackId}, targetPrev=${targetPrevTrack?.trackId}")
@@ -442,6 +441,7 @@ class PlaybackOrchestrator(
         playlistPlayRequest?.cancel()
         if (event.contextTracks.isEmpty()) return
         if (event.contextType == "playlist") {
+            val owner = stateStore.sessionScope
             playlistPlayRequest = scope.launch {
                 var tracks = event.contextTracks
                 var selected = tracks.getOrNull(event.startIndex)
@@ -455,6 +455,7 @@ class PlaybackOrchestrator(
                         ?: rows.singleOrNull { it.trackId == event.trackId }
                     selected = tracks.firstOrNull { it.internalId == requested?.playlistItemId }
                 }
+                if (stateStore.sessionScope != owner) return@launch
                 val index = tracks.indexOfFirst { it.internalId == selected?.internalId }
                 if (index >= 0) playResolved(event.copy(contextTracks = tracks, startIndex = index))
                 else {
@@ -505,11 +506,8 @@ class PlaybackOrchestrator(
             return
         }
 
-        val hasNext = state.priorityQueue.isNotEmpty() || 
-            queueManager.getUpcomingContextTracks().isNotEmpty() ||
-            (state.repeatMode == RepeatMode.All && state.context?.tracks?.isNotEmpty() == true)
-
-        if (!hasNext) {
+        val next = queueManager.peekNext()
+        if (next == null) {
             android.util.Log.d("PlaybackOrchestrator", "handleNext: no next track, stopping player")
             controller?.stop()
             queueManager.next() // Update queueState (currentTrack = null, add current to history)
@@ -518,8 +516,16 @@ class PlaybackOrchestrator(
             return
         }
 
-        android.util.Log.d("PlaybackOrchestrator", "handleNext: delegating transition to ExoPlayer seekToNextMediaItem()")
-        controller?.seekToNextMediaItem()
+        val ctrl = controller ?: return
+        if (ctrl.hasNextMediaItem()) {
+            ctrl.seekToNextMediaItem()
+        } else {
+            // The native timeline can lag the queue while a controller command is pending.
+            queueManager.next()
+            syncExoPlayerPlaylist(0L)
+            saveSnapshot()
+            syncUiState()
+        }
     }
 
     private fun handlePrevious() {
@@ -786,10 +792,10 @@ class PlaybackOrchestrator(
         val state = queueManager.state.value
         
         // Update native repeat mode based on AURA repeat mode
-        ctrl.repeatMode = when (state.repeatMode) {
-            RepeatMode.One -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
-        }
+        val nextTrack = queueManager.peekNext()
+        ctrl.repeatMode = if (state.repeatMode == RepeatMode.One ||
+            (state.repeatMode == RepeatMode.All && nextTrack?.internalId == state.currentTrack?.internalId)
+        ) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
 
         val currentTrack = state.currentTrack ?: run {
             android.util.Log.d("PlaybackOrchestrator", "syncExoPlayerPlaylist: currentTrack is null")
@@ -802,7 +808,7 @@ class PlaybackOrchestrator(
         }
 
         val rawPrev = state.history.lastOrNull()
-        val rawNext = state.priorityQueue.firstOrNull() ?: queueManager.getUpcomingContextTracks().firstOrNull()
+        val rawNext = nextTrack
 
         val prev = rawPrev?.takeIf { it.internalId != currentTrack.internalId }
         val next = rawNext?.takeIf { it.internalId != currentTrack.internalId }
@@ -866,7 +872,8 @@ class PlaybackOrchestrator(
         val currentNextItem = if (hasNextInPlayer) ctrl.getMediaItemAt(currentIndexInPlayer + 1) else null
         
         if (desiredNext != null) {
-            val nextMediaItem = createMediaItem(desiredNext)
+            val nextMediaItem = if (currentNextItem?.matchesQueueTrack(desiredNext) == true) currentNextItem
+                else createMediaItem(desiredNext)
             if (nextMediaItem != null) {
                 if (currentNextItem?.matchesQueueTrack(desiredNext) != true) {
                     if (hasNextInPlayer) {
@@ -898,7 +905,8 @@ class PlaybackOrchestrator(
         val currentPrevItem = if (hasPrevInPlayer) ctrl.getMediaItemAt(currentIndexInPlayer - 1) else null
         
         if (desiredPrev != null) {
-            val prevMediaItem = createMediaItem(desiredPrev)
+            val prevMediaItem = if (currentPrevItem?.matchesQueueTrack(desiredPrev) == true) currentPrevItem
+                else createMediaItem(desiredPrev)
             if (prevMediaItem != null) {
                 if (currentPrevItem?.matchesQueueTrack(desiredPrev) != true) {
                     if (hasPrevInPlayer) {
@@ -998,9 +1006,6 @@ class PlaybackOrchestrator(
             .setMediaMetadata(metadata)
             .build()
     }
-
-    private fun MediaItem.matchesQueueTrack(track: QueuedTrack): Boolean =
-        mediaId == track.trackId && (occurrenceId()?.let { it == track.internalId } ?: true)
 
     private suspend fun handleExternalTrackTransition(trackId: String, occurrenceId: String?) {
         val state = queueManager.state.value
