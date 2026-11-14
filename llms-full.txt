@@ -459,6 +459,8 @@ Resultat attendu :
 
 ## Journal des changements
 
+- 2026-11-14T12:49:45+01:00 | release, android | `androidApp/build.gradle.kts`, `BUILD.md`, `llms-full.txt` | AND-OTA-043 : fusion de `perf/startup-shimmer` (`PERF-001`, `PERF-002`, `PERF-FAV-001`..`003`, durcissement `R1-R4`) dans `main` et publication OTA facultative de `0.4.3`/code `7`. 158 tests passés (`12` `:shared` + `146` `:androidApp`, 0 échec, 0 ignoré), signature v2 identique à `0.4.2`, retéléchargé en HTTPS avec SHA-256 conforme (`7967b5f5ecb070755af442fd8bcf255e0108208e26d7cd0d131226410c0f719f`, `92022841` octets). Backend SEC-005.2 sain et inchangé, ancien APK `aura-0.4.2.apk` conservé et seuil minimal `2`.
+
 - 2026-11-11T15:40:03+01:00 | release, android | `androidApp/build.gradle.kts`, `BUILD.md` | AND-OTA-042 : publication OTA facultative de 0.4.2/code 6 après confirmation sur téléphone de la reconnexion, du streaming et des favoris hors ligne. APK signé comme la 0.4.1, retéléchargé en HTTPS avec SHA-256 conforme. Backend SEC-005.2 sain, ancien APK conservé et seuil minimal 2.
 
 - 2026-11-11T15:08:00+01:00 | dépôt, docs, ops | `docs/ops/security-lot5-candidate.md`, `docs/ops/security-lot5-window-decisions.md` | Clôture des lots de sécurité. Sources et validations backend comparées au contexte SEC-005.2 déployé, Android au candidat figé. Commits distincts, procédures de sauvegarde et déploiement versionnées, preuves historiques archivées hors Git et règles d’ignorance complétées. 162 tests backend isolés, 77 tests Android x64 et 5 tests d’archive réussis. Aucun déploiement ni changement de version.
@@ -970,6 +972,15 @@ désinstaller l'application, puis observer les favoris et tester le mode hors li
 - La lecture privée reste isolée lors d’un changement de compte.
 
 Publication Android facultative via `/app/updates/aura-0.4.2.apk`. SHA-256 `3d7c73be850879bdb718451c6964b723c6cc33365b4f6e8996110e5011c96dcf`. Les 77 tests ciblés Android x64 du candidat ont réussi. La signature correspond à celle de la version précédente. Le descripteur OTA, le SHA-256 du téléchargement public et `/health` ont été vérifiés à 15 h 40, heure de Paris. Seuil de mise à jour obligatoire inchangé à 2.
+
+### [RELEASE v0.4.3] - 2026-11-14 (versionCode: 7)
+
+**Nouveautés pour l'utilisateur :**
+- Démarrage plus rapide de l’application et chargement fluide des écrans d’accueil et de bibliothèque.
+- Défilement fluide dans les Favoris dès l’ouverture, même pendant la synchronisation en arrière-plan.
+- Meilleure conservation des pochettes locales et synchronisation cloud fiabilisée.
+
+Publication Android facultative via `/app/updates/aura-0.4.3.apk` (`92022841` octets). SHA-256 `7967b5f5ecb070755af442fd8bcf255e0108208e26d7cd0d131226410c0f719f`. Les 158 tests unitaires (`12` `:shared` + `146` `:androidApp`) ont réussi sans échec ni ignoré. La signature APK v2 correspond à celle de `0.4.2` (`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`). Le descripteur OTA, le SHA-256 du téléchargement public et `/health` ont été vérifiés à 12 h 49, heure de Paris. Backend SEC-005.2 inchangé ; seuil de mise à jour obligatoire maintenu à 2.
 
 # FILE: docs/adrs/001-machine-friendly-docs.md
 # ADR 001 - Machine-Friendly Documentation
