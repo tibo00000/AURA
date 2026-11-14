@@ -42,9 +42,14 @@ internal class PlaylistSourceReader(
         items.mapNotNull { entry ->
             val track = if (spotify) {
                 if (entry.optBoolean("is_local")) return@mapNotNull null
-                val item = entry.optJSONObject("item") ?: entry.optJSONObject("track")
-                if (item == null && (entry.has("item") || entry.has("track"))) return@mapNotNull null
-                val value = item ?: throw PlaylistSourceReadException("Un élément Spotify est incomplet.")
+                val field = when {
+                    entry.has("item") -> "item"
+                    entry.has("track") -> "track"
+                    else -> throw PlaylistSourceReadException("Un élément Spotify est incomplet.")
+                }
+                if (entry.isNull(field)) return@mapNotNull null
+                val value = entry.optJSONObject(field)
+                    ?: throw PlaylistSourceReadException("Un élément Spotify est incomplet.")
                 if (value.optString("type") == "episode" || value.optBoolean("is_local")) return@mapNotNull null
                 value
             } else entry
@@ -72,6 +77,7 @@ internal class PlaylistSourceReader(
     private suspend fun readPages(start: URI, expected: URI, field: String, token: String?): List<JSONObject> {
         var next: URI? = start
         var expectedTotal: Int? = null
+        val offsetKey = if (field == "items") "offset" else "index"
         val visited = mutableSetOf<URI>()
         val entries = mutableListOf<JSONObject>()
         while (next != null) {
@@ -80,13 +86,26 @@ internal class PlaylistSourceReader(
             if (uri.scheme != "https" || uri.host != expected.host || uri.path != expected.path ||
                 uri.port != -1 || uri.rawUserInfo != null || !visited.add(uri) || visited.size > 250
             ) throw PlaylistSourceReadException("La pagination de la source est incohérente.")
+            val offsets = uri.rawQuery.orEmpty().split('&').filter { it.substringBefore('=') == offsetKey }
+            val requestedOffset = if (offsets.isEmpty() && uri == start) 0
+                else offsets.singleOrNull()?.substringAfter('=', "")?.toIntOrNull()
+            if (requestedOffset != entries.size) {
+                throw PlaylistSourceReadException("Une page de titres manque ou a été répétée. Réessaie.")
+            }
             val page = request(uri, token)
+            if (field == "items" && (page.optInt("offset", -1) != requestedOffset || !page.has("next"))) {
+                throw PlaylistSourceReadException("La pagination Spotify est incohérente.")
+            }
             val total = page.getInt("total")
             if (total !in 0..10000 || (expectedTotal != null && total != expectedTotal)) {
                 throw PlaylistSourceReadException("La liste des titres a changé pendant la lecture.")
             }
             expectedTotal = total
-            entries += page.getJSONArray(field).objects()
+            val pageEntries = page.getJSONArray(field).objects()
+            if (pageEntries.isEmpty() && entries.size < total) {
+                throw PlaylistSourceReadException("La source a renvoyé une page vide avant la fin de la liste.")
+            }
+            entries += pageEntries
             if (entries.size > total) throw PlaylistSourceReadException("La pagination de la source est incohérente.")
             next = page.optionalText("next")?.let { link ->
                 val target = URI(link)

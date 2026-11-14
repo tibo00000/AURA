@@ -29,7 +29,7 @@ class PlaylistSourceReaderTest {
             when (uri.query) {
                 "fields=snapshot_id" -> JSONObject("""{"snapshot_id":"fixture"}""")
                 "limit=50" -> page("0123456789ABCDEFGHIJKN", "First", "$endpoint?offset=1", 2)
-                "offset=1" -> page("0123456789ABCDEFGHIJKM", "Second", null, 2)
+                "offset=1" -> page("0123456789ABCDEFGHIJKM", "Second", null, 2, offset = 1)
                 else -> error("Unexpected page $uri")
             }
         }
@@ -39,6 +39,54 @@ class PlaylistSourceReaderTest {
         assertEquals("Album", tracks.last().album)
         assertEquals(210000L, tracks.last().durationMs)
         assertEquals("https://i.scdn.co/image/test", tracks.last().coverUri)
+    }
+
+    @Test
+    fun spotifyRejectsGapsAndRepeatedOffsetsEvenWhenTheTotalWouldMatch() = runBlocking {
+        for ((nextOffset, returnedOffset) in listOf(2 to 2, 1 to 0)) {
+            val reader = PlaylistSourceReader({ "fixture-token" }) { uri, _ ->
+                when (uri.query) {
+                    "fields=snapshot_id" -> JSONObject("""{"snapshot_id":"fixture"}""")
+                    "limit=50" -> page("0123456789ABCDEFGHIJKN", "First", "$endpoint?offset=$nextOffset", 2)
+                    else -> page("0123456789ABCDEFGHIJKM", "Unexpected", null, 2, offset = returnedOffset)
+                }
+            }
+            assertTrue(runCatching { reader.read(link) }.exceptionOrNull() is PlaylistSourceReadException)
+        }
+    }
+
+    @Test
+    fun spotifyChecksItemShapeWithoutTreatingDocumentedNullAsAnError() = runBlocking {
+        for (value in listOf("null", "42")) {
+            val reader = PlaylistSourceReader({ "fixture-token" }) { uri, _ ->
+                if (uri.query == "fields=snapshot_id") JSONObject("""{"snapshot_id":"fixture"}""")
+                else JSONObject("""{"total":1,"offset":0,"next":null,"items":[{"item":$value}]}""")
+            }
+            val result = runCatching { reader.read(link) }
+            if (value == "null") assertTrue(result.getOrThrow().isEmpty())
+            else assertTrue(result.exceptionOrNull() is PlaylistSourceReadException)
+        }
+    }
+
+    @Test
+    fun deezerReadsTheSameContiguousInventoryTwiceAndKeepsMetadata() = runBlocking {
+        val base = "https://api.deezer.com/playlist/123/tracks"
+        val calls = mutableListOf<URI>()
+        val reader = PlaylistSourceReader({ null }) { uri, token ->
+            assertEquals(null, token)
+            calls += uri
+            val id = if (uri.query == "limit=100") 19 else 97
+            JSONObject("""
+                {"total":2,"data":[{"id":$id,"title":"Title $id","artist":{"name":"Artist"},
+                  "duration":90,"album":{"title":"Album","cover_big":"https://cdn-images.dzcdn.net/cover.jpg"}}]}
+            """.trimIndent()).put("next", if (id == 19) "${base.replace("https:", "http:")}?index=1" else JSONObject.NULL)
+        }
+        val tracks = reader.read(PlaylistSourceReference("deezer", "123"))
+        assertEquals(listOf("19", "97"), tracks.map { it.providerId })
+        assertEquals(90000L, tracks.last().durationMs)
+        assertEquals("Album", tracks.last().album)
+        assertEquals(listOf("$base?limit=100", "$base?index=1", "$base?limit=100", "$base?index=1"),
+            calls.map(URI::toString))
     }
 
     @Test
@@ -68,8 +116,8 @@ class PlaylistSourceReaderTest {
         assertEquals(2, reads)
     }
 
-    private fun page(trackId: String, title: String, next: String?, total: Int): JSONObject = JSONObject("""
-        {"total":$total,"items":[{"item":{
+    private fun page(trackId: String, title: String, next: String?, total: Int, offset: Int = 0): JSONObject = JSONObject("""
+        {"total":$total,"offset":$offset,"items":[{"item":{
             "id":"$trackId","name":"$title","artists":[{"name":"Artist"}],"duration_ms":210000,
             "album":{"name":"Album","images":[{"url":"https://i.scdn.co/image/test"}]}
         }}]}

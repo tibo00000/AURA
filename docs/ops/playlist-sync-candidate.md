@@ -117,6 +117,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Python | 399 réussites |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
+| Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 159 sur 159. Indexation des 50 000 titres en 2,84 s après suppression des normalisations redondantes, contre 4,27 s dans le rejeu précédent du candidat et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
@@ -140,7 +141,12 @@ appareil.
   playlist, sur le même appareil et avec le même corpus. Relever les
   temps jusqu’à l’affichage et au premier titre lisible ainsi que les
   images manquées en défilement.
-- Validation des accès Spotify et Deezer avec la configuration Aura.
+- Validation des accès Spotify et Deezer avec la configuration Aura. En
+  mode Développement, Spotify réserve la lecture du contenu aux playlists
+  possédées par le compte ou sur lesquelles il collabore. Vérifier aussi
+  l’attribution et les liens de retour des métadonnées et pochettes.
+  [Guide Spotify](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide)
+  [Politique Spotify](https://developer.spotify.com/policy)
 - Vérification de la procédure de publication et des sources audio
   autorisées. Aucun test ne requiert de téléchargement de contenu tiers.
 - Vérification sur un environnement de préproduction avec Supabase
