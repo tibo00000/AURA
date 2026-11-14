@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import com.aura.music.data.playlist.PlaylistSourceReference
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -93,6 +94,70 @@ import com.aura.music.ui.theme.TextMuted
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+
+@Composable
+fun PlaylistSourceDialog(
+    importManager: PlaylistImportExportManager,
+    spotifyAuthManager: SpotifyAuthManager,
+    onDismiss: () -> Unit,
+    onConfirm: (PlaylistSourceReference) -> Unit,
+) {
+    var link by remember { mutableStateOf("") }
+    var showSpotify by remember { mutableStateOf(false) }
+    val connected by spotifyAuthManager.isConnected.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val spotifyPlaylists by produceState<List<com.aura.music.data.playlist.SpotifyPlaylistSummary>?>(
+        null, showSpotify, connected,
+    ) {
+        value = if (showSpotify && connected) importManager.getUserSpotifyPlaylists().filterNot { it.isLikedSongs }
+        else null
+    }
+    val reference = remember(link) { PlaylistSourceReference.parse(link) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Source de la playlist") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = link,
+                    onValueChange = { link = it },
+                    label = { Text("Lien Spotify ou Deezer") },
+                    singleLine = true,
+                    isError = link.isNotBlank() && reference == null,
+                    supportingText = {
+                        if (link.isNotBlank() && reference == null) {
+                            Text("Utilise le lien complet d’une playlist.")
+                        }
+                    },
+                )
+                TextButton(onClick = {
+                    showSpotify = true
+                    if (!connected) spotifyAuthManager.startAuthFlow(context)
+                }) {
+                    Text(if (connected) "Choisir une playlist Spotify" else "Connecter Spotify")
+                }
+                if (showSpotify && connected) {
+                    val playlists = spotifyPlaylists
+                    when {
+                        playlists == null -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        playlists.isEmpty() -> Text("Aucune playlist Spotify accessible.")
+                        else -> LazyColumn(Modifier.heightIn(max = 200.dp)) {
+                            items(playlists, key = { it.id }) { playlist ->
+                                TextButton(onClick = { link = "spotify:playlist:${playlist.id}" }) {
+                                    Text(playlist.name)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = reference != null, onClick = { reference?.let(onConfirm) }) { Text("Enregistrer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
 
 @Composable
 fun PlaylistImportDialog(

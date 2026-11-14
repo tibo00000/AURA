@@ -210,6 +210,7 @@ class DesktopCloudSyncOutboxTest {
         override suspend fun pullBatch(token: String, request: PullBatchRequestDto): AuraResponse<PullBatchResponseDto> = throw UnsupportedOperationException()
         override suspend fun getPlaylists(token: String): AuraResponse<List<PlaylistResponse>> = throw UnsupportedOperationException()
         override suspend fun getPlaylistSnapshot(token: String): AuraResponse<PlaylistSnapshotResponse> = throw UnsupportedOperationException()
+        override suspend fun setPlaylistSource(token: String, id: String, request: com.aura.music.data.network.PlaylistSourceRequest) = throw UnsupportedOperationException()
         override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = throw UnsupportedOperationException()
         override suspend fun likeTrack(token: String, trackId: String, sourceContextType: String?, sourceContextId: String?): AuraResponse<LikeResponse> = throw UnsupportedOperationException()
         override suspend fun unlikeTrack(token: String, trackId: String): AuraResponse<LikeResponse> = throw UnsupportedOperationException()

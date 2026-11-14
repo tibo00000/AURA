@@ -60,6 +60,7 @@ import com.aura.music.ui.screens.DuplicateTrackInPlaylistDialog
 import com.aura.music.data.repository.AddToPlaylistResult
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.data.repository.PlaylistDetail
+import com.aura.music.data.playlist.PlaylistSourceReference
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.theme.BlazeOrange
@@ -105,6 +106,17 @@ fun PlaylistDetailScreenNew(
     val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
     var isAutoDownloadPlaylist by remember(playlistId) { mutableStateOf(sharedPrefs.getBoolean("auto_download_playlist_$playlistId", false)) }
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val sourceRepository = appContainer.playlistSourceRepository
+    val sourceState by remember(sourceRepository, playlistId) { sourceRepository.observe(playlistId) }
+        .collectAsState(initial = null)
+    val sourceProvider = sourceState?.sourceProvider
+    val sourceName = when (sourceProvider) {
+        "spotify" -> "Spotify"
+        "deezer" -> "Deezer"
+        else -> null
+    }
+    var sourceEditRevision by remember(playlistId) { mutableStateOf<Long?>(null) }
+    var isSavingSource by remember(playlistId) { mutableStateOf(false) }
     val cloudFileRepository = appContainer.cloudFileRepository
     val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
@@ -116,6 +128,21 @@ fun PlaylistDetailScreenNew(
     }
     val cloudFiles = cloudFilesState.value
     val snackbarHostState = remember { SnackbarHostState() }
+    fun saveSource(reference: PlaylistSourceReference?, revision: Long) {
+        if (isSavingSource) return
+        isSavingSource = true
+        scope.launch {
+            try {
+                val deviceId = android.provider.Settings.Secure.getString(
+                    context.contentResolver, android.provider.Settings.Secure.ANDROID_ID,
+                ) ?: "android_pixel_device"
+                val error = sourceRepository.set(playlistId, deviceId, reference, revision)
+                snackbarHostState.showSnackbar(error ?: "Source de la playlist mise à jour.")
+            } finally {
+                isSavingSource = false
+            }
+        }
+    }
 
     RouteScaffold(title = detail?.summary?.name ?: "Playlist", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
         if (detail == null) {
@@ -167,6 +194,9 @@ fun PlaylistDetailScreenNew(
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                         )
+                        if (sourceName != null) {
+                            Text("Source · $sourceName", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
                     }
                 }
 
@@ -364,6 +394,24 @@ fun PlaylistDetailScreenNew(
                                     onDismissRequest = { showMenuOpen = false },
                                 ) {
                                     DropdownMenuItem(
+                                        text = { Text(if (sourceName == null) "Associer une source" else "Changer la source") },
+                                        enabled = !isSavingSource,
+                                        onClick = {
+                                            sourceEditRevision = sourceState?.sourceRevision ?: 0
+                                            showMenuOpen = false
+                                        },
+                                    )
+                                    if (sourceName != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Retirer la source") },
+                                            enabled = !isSavingSource,
+                                            onClick = {
+                                                showMenuOpen = false
+                                                sourceState?.let { saveSource(null, it.sourceRevision) }
+                                            },
+                                        )
+                                    }
+                                    DropdownMenuItem(
                                         text = { Text("Renommer") },
                                         onClick = {
                                             showRenameDialog = true
@@ -472,6 +520,18 @@ fun PlaylistDetailScreenNew(
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
+    }
+
+    sourceEditRevision?.let { revision ->
+        PlaylistSourceDialog(
+            importManager = appContainer.playlistImportExportManager,
+            spotifyAuthManager = appContainer.spotifyAuthManager,
+            onDismiss = { sourceEditRevision = null },
+            onConfirm = { reference ->
+                sourceEditRevision = null
+                saveSource(reference, revision)
+            },
+        )
     }
 
     if (showRenameDialog && detail != null) {

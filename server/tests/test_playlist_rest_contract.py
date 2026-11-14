@@ -20,6 +20,37 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
+@pytest.mark.parametrize(("provider", "external_id", "status", "expected"), [
+    ("spotify", "0123456789ABCDEFGHIJKL", "applied", 200),
+    ("deezer", "123", "conflict", 409),
+    (None, None, "applied", 200),
+    ("spotify", "https://example.com/playlist", None, 422),
+    ("deezer", "123", "not_found", 404),
+])
+def test_playlist_source_uses_canonical_reference_and_scoped_rpc(provider, external_id, status, expected):
+    db = MagicMock()
+    db.rpc.return_value.execute.return_value.data = {
+        "status": status, "provider": provider, "external_id": external_id, "source_revision": 2,
+    }
+    api = FastAPI()
+    api.include_router(me.router)
+    api.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(id="owner", token="synthetic")
+    api.dependency_overrides[get_current_user_client] = lambda: db
+    response = TestClient(api).put("/me/playlists/playlist:original/source", json={
+        "provider": provider, "external_id": external_id, "expected_revision": 1,
+    })
+    assert response.status_code == expected
+    if expected == 422:
+        db.rpc.assert_not_called()
+    else:
+        db.rpc.assert_called_once_with("aura_set_playlist_source", {
+            "p_playlist_id": "playlist:original", "p_provider": provider,
+            "p_external_id": external_id, "p_expected_revision": 1,
+        })
+    if expected == 200:
+        assert response.json()["data"]["source_revision"] == 2
+
+
 @pytest.fixture
 def document():
     app=FastAPI()

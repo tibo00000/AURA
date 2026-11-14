@@ -16,6 +16,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.appendPathSegments
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -164,6 +165,14 @@ class KtorAuraApiService(
         client.get("$cleanBaseUrl/me/playlists/snapshot") {
             header("Authorization", token)
         }.body()
+
+    override suspend fun setPlaylistSource(token: String, id: String, request: PlaylistSourceRequest): HttpResponse =
+        client.put("$cleanBaseUrl/me/playlists") {
+            url { appendPathSegments(id, "source", encodeSlash = true) }
+            header("Authorization", token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
 
     override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = client.get("$cleanBaseUrl/me/likes") {
         header("Authorization", token)

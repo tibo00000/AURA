@@ -19,6 +19,8 @@ from app.schemas.me import (
     PlaybackSnapshotResponse,
     PlaylistResponse,
     PlaylistSnapshotResponse,
+    PlaylistSourceRequest,
+    PlaylistSourceResponse,
     PlaylistItemResponse,
     UserSettingsPatch,
     UserSettingsResponse,
@@ -79,6 +81,34 @@ async def get_playlist_snapshot(
     except Exception as exc:
         logger.warning("Playlist snapshot unavailable (%s)", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Playlist snapshot unavailable") from None
+
+
+@router.put("/playlists/{playlist_id}/source", response_model=ResponseEnvelope[PlaylistSourceResponse])
+async def set_playlist_source(
+    playlist_id: str,
+    payload: PlaylistSourceRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
+):
+    try:
+        result = await anyio.to_thread.run_sync(lambda: supabase.rpc("aura_set_playlist_source", {
+            "p_playlist_id": playlist_id,
+            "p_provider": payload.provider,
+            "p_external_id": payload.external_id,
+            "p_expected_revision": payload.expected_revision,
+        }).execute().data)
+        if result["status"] == "applied":
+            return ResponseEnvelope(data=PlaylistSourceResponse.model_validate(result))
+        if result["status"] == "not_found":
+            raise HTTPException(status_code=404, detail="Playlist unavailable")
+        if result["status"] == "conflict":
+            raise HTTPException(status_code=409, detail="Playlist source changed on another device")
+        raise ValueError("Unexpected source mutation outcome")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Playlist association unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Playlist association unavailable") from None
 
 
 @router.get(

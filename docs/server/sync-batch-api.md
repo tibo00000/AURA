@@ -57,6 +57,14 @@ Ce snapshot est indépendant du curseur batch. La route historique
 La capacité bootstrap `playlist_snapshot` omet la lecture historique des
 playlists pour un client qui a déjà chargé cet inventaire.
 
+`PUT /me/playlists/{id}/source` reçoit `expected_revision` et une paire
+`provider` / `external_id` canonique, ou deux valeurs nulles pour retirer
+la source. Un changement avance `source_revision` dans la même transaction
+que la révision du snapshot. Le rejeu d'une valeur déjà atteinte est
+idempotent. Une révision périmée en conflit ne peut remplacer l'association.
+Le snapshot inclut `source_provider`, `source_external_id` et
+`source_revision`. Une playlist jamais associée a la révision 0.
+
 Le curseur retourné par un pull départage les changements d'un même
 horodatage par identifiant stable. Les anciens curseurs temporels sont
 encore acceptés. Une page vide conserve le curseur reçu. Le client reprend

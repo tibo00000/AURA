@@ -175,4 +175,38 @@ class PlaylistSnapshotReconcilerTest {
             assertEquals(emptyList<String>(), db.syncOutboxDao().getPendingOperations().map { it.id })
         }
     }
+
+    @Test
+    fun associationRestoresOnAnotherDeviceWithoutChangingEntries() = runBlocking {
+        val sourceId = "0123456789ABCDEFGHIJKL"
+        val original = snapshot("a", "b")
+        val associated = original.copy(revision = 2, playlists = original.playlists.map {
+            it.copy(sourceProvider = "spotify", sourceExternalId = sourceId, sourceRevision = 1)
+        })
+        createAuraDatabase(temporary.newFile("association-first.db")).usingDatabase { first ->
+            val sync = PlaylistSnapshotReconciler(first) { Instant.parse(it).toEpochMilli() }
+            sync.apply(original, user, { true })
+            val entries = first.playlistDao().getPlaylistItems("playlist")
+            sync.apply(associated, user, { true })
+            assertEquals(entries, first.playlistDao().getPlaylistItems("playlist"))
+
+            createAuraDatabase(temporary.newFile("association-reinstalled.db")).usingDatabase { other ->
+                val otherSync = PlaylistSnapshotReconciler(other) { Instant.parse(it).toEpochMilli() }
+                otherSync.apply(associated, user, { true })
+                assertEquals(entries, other.playlistDao().getPlaylistItems("playlist"))
+                assertEquals(sourceId, other.playlistDao().getPlaylistSyncState("playlist")?.sourceExternalId)
+
+                // A direct acknowledgement can arrive before an older snapshot already in flight.
+                val state = requireNotNull(other.playlistDao().getPlaylistSyncState("playlist"))
+                other.playlistDao().upsertPlaylistSyncState(
+                    state.copy(sourceProvider = null, sourceExternalId = null, sourceRevision = 2),
+                )
+                otherSync.apply(associated, user, { true })
+                val detached = other.playlistDao().getPlaylistSyncState("playlist")
+                assertNull(detached?.sourceProvider)
+                assertEquals(2L, detached?.sourceRevision)
+                assertEquals(entries, other.playlistDao().getPlaylistItems("playlist"))
+            }
+        }
+    }
 }

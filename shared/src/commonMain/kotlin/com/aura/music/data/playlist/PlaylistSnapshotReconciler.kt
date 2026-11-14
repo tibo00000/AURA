@@ -40,6 +40,8 @@ class PlaylistSnapshotReconciler(
         for (playlist in snapshot.playlists) {
             require(playlist.userId == userId && playlist.id.isNotBlank() && playlist.orderToken.isNotBlank())
             require(playlist.itemCount == playlist.items.size)
+            require(playlist.sourceRevision >= 0)
+            require((playlist.sourceProvider == null) == (playlist.sourceExternalId == null))
             var previousPosition = -1
             for (item in playlist.items) {
                 require(item.playlistId == playlist.id && item.id.isNotBlank() && item.trackId.isNotBlank())
@@ -79,14 +81,24 @@ class PlaylistSnapshotReconciler(
                 for (remote in snapshot.playlists) {
                     val synced = playlistDao.getPlaylistSyncState(remote.id)
                     require(synced == null || synced.userId == userId) { "Conflicting playlist owner" }
+                    val newerSource = synced?.takeIf { it.sourceRevision > remote.sourceRevision }
                     val state = PlaylistSyncStateEntity(
                         remote.id, userId, remote.updatedAt, remote.orderToken, snapshot.revision,
+                        if (newerSource != null) newerSource.sourceProvider else remote.sourceProvider,
+                        if (newerSource != null) newerSource.sourceExternalId else remote.sourceExternalId,
+                        newerSource?.sourceRevision ?: remote.sourceRevision,
                     )
                     if (remote.id in protectedPlaylists) {
                         // A matching server parent proves ownership even while a legacy edit
                         // keeps its local contents protected from this snapshot.
                         if (synced == null && playlistDao.getPlaylistEntity(remote.id) != null) {
                             playlistDao.upsertPlaylistSyncState(state.copy(appliedRevision = null))
+                        } else if (synced != null && remote.sourceRevision > synced.sourceRevision) {
+                            playlistDao.upsertPlaylistSyncState(synced.copy(
+                                sourceProvider = remote.sourceProvider,
+                                sourceExternalId = remote.sourceExternalId,
+                                sourceRevision = remote.sourceRevision,
+                            ))
                         }
                         continue
                     }

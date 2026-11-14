@@ -167,6 +167,9 @@ data class PlaylistSyncStateEntity(
     @ColumnInfo(name = "server_updated_at") val serverUpdatedAt: String,
     @ColumnInfo(name = "order_token") val orderToken: String,
     @ColumnInfo(name = "applied_revision") val appliedRevision: Long?,
+    @ColumnInfo(name = "source_provider") val sourceProvider: String? = null,
+    @ColumnInfo(name = "source_external_id") val sourceExternalId: String? = null,
+    @ColumnInfo(name = "source_revision", defaultValue = "0") val sourceRevision: Long = 0,
 )
 
 @Entity(tableName = "playlist_snapshot_state")

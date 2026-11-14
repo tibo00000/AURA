@@ -47,6 +47,9 @@ La migration 5 → 6 ajoute l’identité de compte de l’outbox et du curseur
 batch, ainsi que `playlist_sync_state` (dernière révision appliquée à chaque
 playlist) et `playlist_snapshot_state` (dernière révision observée par compte).
 Un curseur hérité sans compte provoque une nouvelle hydratation.
+La migration 6 → 7 conserve la référence Spotify/Deezer et sa révision dans
+l’état de synchronisation de la playlist. Les playlists sans association
+commencent à la révision 0.
 
 ### `artists`
 

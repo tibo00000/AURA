@@ -71,6 +71,8 @@ interface AuraApiService {
 
     suspend fun getPlaylistSnapshot(token: String): AuraResponse<PlaylistSnapshotResponse>
 
+    suspend fun setPlaylistSource(token: String, id: String, request: PlaylistSourceRequest): HttpResponse
+
     suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>>
 
     suspend fun likeTrack(

@@ -2,8 +2,9 @@
 Pydantic schemas for the /me endpoints.
 """
 
-from typing import Optional, List
-from pydantic import BaseModel, Field
+import re
+from typing import Optional, List, Literal
+from pydantic import BaseModel, Field, model_validator
 
 
 class UserSettingsResponse(BaseModel):
@@ -62,6 +63,32 @@ class PlaylistSnapshotEntry(PlaylistResponse):
     order_token: str
     item_count: int = Field(ge=0)
     items: List[PlaylistItemResponse]
+    source_provider: Literal["spotify", "deezer"] | None = None
+    source_external_id: str | None = None
+    source_revision: int = Field(default=0, ge=0)
+
+
+class PlaylistSourceResponse(BaseModel):
+    provider: Literal["spotify", "deezer"] | None
+    external_id: str | None
+    source_revision: int = Field(ge=0)
+
+
+class PlaylistSourceRequest(BaseModel):
+    provider: Literal["spotify", "deezer"] | None
+    external_id: str | None = Field(max_length=22)
+    expected_revision: int = Field(ge=0, le=9223372036854775807)
+
+    @model_validator(mode="after")
+    def validate_reference(self):
+        if self.provider is None and self.external_id is None:
+            return self
+        if self.provider is None or self.external_id is None:
+            raise ValueError("Provider and external ID must be provided together")
+        pattern = r"[A-Za-z0-9]{22}" if self.provider == "spotify" else r"[1-9][0-9]{0,19}"
+        if not re.fullmatch(pattern, self.external_id):
+            raise ValueError("Invalid playlist source reference")
+        return self
 
 
 class PlaylistSnapshotResponse(BaseModel):

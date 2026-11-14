@@ -132,6 +132,10 @@ class AuraAppContainer(context: Context) {
         com.aura.music.data.spotify.SpotifyAuthManager(appContext)
     }
 
+    val playlistSourceRepository by lazy {
+        com.aura.music.data.playlist.PlaylistSourceRepository(database, auraApiService, authSessionManager, syncRepository)
+    }
+
     val playlistImportExportManager by lazy {
         com.aura.music.data.playlist.PlaylistImportExportManager(
             context = appContext,

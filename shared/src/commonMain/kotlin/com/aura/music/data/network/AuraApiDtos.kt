@@ -484,6 +484,23 @@ data class PlaylistSnapshotEntry(
     @SerialName("order_token") val orderToken: String,
     val items: List<PlaylistItemResponse>,
     @SerialName("item_count") val itemCount: Int,
+    @SerialName("source_provider") val sourceProvider: String? = null,
+    @SerialName("source_external_id") val sourceExternalId: String? = null,
+    @SerialName("source_revision") val sourceRevision: Long = 0,
+)
+
+@Serializable
+data class PlaylistSourceRequest(
+    val provider: String?,
+    @SerialName("external_id") val externalId: String?,
+    @SerialName("expected_revision") val expectedRevision: Long,
+)
+
+@Serializable
+data class PlaylistSourceResponse(
+    val provider: String?,
+    @SerialName("external_id") val externalId: String?,
+    @SerialName("source_revision") val sourceRevision: Long,
 )
 
 @Serializable

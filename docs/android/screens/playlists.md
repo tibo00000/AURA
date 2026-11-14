@@ -38,6 +38,7 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `Exporter (.m3u8)` : génération d'un fichier standard M3U8 avec résolution des chemins physiques Scoped Storage et rapport transparent
 - `Supprimer`
 - Switch `Télécharger sur l'appareil` (téléchargement par lot automatique ou libération du stockage physique)
+- Le menu permet d'associer une playlist existante à une référence Spotify ou Deezer, de changer la source et de la retirer. La référence et sa révision sont répliquées par Aura sur les autres appareils. Le contenu et l'ordre de la playlist sont conservés. Les jetons Spotify restent sur l'appareil.
 
 ## Import / Export Engine
 - **Parsing universel** : Détection automatique des encodages (BOM UTF-8, UTF-16, Latin-1, Windows-1252), détection dynamique des délimiteurs CSV (`,`, `;`, `\t`) et mapping d'en-têtes multilingues.
