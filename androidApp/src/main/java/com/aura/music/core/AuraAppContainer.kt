@@ -116,7 +116,8 @@ class AuraAppContainer(context: Context) {
             queueManager = queueManager,
             stateStore = playbackStateStore,
             repository = localLibraryRepository,
-            playbackResolver = trackPlaybackResolver
+            playbackResolver = trackPlaybackResolver,
+            playlistPlaybackProvider = { playlistPlayback },
         )
     }
 
@@ -136,6 +137,13 @@ class AuraAppContainer(context: Context) {
         com.aura.music.data.playlist.PlaylistSourceRepository(
             database, auraApiService, authSessionManager, syncRepository,
             com.aura.music.data.playlist.PlaylistSourceReader(spotifyAuthManager::getValidAccessToken),
+        )
+    }
+
+    val playlistPlayback by lazy {
+        com.aura.music.domain.player.PlaylistPlayback(
+            authSessionManager, playlistSourceRepository, applicationScope, cloudFileRepository::getCachedCloudTrackIds,
+            resolver = { trackPlaybackResolver },
         )
     }
 

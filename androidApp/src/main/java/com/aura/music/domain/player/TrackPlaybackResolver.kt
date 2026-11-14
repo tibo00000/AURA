@@ -86,11 +86,11 @@ class TrackPlaybackResolver(
             }
         }
 
-        if (track.trackId.isNotBlank()) {
+        if (track.trackId.isNotBlank() && track.playlistCloudAvailable != false) {
             val streamUrl = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
             return PlayableResolution.CloudStream(streamUrl)
         }
 
-        return PlayableResolution.NotAvailable("Identifiant de piste manquant")
+        return PlayableResolution.NotAvailable("Aucune source audio confirmée")
     }
 }

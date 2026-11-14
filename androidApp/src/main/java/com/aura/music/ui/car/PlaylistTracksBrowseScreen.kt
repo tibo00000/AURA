@@ -11,16 +11,15 @@ import androidx.car.app.model.Template
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.local.PlaylistTrackRow
 import com.aura.music.data.repository.LocalLibraryRepository
 import com.aura.music.domain.player.PlayerEvent
-import com.aura.music.domain.player.QueuedTrack
-import com.aura.music.domain.player.TrackSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Ecran de navigation dans les titres d'une playlist locale specifique pour Android Auto.
@@ -34,7 +33,9 @@ class PlaylistTracksBrowseScreen(
 
     private val screenScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isLoaded = false
-    private var tracksList: List<TrackListRow> = emptyList()
+    private var tracksList: List<PlaylistTrackRow> = emptyList()
+    private var coverIcons: Map<String, CarIcon> = emptyMap()
+    private var playRequest: kotlinx.coroutines.Job? = null
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -48,7 +49,11 @@ class PlaylistTracksBrowseScreen(
     private fun loadData() {
         screenScope.launch {
             try {
-                tracksList = repository.getPlaylistTrackQueue(playlistId)
+                tracksList = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
+                val firstCovers = tracksList.asSequence().mapNotNull { it.coverUri }.distinct().take(32).toList()
+                coverIcons = withContext(Dispatchers.IO) { firstCovers.associateWith(::loadCoverIcon) }
+                val container = (carContext.applicationContext as com.aura.music.AuraApplication).container
+                container.playlistPlayback.verifyLater(playlistId)
             } catch (e: Exception) {
                 android.util.Log.e("PlaylistTracksScreen", "Erreur lors du chargement des morceaux de la playlist", e)
             } finally {
@@ -75,9 +80,9 @@ class PlaylistTracksBrowseScreen(
                     .setTitle(track.title)
                     .addText(track.artistName ?: "Artiste inconnu")
                     .setOnClickListener {
-                        playTrack(track.id)
+                        playTrack(track.playlistItemId)
                     }
-                    .setImage(loadCoverIcon(track.coverUri))
+                    .setImage(coverIcons[track.coverUri] ?: defaultCoverIcon())
                     .build()
             )
         }
@@ -107,35 +112,36 @@ class PlaylistTracksBrowseScreen(
                 }
             }
         }
-        return CarIcon.Builder(
+        return defaultCoverIcon()
+    }
+
+    private fun defaultCoverIcon(): CarIcon = CarIcon.Builder(
             IconCompat.createWithResource(
                 carContext,
                 android.R.drawable.ic_media_play
             )
         ).build()
+
+    private fun playTrack(occurrenceId: String) {
+        playRequest?.cancel()
+        playRequest = screenScope.launch { playOccurrence(occurrenceId) }
     }
 
-    private fun playTrack(trackId: String) {
-        val tracks = tracksList.map { track ->
-            QueuedTrack(
-                trackId = track.id,
-                title = track.title,
-                artistName = track.artistName ?: "Artiste inconnu",
-                albumTitle = track.albumTitle,
-                contentUri = track.contentUri,
-                durationMs = track.durationMs,
-                coverUri = track.coverUri,
-                source = TrackSource.CONTEXT
-            )
-        }
-        val startIndex = tracksList.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
-
+    private suspend fun playOccurrence(occurrenceId: String) {
         val container = (carContext.applicationContext as com.aura.music.AuraApplication).container
+        val tracks = container.playlistPlayback.prepare(playlistId, tracksList)
+        val startIndex = tracks.indexOfFirst { it.internalId == occurrenceId }
+        val selected = tracks.getOrNull(startIndex)
+        if (selected == null) {
+            container.playlistPlayback.verifyLater(playlistId)
+            androidx.car.app.CarToast.makeText(carContext, "Aucune source audio confirmée", androidx.car.app.CarToast.LENGTH_SHORT).show()
+            return
+        }
         container.playbackOrchestrator.onEvent(
             PlayerEvent.PlayTrack(
-                trackId = trackId,
+                trackId = selected.trackId,
                 contextType = "playlist",
-                contextId = "playlist:$playlistId",
+                contextId = playlistId,
                 contextTracks = tracks,
                 startIndex = startIndex
             )

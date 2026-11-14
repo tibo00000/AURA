@@ -99,6 +99,8 @@ $function$;
 
 -- Fence insertion and link the reserved job before a response can be lost.
 -- The downloader still owns validation, locks, publication and status changes.
+ALTER TABLE public.download_jobs ADD COLUMN playlist_acquisition boolean NOT NULL DEFAULT false;
+
 CREATE FUNCTION public.aura_insert_playlist_download_job(
     p_user_id uuid, p_track_id text, p_lease_token uuid, p_job jsonb
 ) RETURNS jsonb
@@ -114,12 +116,13 @@ BEGIN
     IF NOT FOUND THEN RETURN NULL; END IF;
     IF p_job->>'id' IS DISTINCT FROM intention.reserved_job_id OR p_job->>'status' IS DISTINCT FROM 'queued'
        OR p_job->>'operation_type' IS DISTINCT FROM 'download' THEN RAISE EXCEPTION USING ERRCODE = '22023'; END IF;
-    INSERT INTO public.download_jobs(id, user_id, track_id, provider_name, status, created_at, updated_at, attempt_count)
+    INSERT INTO public.download_jobs(id, user_id, track_id, provider_name, status, created_at, updated_at, attempt_count, playlist_acquisition)
     VALUES(intention.reserved_job_id, p_user_id, p_track_id, p_job->>'provider_name', 'queued',
-        (p_job->>'created_at')::timestamptz, (p_job->>'updated_at')::timestamptz, 1)
+        (p_job->>'created_at')::timestamptz, (p_job->>'updated_at')::timestamptz, 1, true)
     ON CONFLICT (id) DO NOTHING;
     SELECT * INTO job FROM public.download_jobs j
-    WHERE j.id = intention.reserved_job_id AND j.user_id = p_user_id AND j.track_id = p_track_id;
+    WHERE j.id = intention.reserved_job_id AND j.user_id = p_user_id AND j.track_id = p_track_id
+      AND j.playlist_acquisition;
     IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE = '23505'; END IF;
     UPDATE public.playlist_acquisition_intents SET job_id = job.id, status = 'admitted'
     WHERE user_id = p_user_id AND track_id = p_track_id;
@@ -152,7 +155,7 @@ BEGIN
         status = 'queued', progress_percent = 0, error_code = NULL, error_message = NULL,
         candidates = '[]', attempt_count = d.attempt_count + 1, updated_at = clock_timestamp()
     WHERE d.id = p_job_id AND d.user_id = p_user_id AND d.track_id = p_track_id
-      AND d.status = p_status AND d.attempt_count = p_attempt
+      AND d.playlist_acquisition AND d.status = p_status AND d.attempt_count = p_attempt
     RETURNING d.* INTO job;
     IF NOT FOUND THEN RETURN NULL; END IF;
     RETURN to_jsonb(job);

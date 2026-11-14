@@ -19,6 +19,9 @@ import com.aura.music.AuraApplication
 import com.aura.music.data.local.TrackListRow
 import com.aura.music.domain.player.QueuedTrack
 import com.aura.music.domain.player.TrackSource
+import com.aura.music.domain.player.occurrenceId
+import com.aura.music.domain.player.withOccurrence
+import com.aura.music.domain.player.findPlaylistResumeIndex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -181,7 +184,11 @@ class PlaybackService : MediaLibraryService() {
                         else -> {
                             if (parentId.startsWith("playlist:")) {
                                 val playlistId = parentId.substringAfter("playlist:")
-                                repository.getPlaylistTrackQueue(playlistId).map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
+                                val container = (application as AuraApplication).container
+                                val rows = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
+                                val eligible = container.playlistPlayback.prepare(playlistId, rows)
+                                container.playlistPlayback.verifyLater(playlistId)
+                                eligible.map { it.toPlaylistMediaItem(this@PlaybackService, playlistId) }
                             } else if (parentId.startsWith("album:")) {
                                 val albumId = parentId.substringAfter("album:")
                                 repository.getTracksForAlbum(albumId).map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
@@ -222,7 +229,15 @@ class PlaybackService : MediaLibraryService() {
                         "albums" -> createFolderItem("albums", "Albums", MediaMetadata.FOLDER_TYPE_ALBUMS)
                         "tracks" -> createFolderItem("tracks", "Titres", MediaMetadata.FOLDER_TYPE_MIXED)
                         else -> {
-                            if (mediaId.startsWith("playlist:")) {
+                            if (mediaId.startsWith("playlist-entry:")) {
+                                decodePlaylistBrowseId(mediaId)?.let { (playlistId, occurrenceId) ->
+                                    val rows = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
+                                    val eligible = container.playlistPlayback.prepare(playlistId, rows)
+                                    container.playlistPlayback.verifyLater(playlistId)
+                                    eligible.firstOrNull { it.internalId == occurrenceId }
+                                        ?.toPlaylistMediaItem(this@PlaybackService, playlistId)
+                                }
+                            } else if (mediaId.startsWith("playlist:")) {
                                 val playlistId = mediaId.substringAfter("playlist:")
                                 val playlist = repository.getPlaylistDetail(playlistId)
                                 playlist?.let {
@@ -267,6 +282,24 @@ class PlaybackService : MediaLibraryService() {
             privatePlaybackReady.await() // Admit no source until the non-blocking session observer is ready.
             val container = (application as AuraApplication).container
             val repository = container.localLibraryRepository
+            val playlistRequest = mediaItems.singleOrNull()?.mediaId?.takeIf { it.startsWith("playlist-entry:") }
+            val browsedPlaylist = lastBrowsedFolderId?.takeIf { it.startsWith("playlist:") }
+            val requestsBrowsedTrack = browsedPlaylist != null && mediaItems.singleOrNull()?.mediaId?.isNotBlank() == true
+            if (!controllerTrust.isInternal(controller) && (playlistRequest != null || requestsBrowsedTrack)) {
+                val sessionScope = container.authSessionManager.sessionScope.value
+                val selectedReference = playlistRequest?.let(::decodePlaylistBrowseId)
+                if (playlistRequest != null && selectedReference == null) return emptyList()
+                val playlistId = selectedReference?.first ?: browsedPlaylist?.removePrefix("playlist:") ?: return emptyList()
+                val rows = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
+                val eligible = container.playlistPlayback.prepare(playlistId, rows)
+                container.playlistPlayback.verifyLater(playlistId)
+                val index = if (selectedReference != null) eligible.indexOfFirst { it.internalId == selectedReference.second }
+                else eligible.indexOfFirst { it.trackId == mediaItems.single().mediaId }
+                if (index < 0 || container.authSessionManager.sessionScope.value != sessionScope) return emptyList()
+                container.queueManager.setContext("playlist", playlistId, eligible, index)
+                return listOfNotNull(eligible[index], container.queueManager.peekNext())
+                    .distinctBy { it.internalId }.map { it.toPlaylistMediaItem(this@PlaybackService) }
+            }
             val admittedItems = ControllerMediaResolver(this@PlaybackService, controllerTrust,
                 com.aura.music.core.PrivateStreamPolicy(java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)),
                 repository::getTrackById, { repository.searchLocalTracks(it, limit = 20) }
@@ -288,10 +321,7 @@ class PlaybackService : MediaLibraryService() {
                         "downloads" -> repository.getDownloadedTracks()
                         "tracks" -> repository.getAllTracks()
                         else -> {
-                            if (folderId.startsWith("playlist:")) {
-                                val playlistId = folderId.substringAfter("playlist:")
-                                repository.getPlaylistTrackQueue(playlistId)
-                            } else if (folderId.startsWith("album:")) {
+                            if (folderId.startsWith("album:")) {
                                 val albumId = folderId.substringAfter("album:")
                                 repository.getTracksForAlbum(albumId)
                             } else {
@@ -352,7 +382,6 @@ class PlaybackService : MediaLibraryService() {
                                 parentFolderId == "favorites" -> "favorites"
                                 parentFolderId == "downloads" -> "downloads"
                                 parentFolderId == "tracks" -> "library_tracks"
-                                parentFolderId.startsWith("playlist:") -> "playlist"
                                 parentFolderId.startsWith("album:") -> "album"
                                 else -> "library_tracks"
                             },
@@ -452,9 +481,10 @@ class PlaybackService : MediaLibraryService() {
                     // Resolve correct starting index based on target track ID ONLY for external controllers.
                     // For the internal application controller, use the requested startIndex directly.
                     val resolvedIndex = if (!controllerTrust.isInternal(controller) && mediaItems.size == 1) {
+                        val requestedOccurrence = decodePlaylistBrowseId(mediaItems.first().mediaId)?.second
                         val requestedId = mediaItems.first().mediaId.takeIf { it.isNotBlank() }
                             ?: (application as AuraApplication).container.queueManager.state.value.currentTrack?.trackId
-                        resolved.indexOfFirst { it.mediaId == requestedId }
+                        resolved.indexOfFirst { if (requestedOccurrence != null) it.occurrenceId() == requestedOccurrence else it.mediaId == requestedId }
                     } else -1
                     
                     val targetStartIndex = if (resolvedIndex != -1) resolvedIndex else if (resolved.isEmpty()) C.INDEX_UNSET
@@ -463,6 +493,51 @@ class PlaybackService : MediaLibraryService() {
                     future.set(MediaSession.MediaItemsWithStartPosition(resolved, targetStartIndex, startPositionMs))
                 } catch (e: Exception) {
                     future.setException(e)
+                }
+            }
+            return future
+        }
+
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            serviceScope.launch {
+                try {
+                    if (!controllerTrust.allows(controller)) throw SecurityException("Contrôleur non autorisé")
+                    privatePlaybackReady.await()
+                    val container = (application as AuraApplication).container
+                    val sessionScope = container.authSessionManager.sessionScope.value
+                    val snapshot = container.playbackStateStore.restoreLocalPlaylist()
+                    val contextId = snapshot?.contextId
+                    val detail = contextId?.let {
+                        container.localLibraryRepository.getPlaylistDetail(it)
+                            ?: container.localLibraryRepository.getPlaylistDetail(it.removePrefix("playlist:"))
+                    }
+                    if (snapshot == null || detail == null || snapshot.currentTrackId == null) {
+                        future.set(MediaSession.MediaItemsWithStartPosition(emptyList(), C.INDEX_UNSET, C.TIME_UNSET))
+                        return@launch
+                    }
+                    val playlistId = detail.summary.id
+                    val eligible = container.playlistPlayback.prepare(playlistId, detail.tracks)
+                    container.playlistPlayback.verifyLater(playlistId)
+                    if (eligible.isEmpty() || container.authSessionManager.sessionScope.value != sessionScope) {
+                        future.set(MediaSession.MediaItemsWithStartPosition(emptyList(), C.INDEX_UNSET, C.TIME_UNSET))
+                        return@launch
+                    }
+                    val index = findPlaylistResumeIndex(eligible, snapshot.currentTrackId, snapshot.playlistOccurrenceId)
+                    val start = index.coerceAtLeast(0)
+                    container.queueManager.restoreModes(snapshot.shuffleEnabled, snapshot.repeatMode)
+                    container.queueManager.setContext("playlist", playlistId, eligible, start)
+                    future.set(MediaSession.MediaItemsWithStartPosition(
+                        listOfNotNull(eligible[start], container.queueManager.peekNext())
+                            .distinctBy { it.internalId }.map { it.toPlaylistMediaItem(this@PlaybackService) },
+                        0,
+                        if (index < 0) C.TIME_UNSET else snapshot.positionMs,
+                    ))
+                } catch (failure: Exception) {
+                    future.setException(failure)
                 }
             }
             return future
@@ -564,6 +639,31 @@ fun TrackListRow.toMediaItem(
         .setUri(mediaUri)
         .setMediaMetadata(metadata)
         .build()
+}
+
+private fun QueuedTrack.toPlaylistMediaItem(context: android.content.Context, browsePlaylistId: String? = null): MediaItem {
+    val row = TrackListRow(trackId, null, null, title, artistName, albumTitle, contentUri, durationMs, coverUri, false)
+    val item = row.toMediaItem(context)
+    require(com.aura.music.core.PrivateStreamPolicy.validTrackId(trackId))
+    val builder = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().withOccurrence(internalId).build())
+    if (contentUri == null && browsePlaylistId == null) {
+        val origin = java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)
+        builder.setUri(com.aura.music.core.PrivateStreamPolicy(origin).uriFor(trackId))
+    }
+    if (browsePlaylistId != null) {
+        builder.setMediaId("playlist-entry:${Uri.encode(browsePlaylistId)}:${Uri.encode(internalId)}")
+        builder.setUri(null as Uri?)
+    }
+    return builder.build()
+}
+
+private fun decodePlaylistBrowseId(mediaId: String): Pair<String, String>? {
+    if (!mediaId.startsWith("playlist-entry:") || mediaId.length > 1400) return null
+    val parts = mediaId.removePrefix("playlist-entry:").split(':', limit = 2)
+    if (parts.size != 2) return null
+    val playlistId = Uri.decode(parts[0])
+    val occurrenceId = Uri.decode(parts[1])
+    return if (playlistId.isNotBlank() && occurrenceId.isNotBlank()) playlistId to occurrenceId else null
 }
 
 fun <T> List<T>.paginate(page: Int, pageSize: Int): List<T> {

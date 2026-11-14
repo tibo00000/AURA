@@ -45,7 +45,8 @@ data class QueuedTrack(
     val durationMs: Long? = null,
     val coverUri: String? = null,
     val source: TrackSource = TrackSource.CONTEXT,
-    val internalId: String = generateUuid()
+    val internalId: String = generateUuid(),
+    val playlistCloudAvailable: Boolean? = null,
 )
 
 /**

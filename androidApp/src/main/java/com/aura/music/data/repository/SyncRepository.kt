@@ -336,7 +336,7 @@ class SyncRepository(
         }
         val acknowledgedPlaylists = mutableMapOf<String, Long>()
 
-        val activeSnapshot = database.playbackSnapshotDao().getActiveSnapshot()
+        val activeSnapshot = database.playbackSnapshotDao().getActiveSnapshot()?.takeIf { it.snapshotUserId == userId }
 
         if (pendingOps.isNotEmpty() || activeSnapshot != null) {
             val chunks = if (pendingOps.isEmpty()) listOf(emptyList()) else pendingOps.chunked(30)
@@ -374,6 +374,7 @@ class SyncRepository(
                                 "playback_context_type" to activeSnapshot.playbackContextType,
                                 "playback_context_id" to activeSnapshot.playbackContextId,
                                 "playback_context_index" to activeSnapshot.playbackContextIndex,
+                                "playlist_occurrence_id" to activeSnapshot.playlistOccurrenceId,
                                 "position_ms" to activeSnapshot.positionMs,
                                 "shuffle_enabled" to activeSnapshot.shuffleEnabled,
                                 "repeat_mode" to activeSnapshot.repeatMode
@@ -447,7 +448,7 @@ class SyncRepository(
             database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
                     if (!isCurrent()) throw CancellationException("Sync session changed")
-                    for (change in data.changes) applyServerChange(change)
+                    for (change in data.changes) applyServerChange(change, userId)
                     if (!isCurrent()) throw CancellationException("Sync session changed")
                     database.userSettingsDao().updateSyncToken(next, userId, System.currentTimeMillis())
                 }
@@ -460,7 +461,7 @@ class SyncRepository(
     /**
      * Appliquer une modification distante reçue du serveur.
      */
-    private suspend fun applyServerChange(change: ServerChangeDto) {
+    private suspend fun applyServerChange(change: ServerChangeDto, userId: String) {
         val payload = change.payload
         val entityId = change.entityId
         
@@ -512,6 +513,8 @@ class SyncRepository(
                     playbackContextType = payload.string("playback_context_type"),
                     playbackContextId = payload.string("playback_context_id"),
                     playbackContextIndex = payload.int("playback_context_index") ?: payload.double("playback_context_index")?.toInt(),
+                    playlistOccurrenceId = payload.string("playlist_occurrence_id"),
+                    snapshotUserId = userId,
                     positionMs = positionMs,
                     shuffleEnabled = shuffleEnabled,
                     repeatMode = repeatMode,

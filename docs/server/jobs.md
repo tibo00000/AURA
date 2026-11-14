@@ -123,6 +123,15 @@ l’insertion du job. Le worker retrouve un job par son identité persistée,
 utilise l’admission protégée existante et relance uniquement les tentatives
 orphelines rattachées à une intention. Les cas de choix de version et la
 progression restent gérés par `download_jobs`.
+
+Les jobs créés par le worker portent le marqueur persistant
+`playlist_acquisition`. Leur réparation et leur relance passent par
+l’intention et la source autorisée par le manifeste. Les routes
+historiques gardent leur comportement pour les jobs ordinaires,
+y compris ceux simplement rattachés à une intention.
+Un arrêt supervisé laisse le job de playlist en attente avec le même
+identifiant. Après un arrêt brutal, le worker reprend le job orphelin à
+l’expiration de son bail. La relance vérifie à nouveau le manifeste.
 Le déploiement actuel du downloader utilise un processus d’exécution.
 Les baux empêchent deux pollers de réserver ou redémarrer le même job
 avec le même compteur. Le lancement d’un second processus de

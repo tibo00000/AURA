@@ -74,7 +74,6 @@ import com.aura.music.ui.theme.ElevatedGraphite
 import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
 import com.aura.music.ui.screens.PlaylistMosaicCover
-import com.aura.music.ui.toQueuedTrack
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -112,34 +111,46 @@ fun PlaylistDetailScreenNew(
     val sharedPrefs = remember(context) { context.getSharedPreferences("aura_prefs", android.content.Context.MODE_PRIVATE) }
     var isAutoDownloadPlaylist by remember(playlistId) { mutableStateOf(sharedPrefs.getBoolean("auto_download_playlist_$playlistId", false)) }
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
+    val auraScope by appContainer.authSessionManager.sessionScope.collectAsState()
     val sourceRepository = appContainer.playlistSourceRepository
-    val sourceState by remember(sourceRepository, playlistId) { sourceRepository.observe(playlistId) }
+    val observedSourceState by remember(sourceRepository, playlistId) { sourceRepository.observe(playlistId) }
         .collectAsState(initial = null)
+    val sourceState = observedSourceState?.takeIf { it.userId == auraScope?.userId }
     val sourceProvider = sourceState?.sourceProvider
     val sourceName = when (sourceProvider) {
         "spotify" -> "Spotify"
         "deezer" -> "Deezer"
         else -> null
     }
-    var sourceEditRevision by remember(playlistId) { mutableStateOf<Long?>(null) }
-    var isSavingSource by remember(playlistId) { mutableStateOf(false) }
-    var isRefreshingSource by remember(playlistId) { mutableStateOf(false) }
-    var showUncertainTracks by remember(playlistId) { mutableStateOf(false) }
-    var trackToLink by remember(playlistId) { mutableStateOf<com.aura.music.data.network.PlaylistTrackMetadata?>(null) }
+    var sourceEditRevision by remember(playlistId, auraScope) { mutableStateOf<Long?>(null) }
+    var isSavingSource by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var isRefreshingSource by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var showUncertainTracks by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var trackToLink by remember(playlistId, auraScope) { mutableStateOf<com.aura.music.data.network.PlaylistTrackMetadata?>(null) }
     val lastRefresh = remember(sourceState?.lastRefreshJson) {
         sourceState?.lastRefreshJson?.let { runCatching { Json.decodeFromString<PlaylistRefreshResult>(it) }.getOrNull() }
     }
     val cloudFileRepository = appContainer.cloudFileRepository
+    val playlistPlayback = appContainer.playlistPlayback
+    val acquisitionStatusMap by playlistPlayback.statuses.collectAsState()
+    val acquisitionStatuses = acquisitionStatusMap[playlistId].orEmpty()
+    val acquisitionsByTrack = remember(acquisitionStatuses) { acquisitionStatuses.associateBy { it.trackId } }
+    var showAcquisitionReport by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var requestingCloud by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var choosingVersion by remember(playlistId, auraScope) { mutableStateOf<Pair<String, List<com.aura.music.data.network.YtmCandidateDto>>?>(null) }
     val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
+    val jobsByTrack = remember(downloadJobs) { downloadJobs.associateBy { it.trackId } }
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
-    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
-        cloudFileRepository.listCloudFiles().collect { res ->
-            res.onSuccess { value = it }
-        }
-    }
-    val cloudFiles = cloudFilesState.value
     val snackbarHostState = remember { SnackbarHostState() }
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, sourceState?.userId, showAcquisitionReport) {
+        if (showAcquisitionReport) {
+            while (true) {
+                playlistPlayback.verifyLater(playlistId)
+                kotlinx.coroutines.delay(10_000)
+            }
+        } else if (sourceState != null) playlistPlayback.verifyLater(playlistId)
+    }
     fun currentDeviceId(): String = android.provider.Settings.Secure.getString(
         context.contentResolver, android.provider.Settings.Secure.ANDROID_ID,
     ) ?: "android_pixel_device"
@@ -171,6 +182,50 @@ fun PlaylistDetailScreenNew(
                 snackbarHostState.showSnackbar(error ?: "Source de la playlist mise à jour.")
             } finally {
                 isSavingSource = false
+            }
+        }
+    }
+
+    var playRequest by remember(playlistId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun playEntries(rows: List<PlaylistTrackRow>, shuffle: Boolean, occurrence: String? = null) {
+        playRequest?.cancel()
+        playRequest = scope.launch {
+            val eligible = playlistPlayback.prepare(playlistId, rows)
+            playlistPlayback.verifyLater(playlistId)
+            val ordered = if (shuffle) eligible.shuffled() else eligible
+            val index = if (occurrence == null) 0 else ordered.indexOfFirst { it.internalId == occurrence }
+            val selected = ordered.getOrNull(index)
+            if (selected == null) {
+                snackbarHostState.showSnackbar("Aucune source de lecture confirmée pour ce choix.")
+                return@launch
+            }
+            playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.PlayTrack(
+                selected.trackId, "playlist", playlistId, ordered, index,
+            ))
+        }
+    }
+    fun requestCloud(trackId: String? = null) {
+        if (requestingCloud) return
+        requestingCloud = true
+        scope.launch {
+            try {
+                val auth = appContainer.authSessionManager
+                val owner = auraScope ?: run {
+                    snackbarHostState.showSnackbar("Connecte-toi à Aura pour demander la disponibilité cloud.")
+                    return@launch
+                }
+                if (!auth.isCurrent(owner)) return@launch
+                if (sourceState == null) appContainer.syncRepository.performSync(currentDeviceId(), force = true)
+                if (!auth.isCurrent(owner)) return@launch
+                playlistPlayback.request(playlistId, trackId)
+                if (!auth.isCurrent(owner)) return@launch
+                showAcquisitionReport = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                snackbarHostState.showSnackbar("La demande cloud n’a pas pu être confirmée. Réessaie.")
+            } finally {
+                requestingCloud = false
             }
         }
     }
@@ -247,6 +302,16 @@ fun PlaylistDetailScreenNew(
                                 }
                             }
                         }
+                        if (acquisitionStatuses.any { it.status != "not_requested" }) {
+                            val available = acquisitionStatuses.count { it.availability == "available" }
+                            val inProgress = acquisitionStatuses.count {
+                                it.availability != "available" &&
+                                    (it.status == "pending" || it.jobStatus == "queued" || it.jobStatus == "running")
+                            }
+                            TextButton(onClick = { showAcquisitionReport = true }) {
+                                Text("$available disponible(s) dans le cloud · $inProgress en cours")
+                            }
+                        }
                     }
                 }
 
@@ -313,10 +378,7 @@ fun PlaylistDetailScreenNew(
                             // Grand bouton Play principal
                             IconButton(
                                 onClick = {
-                                    val tracks = detail.tracks.map { it.toTrackListRow() }
-                                    if (tracks.isNotEmpty()) {
-                                        playPlaylist(playerViewModel, tracks, false, detail.summary.id)
-                                    }
+                                    playEntries(detail.tracks, false)
                                 },
                                 modifier = Modifier
                                     .size(56.dp)
@@ -334,10 +396,7 @@ fun PlaylistDetailScreenNew(
                             // Bouton Shuffle secondaire
                             IconButton(
                                 onClick = {
-                                    val tracks = detail.tracks.map { it.toTrackListRow() }.shuffled()
-                                    if (tracks.isNotEmpty()) {
-                                        playPlaylist(playerViewModel, tracks, true, detail.summary.id)
-                                    }
+                                    playEntries(detail.tracks, true)
                                 },
                                 modifier = Modifier
                                     .size(44.dp)
@@ -402,13 +461,6 @@ fun PlaylistDetailScreenNew(
                                         batchDownloadJob.value = null
                                         isBatchDownloading = false
                                         scope.launch {
-                                            val playlistTrackIds = detail.tracks.map { it.trackId }.toSet()
-                                            val userToken = appContainer.authSessionManager.getBearerHeader()
-                                            downloadJobs.filter { it.trackId in playlistTrackIds && it.status in setOf("queued", "running", "requires_resolution") }
-                                                .forEach { job ->
-                                                    appContainer.downloadRepository.deleteJob(job.id, userToken)
-                                                }
-
                                             val downloadedTracks = detail.tracks.filter { !it.contentUri.isNullOrBlank() }
                                             downloadedTracks.forEach { track ->
                                                 cloudFileRepository.removeLocalFile(track.trackId)
@@ -443,6 +495,14 @@ fun PlaylistDetailScreenNew(
                                     expanded = showMenuOpen,
                                     onDismissRequest = { showMenuOpen = false },
                                 ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Rendre disponible dans le cloud") },
+                                        enabled = !requestingCloud,
+                                        onClick = {
+                                            showMenuOpen = false
+                                            requestCloud()
+                                        },
+                                    )
                                     DropdownMenuItem(
                                         text = { Text(if (sourceName == null) "Associer une source" else "Changer la source") },
                                         enabled = !isSavingSource,
@@ -540,17 +600,25 @@ fun PlaylistDetailScreenNew(
                         key = { _, track -> track.playlistItemId },
                         contentType = { _, _ -> "track_row" }
                     ) { index, track ->
-                        val onPlayTrackClick = remember(track.trackId, detail.tracks) {
-                            {
-                                val tracks = detail.tracks.map { it.toTrackListRow() }
-                                playPlaylist(playerViewModel, tracks, false, detail.summary.id, track.trackId)
-                            }
+                        val onPlayTrackClick = remember(track.playlistItemId, detail.tracks) {
+                            { playEntries(detail.tracks, false, track.playlistItemId) }
                         }
                         val onRefreshClick = remember { { refreshTick++; Unit } }
                         val onAddToPlaylistClick = remember { { t: PlaylistTrackRow -> activeTrackForPlaylist = t } }
-                        val onAddToQueueClick = remember(track.trackId) {
+                        val onAddToQueueClick = remember(track, playlistId) {
                             {
-                                playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(track.toTrackListRow().toQueuedTrack()))
+                                scope.launch {
+                                    val eligible = playlistPlayback.prepare(playlistId, listOf(track)).singleOrNull()
+                                    if (eligible != null) {
+                                        playerViewModel.onEvent(com.aura.music.domain.player.PlayerEvent.AddToQueue(
+                                            eligible.copy(internalId = java.util.UUID.randomUUID().toString()),
+                                        ))
+                                    } else {
+                                        playlistPlayback.verifyLater(playlistId)
+                                        snackbarHostState.showSnackbar("Aucune source de lecture confirmée pour ce titre.")
+                                    }
+                                }
+                                Unit
                             }
                         }
                         PlaylistTrackRowItem(
@@ -563,12 +631,12 @@ fun PlaylistDetailScreenNew(
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
                             onAddToQueue = onAddToQueueClick,
+                            verifiedCloud = acquisitionsByTrack[track.trackId]?.availability?.let { it == "available" }
+                                ?: (track.trackId in syncedCloudTrackIds),
                             canMoveUp = index > 0,
                             canMoveDown = index < detail.tracks.lastIndex,
                             cloudFileRepository = cloudFileRepository,
-                            syncedCloudTrackIds = syncedCloudTrackIds,
-                            cloudFiles = cloudFiles,
-                            downloadJobs = downloadJobs,
+                            job = jobsByTrack[track.trackId],
                             snackbarHostState = snackbarHostState,
                             onEditMetadata = { t -> trackToEditMetadata = t }
                         )
@@ -578,6 +646,79 @@ fun PlaylistDetailScreenNew(
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
+    }
+
+    if (showAcquisitionReport) {
+        val titles = remember(detail?.tracks) { detail?.tracks.orEmpty().associate { it.trackId to it.title } }
+        AlertDialog(
+            onDismissRequest = { showAcquisitionReport = false },
+            title = { Text("Disponibilité cloud") },
+            text = {
+                LazyColumn(Modifier.height(260.dp)) {
+                    if (acquisitionStatuses.isEmpty()) {
+                        item { Text("Bilan en attente de confirmation.") }
+                    }
+                    itemsIndexed(acquisitionStatuses, key = { _, row -> row.trackId }) { _, row ->
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            Text(titles[row.trackId] ?: "Titre de la playlist")
+                            val label = when {
+                                row.availability == "available" -> "Disponible dans le cloud"
+                                row.status == "source_not_authorized" -> "Source audio autorisée introuvable"
+                                row.status == "failed" || row.jobStatus == "failed" -> "Échec du téléchargement"
+                                row.jobStatus == "requires_resolution" -> "Choix de version nécessaire"
+                                row.status == "not_requested" -> "Aucune demande"
+                                row.status == "cancelled" -> "Demande annulée"
+                                else -> "En attente ou en cours"
+                            }
+                            Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            if (row.availability != "available" &&
+                                row.status in listOf("source_not_authorized", "failed", "cancelled")
+                            ) TextButton(enabled = !requestingCloud, onClick = { requestCloud(row.trackId) }) { Text("Réessayer") }
+                            if (row.availability != "available" && row.jobStatus == "requires_resolution") {
+                                row.jobId?.let { jobId ->
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            val auth = appContainer.authSessionManager
+                                            val session = runCatching { auth.captureScope() }.getOrNull() ?: return@launch
+                                            val candidates = appContainer.downloadRepository.getCandidatesForJob(jobId, auth.getBearerHeader())
+                                            if (!auth.isCurrent(session)) return@launch
+                                            if (candidates.isNullOrEmpty()) snackbarHostState.showSnackbar("Aucune version disponible.")
+                                            else choosingVersion = jobId to candidates
+                                        }
+                                    }) { Text("Choisir la version") }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAcquisitionReport = false }) { Text("Fermer") } },
+        )
+    }
+    choosingVersion?.let { (jobId, candidates) ->
+        AlertDialog(
+            onDismissRequest = { choosingVersion = null },
+            title = { Text("Choisir la version") },
+            text = {
+                LazyColumn(Modifier.height(220.dp)) {
+                    itemsIndexed(candidates, key = { _, candidate -> candidate.videoId }) { _, candidate ->
+                        TextButton(onClick = {
+                            choosingVersion = null
+                            scope.launch {
+                                val auth = appContainer.authSessionManager
+                                val owner = auraScope ?: return@launch
+                                if (!auth.isCurrent(owner)) return@launch
+                                val accepted = appContainer.downloadRepository.resolveJob(jobId, candidate.videoId, auth.getBearerHeader())
+                                if (!auth.isCurrent(owner)) return@launch
+                                if (!accepted) snackbarHostState.showSnackbar("Le choix de version n’a pas pu être confirmé. Réessaie.")
+                                playlistPlayback.verifyLater(playlistId)
+                            }
+                        }) { Text("${candidate.title} · ${candidate.artist}") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosingVersion = null }) { Text("Annuler") } },
+        )
     }
 
     if (showUncertainTracks && lastRefresh != null) {
@@ -747,12 +888,11 @@ private fun PlaylistTrackRowItem(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onAddToQueue: () -> Unit,
+    verifiedCloud: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
-    syncedCloudTrackIds: Set<String>,
-    cloudFiles: List<com.aura.music.data.network.SyncedFileResponseData> = emptyList(),
-    downloadJobs: List<com.aura.music.data.local.DownloadJobEntity> = emptyList(),
+    job: com.aura.music.data.local.DownloadJobEntity?,
     snackbarHostState: SnackbarHostState,
     onEditMetadata: ((com.aura.music.data.local.TrackListRow) -> Unit)? = null,
 ) {
@@ -794,15 +934,7 @@ private fun PlaylistTrackRowItem(
     }
 
     val isLocalScanned = track.contentUri?.startsWith("content://") == true || track.contentUri?.startsWith("file://") == true || track.contentUri?.startsWith("/") == true
-    val isPresentInCloud = syncedCloudTrackIds.contains(track.trackId) ||
-        syncedCloudTrackIds.any { isDeezerTrackMatch(it, track.trackId) } ||
-        cloudFiles.any { cloud ->
-            isDeezerTrackMatch(cloud.trackId, track.trackId) ||
-            (cloud.title?.trim().equals(track.title.trim(), ignoreCase = true) &&
-             (cloud.artistName?.trim().equals(track.artistName?.trim(), ignoreCase = true) || track.artistName.isNullOrBlank() || cloud.artistName.isNullOrBlank()) &&
-             (cloud.albumTitle?.trim().equals(track.albumTitle?.trim(), ignoreCase = true) || track.albumTitle.isNullOrBlank() || cloud.albumTitle.isNullOrBlank()))
-        }
-    val isAlreadySynced = isPresentInCloud
+    val isAlreadySynced = verifiedCloud
     val onUploadToCloudLambda = remember(track.trackId, isLocalScanned, isAlreadySynced) {
         if (isLocalScanned && !isAlreadySynced) {
             {
@@ -824,10 +956,6 @@ private fun PlaylistTrackRowItem(
 
     val isDownloadedLocally = !track.contentUri.isNullOrBlank()
     val isCloudOnly = !isDownloadedLocally
-    val job = remember(downloadJobs, track.trackId) {
-        downloadJobs.find { it.trackId == track.trackId }
-    }
-
     val downloadStatus = when {
         job != null && job.status == "queued" -> TrackDownloadStatus.Queued
         job != null && job.status == "running" -> TrackDownloadStatus.Downloading(job.progressPercent ?: 0f)
@@ -836,15 +964,7 @@ private fun PlaylistTrackRowItem(
         else -> TrackDownloadStatus.NotDownloaded
     }
 
-    val onTrackRowClick: () -> Unit = {
-        if (downloadStatus is TrackDownloadStatus.Queued || downloadStatus is TrackDownloadStatus.Downloading) {
-            scope.launch {
-                snackbarHostState.showSnackbar("Téléchargement Cloud en cours pour : ${track.title}")
-            }
-        } else {
-            onPlayTrack()
-        }
-    }
+    val onTrackRowClick = onPlayTrack
 
     val onDownloadFromCloudLambda = remember(track.trackId, isCloudOnly) {
         if (isCloudOnly) {
@@ -928,29 +1048,5 @@ private fun PlaylistTrackRowItem(
                 }
             }
         } else null,
-    )
-}
-
-private fun playPlaylist(
-    playerViewModel: com.aura.music.ui.player.PlayerViewModel,
-    tracks: List<com.aura.music.data.local.TrackListRow>,
-    shuffle: Boolean,
-    playlistId: String,
-    startTrackId: String? = null,
-) {
-    if (tracks.isEmpty()) return
-    val orderedTracks = if (shuffle) tracks.shuffled() else tracks
-    val startIndex = startTrackId?.let { trackId ->
-        orderedTracks.indexOfFirst { it.id == trackId }.takeIf { it >= 0 }
-    } ?: 0
-    
-    playerViewModel.onEvent(
-        com.aura.music.domain.player.PlayerEvent.PlayTrack(
-            trackId = orderedTracks.getOrNull(startIndex)?.id ?: return,
-            contextType = "playlist",
-            contextId = playlistId,
-            contextTracks = orderedTracks.map { it.toQueuedTrack() },
-            startIndex = startIndex,
-        ),
     )
 }

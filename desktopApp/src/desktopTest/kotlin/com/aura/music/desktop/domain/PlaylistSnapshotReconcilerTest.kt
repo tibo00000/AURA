@@ -134,6 +134,8 @@ class PlaylistSnapshotReconcilerTest {
                 statement.execute("DROP TABLE playlist_sync_state")
                 statement.execute("ALTER TABLE sync_outbox DROP COLUMN user_id")
                 statement.execute("ALTER TABLE user_settings DROP COLUMN sync_token_user_id")
+                statement.execute("ALTER TABLE playback_snapshots DROP COLUMN playlist_occurrence_id")
+                statement.execute("ALTER TABLE playback_snapshots DROP COLUMN snapshot_user_id")
                 statement.execute("PRAGMA user_version = 5")
             }
         }

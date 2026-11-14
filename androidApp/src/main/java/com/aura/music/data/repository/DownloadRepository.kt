@@ -507,19 +507,12 @@ class DownloadRepository(
         }
     }
 
-    private suspend fun handlePollingFailure(job: DownloadJobEntity) {
+    private fun handlePollingFailure(job: DownloadJobEntity) {
         val currentFailures = (consecutiveFailures[job.id] ?: 0) + 1
         consecutiveFailures[job.id] = currentFailures
         if (currentFailures >= 5) {
             consecutiveFailures.remove(job.id)
-            val failedJob = job.copy(
-                status = "failed",
-                errorCode = "polling_failed",
-                errorMessage = mapFriendlyErrorMessage("polling_failed", "Le serveur ne répond pas après 5 tentatives."),
-                updatedAt = System.currentTimeMillis()
-            )
-            database.downloadJobDao().upsert(failedJob)
-            Log.e(TAG, "Job ${job.id} marked as failed after 5 consecutive polling failures.")
+            Log.w(TAG, "Job ${job.id} status unconfirmed after 5 consecutive polling failures.")
         }
     }
 
@@ -675,7 +668,6 @@ class DownloadRepository(
             val response = apiService.downloadFile(userToken, jobId)
             if (response.status.value !in 200..299) {
                 Log.e(TAG, "Failed to download physical file for job $jobId: HTTP ${response.status.value}")
-                markJobAsFetchFailed(jobId)
                 return@withContext
             }
 
@@ -847,27 +839,10 @@ class DownloadRepository(
                     Log.e(TAG, "Failed to auto-sync upload track $trackId to cloud", e)
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to retrieve physical file for job $jobId", e)
-            markJobAsFetchFailed(jobId)
-        }
-    }
-
-    private suspend fun markJobAsFetchFailed(jobId: String) {
-        try {
-            val localJob = database.downloadJobDao().getJobById(jobId)
-            if (localJob != null) {
-                val updatedJob = localJob.copy(
-                    status = "failed",
-                    errorCode = "FETCH_ERROR",
-                    errorMessage = "Impossible de récupérer le fichier audio du serveur.",
-                    updatedAt = System.currentTimeMillis()
-                )
-                database.downloadJobDao().upsert(updatedJob)
-                Log.d(TAG, "Marked job $jobId as failed with FETCH_ERROR")
-            }
-        } catch (dbEx: Exception) {
-            Log.e(TAG, "Failed to update job status to failed for $jobId", dbEx)
         }
     }
 
@@ -907,21 +882,24 @@ class DownloadRepository(
      * Resolve a pending download job by choosing one of the YouTube Music candidates.
      * Calls the backend resolve route, updates Room to "queued", and restarts polling.
      */
-    suspend fun resolveJob(jobId: String, videoId: String, userToken: String) = withContext(Dispatchers.IO) {
+    suspend fun resolveJob(jobId: String, videoId: String, userToken: String): Boolean = withContext(Dispatchers.IO) {
         try {
+            val auth = authSessionManagerProvider()
+            val lease = auth.authorize(userToken)
+            if (!auth.isCurrent(lease)) return@withContext false
             notifiedResolutionJobIds.remove(jobId)
             jobTrackTitles.remove(jobId)
             Log.i(TAG, "Resolving job $jobId with videoId $videoId...")
             val response = apiService.resolveDownload(
-                token = userToken,
+                token = lease.bearer,
                 jobId = jobId,
                 request = ResolveDownloadRequestDto(videoId = videoId)
             )
             val createData = response.data
-            if (createData != null) {
+            if (response.error == null && createData != null && auth.isCurrent(lease)) {
                 // Update local Room entity
                 val job = database.downloadJobDao().getJobById(jobId)
-                if (job != null) {
+                if (job != null && auth.isCurrent(lease)) {
                     val updatedJob = job.copy(
                         status = createData.status,
                         progressPercent = 0f,
@@ -931,11 +909,17 @@ class DownloadRepository(
                     )
                     database.downloadJobDao().upsert(updatedJob)
                     Log.d(TAG, "Local job $jobId reset to ${createData.status} after resolution")
-                    ensurePollingStarted(userToken)
+                    if (auth.isCurrent(lease)) ensurePollingStarted(lease.bearer)
                 }
+                true
+            } else {
+                false
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.e(TAG, "Error resolving job $jobId", e)
+            false
         }
     }
 

@@ -39,6 +39,7 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `Supprimer`
 - Switch `Télécharger sur l'appareil` (téléchargement par lot automatique ou libération du stockage physique)
 - Le menu permet d'associer une playlist existante à une référence Spotify ou Deezer, de changer la source et de la retirer. La référence et sa révision sont répliquées par Aura sur les autres appareils. Le contenu et l'ordre de la playlist sont conservés. Les jetons Spotify restent sur l'appareil.
+- `Actualiser depuis Spotify/Deezer` ajoute les nouveautés et présente le résultat confirmé ainsi que les correspondances à vérifier. `Rendre disponible dans le cloud` lance les intentions pour les titres de toute playlist et permet de consulter leur bilan, de réessayer et de choisir une version. Le réglage de copie locale est indépendant.
 
 ## Import / Export Engine
 - **Parsing universel** : Détection automatique des encodages (BOM UTF-8, UTF-16, Latin-1, Windows-1252), détection dynamique des délimiteurs CSV (`,`, `;`, `\t`) et mapping d'en-têtes multilingues.

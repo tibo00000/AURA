@@ -222,6 +222,8 @@ data class PlaybackSnapshotEntity(
     @ColumnInfo(name = "shuffle_enabled") val shuffleEnabled: Boolean,
     @ColumnInfo(name = "repeat_mode") val repeatMode: String,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "playlist_occurrence_id") val playlistOccurrenceId: String? = null,
+    @ColumnInfo(name = "snapshot_user_id") val snapshotUserId: String? = null,
 )
 
 @Entity(

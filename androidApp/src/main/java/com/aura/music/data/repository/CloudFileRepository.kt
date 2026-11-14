@@ -134,6 +134,11 @@ class CloudFileRepository(
         }
     }
 
+    fun getCachedCloudTrackIds(): Set<String> {
+        ensureScopeCurrent()
+        return _syncedTrackIds.value
+    }
+
     suspend fun getOrFetchCloudFiles(forceRefresh: Boolean = false): Result<List<SyncedFileResponseData>> {
         var forceThresholdGen: Long? = null
 

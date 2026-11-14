@@ -5,6 +5,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaSession
 import com.aura.music.core.PrivateStreamPolicy
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.domain.player.PLAYLIST_OCCURRENCE_KEY
+import com.aura.music.domain.player.occurrenceId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URI
@@ -30,7 +32,11 @@ internal class ControllerMediaResolver(
                 }
                 if (track != null) {
                     val mapped = track.toMediaItem(context)
-                    val resolved = if (track.contentUri.isNullOrBlank())
+                    val internal = trust.isInternal(controller)
+                    val requestedCloud = if (internal) item.localConfiguration?.uri?.let {
+                        runCatching { streams.trackId(URI(it.toString())) }.getOrNull() == track.id
+                    } == true else false
+                    val resolved = if (track.contentUri.isNullOrBlank() || requestedCloud)
                         mapped.buildUpon().setUri(streams.uriFor(track.id)).build() else mapped
                     val uri = resolved.localConfiguration?.uri ?: throw SecurityException("Source absente")
                     val local = uri.scheme in setOf("content", "file") ||
@@ -39,7 +45,12 @@ internal class ControllerMediaResolver(
                         !runCatching { streams.allows(URI(uri.toString())) }.getOrDefault(false)) {
                         throw SecurityException("Source non autorisée")
                     }
-                    resolved // Never copy caller URI, DRM, subtitles, requestMetadata or credentials.
+                    val occurrence = if (internal) item.occurrenceId() else null
+                    if (occurrence == null) resolved
+                    else resolved.buildUpon().setMediaMetadata(resolved.mediaMetadata.buildUpon()
+                        .setExtras(android.os.Bundle(resolved.mediaMetadata.extras ?: android.os.Bundle()).apply {
+                            putString(PLAYLIST_OCCURRENCE_KEY, occurrence)
+                        }).build()).build()
                 } else {
                     // The app can play online results before insertion in Room. External callers cannot.
                     val uri = item.localConfiguration?.uri

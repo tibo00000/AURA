@@ -43,7 +43,10 @@ BEGIN
         RAISE EXCEPTION 'Two workers claimed the same live intention';
     END IF;
     admitted := public.aura_insert_playlist_download_job(owner_id, 'trk_fixture', (first->>'lease_token')::uuid, job);
-    IF admitted->>'id' IS DISTINCT FROM 'job_fixture1' THEN RAISE EXCEPTION 'Job admission failed'; END IF;
+    IF admitted->>'id' IS DISTINCT FROM 'job_fixture1'
+        OR admitted->>'playlist_acquisition' IS DISTINCT FROM 'true' THEN
+        RAISE EXCEPTION 'Job admission failed to persist its origin';
+    END IF;
     -- Simulate a process lost after insertion but before it acknowledged the claim.
     UPDATE public.playlist_acquisition_intents SET lease_until = clock_timestamp() - interval '1 second';
     second := public.aura_claim_playlist_acquisition('job_fixture2', 120);

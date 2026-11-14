@@ -33,3 +33,10 @@ Si une playlist joue et que l'utilisateur ajoute des titres a la file d'attente,
 ## Code Mapping
 - `android/app/src/main/java/com/aura/music/data/player/QueueManager.kt` : implementation des regles ci-dessus (next, prev, add, remove, reorder, shuffle, repeat)
 - `android/app/src/main/java/com/aura/music/domain/player/PlaybackModels.kt` : modeles `QueuedTrack`, `PlaybackContext`, `TrackSource`, `RepeatMode`
+### Disponibilité des playlists
+
+La construction de la file utilise l’état de disponibilité déjà observé
+de l’appareil ou du compte Aura. Une vérification cloud groupée actualise
+l’état pour les prochaines actions. Elle ne change jamais la file active.
+Une coupure laisse la disponibilité inconnue. Les IDs d’occurrence restent
+distincts pour le choix de départ, la navigation et la reprise Media3.

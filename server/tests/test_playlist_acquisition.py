@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.routes import me
+from app.api.routes import me, sync_files
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.user_client import get_current_user_client
 from app.services.playlist_acquisition import PlaylistAcquisitionWorker
@@ -80,3 +81,15 @@ def test_acquisition_status_checks_streaming_and_does_not_trust_a_successful_job
     db.rpc.assert_called_once_with("aura_get_playlist_acquisitions", {
         "p_playlist_id": "playlist:mix", "p_enqueue": True, "p_retry_track_id": None,
     })
+
+
+def test_personal_cloud_listing_excludes_missing_and_empty_audio(tmp_path, monkeypatch):
+    monkeypatch.setattr(sync_files, "_base_dir", lambda: tmp_path)
+    for track, data in [("ready", b"fixture audio"), ("removed", None), ("empty", b"")]:
+        path, metadata = sync_files._paths("account", track)
+        metadata.write_text(json.dumps({"track_id": track}), encoding="utf-8")
+        if data is not None:
+            path.write_bytes(data)
+
+    response = asyncio.run(sync_files.list_sync_files(AuthenticatedUser(id="account", token="synthetic")))
+    assert response.data == {"items": [{"track_id": "ready"}]}

@@ -37,6 +37,7 @@ actual fun createAuraDatabase(context: Any?): AuraDatabase {
         AuraDatabase.MIGRATION_5_6,
         AuraDatabase.MIGRATION_6_7,
         AuraDatabase.MIGRATION_7_8,
+        AuraDatabase.MIGRATION_8_9,
     )
     .build()
 }

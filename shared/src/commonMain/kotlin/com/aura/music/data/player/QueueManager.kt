@@ -182,7 +182,7 @@ class QueueManager {
 
                 val restoredContext = if (previousTrack.source == TrackSource.CONTEXT) {
                     current.context?.let { ctx ->
-                        val idx = ctx.tracks.indexOfFirst { it.trackId == previousTrack.trackId }
+                        val idx = ctx.tracks.indexOfFirst { it.internalId == previousTrack.internalId }
                         if (idx >= 0) ctx.copy(currentIndex = idx) else ctx
                     }
                 } else {

@@ -149,15 +149,30 @@ async def upload_sync_file(
 async def list_sync_files(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    user_dir = _user_dir(current_user.id)
+    items = await blocking(_list_playable_sync_files, current_user.id)
+    return ResponseEnvelope(data={"items": items})
+
+
+def _list_playable_sync_files(user_id: str) -> list[dict[str, Any]]:
+    user_dir = _user_dir(user_id)
     items = []
     for metadata_path in user_dir.glob("*.json"):
+        if metadata_path.is_symlink() or metadata_path.is_junction():
+            continue
         metadata = _read_metadata(metadata_path)
-        if metadata is not None:
+        if not isinstance(metadata, dict) or not isinstance(metadata.get("track_id"), str):
+            continue
+        if metadata_path.stem != _track_key(metadata["track_id"]):
+            continue
+        try:
+            audio = metadata_path.with_suffix(".audio").lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(audio.st_mode) and audio.st_size > 0:
             items.append(metadata)
 
     items.sort(key=lambda item: item.get("uploaded_at") or "", reverse=True)
-    return ResponseEnvelope(data={"items": items})
+    return items
 
 
 def find_playable_sync_file(user_id: str, track_id: str):

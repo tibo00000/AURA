@@ -4,6 +4,10 @@ import android.app.Application
 import androidx.room3.Room
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.sqlite.execSQL
+import com.aura.music.core.MemorySessionStore
+import com.aura.music.core.StoredSession
+import com.aura.music.core.manager
+import com.aura.music.core.token
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.AuraDatabaseConstructor
 import com.aura.music.data.local.PlaylistEntity
@@ -11,9 +15,13 @@ import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.SyncOutboxEntity
 import com.aura.music.data.local.TrackEntity
 import com.aura.music.data.network.PlaylistSnapshotResponse
+import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.playlist.PlaylistSnapshotReconciler
+import com.aura.music.data.player.PlaybackStateStore
+import com.aura.music.domain.player.RepeatMode
 import java.io.File
 import java.time.Instant
+import java.lang.reflect.Proxy
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -41,7 +49,42 @@ class PlaylistSnapshotMigrationTest {
         factory = { AuraDatabaseConstructor.initialize() },
     ).setDriver(AndroidSQLiteDriver()).addMigrations(
         AuraDatabase.MIGRATION_5_6, AuraDatabase.MIGRATION_6_7, AuraDatabase.MIGRATION_7_8,
+        AuraDatabase.MIGRATION_8_9,
     ).build()
+
+    @Test
+    fun playbackOccurrenceSurvivesReopenButDoesNotRestoreAcrossAccounts(): Unit = runBlocking {
+        val file = temp.newFile("playback.db")
+        val auth = manager(MemorySessionStore(StoredSession(token("A"), null, "A", null))) {
+            error("Unexpected refresh")
+        }
+        val api = Proxy.newProxyInstance(AuraApiService::class.java.classLoader, arrayOf<Class<*>>(AuraApiService::class.java)) {
+            _, method, _ -> error("Unexpected network request ${method.name}")
+        } as AuraApiService
+        val before = open(file)
+        try {
+            val db = before
+            val store = PlaybackStateStore(db.playbackSnapshotDao(), db, api, RuntimeEnvironment.getApplication(), auth)
+            store.save("track", "playlist", "playlist:legacy", 1, 4200, false, RepeatMode.Off, "occurrence-2")
+        } finally {
+            before.close()
+        }
+        val after = open(file)
+        try {
+            val db = after
+            val store = PlaybackStateStore(db.playbackSnapshotDao(), db, api, RuntimeEnvironment.getApplication(), auth)
+            assertEquals("occurrence-2", store.restoreLocalPlaylist()?.playlistOccurrenceId)
+            assertEquals(4200L, store.restore()?.positionMs)
+            auth.saveSession(token("B"), null, "B", null)
+            assertNull(store.restoreLocalPlaylist())
+            auth.logout()
+            assertNull(store.restoreLocalPlaylist())
+            auth.saveSession(token("A"), null, "A", null)
+            assertEquals("occurrence-2", store.restoreLocalPlaylist()?.playlistOccurrenceId)
+        } finally {
+            after.close()
+        }
+    }
 
     @Test
     fun migratedLegacyPlaylistAndPendingOccurrenceSurviveAnEmptyInventory() = runBlocking {
@@ -82,6 +125,14 @@ class PlaylistSnapshotMigrationTest {
         AndroidSQLiteDriver().open(file.absolutePath).use { connection ->
             connection.execSQL("DROP TABLE playlist_snapshot_state")
             connection.execSQL("DROP TABLE playlist_sync_state")
+            connection.execSQL("DROP TABLE playback_snapshots")
+            connection.execSQL("""
+                CREATE TABLE playback_snapshots (
+                    id TEXT NOT NULL PRIMARY KEY, current_track_id TEXT, playback_context_type TEXT,
+                    playback_context_id TEXT, playback_context_index INTEGER, position_ms INTEGER NOT NULL,
+                    shuffle_enabled INTEGER NOT NULL, repeat_mode TEXT NOT NULL, updated_at INTEGER NOT NULL
+                )
+            """.trimIndent())
             connection.execSQL("ALTER TABLE sync_outbox RENAME TO newer_sync_outbox")
             connection.execSQL("""
                 CREATE TABLE sync_outbox (

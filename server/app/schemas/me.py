@@ -35,6 +35,7 @@ class PlaybackSnapshotResponse(BaseModel):
     shuffle_enabled: bool
     repeat_mode: str
     updated_at: Optional[str] = None
+    playlist_occurrence_id: str | None = Field(default=None, max_length=512)
 
 
 class PlaylistTrackMetadata(BaseModel):

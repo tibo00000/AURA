@@ -55,6 +55,10 @@ La migration 7 → 8 ajoute le dernier bilan d’actualisation confirmé à cet
 manquants de `tracks`. Les liens média restent locaux.
 La même migration garde temporairement la demande d’actualisation préparée.
 Un accusé perdu est rejoué avec le même identifiant et le même inventaire.
+La migration 8 → 9 conserve l’identifiant de l’occurrence active et le
+compte Aura du snapshot de lecture. Les anciens snapshots restent
+restaurables localement selon le propriétaire connu de la playlist.
+Seuls les nouveaux snapshots attribués au compte actif remontent au serveur.
 
 ### `artists`
 

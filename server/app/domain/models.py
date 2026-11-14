@@ -151,6 +151,7 @@ class DownloadJob:
     updated_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
     candidates: List[Any] = field(default_factory=list)
+    playlist_acquisition: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -168,6 +169,7 @@ class DownloadJob:
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "archived_at": self.archived_at.isoformat() if self.archived_at else None,
             "candidates": self.candidates,
+            **({"playlist_acquisition": True} if self.playlist_acquisition else {}),
         }
 
     @classmethod
@@ -200,5 +202,6 @@ class DownloadJob:
             updated_at=parse_date(d.get("updated_at")),
             archived_at=parse_date(d.get("archived_at")),
             candidates=d.get("candidates") or [],
+            playlist_acquisition=d.get("playlist_acquisition") is True,
         )
 

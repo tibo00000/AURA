@@ -96,6 +96,44 @@ async def invoke(function, **kwargs):
     return await result if inspect.isawaitable(result) else result
 
 
+@pytest.mark.parametrize(('status', 'operation'), [
+    ('failed', 'retry'), ('requires_resolution', 'resolve'), ('succeeded', 'repair'),
+])
+def test_playlist_job_cannot_be_restarted_with_an_unapproved_source(service, status, operation):
+    instance, db = service
+    db.rows = [row(status=status, playlist_acquisition=True)]
+
+    async def scenario():
+        with pytest.raises(Conflict, match='Retry this acquisition from the playlist'):
+            if operation == 'retry':
+                await instance.retry_job(A, 'job_1')
+            elif operation == 'resolve':
+                await instance.resolve_job(A, 'job_1', 'arbitrary11')
+            else:
+                await instance.create_job(A, 'trk_shared', source_hint={'resolved_video_id': 'arbitrary11'})
+
+    asyncio.run(scenario())
+    assert db.mutations == []
+    assert instance._attempts == {}
+
+
+def test_graceful_shutdown_leaves_playlist_jobs_resumable(service):
+    instance, db = service
+    db.rows = [row(status='running', playlist_acquisition=True)]
+    attempt = DownloadAttempt(DownloadJob.from_dict(db.rows[0]))
+    instance._attempts[attempt.job.id] = attempt
+
+    async def scenario():
+        instance._closing = True
+        attempt.cancelled.set()
+        await instance._finalize_attempt(attempt, failed=False)
+
+    asyncio.run(scenario())
+    assert db.rows[0]['status'] == 'queued'
+    assert db.rows[0]['error_code'] == 'playlist_worker_shutdown'
+    assert db.rows[0]['attempt_count'] == 1
+
+
 def test_foreign_delete_has_no_memory_sql_or_file_effect(service):
     instance, db = service
     db.rows = [row(user_id=B)]

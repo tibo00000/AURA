@@ -557,7 +557,8 @@ data class PlaybackSnapshotResponse(
     @SerialName("position_ms") val positionMs: Long,
     @SerialName("shuffle_enabled") val shuffleEnabled: Boolean,
     @SerialName("repeat_mode") val repeatMode: String,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("playlist_occurrence_id") val playlistOccurrenceId: String? = null,
 )
 
 @Serializable

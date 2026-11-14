@@ -790,11 +790,14 @@ class DownloadService:
                     orphaned = current.status in ('queued', 'running') and current.id not in self._attempts
                     retryable = retry and current.status in ('failed', 'cancelled', 'succeeded')
                     if orphaned or retryable:
-                        if current.id == reserved_job_id and current.operation_type == 'download' and source_hint is not None:
+                        if current.playlist_acquisition and current.id == reserved_job_id and source_hint is not None:
                             return await self._restart_locked(current, increment=True, source_hint=source_hint, playlist_lease=lease_token)
-                        if orphaned and current.id == reserved_job_id and source_hint is None:
+                        if current.playlist_acquisition and current.id == reserved_job_id and source_hint is None:
                             return None
-                    return current
+                    # An independently started job keeps its own retry policy.
+                    # A playlist retry can admit a new, authorized attempt under its reservation.
+                    if not retryable or current.playlist_acquisition or source_hint is None:
+                        return current
             rows = await blocking(lambda: self.supabase.table('download_jobs').select('*').eq(
                 'user_id', user_id).eq('track_id', track_id).in_(
                     'status', ['queued', 'running', 'requires_resolution']).order('created_at', desc=True).limit(1).execute().data)
@@ -819,6 +822,7 @@ class DownloadService:
                 and actual.track_id == expected.track_id and actual.status == expected.status
                 and actual.attempt_count == expected.attempt_count
                 and actual.operation_type == expected.operation_type
+                and actual.playlist_acquisition == expected.playlist_acquisition
                 and actual.created_at == expected.created_at)
 
     async def _write_admission(self, intent, playlist_lease=None):
@@ -963,7 +967,8 @@ class DownloadService:
                     return await self._restart_locked(existing, source_hint=source_hint)
         now = datetime.now(timezone.utc)
         job = DownloadJob(id=reserved_job_id or generate_id('job'), user_id=user_id, track_id=track_id,
-                          provider_name=provider_name, status='queued', created_at=now, updated_at=now)
+                          provider_name=provider_name, status='queued', created_at=now, updated_at=now,
+                          playlist_acquisition=playlist_lease is not None)
         if playlist_lease is None:
             await self._insert_owned_job(job, source_hint)
         else:
@@ -1074,6 +1079,8 @@ class DownloadService:
         return {**source_hint, 'resolved_video_id': video_id.strip()}
 
     async def _restart_locked(self, job, *, increment=False, source_hint=None, explicit_resolution=False, playlist_lease=None):
+        if job.playlist_acquisition and playlist_lease is None:
+            raise Conflict('Retry this acquisition from the playlist')
         source_hint = self._restart_source(job, source_hint, explicit_resolution=explicit_resolution)
         await self._ensure_pair_available(job)
         changes = dict(status='queued', progress_percent=0.0, error_code=None,
@@ -1098,6 +1105,8 @@ class DownloadService:
         async with self._admission(user_id, snapshot.track_id):
             async with self._job_gate(job_id):
                 current = await blocking(self.get_job, user_id, job_id)
+                if current.playlist_acquisition:
+                    raise Conflict('Retry this acquisition from the playlist')
                 self._restart_source(current, source_hint, explicit_resolution=not increment)
                 if current.operation_type == 'manual_reassign' and any(
                         intent.job.user_id == user_id and intent.job.track_id == snapshot.track_id
@@ -1257,8 +1266,10 @@ class DownloadService:
                 if (current.attempt_count == attempt.job.attempt_count
                         and current.track_id == attempt.job.track_id
                         and current.status in ('queued', 'running')):
-                    self._mutate_job(current, dict(status='failed' if failed else 'cancelled',
-                        error_code='download_interrupted', error_message='Download interrupted; retry available'))
+                    resumable = self._closing and current.playlist_acquisition
+                    self._mutate_job(current, dict(status='queued' if resumable else ('failed' if failed else 'cancelled'),
+                        error_code='playlist_worker_shutdown' if resumable else 'download_interrupted',
+                        error_message=None if resumable else 'Download interrupted; retry available'))
             try:
                 await blocking(finish)
             except NotFound:
@@ -1418,6 +1429,10 @@ class DownloadService:
     async def _run_download_job_impl(self, attempt: DownloadAttempt, source_hint=None):
         if not await self._update_job_status(attempt, status='running', progress_percent=0.0):
             return
+        if attempt.job.playlist_acquisition and not (source_hint or {}).get('resolved_video_id'):
+            await self._update_job_status(attempt, status='failed', error_code='authorized_audio_source_missing',
+                                          error_message='Retry this acquisition from the playlist')
+            return
         if attempt.job.operation_type == 'manual_reassign':
             video_id = (source_hint or {}).get('resolved_video_id')
             if not isinstance(video_id, str) or not video_id.strip():
@@ -1478,6 +1493,8 @@ class DownloadService:
                 album = source_hint["album_title"]
             if not cover_uri and source_hint.get("cover_uri"):
                 cover_uri = source_hint["cover_uri"]
+            if duration_ms is None:
+                duration_ms = source_hint.get("duration_ms")
             if artist and not artist_id:
                 artist_id = f"artist:{artist.lower().strip()}"
             if artist and album and not album_id:
