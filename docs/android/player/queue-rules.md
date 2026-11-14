@@ -40,6 +40,9 @@ de l’appareil ou du compte Aura. Une vérification cloud groupée actualise
 l’état pour les prochaines actions. Elle ne change jamais la file active.
 Une coupure laisse la disponibilité inconnue. Les IDs d’occurrence restent
 distincts pour le choix de départ, la navigation et la reprise Media3.
+Le navigateur Media3 peut afficher les titres connus immédiatement.
+Quand une vérification change les titres admissibles, il signale la mise
+à jour du dossier aux navigateurs abonnés, sans toucher à la file active.
 À la fin de la file, la répétition de la playlist prépare sa première
 occurrence dans Media3. Pour une playlist à une seule occurrence, Media3
 répète le média en place. Le prochain titre inspecté et la transition

@@ -119,6 +119,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Python | 399 réussites |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
+| Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
@@ -139,6 +140,9 @@ appareil.
   répétition, redémarrer puis contrôler l’occurrence et la position.
   Rejouer en mode avion et après déconnexion puis connexion à un autre
   compte. Tester aussi une playlist entièrement indisponible.
+  Ouvrir dans Android Auto une playlist composée uniquement de titres
+  cloud lors d’un démarrage sans cache, puis vérifier que le dossier
+  affiche les titres quand le serveur confirme leur disponibilité.
 - Mesures comparables de démarrage à froid et d’ouverture d’une grande
   playlist, sur le même appareil et avec le même corpus. Relever les
   temps jusqu’à l’affichage et au premier titre lisible ainsi que les

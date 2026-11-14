@@ -143,7 +143,8 @@ fun PlaylistDetailScreenNew(
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val snackbarHostState = remember { SnackbarHostState() }
-    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, sourceState?.userId, showAcquisitionReport) {
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, sourceState?.userId, showAcquisitionReport, isOnline) {
+        if (!isOnline) return@LaunchedEffect
         if (showAcquisitionReport) {
             while (true) {
                 playlistPlayback.verifyLater(playlistId)

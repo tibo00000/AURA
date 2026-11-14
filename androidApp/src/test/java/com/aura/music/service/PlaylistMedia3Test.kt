@@ -6,6 +6,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import com.aura.music.data.local.PlaylistTrackRow
+import com.aura.music.data.network.PlaylistAcquisitionStatus
 import com.aura.music.data.player.PersistedPlaybackSnapshot
 import com.aura.music.data.player.QueueManager
 import com.aura.music.domain.player.RepeatMode
@@ -85,6 +86,28 @@ class PlaylistMedia3Test {
         val empty = restorePlaylistMediaItems(context, QueueManager(), playlistId, emptyList(), snapshot("occ:second"))
         assertEquals(C.INDEX_UNSET, empty.startIndex)
         assertTrue(empty.mediaItems.isEmpty())
+    }
+
+    @Test
+    fun browserRefreshesOnAvailabilityChangesAndAccountResetButIgnoresProgressAndEviction() {
+        val pending = PlaylistAcquisitionStatus("track", "pending", "missing")
+        val verifying = mapOf(playlistId to listOf(pending))
+        val working = mapOf(playlistId to listOf(pending.copy(status = "admitted", jobStatus = "running")))
+        val ready = mapOf(playlistId to listOf(pending.copy(status = "available", availability = "available")))
+
+        assertEquals(emptyList<String>(), changedPlaylistBrowseFolders(verifying, working))
+        assertEquals(listOf(playlistId), changedPlaylistBrowseFolders(working, ready))
+        assertEquals(listOf(playlistId), changedPlaylistBrowseFolders(ready, emptyMap()))
+        assertEquals(emptyList<String>(), changedPlaylistBrowseFolders(ready + ("evicted" to listOf(pending)), ready))
+    }
+
+    @Test
+    fun browserPagesPreserveOrderWithLargeLibraryLimits() {
+        val rows = (0 until 350).map { row("occ:$it") }
+        val eligible = buildPlaylistQueue(rows, emptySet())
+        assertEquals((100 until 200).map { "occ:$it" }, eligible.paginate(1, 100).map { it.internalId })
+        assertEquals(eligible, eligible.paginate(0, Int.MAX_VALUE))
+        assertTrue(eligible.paginate(Int.MAX_VALUE, Int.MAX_VALUE).isEmpty())
     }
 
     private fun snapshot(id: String) = PersistedPlaybackSnapshot(

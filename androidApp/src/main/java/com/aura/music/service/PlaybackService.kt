@@ -17,6 +17,8 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import com.aura.music.AuraApplication
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.network.PlaylistAcquisitionStatus
+import com.aura.music.domain.player.PlaylistPlayback
 import com.aura.music.domain.player.QueuedTrack
 import com.aura.music.domain.player.TrackSource
 import com.aura.music.domain.player.occurrenceId
@@ -27,6 +29,7 @@ import com.aura.music.data.player.PersistedPlaybackSnapshot
 import com.aura.music.data.player.QueueManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -45,6 +48,7 @@ class PlaybackService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var lastBrowsedFolderId: String? = null
+    private var playlistBrowseObserver: Job? = null
     private val controllerTrust by lazy { ControllerTrustPolicy(this) }
     private val privatePlaybackReady = PlaybackSessionReadiness()
 
@@ -105,6 +109,19 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
         mediaSession.takeIf { controllerTrust.allows(controllerInfo) }
+
+    private fun observePlaylistBrowseAvailability(playback: PlaylistPlayback) {
+        if (playlistBrowseObserver?.isActive == true) return
+        playlistBrowseObserver = serviceScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var previous = playback.statuses.value
+            playback.statuses.collect { current ->
+                for (playlistId in changedPlaylistBrowseFolders(previous, current)) {
+                    mediaSession?.notifyChildrenChanged("playlist:$playlistId", Int.MAX_VALUE, null)
+                }
+                previous = current
+            }
+        }
+    }
 
     internal val librarySessionCallback = object : MediaLibrarySession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
@@ -196,11 +213,15 @@ class PlaybackService : MediaLibraryService() {
                         else -> {
                             if (parentId.startsWith("playlist:")) {
                                 val playlistId = parentId.substringAfter("playlist:")
-                                val container = (application as AuraApplication).container
+                                val playback = container.playlistPlayback
+                                observePlaylistBrowseAvailability(playback)
                                 val rows = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
-                                val eligible = container.playlistPlayback.prepare(playlistId, rows)
-                                container.playlistPlayback.verifyLater(playlistId)
-                                eligible.map { it.toPlaylistMediaItem(this@PlaybackService, playlistId) }
+                                val eligible = playback.prepare(playlistId, rows)
+                                playback.verifyLater(playlistId)
+                                val items = eligible.paginate(page, pageSize)
+                                    .map { it.toPlaylistMediaItem(this@PlaybackService, playlistId) }
+                                future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
+                                return@launch
                             } else if (parentId.startsWith("album:")) {
                                 val albumId = parentId.substringAfter("album:")
                                 repository.getTracksForAlbum(albumId).map { it.toMediaItem(this@PlaybackService, browser.packageName, connectedPackages) }
@@ -598,6 +619,22 @@ class PlaybackService : MediaLibraryService() {
     }
 }
 
+internal fun changedPlaylistBrowseFolders(
+    previous: Map<String, List<PlaylistAcquisitionStatus>>,
+    current: Map<String, List<PlaylistAcquisitionStatus>>,
+): List<String> {
+    fun List<PlaylistAcquisitionStatus>?.knownAvailability() = orEmpty().asSequence()
+        .filter { it.availability == "available" || it.availability == "missing" }
+        .associate { it.trackId to it.availability }
+    // A cache eviction does not invalidate an already published folder.
+    // An empty map signals a change of account.
+    val folders = if (current.isEmpty()) previous.keys else current.keys
+    return folders.filter { id ->
+        if (previous[id] === current[id]) false
+        else previous[id].knownAvailability() != current[id].knownAvailability()
+    }
+}
+
 // Mappers d'extension utilitaires pour la conversion propre vers MediaItem avec metadonnees completes
 fun TrackListRow.toMediaItem(
     context: android.content.Context,
@@ -686,8 +723,9 @@ internal fun restorePlaylistMediaItems(
 }
 
 fun <T> List<T>.paginate(page: Int, pageSize: Int): List<T> {
-    val fromIndex = page * pageSize
-    if (fromIndex >= size || fromIndex < 0) return emptyList()
-    val toIndex = ((page + 1) * pageSize).coerceAtMost(size)
-    return subList(fromIndex, toIndex)
+    if (page < 0 || pageSize <= 0) return emptyList()
+    val fromIndex = page.toLong() * pageSize
+    if (fromIndex >= size) return emptyList()
+    val toIndex = (fromIndex + pageSize).coerceAtMost(size.toLong())
+    return subList(fromIndex.toInt(), toIndex.toInt())
 }
