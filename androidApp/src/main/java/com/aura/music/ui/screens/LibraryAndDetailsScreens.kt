@@ -699,9 +699,13 @@ fun FavoritesScreen(
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val cloudFiles by cloudFileRepository.cachedCloudFiles.collectAsState()
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
+    var lastHandledRefreshPair by remember(cloudFileRepository) { mutableStateOf(refreshTick to refreshToken) }
     LaunchedEffect(cloudFileRepository, refreshTick, refreshToken, isOnline) {
         if (isOnline) {
-            cloudFileRepository.getOrFetchCloudFiles(forceRefresh = refreshTick > 0 || refreshToken > 0)
+            val currentPair = refreshTick to refreshToken
+            val shouldForce = currentPair != lastHandledRefreshPair
+            lastHandledRefreshPair = currentPair
+            cloudFileRepository.getOrFetchCloudFiles(forceRefresh = shouldForce)
         }
     }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -1220,12 +1224,11 @@ fun FavoritesScreen(
                 scope.launch {
                     cloudFileRepository.deleteSyncFile(t.id).collect { res ->
                         res.onSuccess {
+                            refreshTick++
                             snackbarHostState.showSnackbar("Titre supprimé du Cloud : ${t.title}")
-                            cloudFileRepository.refreshSyncedTrackIds()
-                            refreshTick++
                         }.onFailure { err ->
-                            snackbarHostState.showSnackbar("Échec de la suppression Cloud : ${err.message}")
                             refreshTick++
+                            snackbarHostState.showSnackbar("Échec de la suppression Cloud : ${err.message}")
                         }
                     }
                 }

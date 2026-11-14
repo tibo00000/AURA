@@ -101,8 +101,17 @@ class CloudFileRepository(
         }
     }
 
+    private fun captureAuthScope(): com.aura.music.core.AuthSessionManager.Scope? =
+        runCatching { authSessionManagerProvider().sessionScope.value }.getOrNull()
+
+    private fun isScopeStillValid(expectedScope: com.aura.music.core.AuthSessionManager.Scope?): Boolean {
+        val authManager = runCatching { authSessionManagerProvider() }.getOrNull() ?: return true
+        if (expectedScope != null && !authManager.isLoggedIn.value) return false
+        return authManager.sessionScope.value == expectedScope
+    }
+
     private fun ensureScopeCurrent() {
-        val currentScope = runCatching { authSessionManagerProvider().sessionScope.value }.getOrNull()
+        val currentScope = captureAuthScope()
         synchronized(refreshLock) {
             syncCacheScopeLocked(currentScope)
         }
@@ -149,17 +158,18 @@ class CloudFileRepository(
                 syncCacheScopeLocked(requestScope)
                 val stillNeedsForce = forceRefresh &&
                     (forceThresholdGen == null || fetchGeneration <= forceThresholdGen!!)
-                if (!stillNeedsForce && hasCachedCloudFiles) {
-                    return Result.success(_cachedCloudFiles.value)
-                }
-
                 val existing = ongoingFetchDeferred
                 if (existing != null && existing.isActive) {
+                    if (!forceRefresh && hasCachedCloudFiles) {
+                        return Result.success(_cachedCloudFiles.value)
+                    }
                     joinedGen = fetchGeneration
                     if (stillNeedsForce && forceThresholdGen == null) {
                         forceThresholdGen = joinedGen
                     }
                     joinExisting = existing
+                } else if (!stillNeedsForce && hasCachedCloudFiles) {
+                    return Result.success(_cachedCloudFiles.value)
                 } else {
                     fetchGeneration += 1L
                     val created = CompletableDeferred<Result<List<SyncedFileResponseData>>>()
@@ -211,10 +221,7 @@ class CloudFileRepository(
     }
 
     suspend fun refreshSyncedTrackIds() {
-        val force = synchronized(refreshLock) {
-            ongoingFetchDeferred?.isActive != true
-        }
-        getOrFetchCloudFiles(forceRefresh = force)
+        getOrFetchCloudFiles(forceRefresh = true)
     }
 
     private suspend fun doFetchAndReconcileCloudFiles(
@@ -249,7 +256,7 @@ class CloudFileRepository(
             val items = data.items
             var scopeRemainsCurrent = true
             synchronized(refreshLock) {
-                val liveScope = runCatching { authSessionManagerProvider().sessionScope.value }.getOrNull()
+                val liveScope = captureAuthScope()
                 if (authManager != null && (!authManager.isLoggedIn.value || liveScope != requestScope)) {
                     syncCacheScopeLocked(liveScope)
                     scopeRemainsCurrent = false
@@ -264,7 +271,10 @@ class CloudFileRepository(
                 return@withContext Result.success(emptyList())
             }
 
-            reconcileCloudTracksWithDatabase(items)
+            reconcileCloudTracksWithDatabase(items, expectedScope = requestScope)
+            if (!isScopeStillValid(requestScope)) {
+                return@withContext Result.success(emptyList())
+            }
             Log.i(TAG, "Refreshed synced track IDs: ${items.size} tracks")
             Result.success(items)
         } catch (e: CancellationException) {
@@ -275,8 +285,13 @@ class CloudFileRepository(
         }
     }
 
-    suspend fun reconcileCloudTracksWithDatabase(items: List<SyncedFileResponseData>) = withContext(Dispatchers.IO) {
+    suspend fun reconcileCloudTracksWithDatabase(
+        items: List<SyncedFileResponseData>,
+        expectedScope: com.aura.music.core.AuthSessionManager.Scope? = captureAuthScope(),
+    ) = withContext(Dispatchers.IO) {
+        if (!isScopeStillValid(expectedScope)) return@withContext
         reconcileMutex.withLock {
+            if (!isScopeStillValid(expectedScope)) return@withLock
             val now = System.currentTimeMillis()
             try {
                 val serverCloudIds = items.map { it.trackId }.toSet()
@@ -485,15 +500,30 @@ class CloudFileRepository(
                 // 3. Apply all mutations atomically in a single immediate transaction
                 withContext(NonCancellable) {
                     database.useWriterConnection { transactor ->
-                        transactor.immediateTransaction {
+                        transactor.immediateTransaction<Unit> {
+                            if (!isScopeStillValid(expectedScope)) return@immediateTransaction
                             if (orphanIds.isNotEmpty()) {
+                                val liveActiveJobTrackIds = try {
+                                    database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
+                                } catch (e: Exception) {
+                                    emptySet()
+                                }
+                                val livePlaylistTrackIds = try {
+                                    database.playlistDao().getAllPlaylistTrackIds().toSet()
+                                } catch (e: Exception) {
+                                    emptySet()
+                                }
                                 val safeOrphans = orphanIds.filter { id ->
                                     val live = database.trackDao().getRawTrackById(id)
+                                    val liveContentUri = database.trackDao().getTrackContentUri(id)
                                     live != null &&
                                         !live.isLiked &&
                                         live.canonicalAudioSourceType != "downloaded" &&
                                         live.canonicalAudioSourceType != "local" &&
-                                        !live.isDownloadedByAura
+                                        !live.isDownloadedByAura &&
+                                        liveContentUri.isNullOrBlank() &&
+                                        id !in liveActiveJobTrackIds &&
+                                        id !in livePlaylistTrackIds
                                 }
                                 if (safeOrphans.isNotEmpty()) {
                                     database.trackDao().deleteTracksByIds(safeOrphans)
@@ -512,6 +542,12 @@ class CloudFileRepository(
                                     if (live == null) {
                                         candidate
                                     } else {
+                                        val liveCover = live.coverUri
+                                        val preserveLocalCover = !liveCover.isNullOrBlank() && (
+                                            liveCover.startsWith("file:") ||
+                                                liveCover.startsWith("content:") ||
+                                                liveCover.startsWith("/")
+                                            )
                                         candidate.copy(
                                             isLiked = candidate.isLiked || live.isLiked,
                                             canonicalAudioSourceType = if (live.canonicalAudioSourceType == "downloaded" || live.canonicalAudioSourceType == "local") {
@@ -519,7 +555,8 @@ class CloudFileRepository(
                                             } else {
                                                 candidate.canonicalAudioSourceType
                                             },
-                                            isDownloadedByAura = candidate.isDownloadedByAura || live.isDownloadedByAura
+                                            isDownloadedByAura = candidate.isDownloadedByAura || live.isDownloadedByAura,
+                                            coverUri = if (preserveLocalCover) liveCover else candidate.coverUri
                                         )
                                     }
                                 }
@@ -707,6 +744,7 @@ class CloudFileRepository(
 
     fun uploadTrack(trackId: String): Flow<Result<SyncedFileResponseData>> = flow {
         try {
+            val requestScope = captureAuthScope()
             val trackRow = database.trackDao().getTrackById(trackId)
             if (trackRow == null) {
                 emit(Result.failure(Exception("Piste introuvable localement")))
@@ -806,8 +844,20 @@ class CloudFileRepository(
             }
 
             Log.i(TAG, "Successfully uploaded track $trackId to cloud")
-            _syncedTrackIds.value = _syncedTrackIds.value + trackId
+            synchronized(refreshLock) {
+                if (isScopeStillValid(requestScope)) {
+                    syncCacheScopeLocked(requestScope)
+                    _syncedTrackIds.value = _syncedTrackIds.value + trackId
+                    if (hasCachedCloudFiles) {
+                        _cachedCloudFiles.value = _cachedCloudFiles.value.filterNot { it.trackId == data.trackId } + data
+                    }
+                } else {
+                    ensureScopeCurrent()
+                }
+            }
             emit(Result.success(data))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to upload track $trackId", e)
             emit(Result.failure(e))
@@ -1206,6 +1256,7 @@ class CloudFileRepository(
      */
     fun deleteSyncFile(trackId: String): Flow<Result<Unit>> = flow {
         try {
+            val requestScope = captureAuthScope()
             Log.i(TAG, "Deleting track $trackId from cloud...")
             val response = apiService.deleteSyncFile(getAuthToken(), trackId)
             val data = response.data
@@ -1216,34 +1267,52 @@ class CloudFileRepository(
             }
             Log.i(TAG, "Successfully deleted track $trackId from cloud")
             synchronized(refreshLock) {
-                _syncedTrackIds.value = _syncedTrackIds.value - trackId
-                _cachedCloudFiles.value = _cachedCloudFiles.value.filterNot { it.trackId == trackId }
+                if (isScopeStillValid(requestScope)) {
+                    syncCacheScopeLocked(requestScope)
+                    _syncedTrackIds.value = _syncedTrackIds.value - trackId
+                    _cachedCloudFiles.value = _cachedCloudFiles.value.filterNot { it.trackId == trackId }
+                } else {
+                    ensureScopeCurrent()
+                }
+            }
+
+            if (!isScopeStillValid(requestScope)) {
+                emit(Result.success(Unit))
+                return@flow
             }
 
             reconcileMutex.withLock {
-                val rawTrack = database.trackDao().getRawTrackById(trackId)
-                val trackRow = database.trackDao().getTrackById(trackId)
-                val inPlaylist = try {
-                    database.playlistDao().getAllPlaylistTrackIds().contains(trackId)
-                } catch (e: Exception) {
-                    false
-                }
-                val isActiveJob = try {
-                    database.downloadJobDao().getActiveJobs().any { it.trackId == trackId }
-                } catch (e: Exception) {
-                    false
-                }
-                if (rawTrack != null &&
-                    !rawTrack.isLiked &&
-                    !rawTrack.isDownloadedByAura &&
-                    rawTrack.canonicalAudioSourceType != "downloaded" &&
-                    rawTrack.canonicalAudioSourceType != "local" &&
-                    !inPlaylist &&
-                    !isActiveJob &&
-                    (trackRow == null || trackRow.contentUri.isNullOrBlank())
-                ) {
-                    database.trackDao().deleteTracksByIds(listOf(trackId))
-                    Log.i(TAG, "Deleted unliked cloud-only track $trackId from Room database")
+                if (!isScopeStillValid(requestScope)) return@withLock
+                withContext(NonCancellable) {
+                    database.useWriterConnection { transactor ->
+                        transactor.immediateTransaction {
+                            if (!isScopeStillValid(requestScope)) return@immediateTransaction
+                            val rawTrack = database.trackDao().getRawTrackById(trackId)
+                            val contentUri = database.trackDao().getTrackContentUri(trackId)
+                            val inPlaylist = try {
+                                database.playlistDao().getAllPlaylistTrackIds().contains(trackId)
+                            } catch (e: Exception) {
+                                false
+                            }
+                            val isActiveJob = try {
+                                database.downloadJobDao().getActiveJobs().any { it.trackId == trackId }
+                            } catch (e: Exception) {
+                                false
+                            }
+                            if (rawTrack != null &&
+                                !rawTrack.isLiked &&
+                                !rawTrack.isDownloadedByAura &&
+                                rawTrack.canonicalAudioSourceType != "downloaded" &&
+                                rawTrack.canonicalAudioSourceType != "local" &&
+                                !inPlaylist &&
+                                !isActiveJob &&
+                                contentUri.isNullOrBlank()
+                            ) {
+                                database.trackDao().deleteTracksByIds(listOf(trackId))
+                                Log.i(TAG, "Deleted unliked cloud-only track $trackId from Room database")
+                            }
+                        }
+                    }
                 }
             }
 

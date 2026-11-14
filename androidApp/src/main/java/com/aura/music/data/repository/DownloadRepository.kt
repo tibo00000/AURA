@@ -460,10 +460,13 @@ class DownloadRepository(
     private suspend fun markJobAsCloudReady(
         trackId: String,
         invalidateStreamingCache: Boolean = false,
-        emitSuccessEvent: Boolean = true
+        emitSuccessEvent: Boolean = true,
+        isScopeValid: () -> Boolean = { true }
     ) = withContext(Dispatchers.IO) {
         try {
+            if (!isScopeValid()) return@withContext
             TrackMediaCoordinator.shared.withTrack(trackId) {
+                if (!isScopeValid()) return@withTrack
                 val currentTrack = database.trackDao().getRawTrackById(trackId)
                 val needsTrackUpdate = currentTrack != null &&
                     currentTrack.canonicalAudioSourceType != "downloaded" &&
@@ -472,7 +475,8 @@ class DownloadRepository(
                     val now = System.currentTimeMillis()
                     withContext(NonCancellable) {
                         database.useWriterConnection { transactor ->
-                            transactor.immediateTransaction {
+                            transactor.immediateTransaction<Unit> {
+                                if (!isScopeValid()) return@immediateTransaction
                                 val rawTrack = database.trackDao().getRawTrackById(trackId)
                                 if (rawTrack != null &&
                                     rawTrack.canonicalAudioSourceType != "downloaded" &&
@@ -491,6 +495,7 @@ class DownloadRepository(
                     }
                 }
             }
+            if (!isScopeValid()) return@withContext
             if (emitSuccessEvent) {
                 _downloadSuccessFlow.tryEmit(trackId)
             }
@@ -611,14 +616,20 @@ class DownloadRepository(
                 val existing = existingJobsById[job.id]
                 existing == null || existing != job
             }
+            val isScopeValid = { authManager.sessionScope.value == initialSessionScope }
             if (changedJobs.isNotEmpty()) {
-                database.downloadJobDao().upsert(changedJobs)
-                Log.i(TAG, "Synchronized ${changedJobs.size}/${jobs.size} changed download jobs from server")
+                database.useWriterConnection { transactor ->
+                    transactor.immediateTransaction<Unit> {
+                        if (!isScopeValid()) return@immediateTransaction
+                        database.downloadJobDao().upsert(changedJobs)
+                        Log.i(TAG, "Synchronized ${changedJobs.size}/${jobs.size} changed download jobs from server")
+                    }
+                }
             } else {
                 Log.d(TAG, "Download jobs sync: 0/${jobs.size} jobs changed, skipping write")
             }
 
-            if (authManager.sessionScope.value != initialSessionScope) return@withContext
+            if (!isScopeValid()) return@withContext
 
             // Auto-start polling if there are pending/running jobs
             if (jobs.any { it.status == "queued" || it.status == "running" }) {
@@ -626,7 +637,7 @@ class DownloadRepository(
             }
 
             for (item in items) {
-                if (authManager.sessionScope.value != initialSessionScope) return@withContext
+                if (!isScopeValid()) return@withContext
                 if (item.status == "succeeded") {
                     val existingJob = existingJobsById[item.id]
                     val isReassign = item.operationType == "manual_reassign" ||
@@ -636,13 +647,15 @@ class DownloadRepository(
                         markJobAsCloudReady(
                             trackId = item.trackId,
                             invalidateStreamingCache = isReassign,
-                            emitSuccessEvent = true
+                            emitSuccessEvent = true,
+                            isScopeValid = isScopeValid
                         )
                     } else {
                         markJobAsCloudReady(
                             trackId = item.trackId,
                             invalidateStreamingCache = false,
-                            emitSuccessEvent = false
+                            emitSuccessEvent = false,
+                            isScopeValid = isScopeValid
                         )
                     }
                 }

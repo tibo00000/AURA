@@ -11,6 +11,9 @@ import com.aura.music.core.StoredSession
 import com.aura.music.core.token
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.AuraDatabaseConstructor
+import com.aura.music.data.local.DownloadJobEntity
+import com.aura.music.data.local.PlaylistEntity
+import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.TrackEntity
 import com.aura.music.data.local.TrackLikeEntity
 import com.aura.music.data.local.TrackMediaLinkEntity
@@ -41,6 +44,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -131,6 +135,7 @@ class PerfFav003CloudReconciliationTest {
         val serialized = when (payload) {
             is AuraResponse<*> -> when (val d = payload.data) {
                 is SyncedFileListResponseData -> json.encodeToString(AuraResponse(data = d))
+                is SyncedFileResponseData -> json.encodeToString(AuraResponse(data = d))
                 is SyncedFileDeleteResponse -> json.encodeToString(AuraResponse(data = d))
                 else -> json.encodeToString(AuraResponse<SyncedFileListResponseData>(error = payload.error))
             }
@@ -525,5 +530,409 @@ class PerfFav003CloudReconciliationTest {
         assertTrue(recoveredResult.isSuccess)
         assertEquals(listOf("cloud:keep", "cloud:recovered"), recoveredResult.getOrThrow().map { it.trackId })
         assertNotNull(db.trackDao().getRawTrackById("cloud:recovered"))
+    }
+
+    @Test
+    fun refreshSyncedTrackIds_forcesRefreshEvenWhenCacheWarm_andCoalescesForcedWaiters() = runBlocking {
+        val auth = newAuthManager("A")
+        val listCalls = AtomicInteger(0)
+        val refreshEntered = CompletableDeferred<Unit>()
+        val releaseRefresh = CompletableDeferred<Unit>()
+        val itemV1 = SyncedFileResponseData(trackId = "cloud:warm1", title = "Warm 1", artistName = "Artist")
+        val itemV2 = SyncedFileResponseData(trackId = "cloud:warm2", title = "Warm 2", artistName = "Artist")
+        val itemV3 = SyncedFileResponseData(trackId = "cloud:warm3", title = "Warm 3", artistName = "Artist")
+
+        val repo = newCloudRepo(auth) {
+            when (listCalls.incrementAndGet()) {
+                1 -> jsonOk(AuraResponse(data = SyncedFileListResponseData(listOf(itemV1))))
+                2 -> {
+                    refreshEntered.complete(Unit)
+                    releaseRefresh.await()
+                    jsonOk(AuraResponse(data = SyncedFileListResponseData(listOf(itemV1, itemV2))))
+                }
+                else -> jsonOk(AuraResponse(data = SyncedFileListResponseData(listOf(itemV1, itemV2, itemV3))))
+            }
+        }
+
+        // Warm the cache first (call 1)
+        val initial = withTimeout(5_000L) { repo.getOrFetchCloudFiles(forceRefresh = false) }
+        assertTrue(initial.isSuccess)
+        assertEquals(listOf("cloud:warm1"), repo.cachedCloudFiles.value.map { it.trackId })
+        assertEquals(1, listCalls.get())
+
+        // Even with a warm cache, refreshSyncedTrackIds() forces call 2
+        val refreshJob = async { repo.refreshSyncedTrackIds() }
+        withTimeout(5_000L) { refreshEntered.await() }
+
+        // While call 2 is in flight, non-forced read returns warm cache immediately without blocking,
+        // whereas concurrent forceRefresh=true waiters coalesce onto a single post-threshold fetch (call 3).
+        val concurrentForced1 = async { repo.getOrFetchCloudFiles(forceRefresh = true) }
+        val concurrentForced2 = async { repo.getOrFetchCloudFiles(forceRefresh = true) }
+        val concurrentCached = async { repo.getOrFetchCloudFiles(forceRefresh = false) }
+
+        val cachedResult = withTimeout(5_000L) { concurrentCached.await() }
+        assertEquals(listOf("cloud:warm1"), cachedResult.getOrThrow().map { it.trackId })
+        delay(40)
+
+        releaseRefresh.complete(Unit)
+        withTimeout(5_000L) { refreshJob.await() }
+        val forcedResult1 = withTimeout(5_000L) { concurrentForced1.await() }
+        val forcedResult2 = withTimeout(5_000L) { concurrentForced2.await() }
+
+        assertEquals(listOf("cloud:warm1", "cloud:warm2", "cloud:warm3"), forcedResult1.getOrThrow().map { it.trackId })
+        assertEquals(listOf("cloud:warm1", "cloud:warm2", "cloud:warm3"), forcedResult2.getOrThrow().map { it.trackId })
+        assertEquals(listOf("cloud:warm1", "cloud:warm2", "cloud:warm3"), repo.cachedCloudFiles.value.map { it.trackId })
+        assertEquals(setOf("cloud:warm1", "cloud:warm2", "cloud:warm3"), repo.syncedTrackIds.value)
+        assertEquals(3, listCalls.get())
+    }
+
+    @Test
+    fun uploadTrack_updatesWarmCache_skipsColdCache_andAbortsCacheMutationOnLogout() = runBlocking {
+        val auth = newAuthManager("A")
+        val listCalls = AtomicInteger(0)
+        val uploadEntered = CompletableDeferred<Unit>()
+        val releaseUpload = CompletableDeferred<Unit>()
+        var blockNextUpload = false
+
+        val repo = newCloudRepo(auth) { request ->
+            if (request.method == HttpMethod.Post) {
+                val trackId = request.url.encodedPath.substringAfterLast('/')
+                if (blockNextUpload) {
+                    uploadEntered.complete(Unit)
+                    releaseUpload.await()
+                }
+                jsonOk(
+                    AuraResponse(
+                        data = SyncedFileResponseData(
+                            trackId = trackId,
+                            title = "Uploaded $trackId",
+                            artistName = "Artist",
+                            coverUri = "https://cdn.example/$trackId.jpg"
+                        )
+                    )
+                )
+            } else {
+                listCalls.incrementAndGet()
+                jsonOk(
+                    AuraResponse(
+                        data = SyncedFileListResponseData(
+                            listOf(
+                                SyncedFileResponseData(
+                                    trackId = "cloud:existing",
+                                    title = "Existing",
+                                    artistName = "Artist"
+                                ),
+                                SyncedFileResponseData(
+                                    trackId = "local:u1",
+                                    title = "Uploaded local:u1",
+                                    artistName = "Artist",
+                                    coverUri = "https://cdn.example/local:u1.jpg"
+                                )
+                            )
+                        )
+                    )
+                )
+            }
+        }
+
+        suspend fun seedUploadableTrack(id: String, fileName: String) {
+            val audioFile = File(testFilesRoot, fileName).apply { writeBytes("ID3-audio".toByteArray()) }
+            db.trackDao().upsertTrack(
+                TrackEntity(
+                    id = id,
+                    primaryArtistId = null,
+                    albumId = null,
+                    title = "Track $id",
+                    normalizedTitle = "track-$id",
+                    displayArtistName = "Artist",
+                    coverUri = "https://cdn.example/$id.jpg",
+                    canonicalAudioSourceType = "local",
+                    isLiked = false,
+                    isDownloadedByAura = false,
+                    createdAt = 10L,
+                    updatedAt = 10L
+                )
+            )
+            db.trackDao().upsertTrackMediaLinks(
+                listOf(
+                    TrackMediaLinkEntity(
+                        id = "link-$id",
+                        trackId = id,
+                        mediaStoreId = id.hashCode().toLong(),
+                        contentUri = audioFile.toURI().toString(),
+                        availabilityStatus = "available",
+                        lastScannedAt = 10L
+                    )
+                )
+            )
+        }
+
+        seedUploadableTrack("local:u1", "u1.mp3")
+        seedUploadableTrack("local:u2", "u2.mp3")
+        seedUploadableTrack("local:u3", "u3.mp3")
+
+        // 1) Cold cache upload: updates syncedTrackIds ONLY, keeps cachedCloudFiles empty so full GET is not bypassed
+        val coldUpload = withTimeout(5_000L) { repo.uploadTrack("local:u1").last() }
+        assertTrue(coldUpload.isSuccess)
+        assertTrue(repo.syncedTrackIds.value.contains("local:u1"))
+        assertTrue(repo.cachedCloudFiles.value.isEmpty())
+
+        val warmed = withTimeout(5_000L) { repo.getOrFetchCloudFiles(forceRefresh = false) }
+        assertTrue(warmed.isSuccess)
+        assertEquals(1, listCalls.get())
+        assertEquals(listOf("cloud:existing", "local:u1"), repo.cachedCloudFiles.value.map { it.trackId })
+
+        // 2) Warm cache upload: appends into both cachedCloudFiles and syncedTrackIds
+        val warmUpload = withTimeout(5_000L) { repo.uploadTrack("local:u2").last() }
+        assertTrue(warmUpload.isSuccess)
+        assertEquals(listOf("cloud:existing", "local:u1", "local:u2"), repo.cachedCloudFiles.value.map { it.trackId })
+        assertTrue(repo.syncedTrackIds.value.contains("local:u2"))
+
+        // 3) Logout mid-upload: abort cache/ID updates cleanly
+        blockNextUpload = true
+        val uploadJob = async { repo.uploadTrack("local:u3").last() }
+        withTimeout(5_000L) { uploadEntered.await() }
+        auth.logout()
+        releaseUpload.complete(Unit)
+        withTimeout(5_000L) { uploadJob.await() }
+
+        assertTrue(repo.cachedCloudFiles.value.isEmpty())
+        assertTrue(repo.syncedTrackIds.value.isEmpty())
+    }
+
+    @Test
+    fun reconcileAndDeleteSyncFile_preserveLocalCovers_playlistTracks_andActiveDownloadJobs() = runBlocking {
+        val auth = newAuthManager("A")
+        val deletedPaths = Collections.synchronizedList(mutableListOf<String>())
+        val repo = newCloudRepo(auth) { request ->
+            if (request.method == HttpMethod.Delete) {
+                val trackId = request.url.encodedPath.substringAfterLast('/')
+                deletedPaths.add(trackId)
+                jsonOk(AuraResponse(data = SyncedFileDeleteResponse(trackId = trackId, deleted = true)))
+            } else {
+                jsonOk(AuraResponse(data = SyncedFileListResponseData(emptyList())))
+            }
+        }
+
+        val localCoverTrack = TrackEntity(
+            id = "cloud:local-cover",
+            primaryArtistId = null,
+            albumId = null,
+            title = "Titre inconnu",
+            normalizedTitle = "titre inconnu",
+            displayArtistName = "Artist",
+            coverUri = "file:///data/user/0/app/covers/local.jpg",
+            canonicalAudioSourceType = "cloud",
+            isLiked = false,
+            isDownloadedByAura = false,
+            createdAt = 10L,
+            updatedAt = 10L
+        )
+        val contentCoverTrack = TrackEntity(
+            id = "cloud:content-cover",
+            primaryArtistId = null,
+            albumId = null,
+            title = "Titre inconnu",
+            normalizedTitle = "titre inconnu",
+            displayArtistName = "Artist",
+            coverUri = "content://com.aura.music.artwork/covers/art.jpg",
+            canonicalAudioSourceType = "cloud",
+            isLiked = false,
+            isDownloadedByAura = false,
+            createdAt = 10L,
+            updatedAt = 10L
+        )
+        val nullCoverTrack = TrackEntity(
+            id = "cloud:null-cover",
+            primaryArtistId = null,
+            albumId = null,
+            title = "Null Cover Track",
+            normalizedTitle = "null-cover-track",
+            displayArtistName = "Artist",
+            coverUri = null,
+            canonicalAudioSourceType = "cloud",
+            isLiked = false,
+            isDownloadedByAura = false,
+            createdAt = 10L,
+            updatedAt = 10L
+        )
+        val playlistCloudTrack = TrackEntity(
+            id = "cloud:in-playlist",
+            primaryArtistId = null,
+            albumId = null,
+            title = "In Playlist",
+            normalizedTitle = "in-playlist",
+            displayArtistName = "Artist",
+            canonicalAudioSourceType = "cloud",
+            isLiked = false,
+            isDownloadedByAura = false,
+            createdAt = 10L,
+            updatedAt = 10L
+        )
+        val activeJobCloudTrack = TrackEntity(
+            id = "cloud:active-dl",
+            primaryArtistId = null,
+            albumId = null,
+            title = "Active Download",
+            normalizedTitle = "active-download",
+            displayArtistName = "Artist",
+            canonicalAudioSourceType = "cloud",
+            isLiked = false,
+            isDownloadedByAura = false,
+            createdAt = 10L,
+            updatedAt = 10L
+        )
+        val disposableCloudTrack = TrackEntity(
+            id = "cloud:disposable",
+            primaryArtistId = null,
+            albumId = null,
+            title = "Disposable",
+            normalizedTitle = "disposable",
+            displayArtistName = "Artist",
+            canonicalAudioSourceType = "cloud",
+            isLiked = false,
+            isDownloadedByAura = false,
+            createdAt = 10L,
+            updatedAt = 10L
+        )
+
+        db.trackDao().upsertTracks(
+            listOf(
+                localCoverTrack,
+                contentCoverTrack,
+                nullCoverTrack,
+                playlistCloudTrack,
+                activeJobCloudTrack,
+                disposableCloudTrack
+            )
+        )
+        db.playlistDao().insertPlaylist(
+            PlaylistEntity(
+                id = "pl-1",
+                name = "Keep",
+                isPinned = false,
+                createdAt = 10L,
+                updatedAt = 10L
+            )
+        )
+        db.playlistDao().insertPlaylistItem(
+            PlaylistItemEntity(
+                id = "pli-1",
+                playlistId = "pl-1",
+                trackId = "cloud:in-playlist",
+                position = 0,
+                addedAt = 10L
+            )
+        )
+        db.downloadJobDao().upsert(
+            DownloadJobEntity(
+                id = "job-1",
+                trackId = "cloud:active-dl",
+                providerName = "deezer",
+                status = "running",
+                createdAt = 10L,
+                updatedAt = 10L
+            )
+        )
+
+        // 1) Reconcile fills missing coverUri, updates metadata, yet preserves local/content covers and playlist + active-job tracks
+        repo.reconcileCloudTracksWithDatabase(
+            listOf(
+                SyncedFileResponseData(
+                    trackId = "cloud:local-cover",
+                    title = "Local Cover Track",
+                    artistName = "Artist",
+                    coverUri = "https://remote.example/new1.jpg"
+                ),
+                SyncedFileResponseData(
+                    trackId = "cloud:content-cover",
+                    title = "Content Cover Track",
+                    artistName = "Artist",
+                    coverUri = "https://remote.example/new2.jpg"
+                ),
+                SyncedFileResponseData(
+                    trackId = "cloud:null-cover",
+                    title = "Null Cover Track",
+                    artistName = "Artist",
+                    coverUri = "https://remote.example/new3.jpg"
+                )
+            )
+        )
+
+        val localAfter = db.trackDao().getRawTrackById("cloud:local-cover")
+        val contentAfter = db.trackDao().getRawTrackById("cloud:content-cover")
+        assertEquals("Local Cover Track", localAfter?.title)
+        assertEquals("file:///data/user/0/app/covers/local.jpg", localAfter?.coverUri)
+        assertEquals("Content Cover Track", contentAfter?.title)
+        assertEquals("content://com.aura.music.artwork/covers/art.jpg", contentAfter?.coverUri)
+        assertEquals(
+            "https://remote.example/new3.jpg",
+            db.trackDao().getRawTrackById("cloud:null-cover")?.coverUri
+        )
+        assertNotNull(db.trackDao().getRawTrackById("cloud:in-playlist"))
+        assertNotNull(db.trackDao().getRawTrackById("cloud:active-dl"))
+        assertNull(db.trackDao().getRawTrackById("cloud:disposable"))
+
+        // 2) Re-seed disposable track, then verify deleteSyncFile respects playlist & active download guards atomically
+        db.trackDao().upsertTrack(disposableCloudTrack)
+
+        assertTrue(withTimeout(5_000L) { repo.deleteSyncFile("cloud:in-playlist").first() }.isSuccess)
+        assertTrue(withTimeout(5_000L) { repo.deleteSyncFile("cloud:active-dl").first() }.isSuccess)
+        assertTrue(withTimeout(5_000L) { repo.deleteSyncFile("cloud:disposable").first() }.isSuccess)
+
+        assertEquals(listOf("cloud:in-playlist", "cloud:active-dl", "cloud:disposable"), deletedPaths)
+        assertNotNull(db.trackDao().getRawTrackById("cloud:in-playlist"))
+        assertNotNull(db.trackDao().getRawTrackById("cloud:active-dl"))
+        assertNull(db.trackDao().getRawTrackById("cloud:disposable"))
+    }
+
+    @Test
+    fun accountSwitchMidFetch_abortsStaleCacheAndRoomWrites() = runBlocking {
+        val auth = newAuthManager("A")
+        val fetchAEntered = CompletableDeferred<Unit>()
+        val releaseFetchA = CompletableDeferred<Unit>()
+
+        val repo = newCloudRepo(auth) { request ->
+            val authHeader = request.headers[HttpHeaders.Authorization].orEmpty()
+            if (authHeader.contains(token("A"))) {
+                fetchAEntered.complete(Unit)
+                releaseFetchA.await()
+                jsonOk(
+                    AuraResponse(
+                        data = SyncedFileListResponseData(
+                            listOf(SyncedFileResponseData(trackId = "cloud:from-A", title = "Track A", artistName = "Artist A"))
+                        )
+                    )
+                )
+            } else {
+                jsonOk(
+                    AuraResponse(
+                        data = SyncedFileListResponseData(
+                            listOf(SyncedFileResponseData(trackId = "cloud:from-B", title = "Track B", artistName = "Artist B"))
+                        )
+                    )
+                )
+            }
+        }
+
+        val jobA = async { repo.getOrFetchCloudFiles(forceRefresh = true) }
+        withTimeout(5_000L) { fetchAEntered.await() }
+
+        // Switch account A -> B before A completes
+        auth.saveSession(token("B"), "refresh-B", "B", null)
+        releaseFetchA.complete(Unit)
+        withTimeout(5_000L) { jobA.await() }
+
+        // Account A's late response must not write Room or contaminate B's cache/IDs
+        assertNull(db.trackDao().getRawTrackById("cloud:from-A"))
+        assertFalse(repo.isCloudTrackSynced("cloud:from-A"))
+        assertTrue(repo.cachedCloudFiles.value.isEmpty())
+
+        // Account B fetches cleanly
+        val resultB = withTimeout(5_000L) { repo.getOrFetchCloudFiles(forceRefresh = false) }
+        assertTrue(resultB.isSuccess)
+        assertEquals(listOf("cloud:from-B"), resultB.getOrThrow().map { it.trackId })
+        assertNotNull(db.trackDao().getRawTrackById("cloud:from-B"))
+        assertNull(db.trackDao().getRawTrackById("cloud:from-A"))
     }
 }
