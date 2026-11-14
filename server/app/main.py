@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +13,15 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.enable_startup_recovery and settings.app_env != "test":
+    from app.api.routes.downloads import download_service
+    from app.services.playlist_acquisition import PlaylistAcquisitionWorker
+
+    worker = None
+    worker_task = None
+    if settings.enable_playlist_acquisition_worker and settings.app_env != "test":
+        worker = PlaylistAcquisitionWorker(download_service, settings.playlist_authorized_audio_manifest)
+        worker_task = asyncio.create_task(worker.run())
+    if settings.enable_startup_recovery and worker is None and settings.app_env != "test":
         try:
             from app.api.routes.downloads import download_service
             download_service._recover_stale_jobs_on_startup()
@@ -27,8 +36,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        from app.api.routes.downloads import download_service
-        await download_service.shutdown()
+        try:
+            if worker is not None:
+                worker.stopping.set()
+                await worker_task
+        finally:
+            await download_service.shutdown()
 
 
 app = FastAPI(

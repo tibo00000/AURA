@@ -114,6 +114,27 @@ dans `download_jobs`. La reprise recourt aux intentions arrivées à échéance,
 avec bail et comparaison du jeton avant toute finalisation. L’activation
 de l’acquisition réelle requiert une source vérifiée côté serveur.
 
+Le worker contrôle les intentions dès le démarrage de FastAPI puis à
+intervalles réguliers. PostgreSQL attribue les demandes arrivées à échéance
+via `FOR UPDATE SKIP LOCKED`, y compris celles dont le bail a expiré pendant
+un arrêt du VPS. Un jeton protège la réservation d’ID de job et les
+changements d’état. Une réservation survit à un crash avant ou après
+l’insertion du job. Le worker retrouve un job par son identité persistée,
+utilise l’admission protégée existante et relance uniquement les tentatives
+orphelines rattachées à une intention. Les cas de choix de version et la
+progression restent gérés par `download_jobs`.
+Le déploiement actuel du downloader utilise un processus d’exécution.
+Les baux empêchent deux pollers de réserver ou redémarrer le même job
+avec le même compteur. Le lancement d’un second processus de
+téléchargement nécessite d’abord des verrous de publication interprocessus.
+
+`ENABLE_PLAYLIST_ACQUISITION_WORKER` active le poll serveur. Pour autoriser
+un transfert, le manifeste local au backend désigne l’enregistrement, la
+vidéo exacte, l’autorisation cloud et sa provenance. Sans entrée validée,
+le worker peut confirmer un fichier déjà lisible ou retrouver un job actif
+et affiche une source non autorisée pour les autres titres. Il ne lance
+aucune recherche heuristique pour ces intentions.
+
 La coordination concerne un seul processus Uvicorn et une seule instance de service
 responsable des mutations. Une exécution multiworker nécessite une coordination
 interprocessus avant activation. Le passage à une image corrigée doit terminer les

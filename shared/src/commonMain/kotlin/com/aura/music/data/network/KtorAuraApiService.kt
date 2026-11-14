@@ -182,6 +182,19 @@ class KtorAuraApiService(
             setBody(request)
         }
 
+    override suspend fun getPlaylistAcquisitions(token: String, id: String): AuraResponse<List<PlaylistAcquisitionStatus>> =
+        client.get("$cleanBaseUrl/me/playlists") {
+            url { appendPathSegments(id, "acquisitions", encodeSlash = true) }
+            header("Authorization", token)
+        }.body()
+
+    override suspend fun requestPlaylistAcquisitions(token: String, id: String, retryTrackId: String?): AuraResponse<List<PlaylistAcquisitionStatus>> =
+        client.post("$cleanBaseUrl/me/playlists") {
+            url { appendPathSegments(id, "acquisitions", encodeSlash = true) }
+            header("Authorization", token)
+            retryTrackId?.let { parameter("retry_track_id", it) }
+        }.body()
+
     override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = client.get("$cleanBaseUrl/me/likes") {
         header("Authorization", token)
     }.body()

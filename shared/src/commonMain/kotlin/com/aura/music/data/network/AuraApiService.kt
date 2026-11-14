@@ -75,6 +75,10 @@ interface AuraApiService {
 
     suspend fun commitPlaylistRefresh(token: String, id: String, request: PlaylistRefreshRequest): HttpResponse
 
+    suspend fun getPlaylistAcquisitions(token: String, id: String): AuraResponse<List<PlaylistAcquisitionStatus>>
+
+    suspend fun requestPlaylistAcquisitions(token: String, id: String, retryTrackId: String? = null): AuraResponse<List<PlaylistAcquisitionStatus>>
+
     suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>>
 
     suspend fun likeTrack(

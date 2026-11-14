@@ -1,0 +1,82 @@
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.routes import me
+from app.core.auth import AuthenticatedUser, get_current_user
+from app.db.user_client import get_current_user_client
+from app.services.playlist_acquisition import PlaylistAcquisitionWorker
+
+
+def test_fresh_worker_reuses_durable_job_with_no_client_running():
+    intent = {
+        "user_id": "account-a", "track_id": "trk_fixture", "status": "admitted",
+        "lease_token": "new-lease", "reserved_job_id": "job_persisted", "job_id": "job_persisted",
+        "metadata": {"title": "Title"}, "failure_count": 0,
+    }
+    download = SimpleNamespace(admit_playlist_acquisition=AsyncMock(return_value=SimpleNamespace(
+        id="job_persisted", status="running",
+    )))
+    worker = PlaylistAcquisitionWorker(
+        download, is_playable=lambda *_: False, authorize=lambda _: {"resolved_video_id": "fixture0000"},
+    )
+    worker._rpc = AsyncMock(side_effect=[intent, True])
+    assert asyncio.run(worker.run_once())
+    download.admit_playlist_acquisition.assert_awaited_once_with(
+        "account-a", "trk_fixture", "job_persisted", "job_persisted",
+        {"resolved_video_id": "fixture0000"}, "new-lease", retry=False,
+    )
+    assert worker._rpc.await_args.kwargs["p_job_id"] == "job_persisted"
+
+
+@pytest.mark.parametrize(("file_exists", "job_status", "expected"), [
+    (True, None, "available"),
+    (False, "succeeded", "failed"),
+    (False, None, "source_not_authorized"),
+])
+def test_only_a_readable_file_counts_as_available(file_exists, job_status, expected):
+    intent = {
+        "user_id": "account-a", "track_id": "trk_fixture", "status": "pending",
+        "lease_token": "lease", "reserved_job_id": "job_persisted", "job_id": None,
+        "metadata": {"title": "Title"}, "failure_count": 0,
+    }
+    job = SimpleNamespace(id="job_persisted", status=job_status) if job_status else None
+    download = SimpleNamespace(admit_playlist_acquisition=AsyncMock(return_value=job))
+    worker = PlaylistAcquisitionWorker(download, is_playable=lambda *_: file_exists)
+    worker._rpc = AsyncMock(side_effect=[intent, True])
+    assert asyncio.run(worker.run_once())
+    assert worker._rpc.await_args.kwargs["p_status"] == expected
+    if file_exists:
+        download.admit_playlist_acquisition.assert_not_awaited()
+    else:
+        assert download.admit_playlist_acquisition.await_args.args[4] is None
+
+
+def test_acquisition_status_checks_streaming_and_does_not_trust_a_successful_job(monkeypatch):
+    rows = [
+        {"track_id": "ready", "status": "pending", "job_status": None},
+        {"track_id": "removed", "status": "available", "job_status": "succeeded"},
+    ]
+    db = MagicMock()
+    db.rpc.return_value.execute.return_value.data = rows
+    monkeypatch.setattr(me, "find_playable_sync_file", lambda owner, track: (
+        (object(), {}) if owner == "account" and track == "ready" else (None, None)
+    ))
+    api = FastAPI()
+    api.include_router(me.router)
+    api.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(id="account", token="synthetic")
+    api.dependency_overrides[get_current_user_client] = lambda: db
+    response = TestClient(api).post("/me/playlists/playlist:mix/acquisitions")
+    assert response.status_code == 200
+    ready, missing = response.json()["data"]
+    assert ready["availability"] == "available"
+    assert missing["availability"] == "missing"
+    assert missing["status"] == "failed"
+    assert missing["error_code"] == "cloud_file_missing"
+    db.rpc.assert_called_once_with("aura_get_playlist_acquisitions", {
+        "p_playlist_id": "playlist:mix", "p_enqueue": True, "p_retry_track_id": None,
+    })

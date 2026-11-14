@@ -766,6 +766,44 @@ class DownloadService:
     async def create_job(self, user_id, track_id, provider_name='youtube', source_hint=None):
         return await self._command(self._admit_create(user_id, track_id, provider_name, source_hint))
 
+    async def admit_playlist_acquisition(self, user_id, track_id, reserved_job_id, linked_job_id, source_hint, lease_token, retry=False):
+        validate_job_id(reserved_job_id)
+        return await self._command(
+            self._admit_playlist_acquisition(user_id, track_id, reserved_job_id, linked_job_id, source_hint, lease_token, retry)
+        )
+
+    async def _admit_playlist_acquisition(self, user_id, track_id, reserved_job_id, linked_job_id, source_hint, lease_token, retry):
+        async with self._admission(user_id, track_id):
+            resumed = await self._resume_pending_pair(user_id, track_id)
+            if resumed is not None:
+                return resumed
+            job_id = linked_job_id or reserved_job_id
+            async with self._job_gate(job_id):
+                try:
+                    current = await blocking(self.get_job, user_id, job_id)
+                except NotFound:
+                    if linked_job_id is not None:
+                        raise
+                else:
+                    if current.track_id != track_id:
+                        raise Conflict('Download track changed concurrently')
+                    orphaned = current.status in ('queued', 'running') and current.id not in self._attempts
+                    retryable = retry and current.status in ('failed', 'cancelled', 'succeeded')
+                    if orphaned or retryable:
+                        if current.id == reserved_job_id and current.operation_type == 'download' and source_hint is not None:
+                            return await self._restart_locked(current, increment=True, source_hint=source_hint, playlist_lease=lease_token)
+                        if orphaned and current.id == reserved_job_id and source_hint is None:
+                            return None
+                    return current
+            rows = await blocking(lambda: self.supabase.table('download_jobs').select('*').eq(
+                'user_id', user_id).eq('track_id', track_id).in_(
+                    'status', ['queued', 'running', 'requires_resolution']).order('created_at', desc=True).limit(1).execute().data)
+            if rows or source_hint is None:
+                return DownloadJob.from_dict(rows[0]) if rows else None
+            return await self._create_job(
+                user_id, track_id, 'youtube', source_hint, reserved_job_id=reserved_job_id, playlist_lease=lease_token,
+            )
+
     async def _admit_create(self, user_id, track_id, provider_name, source_hint):
         if not track_id.startswith('trk_'):
             raise BadRequest('Invalid track ID format. Must start with trk_')
@@ -783,14 +821,25 @@ class DownloadService:
                 and actual.operation_type == expected.operation_type
                 and actual.created_at == expected.created_at)
 
-    async def _write_admission(self, intent):
+    async def _write_admission(self, intent, playlist_lease=None):
         """Caller holds admission then job guard; replay targets the same ID/CAS."""
         job = intent.job
-        self._pending_admissions[job.id] = intent
+        if playlist_lease is None:
+            self._pending_admissions[job.id] = intent
         try:
             if intent.previous is None:
-                result = await blocking(lambda: self.supabase.table('download_jobs').insert(job.to_dict()).execute())
-                data = getattr(result, 'data', None)
+                if playlist_lease is None:
+                    result = await blocking(lambda: self.supabase.table('download_jobs').insert(job.to_dict()).execute())
+                    data = getattr(result, 'data', None)
+                else:
+                    result = await blocking(lambda: self.supabase.rpc('aura_insert_playlist_download_job', {
+                        'p_user_id': job.user_id, 'p_track_id': job.track_id,
+                        'p_lease_token': playlist_lease, 'p_job': job.to_dict(),
+                    }).execute())
+                    row = getattr(result, 'data', None)
+                    if row is None:
+                        raise Conflict('Playlist acquisition lease changed')
+                    data = [row]
                 if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
                     raise AmbiguousMutation('Download insertion response is ambiguous')
                 try:
@@ -798,7 +847,17 @@ class DownloadService:
                 except Exception:
                     raise AmbiguousMutation('Download insertion could not be verified') from None
             else:
-                confirmed = await blocking(self._mutate_job, intent.previous, intent.changes)
+                if playlist_lease is None:
+                    confirmed = await blocking(self._mutate_job, intent.previous, intent.changes)
+                else:
+                    row = await blocking(lambda: self.supabase.rpc('aura_restart_playlist_download_job', {
+                        'p_user_id': job.user_id, 'p_track_id': job.track_id, 'p_lease_token': playlist_lease,
+                        'p_job_id': job.id, 'p_status': intent.previous.status,
+                        'p_attempt': intent.previous.attempt_count,
+                    }).execute().data)
+                    if row is None:
+                        raise Conflict('Playlist acquisition lease or attempt changed')
+                    confirmed = DownloadJob.from_dict(row)
             if not self._same_admission(confirmed, job):
                 raise AmbiguousMutation('Download admission could not be verified')
         except AmbiguousMutation:
@@ -826,9 +885,9 @@ class DownloadService:
         self._pending_admissions.pop(job.id, None)
         return confirmed
 
-    async def _insert_owned_job(self, job, source_hint=None):
+    async def _insert_owned_job(self, job, source_hint=None, playlist_lease=None):
         async with self._job_gate(job.id):
-            await self._write_admission(AdmissionIntent(job, source_hint=source_hint))
+            await self._write_admission(AdmissionIntent(job, source_hint=source_hint), playlist_lease)
 
     async def _resume_pending_pair(self, user_id, track_id):
         """Reconcile under admission before any pair mutation is allowed."""
@@ -873,7 +932,7 @@ class DownloadService:
         if any(row['id'] != job.id for row in rows):
             raise Conflict('Another download is already active for this track')
 
-    async def _create_job(self, user_id, track_id, provider_name, source_hint):
+    async def _create_job(self, user_id, track_id, provider_name, source_hint, *, reserved_job_id=None, playlist_lease=None):
         def read_existing():
             return (self.supabase.table('download_jobs').select('*').eq('user_id', user_id)
                     .eq('track_id', track_id).execute().data)
@@ -897,13 +956,18 @@ class DownloadService:
                 if existing.status in ('queued', 'running', 'requires_resolution'):
                     return existing
                 if existing.status == 'succeeded':
+                    if reserved_job_id is not None:
+                        continue
                     if await blocking(legacy_audio, DOWNLOADS_DIR, existing.id):
                         return existing
                     return await self._restart_locked(existing, source_hint=source_hint)
         now = datetime.now(timezone.utc)
-        job = DownloadJob(id=generate_id('job'), user_id=user_id, track_id=track_id,
+        job = DownloadJob(id=reserved_job_id or generate_id('job'), user_id=user_id, track_id=track_id,
                           provider_name=provider_name, status='queued', created_at=now, updated_at=now)
-        await self._insert_owned_job(job, source_hint)
+        if playlist_lease is None:
+            await self._insert_owned_job(job, source_hint)
+        else:
+            await self._insert_owned_job(job, source_hint, playlist_lease)
         track_lock = await self._get_track_lock(track_id)
         if not track_lock.locked():
             async with track_lock:
@@ -1009,13 +1073,16 @@ class DownloadService:
             raise BadRequest('A shared replacement requires a new explicit video selection; resolve or reassign')
         return {**source_hint, 'resolved_video_id': video_id.strip()}
 
-    async def _restart_locked(self, job, *, increment=False, source_hint=None, explicit_resolution=False):
+    async def _restart_locked(self, job, *, increment=False, source_hint=None, explicit_resolution=False, playlist_lease=None):
         source_hint = self._restart_source(job, source_hint, explicit_resolution=explicit_resolution)
         await self._ensure_pair_available(job)
         changes = dict(status='queued', progress_percent=0.0, error_code=None,
                        error_message=None, candidates=[], attempt_count=job.attempt_count + int(increment))
         expected = DownloadJob.from_dict({**job.to_dict(), **changes})
-        updated = await self._write_admission(AdmissionIntent(expected, job, changes, source_hint))
+        if playlist_lease is None:
+            updated = await self._write_admission(AdmissionIntent(expected, job, changes, source_hint))
+        else:
+            updated = await self._write_admission(AdmissionIntent(expected, job, changes, source_hint), playlist_lease)
         self._start_download_task(updated, source_hint)
         return updated
 
@@ -1455,10 +1522,10 @@ class DownloadService:
                 query = source_hint.get("title")
 
             if not query or len(query) < 3 or query.startswith("trk_"):
-                if artist and title:
-                    query = f"{artist} {title}"
-                else:
-                    query = "Booba DKR"  # Default fallback for testing
+                await self._update_job_status(attempt, status='failed',
+                    error_code='download_metadata_missing',
+                    error_message='No reliable track identity for audio acquisition')
+                return
                 
             download_target = query
             logger.info("Targeted search returned no candidate. Falling back to search query: %r", download_target)

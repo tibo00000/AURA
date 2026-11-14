@@ -476,6 +476,15 @@ activés ensemble après les validations du runbook SEC-002.1/SEC-002.2, sans ch
 - Erreurs attendues :
   - `unauthorized`
 
+### `GET /me/playlists/{id}/acquisitions`
+
+Renvoie la disponibilité vérifiée des pistes et l’état des intentions du
+compte. `POST` sur la même route inscrit les intentions manquantes.
+`POST ?retry_track_id=…` demande une reprise pour une piste de la playlist.
+La présence du fichier est vérifiée par le même résolveur que le streaming.
+Une erreur de vérification rend l’appel indisponible et n’établit pas
+l’absence d’un fichier.
+
 ### `PUT /me/playback-snapshot`
 - Usage : enregistrer l'etat de reprise cloud du player.
 - Auth : requise.

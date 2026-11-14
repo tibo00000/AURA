@@ -25,6 +25,8 @@ class Settings(BaseSettings):
         default_factory=lambda: os.getenv("TESTING") != "1"
     )
     enable_cache_backfill: bool = True
+    enable_playlist_acquisition_worker: bool = False
+    playlist_authorized_audio_manifest: str = ""
     upload_max_file_bytes: int = Field(default=50 * 1024**2, gt=0)
     upload_min_free_bytes: int = Field(default=10 * 1024**3, ge=0)
     upload_min_free_ratio: float = Field(default=0.10, ge=0, le=1)

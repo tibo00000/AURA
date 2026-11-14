@@ -9,6 +9,7 @@ import com.aura.music.data.network.AuraApiService
 import com.aura.music.data.network.AuraResponse
 import com.aura.music.data.network.PlaylistSourceRequest
 import com.aura.music.data.network.PlaylistSourceResponse
+import com.aura.music.data.network.PlaylistAcquisitionStatus
 import com.aura.music.data.network.PlaylistRefreshRequest
 import com.aura.music.data.network.PlaylistRefreshResult
 import com.aura.music.data.repository.SyncRepository
@@ -70,6 +71,24 @@ class PlaylistSourceRepository internal constructor(
     private val sourceReader: PlaylistSourceReader,
 ) {
     private val refreshMutex = Mutex()
+
+    suspend fun getAcquisitions(playlistId: String): List<PlaylistAcquisitionStatus> =
+        acquisitions(playlistId, enqueue = false, retryTrackId = null)
+
+    suspend fun requestAcquisitions(playlistId: String, retryTrackId: String? = null): List<PlaylistAcquisitionStatus> =
+        acquisitions(playlistId, enqueue = true, retryTrackId = retryTrackId)
+
+    private suspend fun acquisitions(
+        playlistId: String, enqueue: Boolean, retryTrackId: String?,
+    ): List<PlaylistAcquisitionStatus> {
+        val scope = auth.captureScope()
+        val bearer = auth.validSession(scope = scope).bearer
+        val response = if (enqueue) api.requestPlaylistAcquisitions(bearer, playlistId, retryTrackId)
+        else api.getPlaylistAcquisitions(bearer, playlistId)
+        if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+        return response.data?.takeIf { response.error == null && response.meta?.partialFailure != true }
+            ?: throw PlaylistSourceReadException("Le bilan cloud est temporairement indisponible.")
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observe(playlistId: String) = auth.sessionScope.map { it?.userId }.distinctUntilChanged()

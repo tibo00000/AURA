@@ -539,6 +539,16 @@ data class PlaylistRefreshResult(
 )
 
 @Serializable
+data class PlaylistAcquisitionStatus(
+    @SerialName("track_id") val trackId: String,
+    val status: String,
+    val availability: String,
+    @SerialName("job_id") val jobId: String? = null,
+    @SerialName("job_status") val jobStatus: String? = null,
+    @SerialName("error_code") val errorCode: String? = null,
+)
+
+@Serializable
 data class PlaybackSnapshotResponse(
     @SerialName("current_track_id") val currentTrackId: String? = null,
     @SerialName("playback_context_type") val playbackContextType: String? = null,

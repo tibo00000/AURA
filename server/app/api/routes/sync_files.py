@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import stat
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -159,11 +160,7 @@ async def list_sync_files(
     return ResponseEnvelope(data={"items": items})
 
 
-@router.get("/{track_id}")
-async def download_sync_file(
-    track_id: str,
-    current_user: AuthenticatedUser = Depends(get_current_user),
-):
+def find_playable_sync_file(user_id: str, track_id: str):
     from app.core.aura_id_codec import get_track_id_aliases
     from app.services.download_service import _find_globally_cached_track
 
@@ -173,8 +170,12 @@ async def download_sync_file(
 
     # 1. Vérification dans le répertoire personnel de l'utilisateur (track_id ou alias)
     for alias in aliases:
-        cand_file, cand_meta = _paths(current_user.id, alias)
-        if not cand_file.is_symlink() and cand_file.is_file() and cand_file.stat().st_size > 0:
+        cand_file, cand_meta = _paths(user_id, alias)
+        try:
+            info = cand_file.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(info.st_mode) and info.st_size > 0:
             target_file = cand_file
             metadata = _read_metadata(cand_meta) or {}
             break
@@ -188,7 +189,15 @@ async def download_sync_file(
             cached_audio, cached_meta = cached
             target_file = cached_audio
             metadata = cached_meta
+    return target_file, metadata
 
+
+@router.get("/{track_id}")
+async def download_sync_file(
+    track_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    target_file, metadata = await blocking(find_playable_sync_file, current_user.id, track_id)
     if target_file is None or not target_file.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Synced audio file not found")
 

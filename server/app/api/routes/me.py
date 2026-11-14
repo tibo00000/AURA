@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.user_client import get_current_user_client
@@ -36,6 +36,7 @@ from app.schemas.me import (
 from app.schemas.responses import ResponseEnvelope
 from app.services.sync_service import compute_order_token
 from app.core.aura_id_codec import build_aura_id
+from app.api.routes.sync_files import find_playable_sync_file
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,45 @@ async def commit_playlist_refresh(
             raise HTTPException(status_code=422, detail="Invalid source inventory") from None
         logger.warning("Playlist refresh unavailable (%s)", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Playlist refresh unavailable") from None
+
+
+@router.get("/playlists/{playlist_id}/acquisitions", response_model=ResponseEnvelope[list[dict]])
+@router.post("/playlists/{playlist_id}/acquisitions", response_model=ResponseEnvelope[list[dict]])
+async def playlist_acquisitions(
+    playlist_id: str,
+    request: Request,
+    retry_track_id: str | None = Query(default=None, max_length=200),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    supabase=Depends(get_current_user_client),
+):
+    def get_status():
+        rows = supabase.rpc("aura_get_playlist_acquisitions", {
+            "p_playlist_id": playlist_id,
+            "p_enqueue": request.method == "POST" and retry_track_id is None,
+            "p_retry_track_id": retry_track_id if request.method == "POST" else None,
+        }).execute().data
+        if rows is None:
+            raise HTTPException(status_code=404, detail="Playlist unavailable")
+        if not isinstance(rows, list):
+            raise ValueError("Invalid playlist acquisition snapshot")
+        for row in rows:
+            source, _ = find_playable_sync_file(current_user.id, row["track_id"])
+            if source is not None:
+                row["availability"] = "available"
+            else:
+                row["availability"] = "missing"
+                if row["status"] == "available" or row["job_status"] == "succeeded":
+                    row["status"] = "failed"
+                    row["error_code"] = "cloud_file_missing"
+        return rows
+
+    try:
+        return ResponseEnvelope(data=await anyio.to_thread.run_sync(get_status))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Playlist acquisition status unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Playlist acquisition status unavailable") from None
 
 
 @router.get(
