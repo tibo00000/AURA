@@ -15,6 +15,8 @@ Le chantier de démarrage Android et les protections de session intégrés
 | E | `eb4fc2a7` | Menu, bilans, file éligible et identifiants d’occurrence |
 | F | Ce dossier | Tests croisés, inventaire et retour arrière |
 | Suivi E/F | `c770f98f` | Répétition Media3 par occurrence et invalidation cloud au changement de compte |
+| Suivi F | `60a549df` | Réutilisation des métadonnées normalisées dans l’index de recherche |
+| Suivi C/F | `e4380932` | Refus des inventaires fournisseurs dont les pages sont discontinues |
 
 ## Ordre de livraison proposé
 
@@ -120,7 +122,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 159 sur 159. Indexation des 50 000 titres en 2,84 s après suppression des normalisations redondantes, contre 4,27 s dans le rejeu précédent du candidat et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
+| Suite Android complète | 162 sur 162. Indexation des 50 000 titres en 2,68 s après suppression des normalisations redondantes, contre 4,27 s dans le rejeu précédent du candidat et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
 | PostgreSQL | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique et reprise dans deux processus vérifiés. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
