@@ -99,6 +99,21 @@ garanties SEC-003.2, sans mutation de récupération globale.
 
 ## Limites opérationnelles
 
+### Intentions d’acquisition d’une playlist
+
+Une intention est créée dans la transaction de la mutation playlist qui
+l’a demandée. L’intention identifie le compte, la piste et la provenance de
+la demande. L’admission audio est ensuite traitée par le serveur, avec un
+identifiant de job réservé de façon durable. Les ajouts répétés d’une
+même piste réutilisent l’intention du compte et de cette piste.
+
+Le stockage des intentions est réservé au backend. Les requêtes utilisateur
+passent par des RPC qui vérifient le compte issu du JWT et l’appartenance de
+la playlist. Le job conserve son propre cycle de vie et sa progression
+dans `download_jobs`. La reprise recourt aux intentions arrivées à échéance,
+avec bail et comparaison du jeton avant toute finalisation. L’activation
+de l’acquisition réelle requiert une source vérifiée côté serveur.
+
 La coordination concerne un seul processus Uvicorn et une seule instance de service
 responsable des mutations. Une exécution multiworker nécessite une coordination
 interprocessus avant activation. Le passage à une image corrigée doit terminer les
