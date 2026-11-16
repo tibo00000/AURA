@@ -137,6 +137,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
 | Bilan cloud Android | 10 tests ciblés réussis avec la lecture et la navigation. Le suivi reste actif pendant un traitement ou une reprise transitoire et s’arrête quand le statut est définitif ou requiert un choix. |
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
+| Rejeu d’une actualisation Android | 11 tests ciblés avec migration Room et lecteurs fournisseur. Un accusé retardé acquitte la demande correspondante et préserve le bilan plus récent provenant d’un autre appareil. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 166 sur 166 au commit `7fb77fe4`. L’indexation des 50 000 titres prend 1,29 s sur ce rejeu, 2,68 s sur le rejeu précédent après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |

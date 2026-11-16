@@ -18,6 +18,7 @@ import io.ktor.client.call.body
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import java.net.URI
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -139,6 +140,7 @@ class PlaylistSourceRepository internal constructor(
             confirmedDistinct = confirmedDistinct,
             confirmedLinks = confirmedLinks,
         )
+        val serializedRequest = Json.encodeToString(request)
         database.useWriterConnection { writer ->
             writer.immediateTransaction {
                 if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
@@ -155,9 +157,8 @@ class PlaylistSourceRepository internal constructor(
                                 == kotlinx.serialization.json.JsonPrimitive(playlistId)
                         )
                 }) throw PlaylistSourceReadException("Une modification locale de cette playlist est encore en attente.")
-                val serialized = Json.encodeToString(request)
-                if (latest.pendingRefreshJson != serialized) {
-                    dao.upsertPlaylistSyncState(latest.copy(pendingRefreshJson = serialized))
+                if (latest.pendingRefreshJson != serializedRequest) {
+                    dao.upsertPlaylistSyncState(latest.copy(pendingRefreshJson = serializedRequest))
                 }
             }
         }
@@ -172,18 +173,21 @@ class PlaylistSourceRepository internal constructor(
             throw PlaylistSourceReadException("Le fournisseur a renvoyé des données que la playlist ne peut pas importer.")
         }
         if (!response.status.isSuccess()) throw PlaylistSourceReadException("Aura n’a pas pu confirmer l’actualisation.")
-        val result = response.body<AuraResponse<PlaylistRefreshResult>>().data
-        if (result == null || result.requestId != request.requestId || result.sourceRevision != state.sourceRevision) {
+        val envelope = response.body<AuraResponse<PlaylistRefreshResult>>()
+        val result = envelope.data
+        if (envelope.error != null || envelope.meta?.partialFailure == true || result == null ||
+            result.requestId != request.requestId || result.sourceRevision != state.sourceRevision ||
+            runCatching { Instant.parse(result.completedAt) }.isFailure
+        ) {
             throw PlaylistSourceReadException("Aura n’a pas pu confirmer l’actualisation.")
         }
         database.useWriterConnection { writer ->
             writer.immediateTransaction {
                 if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
                 val latest = dao.getPlaylistSyncState(playlistId)
-                if (latest?.userId == scope.userId && latest.sourceRevision == state.sourceRevision) {
-                    dao.upsertPlaylistSyncState(latest.copy(
-                        lastRefreshJson = Json.encodeToString(result), pendingRefreshJson = null,
-                    ))
+                if (latest?.userId == scope.userId) {
+                    val updated = latest.acknowledgeRefresh(serializedRequest, result)
+                    if (updated != latest) dao.upsertPlaylistSyncState(updated)
                 }
                 if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
             }
@@ -269,5 +273,22 @@ class PlaylistSourceRepository internal constructor(
         sourceRevision = source.sourceRevision,
         lastRefreshJson = lastRefreshJson.takeIf { source.sourceRevision == sourceRevision },
         pendingRefreshJson = pendingRefreshJson.takeIf { source.sourceRevision == sourceRevision },
+    )
+}
+
+internal fun PlaylistSyncStateEntity.acknowledgeRefresh(
+    serializedRequest: String,
+    result: PlaylistRefreshResult,
+): PlaylistSyncStateEntity {
+    if (sourceRevision != result.sourceRevision || pendingRefreshJson != serializedRequest) return this
+    val current = lastRefreshJson?.let {
+        runCatching { Json.decodeFromString<PlaylistRefreshResult>(it) }.getOrNull()
+    }
+    val newer = current?.takeIf { it.sourceRevision == sourceRevision }?.let {
+        runCatching { Instant.parse(it.completedAt) }.getOrNull()
+    }?.let { it > Instant.parse(result.completedAt) } == true
+    return copy(
+        lastRefreshJson = if (newer) lastRefreshJson else Json.encodeToString(result),
+        pendingRefreshJson = null,
     )
 }

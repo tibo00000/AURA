@@ -42,6 +42,7 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `Actualiser depuis Spotify/Deezer` ajoute les nouveautés et présente le résultat confirmé ainsi que les correspondances à vérifier. `Rendre disponible dans le cloud` lance les intentions pour les titres de toute playlist et permet de consulter leur bilan, de réessayer et de choisir une version. Le réglage de copie locale est indépendant.
 - La lecture fournisseur vérifie le total et la continuité des pages avant tout envoi. Spotify contrôle aussi la révision de la playlist et l’offset déclaré par chaque page. Deezer compare deux inventaires successifs. Une lecture interrompue ou incohérente laisse la date de dernière réussite et le contenu Aura en place.
 - Le bilan cloud se recharge après un résultat d’actualisation, à l’ouverture de la fiche synchronisée et au retour du réseau. La fiche le vérifie périodiquement tant qu’une acquisition est en cours ou que le bilan est ouvert. En mode hors connexion, le bilan indique qu’il affiche le dernier état connu.
+- Le rejeu d’une actualisation acquitte sa demande locale et conserve le bilan le plus récent de la même source, même si un autre appareil a actualisé la playlist entre-temps.
 
 ## Import / Export Engine
 - **Parsing universel** : Détection automatique des encodages (BOM UTF-8, UTF-16, Latin-1, Windows-1252), détection dynamique des délimiteurs CSV (`,`, `;`, `\t`) et mapping d'en-têtes multilingues.
