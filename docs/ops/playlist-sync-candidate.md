@@ -17,6 +17,8 @@ Le chantier de démarrage Android et les protections de session intégrés
 | Suivi E/F | `c770f98f` | Répétition Media3 par occurrence et invalidation cloud au changement de compte |
 | Suivi F | `60a549df` | Réutilisation des métadonnées normalisées dans l’index de recherche |
 | Suivi C/F | `e4380932` | Refus des inventaires fournisseurs dont les pages sont discontinues |
+| Suivi E/F | `aae00050` | Mise à jour des dossiers Media3 après vérification cloud |
+| Suivi E | `7fb77fe4` | Suivi du bilan cloud après actualisation confirmée |
 
 ## Ordre de livraison proposé
 
@@ -67,13 +69,26 @@ compatibilité sur la cible confirment les contrats historiques.
 
 ## Retour arrière
 
-Couper d’abord le worker et les actions nouvelles. Laisser les baux expirer
-et conserver intentions et jobs. Revenir au backend compatible précédent
-avec les schémas additifs en place après vérification des routes historiques.
+En cas d’incident d’acquisition, couper d’abord le worker avec
+`ENABLE_PLAYLIST_ACQUISITION_WORKER=false` et garder
+`ENABLE_STARTUP_RECOVERY=false`. Laisser expirer les baux et conserver
+les intentions, les jobs et les fichiers. Ce réglage suspend le
+traitement. Les actualisations peuvent encore enregistrer des intentions.
+
+Si le problème concerne le commit des playlists, suspendre également les
+écritures client avant toute restauration. Privilégier un correctif en
+avant qui conserve le snapshot et le contrat v2 si des clients migrés
+sont déjà en service. Après la création de jobs playlist, le backend de
+secours doit aussi conserver la vérification du champ
+`download_jobs.playlist_acquisition` sur la relance historique. Le
+backend antérieur au programme ne connaît ni cette protection ni le
+contrat v2. Les schémas additifs sont conservés.
+
 Les bases Room mises à niveau exigent une correction en avant ou une
-restauration de sauvegarde explicite. Réconcilier les éditions plus récentes
-avant de restaurer une copie locale. Préserver les données et fichiers du
-compte durant toute investigation.
+restauration de sauvegarde explicite. Exporter les éditions locales et
+l’outbox avant de restaurer une copie, puis réconcilier les événements
+plus récents. Vérifier les comptes, nombres d’occurrences, références
+fournisseur et jobs en attente avant de rouvrir la synchronisation.
 
 ## Inventaire avant nettoyage éventuel
 
@@ -124,7 +139,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 162 sur 162. Indexation des 50 000 titres en 2,68 s après suppression des normalisations redondantes, contre 4,27 s dans le rejeu précédent du candidat et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
+| Suite Android complète | 166 sur 166 au commit `7fb77fe4`. L’indexation des 50 000 titres prend 1,29 s sur ce rejeu, 2,68 s sur le rejeu précédent après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
 | PostgreSQL | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique et reprise dans deux processus vérifiés. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
