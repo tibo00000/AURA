@@ -128,7 +128,9 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
   deuxième tentative et le fichier synthétique servi par Aura. Le
   bilan HTTP du propriétaire confirme la disponibilité, le second
   compte reçoit 404 et une requête authentifiée `Range` reçoit 206
-  avec les octets du fichier de test. Le transport SQL du harnais
+  avec les octets du fichier de test via l’identifiant Aura ou son alias
+  Deezer historique. Le catalogue Deezer est volontairement indisponible
+  pendant les deux tentatives. Le transport SQL du harnais
   utilise `psql` sur un conteneur sans réseau. FastAPI vérifie des JWT
   signés pour le test, puis le harnais transmet le sujet à PostgreSQL.
 

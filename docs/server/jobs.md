@@ -132,6 +132,9 @@ y compris ceux simplement rattachés à une intention.
 Un arrêt supervisé laisse le job de playlist en attente avec le même
 identifiant. Après un arrêt brutal, le worker reprend le job orphelin à
 l’expiration de son bail. La relance vérifie à nouveau le manifeste.
+Quand l’intention conserve le titre et l’artiste, le téléchargement
+utilise ces métadonnées persistées et la source audio autorisée même
+pendant une panne du catalogue Deezer.
 Le déploiement actuel du downloader utilise un processus d’exécution.
 Les baux empêchent deux pollers de réserver ou redémarrer le même job
 avec le même compteur. Le lancement d’un second processus de

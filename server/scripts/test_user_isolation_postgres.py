@@ -1,6 +1,7 @@
 """SEC-002: real PostgreSQL tests, local Docker only; no remote credentials or ports."""
 
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / "supabase/migrations/20261017200822_secure_user_data_isolation.sql"
+RESTART_PROVIDER_TRACK = "track:deezer:900000000001"
 
 
 def run(args, **kwargs):
@@ -128,13 +130,14 @@ INSERT INTO public.history_items(id,user_id,track_id,listening_session_id) VALUE
             sql((ROOT/"supabase/tests/sec002_user_isolation.sql").read_text())
             if args.download_cancellation:
                 sql((ROOT/"supabase/tests/sec003_download_cancellation.sql").read_text())
-            sql("""
+            restart_track_id = "trk_" + base64.urlsafe_b64encode(f"v1:{RESTART_PROVIDER_TRACK}".encode()).decode().rstrip("=")
+            sql(f"""
 INSERT INTO public.profiles(id) VALUES ('c0000000-0000-0000-0000-000000000061');
 INSERT INTO public.playlists(id,user_id,name)
 VALUES ('restart-fixture','c0000000-0000-0000-0000-000000000061','Mix');
 INSERT INTO public.playlist_items(id,playlist_id,track_id,position) VALUES
-('restart-entry','restart-fixture','trk_restart_fixture',0),
-('repeated-entry','restart-fixture','trk_restart_fixture',2);
+('restart-entry','restart-fixture','{restart_track_id}',0),
+('repeated-entry','restart-fixture','{restart_track_id}',2);
 """)
             inventory = (ROOT/"supabase/sql/playlist_sync_inventory.sql").read_text(encoding="utf-8-sig")
             result = sql("\\set owner_id 'c0000000-0000-0000-0000-000000000061'\n" + inventory).stdout.decode()
@@ -158,7 +161,8 @@ SET metadata = '{"title":"Fixture title","artist":"Fixture artist","album":"Fixt
                         "ENABLE_STARTUP_RECOVERY": "false", "ENABLE_CACHE_BACKFILL": "false",
                         "DOWNLOADS_DIR": str(Path(workspace)/"downloads"), "SYNC_FILES_DIR": str(Path(workspace)/"sync"),
                     }
-                    command = [sys.executable, "-B", str(ROOT/"server/scripts/playlist_worker_restart_fixture.py"), container]
+                    command = [sys.executable, "-B", str(ROOT/"server/scripts/playlist_worker_restart_fixture.py"),
+                               container, restart_track_id, RESTART_PROVIDER_TRACK]
                     first = subprocess.run([*command, "interrupt"], cwd=workspace, env=env, timeout=90)
                     assert first.returncode == 42, first.returncode
                     original_job = sql("""

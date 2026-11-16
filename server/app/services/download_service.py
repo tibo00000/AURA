@@ -1459,11 +1459,15 @@ class DownloadService:
         artist_id = None
         album_id = None
         cover_uri = None
-        ref = None
+        has_intent_metadata = (
+            job.playlist_acquisition
+            and source_hint is not None
+            and bool(source_hint.get("title") and source_hint.get("artist_name"))
+        )
         try:
             # Check if this is a valid encoded stateless AURA ID
             ref = parse_aura_id(job.track_id)
-            if ref.provider_name == "deezer":
+            if ref.provider_name == "deezer" and not has_intent_metadata:
                 logger.info("Resolving Deezer metadata for track: %s", ref.provider_id)
                 track_data = await self.deezer_client.get_track(ref.provider_id)
                 title = track_data.get("title", "")

@@ -23,7 +23,6 @@ from app.services.playlist_acquisition import PlaylistAcquisitionWorker
 OWNER = "c0000000-0000-0000-0000-000000000061"
 OTHER_ACCOUNT = "c0000000-0000-0000-0000-000000000062"
 PLAYLIST = "restart-fixture"
-TRACK = "trk_restart_fixture"
 VIDEO = "fixture0000"
 EXIT_AFTER_COMMIT = 42
 
@@ -147,7 +146,7 @@ def make_downloader(interrupt):
     return FixtureDownloader
 
 
-async def assert_http_availability(container):
+async def assert_http_availability(container, track_id, legacy_track_id):
     def headers(owner):
         claims = {
             "sub": owner, "role": "authenticated", "aud": "authenticated",
@@ -165,43 +164,49 @@ async def assert_http_availability(container):
     api.dependency_overrides[get_current_user_client] = user_database
     async with AsyncClient(transport=ASGITransport(app=api), base_url="http://testserver") as client:
         report_url = f"/me/playlists/{PLAYLIST}/acquisitions"
-        audio_url = f"/me/sync/files/{TRACK}"
+        audio_url = f"/me/sync/files/{track_id}"
         assert (await client.get(report_url, headers=headers(OTHER_ACCOUNT))).status_code == 404
         report = await client.get(report_url, headers=headers(OWNER))
         assert report.status_code == 200, report.text
         assert len(report.json()["data"]) == 1
         acquisition = report.json()["data"][0]
-        assert acquisition["track_id"] == TRACK and acquisition["availability"] == "available"
+        assert acquisition["track_id"] == track_id and acquisition["availability"] == "available"
         assert acquisition["job_status"] == "succeeded"
         assert (await client.get(audio_url)).status_code == 401
-        audio = await client.get(audio_url, headers=headers(OWNER) | {"Range": "bytes=0-3"})
-        assert audio.status_code == 206, audio.status_code
-        assert audio.content == b"RIFF"
-        assert audio.headers["content-range"].startswith("bytes 0-3/")
+        for playable_id in (track_id, legacy_track_id):
+            audio = await client.get(f"/me/sync/files/{playable_id}", headers=headers(OWNER) | {"Range": "bytes=0-3"})
+            assert audio.status_code == 206, (playable_id, audio.status_code)
+            assert audio.content == b"RIFF"
+            assert audio.headers["content-range"].startswith("bytes 0-3/")
 
 
-async def run(container, phase):
+async def run(container, track_id, legacy_track_id, phase):
     assert phase in {"interrupt", "resume"}
     manifest = Path("audio-authorizations.json")
-    manifest.write_text(json.dumps({TRACK: {
+    manifest.write_text(json.dumps({track_id: {
         "video_id": VIDEO, "provenance": "locally generated silence",
         "authorized_for_cloud": True,
     }}), encoding="utf-8")
     download_service.yt_dlp.YoutubeDL = make_downloader(interrupt=phase == "interrupt")
     database = DockerPostgres(container)
     service = download_service.DownloadService(supabase_client=database)
+
+    async def unavailable_deezer_catalog(provider_id):
+        raise RuntimeError(f"Deezer catalog unavailable for synthetic track {provider_id}")
+
+    service.deezer_client.get_track = unavailable_deezer_catalog
     worker = PlaylistAcquisitionWorker(service, manifest)
     assert await worker.run_once()
     await service._workers.join()
     if phase == "resume":
         database.scalar(f"WITH due AS (UPDATE public.playlist_acquisition_intents SET "
-                        f"next_attempt_at = clock_timestamp() WHERE track_id = {literal(TRACK)} RETURNING 1) "
+                        f"next_attempt_at = clock_timestamp() WHERE track_id = {literal(track_id)} RETURNING 1) "
                         "SELECT count(*) FROM due")
         assert await worker.run_once()
-        path, metadata = sync_files.find_playable_sync_file(OWNER, TRACK)
+        path, metadata = sync_files.find_playable_sync_file(OWNER, track_id)
         assert path and path.read_bytes().startswith(b"RIFF")
         assert metadata["title"] == "Fixture title" and metadata["duration_ms"] == 100
-        await assert_http_availability(container)
+        await assert_http_availability(container, track_id, legacy_track_id)
     await service.shutdown()
 
 
