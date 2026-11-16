@@ -135,6 +135,7 @@ fun PlaylistDetailScreenNew(
     val acquisitionStatusMap by playlistPlayback.statuses.collectAsState()
     val acquisitionStatuses = acquisitionStatusMap[playlistId].orEmpty()
     val acquisitionsByTrack = remember(acquisitionStatuses) { acquisitionStatuses.associateBy { it.trackId } }
+    val inProgress = remember(acquisitionStatuses) { acquisitionStatuses.count { it.isAcquisitionInProgress() } }
     var showAcquisitionReport by remember(playlistId, auraScope) { mutableStateOf(false) }
     var requestingCloud by remember(playlistId, auraScope) { mutableStateOf(false) }
     var choosingVersion by remember(playlistId, auraScope) { mutableStateOf<Pair<String, List<com.aura.music.data.network.YtmCandidateDto>>?>(null) }
@@ -143,9 +144,12 @@ fun PlaylistDetailScreenNew(
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val snackbarHostState = remember { SnackbarHostState() }
-    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, sourceState?.userId, showAcquisitionReport, isOnline) {
+    androidx.compose.runtime.LaunchedEffect(
+        playlistId, auraScope, sourceState?.userId, lastRefresh?.requestId,
+        showAcquisitionReport, isOnline, inProgress > 0,
+    ) {
         if (!isOnline) return@LaunchedEffect
-        if (showAcquisitionReport) {
+        if (showAcquisitionReport || inProgress > 0) {
             while (true) {
                 playlistPlayback.verifyLater(playlistId)
                 kotlinx.coroutines.delay(10_000)
@@ -305,10 +309,6 @@ fun PlaylistDetailScreenNew(
                         }
                         if (acquisitionStatuses.any { it.status != "not_requested" }) {
                             val available = acquisitionStatuses.count { it.availability == "available" }
-                            val inProgress = acquisitionStatuses.count {
-                                it.availability != "available" &&
-                                    (it.status == "pending" || it.jobStatus == "queued" || it.jobStatus == "running")
-                            }
                             TextButton(onClick = { showAcquisitionReport = true }) {
                                 Text("$available disponible(s) dans le cloud · $inProgress en cours")
                             }
@@ -656,7 +656,10 @@ fun PlaylistDetailScreenNew(
             title = { Text("Disponibilité cloud") },
             text = {
                 LazyColumn(Modifier.height(260.dp)) {
-                    if (acquisitionStatuses.isEmpty()) {
+                    if (!isOnline) {
+                        item { Text("Hors connexion · dernier bilan connu") }
+                    }
+                    if (acquisitionStatuses.isEmpty() && isOnline) {
                         item { Text("Bilan en attente de confirmation.") }
                     }
                     itemsIndexed(acquisitionStatuses, key = { _, row -> row.trackId }) { _, row ->
@@ -665,6 +668,9 @@ fun PlaylistDetailScreenNew(
                             val label = when {
                                 row.availability == "available" -> "Disponible dans le cloud"
                                 row.status == "source_not_authorized" -> "Source audio autorisée introuvable"
+                                row.errorCode == "cloud_file_missing" -> "Fichier cloud introuvable · téléchargement à relancer"
+                                row.errorCode == "acquisition_temporarily_unavailable" -> "Serveur temporairement indisponible · reprise automatique"
+                                row.errorCode == "retry_requested" -> "Relance demandée"
                                 row.status == "failed" || row.jobStatus == "failed" -> "Échec du téléchargement"
                                 row.jobStatus == "requires_resolution" -> "Choix de version nécessaire"
                                 row.status == "not_requested" -> "Aucune demande"
@@ -877,6 +883,11 @@ fun PlaylistDetailScreenNew(
         )
     }
 }
+
+internal fun com.aura.music.data.network.PlaylistAcquisitionStatus.isAcquisitionInProgress(): Boolean =
+    availability != "available" && (status == "pending" ||
+        (status == "admitted" && (jobStatus == null || jobStatus == "queued" || jobStatus == "running" ||
+            errorCode == "retry_requested" || errorCode == "acquisition_temporarily_unavailable")))
 
 @Composable
 private fun PlaylistTrackRowItem(
