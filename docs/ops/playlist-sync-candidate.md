@@ -19,6 +19,7 @@ Le chantier de démarrage Android et les protections de session intégrés
 | Suivi C/F | `e4380932` | Refus des inventaires fournisseurs dont les pages sont discontinues |
 | Suivi E/F | `aae00050` | Mise à jour des dossiers Media3 après vérification cloud |
 | Suivi E | `7fb77fe4` | Suivi du bilan cloud après actualisation confirmée |
+| Suivi C/F | `10b35096` | Acquittement des relectures sans régression du dernier bilan |
 
 ## Ordre de livraison proposé
 
@@ -140,7 +141,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Rejeu d’une actualisation Android | 11 tests ciblés avec migration Room et lecteurs fournisseur. Un accusé retardé acquitte la demande correspondante et préserve le bilan plus récent provenant d’un autre appareil. |
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 166 sur 166 au commit `7fb77fe4`. L’indexation des 50 000 titres prend 1,29 s sur ce rejeu, 2,68 s sur le rejeu précédent après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
+| Suite Android complète | 169 sur 169 au commit `10b35096`. L’indexation des 50 000 titres prend 2,48 s sur ce rejeu, 1,29 à 2,68 s sur les rejeux précédents après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
 | PostgreSQL | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique et reprise dans deux processus vérifiés. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
