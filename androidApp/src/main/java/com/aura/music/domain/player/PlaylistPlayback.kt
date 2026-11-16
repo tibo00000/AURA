@@ -134,7 +134,7 @@ class PlaylistPlayback(
         requestVersions[playlistId] = version
         verificationJobs[playlistId] = applicationScope.launch {
             try {
-                val statuses = source.getAcquisitions(playlistId)
+                val statuses = source.getAcquisitions(playlistId, owner)
                 publish(playlistId, owner, version, statuses)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -148,10 +148,12 @@ class PlaylistPlayback(
         }
     }
 
-    suspend fun request(playlistId: String, trackId: String? = null): List<PlaylistAcquisitionStatus> {
-        val owner = auth.captureScope()
+    internal suspend fun request(
+        playlistId: String, deviceId: String, trackId: String?, owner: AuthSessionManager.Scope,
+    ): List<PlaylistAcquisitionStatus> {
         val version = synchronized(this) {
             resetScope()
+            if (cacheScope != owner) throw CancellationException("Playlist session changed")
             verificationJobs.remove(playlistId)?.cancel()
             (++requestVersion).also {
                 requestVersions[playlistId] = it
@@ -159,7 +161,7 @@ class PlaylistPlayback(
             }
         }
         try {
-            val statuses = source.requestAcquisitions(playlistId, trackId)
+            val statuses = source.requestAcquisitions(playlistId, deviceId, trackId, owner)
             publish(playlistId, owner, version, statuses)
             return statuses
         } finally {

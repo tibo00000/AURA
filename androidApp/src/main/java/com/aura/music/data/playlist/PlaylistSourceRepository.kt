@@ -1,6 +1,8 @@
 package com.aura.music.data.playlist
 
+import androidx.room3.deferredTransaction
 import androidx.room3.immediateTransaction
+import androidx.room3.useReaderConnection
 import androidx.room3.useWriterConnection
 import com.aura.music.core.AuthSessionManager
 import com.aura.music.data.local.AuraDatabase
@@ -30,6 +32,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class PlaylistSourceReference(val provider: String, val externalId: String) {
     fun isCanonical(): Boolean = when (provider) {
@@ -73,23 +77,57 @@ class PlaylistSourceRepository internal constructor(
 ) {
     private val refreshMutex = Mutex()
 
-    suspend fun getAcquisitions(playlistId: String): List<PlaylistAcquisitionStatus> =
-        acquisitions(playlistId, enqueue = false, retryTrackId = null)
-
-    suspend fun requestAcquisitions(playlistId: String, retryTrackId: String? = null): List<PlaylistAcquisitionStatus> =
-        acquisitions(playlistId, enqueue = true, retryTrackId = retryTrackId)
-
-    private suspend fun acquisitions(
-        playlistId: String, enqueue: Boolean, retryTrackId: String?,
+    internal suspend fun getAcquisitions(
+        playlistId: String,
+        scope: AuthSessionManager.Scope = auth.captureScope(),
     ): List<PlaylistAcquisitionStatus> {
-        val scope = auth.captureScope()
         val bearer = auth.validSession(scope = scope).bearer
-        val response = if (enqueue) api.requestPlaylistAcquisitions(bearer, playlistId, retryTrackId)
-        else api.getPlaylistAcquisitions(bearer, playlistId)
+        return confirmedAcquisitions(scope, api.getPlaylistAcquisitions(bearer, playlistId))
+    }
+
+    internal suspend fun requestAcquisitions(
+        playlistId: String,
+        deviceId: String,
+        retryTrackId: String? = null,
+        scope: AuthSessionManager.Scope = auth.captureScope(),
+    ): List<PlaylistAcquisitionStatus> {
+        if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+        val syncMessage = "Synchronise les modifications locales de cette playlist avant de demander la disponibilité cloud."
+        if (!canRequestAcquisitions(playlistId, scope.userId) && !sync.performSync(deviceId, force = true, scope = scope)) {
+            if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+            throw PlaylistSourceReadException(syncMessage)
+        }
+        val bearer = auth.validSession(scope = scope).bearer
+        if (!canRequestAcquisitions(playlistId, scope.userId)) throw PlaylistSourceReadException(syncMessage)
+        if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+        return confirmedAcquisitions(scope, api.requestPlaylistAcquisitions(bearer, playlistId, retryTrackId))
+    }
+
+    private fun confirmedAcquisitions(
+        scope: AuthSessionManager.Scope,
+        response: AuraResponse<List<PlaylistAcquisitionStatus>>,
+    ): List<PlaylistAcquisitionStatus> {
         if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
         return response.data?.takeIf { response.error == null && response.meta?.partialFailure != true }
             ?: throw PlaylistSourceReadException("Le bilan cloud est temporairement indisponible.")
     }
+
+    private suspend fun canRequestAcquisitions(playlistId: String, userId: String): Boolean =
+        database.useReaderConnection { reader ->
+            reader.deferredTransaction {
+                val state = database.playlistDao().getPlaylistSyncState(playlistId)
+                state != null && state.userId == userId && state.appliedRevision != null &&
+                    !hasUnresolvedEdits(playlistId, userId)
+            }
+        }
+
+    private suspend fun hasUnresolvedEdits(playlistId: String, userId: String): Boolean =
+        database.syncOutboxDao().getUnresolvedPlaylistOperations().any { operation ->
+            (operation.userId == null || operation.userId == userId) &&
+                (operation.entityId == playlistId || runCatching {
+                    Json.decodeFromString<JsonObject>(operation.payloadJson)["playlist_id"]
+                }.getOrNull() == JsonPrimitive(playlistId))
+        }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observe(playlistId: String) = auth.sessionScope.map { it?.userId }.distinctUntilChanged()
@@ -148,15 +186,9 @@ class PlaylistSourceRepository internal constructor(
                 if (latest?.userId != scope.userId || latest.sourceRevision != request.sourceRevision) {
                     throw PlaylistSourceReadException("La source de la playlist a changé. Réessaie.")
                 }
-                val unresolved = database.syncOutboxDao().getUnresolvedPlaylistOperations()
-                if (pending == null && unresolved.any { operation ->
-                    (operation.userId == null || operation.userId == scope.userId) && (
-                        operation.entityId == playlistId ||
-                            runCatching { Json.parseToJsonElement(operation.payloadJson) }
-                                .getOrNull()?.let { (it as? kotlinx.serialization.json.JsonObject)?.get("playlist_id") }
-                                == kotlinx.serialization.json.JsonPrimitive(playlistId)
-                        )
-                }) throw PlaylistSourceReadException("Une modification locale de cette playlist est encore en attente.")
+                if (pending == null && hasUnresolvedEdits(playlistId, scope.userId)) {
+                    throw PlaylistSourceReadException("Une modification locale de cette playlist est encore en attente.")
+                }
                 if (latest.pendingRefreshJson != serializedRequest) {
                     dao.upsertPlaylistSyncState(latest.copy(pendingRefreshJson = serializedRequest))
                 }

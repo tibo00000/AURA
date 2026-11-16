@@ -220,15 +220,15 @@ fun PlaylistDetailScreenNew(
                     return@launch
                 }
                 if (!auth.isCurrent(owner)) return@launch
-                if (sourceState == null) appContainer.syncRepository.performSync(currentDeviceId(), force = true)
-                if (!auth.isCurrent(owner)) return@launch
-                playlistPlayback.request(playlistId, trackId)
+                playlistPlayback.request(playlistId, currentDeviceId(), trackId, owner)
                 if (!auth.isCurrent(owner)) return@launch
                 showAcquisitionReport = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                snackbarHostState.showSnackbar("La demande cloud n’a pas pu être confirmée. Réessaie.")
+            } catch (failure: Exception) {
+                snackbarHostState.showSnackbar(
+                    (failure as? PlaylistSourceReadException)?.message ?: "La demande cloud n’a pas pu être confirmée. Réessaie.",
+                )
             } finally {
                 requestingCloud = false
             }

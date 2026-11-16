@@ -13,6 +13,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.aura.music.core.AuthSessionManager
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.SyncOutboxEntity
 import com.aura.music.data.local.TrackLikeEntity
@@ -44,7 +45,7 @@ class SyncRepository(
     private val database: AuraDatabase,
     private val apiService: AuraApiService,
     private val context: Context,
-    private val authSessionManager: com.aura.music.core.AuthSessionManager? = null
+    private val authSessionManager: AuthSessionManager? = null
 ) {
     companion object {
         private const val TAG = "SyncRepository"
@@ -192,11 +193,15 @@ class SyncRepository(
     /**
      * Exécuter la routine complète de synchronisation.
      */
-    suspend fun performSync(deviceId: String, force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
-        syncMutex.withLock { syncOnce(deviceId, force) }
-    }
+    suspend fun performSync(deviceId: String, force: Boolean = false): Boolean = performSync(deviceId, force, scope = null)
 
-    private suspend fun syncOnce(deviceId: String, force: Boolean): Boolean {
+    internal suspend fun performSync(
+        deviceId: String,
+        force: Boolean,
+        scope: AuthSessionManager.Scope?,
+    ): Boolean = withContext(Dispatchers.IO) { syncMutex.withLock { syncOnce(deviceId, force, scope) } }
+
+    private suspend fun syncOnce(deviceId: String, force: Boolean, expectedScope: AuthSessionManager.Scope?): Boolean {
         Log.i(TAG, "Starting sync routine for device $deviceId (force=$force)")
         
         val settings = database.userSettingsDao().getSettings()
@@ -218,7 +223,7 @@ class SyncRepository(
         val auth = authSessionManager ?: return false
         if (!auth.isLoggedIn.value) return false
         return try {
-            val scope = auth.captureScope()
+            val scope = expectedScope ?: auth.captureScope()
             val token = auth.validSession(scope = scope).bearer
             val isCurrent = { auth.isCurrent(scope) }
             val acknowledged = pushOutbox(deviceId, token, scope.userId, isCurrent) ?: return false
