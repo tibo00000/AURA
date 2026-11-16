@@ -45,6 +45,11 @@ L’actualisation fournisseur applique uniquement des ajouts en fin de liste.
 Elle vérifie la révision d’association sous le verrou de la playlist, puis
 relit les identités et les exclusions avant de décider. Les exclusions
 portent sur une identité fournisseur exacte ou un rattachement confirmé.
+Lors d’un retrait, Aura enregistre aussi la référence fournisseur confirmée
+de l’occurrence. Une ancienne exclusion basée sur le titre et l’artiste
+reste conservée pour les cas ambigus. Elle ne peut pas masquer une
+référence fournisseur acquise plus tard, même si le catalogue renomme le
+morceau. Les autres occurrences et les ajouts manuels restent possibles.
 Une ressemblance de métadonnées peut ouvrir une confirmation utilisateur.
 Elle ne fusionne ni ne remplace deux identités à elle seule.
 

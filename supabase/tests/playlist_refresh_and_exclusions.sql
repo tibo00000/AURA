@@ -47,11 +47,24 @@ BEGIN
     IF public.aura_playlist_snapshot() #>> '{playlists,0,items,2,id}' IS DISTINCT FROM 'new-manual-entry' THEN
         RAISE EXCEPTION 'Manual addition of excluded title failed';
     END IF;
+    -- Remove an unlinked duplicate while the same recording remains in another occurrence.
+    old_items := public.aura_playlist_snapshot() #> '{playlists,0,items}';
+    PERFORM public.aura_apply_playlist_operation('unlinked-duplicate-add', 'playlist_item', 'unlinked-duplicate', 'create',
+        '{"playlist_id":"refresh-fixture","track_id":"local-track"}');
+    PERFORM public.aura_apply_playlist_operation('unlinked-duplicate-remove', 'playlist_item', 'unlinked-duplicate', 'delete',
+        '{"playlist_id":"refresh-fixture","removed_title":"Local song","removed_artist":"An artist"}');
+    IF public.aura_playlist_snapshot() #> '{playlists,0,items}' IS DISTINCT FROM old_items THEN
+        RAISE EXCEPTION 'Removing a duplicate changed another occurrence';
+    END IF;
     recording := 'trk_' || rtrim(encode(convert_to('v1:track:deezer:789', 'UTF8'), 'base64'), '=');
     tracks := jsonb_build_array(jsonb_build_object(
         'track_id', recording, 'provider', 'deezer', 'provider_id', '789', 'title', 'Local song',
-        'artist', 'An artist', 'requires_confirmation', true
+        'artist', 'An artist'
     ));
+    result := public.aura_commit_playlist_refresh('refresh-fixture', '00000000-0000-0000-0000-000000000042', 1, tracks);
+    IF result->>'added_count' IS DISTINCT FROM '0' OR jsonb_array_length(result->'uncertain') <> 1 THEN
+        RAISE EXCEPTION 'An exclusion based on display metadata is not an exact match';
+    END IF;
     result := public.aura_commit_playlist_refresh('refresh-fixture', '00000000-0000-0000-0000-000000000035',
         1, tracks, '[]', jsonb_build_object(recording, 'refresh-old-2'));
     IF result->>'added_count' IS DISTINCT FROM '0'
@@ -60,10 +73,11 @@ BEGIN
         RAISE EXCEPTION 'Confirmation did not preserve the original ID and record its provider identity';
     END IF;
     PERFORM public.aura_apply_playlist_operation('alias-remove', 'playlist_item', 'refresh-old-2', 'delete', '{"playlist_id":"refresh-fixture"}');
-    result := public.aura_commit_playlist_refresh('refresh-fixture', '00000000-0000-0000-0000-000000000036',
-        1, tracks, jsonb_build_array(recording));
-    IF result->>'excluded_count' IS DISTINCT FROM '1' THEN
-        RAISE EXCEPTION 'Manual removal lost the confirmed identity';
+    tracks := jsonb_set(tracks, '{0,title}', '"Renamed catalog title"');
+    result := public.aura_commit_playlist_refresh('refresh-fixture', '00000000-0000-0000-0000-000000000036', 1, tracks);
+    IF result->>'excluded_count' IS DISTINCT FROM '1' OR result->>'added_count' IS DISTINCT FROM '0'
+        OR public.aura_playlist_snapshot() #>> '{playlists,0,items,0,id}' IS DISTINCT FROM 'refresh-old-1' THEN
+        RAISE EXCEPTION 'A weak exclusion masked the subsequently confirmed recording identity';
     END IF;
     recording := 'trk_' || rtrim(encode(convert_to('v1:track:deezer:901', 'UTF8'), 'base64'), '=');
     tracks := jsonb_build_array(

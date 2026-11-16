@@ -37,8 +37,9 @@ Historique complet depuis le point de départ avec
    `20261114125746_playlist_source_association.sql`,
    `20261114181513_playlist_acquisition_intents.sql`,
    `20261114181653_playlist_refresh_and_exclusions.sql`,
-   `20261114183022_playlist_acquisition_leases.sql` puis
-   `20261114184616_playlist_playback_occurrence.sql`.
+   `20261114183022_playlist_acquisition_leases.sql`,
+   `20261114184616_playlist_playback_occurrence.sql` puis
+   `20261116223507_playlist_confirmed_exclusions.sql`.
    Vérifier aussi la présence de la migration existante
    `005_add_download_job_operation_type.sql`.
 3. Déployer le backend seul et vérifier les contrats historiques, le nouvel
@@ -96,6 +97,12 @@ l’outbox avant de restaurer une copie, puis réconcilier les événements
 plus récents. Vérifier les comptes, nombres d’occurrences, références
 fournisseur et jobs en attente avant de rouvrir la synchronisation.
 
+La correction des exclusions remplace la fonction du déclencheur de retrait.
+Elle s’applique aux retraits suivants et conserve les anciennes exclusions.
+Si un retour arrière s’impose, restaurer la définition précédente de la
+fonction via une migration ciblée avec les mêmes droits. Conserver les
+exclusions enregistrées.
+
 ## Inventaire avant nettoyage éventuel
 
 Relever pour chaque playlist ses identifiants et positions, ses occurrences
@@ -125,7 +132,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 - Backend via `python -B -m pytest -p no:cacheprovider tests -q` dans
   `server`, avec configuration synthétique et stockage jetable.
 - PostgreSQL et reprise via `python -B server/scripts/test_user_isolation_postgres.py --image postgres:17.11-alpine --download-cancellation --playlist-sync --playlist-worker-restart`.
-  Le test exige les dépendances Python du backend. Il rejoue les sept
+  Le test exige les dépendances Python du backend. Il rejoue les huit
   migrations, les cinq scénarios playlist, 97 assertions d’isolation,
   10 assertions d’annulation et trois contrôles de rollback. Il lance
   deux processus séparés, interrompt le premier après l’écriture du job,
@@ -169,7 +176,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 169 sur 169 au commit `10b35096`. L’indexation des 50 000 titres prend 2,48 s sur ce rejeu, 1,29 à 2,68 s sur les rejeux précédents après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
-| PostgreSQL et HTTP | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
+| PostgreSQL et HTTP | Huit migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
 | Supabase Auth et PostgREST locaux | Deux comptes et deux sessions distinctes du propriétaire. La seconde session retrouve la référence Deezer, le bilan, le morceau ajouté et ses métadonnées avec l’occurrence manuelle intacte. Rejeu stable de l’actualisation et de l’action cloud. Un inventaire invalide laisse le snapshot intact. Accès anonyme et accès croisé refusés. |
 | Démarrage et reprise du worker via PostgREST | Le démarrage FastAPI reprend le même job après interruption et sert les octets du fichier synthétique. L’entrée sans source autorisée reçoit un statut explicite. Le second compte peut lire via le cache natif authentifié, avec sa bibliothèque personnelle intacte. |
 
