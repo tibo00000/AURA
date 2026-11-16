@@ -5,14 +5,24 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 import wave
 
+from fastapi import Depends, FastAPI
+from httpx import ASGITransport, AsyncClient
+import jwt
+
+from app.api.routes import me, sync_files
+from app.core.auth import AuthenticatedUser, get_current_user
+from app.db.user_client import get_current_user_client
 from app.services import download_service
 from app.services.playlist_acquisition import PlaylistAcquisitionWorker
 
 
 OWNER = "c0000000-0000-0000-0000-000000000061"
+OTHER_ACCOUNT = "c0000000-0000-0000-0000-000000000062"
+PLAYLIST = "restart-fixture"
 TRACK = "trk_restart_fixture"
 VIDEO = "fixture0000"
 EXIT_AFTER_COMMIT = 42
@@ -32,23 +42,28 @@ def literal(value):
 
 class DockerPostgres:
     """Only the service calls used by this fixture; values come from synthetic inputs."""
-    def __init__(self, container):
+    def __init__(self, container, owner=None):
         self.container = container
+        self.owner = owner
 
     def scalar(self, statement):
+        role = "SET ROLE service_role;" if self.owner is None else (
+            f'SET ROLE authenticated; SET "request.jwt.claim.sub" = {literal(self.owner)};'
+        )
         result = subprocess.run(
             ["docker", "exec", "-i", self.container, "psql", "-X", "-qAt",
              "-v", "ON_ERROR_STOP=1", "-U", "postgres"],
-            input=f"SET ROLE service_role;\n{statement};\n", text=True,
+            input=f"{role}\n{statement};\n", text=True,
             capture_output=True, timeout=12, check=True,
         )
-        return json.loads(result.stdout or "null")
+        return json.loads(result.stdout.strip() or "null")
 
     def rpc(self, name, arguments):
-        assert name in {
+        allowed = {"aura_get_playlist_acquisitions"} if self.owner is not None else {
             "aura_claim_playlist_acquisition", "aura_insert_playlist_download_job",
             "aura_restart_playlist_download_job", "aura_finish_playlist_acquisition",
         }
+        assert name in allowed
         args = ", ".join(f"{key} => {literal(value)}" for key, value in arguments.items())
         return SimpleNamespace(execute=lambda: SimpleNamespace(data=self.scalar(f"SELECT to_jsonb(public.{name}({args}))")))
 
@@ -132,6 +147,39 @@ def make_downloader(interrupt):
     return FixtureDownloader
 
 
+async def assert_http_availability(container):
+    def headers(owner):
+        claims = {
+            "sub": owner, "role": "authenticated", "aud": "authenticated",
+            "iss": os.environ["SUPABASE_URL"] + "/auth/v1", "exp": int(time.time()) + 60,
+        }
+        bearer = jwt.encode(claims, os.environ["SUPABASE_JWT_SECRET"], algorithm="HS256")
+        return {"Authorization": f"Bearer {bearer}"}
+
+    def user_database(user: AuthenticatedUser = Depends(get_current_user)):
+        return DockerPostgres(container, owner=user.id)
+
+    api = FastAPI()
+    api.include_router(me.router)
+    api.include_router(sync_files.router)
+    api.dependency_overrides[get_current_user_client] = user_database
+    async with AsyncClient(transport=ASGITransport(app=api), base_url="http://testserver") as client:
+        report_url = f"/me/playlists/{PLAYLIST}/acquisitions"
+        audio_url = f"/me/sync/files/{TRACK}"
+        assert (await client.get(report_url, headers=headers(OTHER_ACCOUNT))).status_code == 404
+        report = await client.get(report_url, headers=headers(OWNER))
+        assert report.status_code == 200, report.text
+        assert len(report.json()["data"]) == 1
+        acquisition = report.json()["data"][0]
+        assert acquisition["track_id"] == TRACK and acquisition["availability"] == "available"
+        assert acquisition["job_status"] == "succeeded"
+        assert (await client.get(audio_url)).status_code == 401
+        audio = await client.get(audio_url, headers=headers(OWNER) | {"Range": "bytes=0-3"})
+        assert audio.status_code == 206, audio.status_code
+        assert audio.content == b"RIFF"
+        assert audio.headers["content-range"].startswith("bytes 0-3/")
+
+
 async def run(container, phase):
     assert phase in {"interrupt", "resume"}
     manifest = Path("audio-authorizations.json")
@@ -150,10 +198,10 @@ async def run(container, phase):
                         f"next_attempt_at = clock_timestamp() WHERE track_id = {literal(TRACK)} RETURNING 1) "
                         "SELECT count(*) FROM due")
         assert await worker.run_once()
-        from app.api.routes.sync_files import find_playable_sync_file
-        path, metadata = find_playable_sync_file(OWNER, TRACK)
+        path, metadata = sync_files.find_playable_sync_file(OWNER, TRACK)
         assert path and path.read_bytes().startswith(b"RIFF")
         assert metadata["title"] == "Fixture title" and metadata["duration_ms"] == 100
+        await assert_http_availability(container)
     await service.shutdown()
 
 

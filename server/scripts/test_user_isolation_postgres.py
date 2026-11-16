@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -153,6 +154,7 @@ SET metadata = '{"title":"Fixture title","artist":"Fixture artist","album":"Fixt
                         **os.environ, "PYTHONPATH": str(ROOT/"server"), "APP_ENV": "test",
                         "SUPABASE_URL": "https://synthetic.supabase.invalid",
                         "SUPABASE_ANON_KEY": "SYNTHETIC_PUBLIC", "SUPABASE_SERVICE_ROLE_KEY": "SYNTHETIC_ADMIN",
+                        "SUPABASE_JWT_SECRET": secrets.token_urlsafe(48),
                         "ENABLE_STARTUP_RECOVERY": "false", "ENABLE_CACHE_BACKFILL": "false",
                         "DOWNLOADS_DIR": str(Path(workspace)/"downloads"), "SYNC_FILES_DIR": str(Path(workspace)/"sync"),
                     }

@@ -126,7 +126,11 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
   deux processus séparés, interrompt le premier après l’écriture du job,
   rend l’intention à nouveau éligible, puis vérifie le même job à la
   deuxième tentative et le fichier synthétique servi par Aura. Le
-  transport SQL du harnais utilise `psql` sur un conteneur sans réseau.
+  bilan HTTP du propriétaire confirme la disponibilité, le second
+  compte reçoit 404 et une requête authentifiée `Range` reçoit 206
+  avec les octets du fichier de test. Le transport SQL du harnais
+  utilise `psql` sur un conteneur sans réseau. FastAPI vérifie des JWT
+  signés pour le test, puis le harnais transmet le sujet à PostgreSQL.
 
 ## Résultats obtenus
 
@@ -142,7 +146,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 169 sur 169 au commit `10b35096`. L’indexation des 50 000 titres prend 2,48 s sur ce rejeu, 1,29 à 2,68 s sur les rejeux précédents après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
-| PostgreSQL | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique et reprise dans deux processus vérifiés. |
+| PostgreSQL et HTTP | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
 antérieur sur les deux branches. Les mesures de cette section proviennent
@@ -174,7 +178,8 @@ appareil.
 - Vérification de la procédure de publication et des sources audio
   autorisées. Aucun test ne requiert de téléchargement de contenu tiers.
 - Vérification sur un environnement de préproduction avec Supabase
-  Auth et PostgREST. Le rejeu local simule uniquement le sujet du JWT.
+  Auth et PostgREST. Le rejeu local vérifie le JWT dans FastAPI et
+  substitue un adaptateur `psql` au transport PostgREST.
 
 Aucune révision de production, OTA ou base réelle n’entre dans la
 validation locale. Chaque intervention distante doit faire l’objet d’une
