@@ -13,13 +13,18 @@ Le chantier de démarrage Android et les protections de session intégrés
 | C | `59dc7bff` | Actualisation incrémentale, exclusions et métadonnées |
 | D | `17a276f0` | Traitement serveur et reprise des intentions |
 | E | `eb4fc2a7` | Menu, bilans, file éligible et identifiants d’occurrence |
-| F | Ce dossier | Tests croisés, inventaire et retour arrière |
+| F | `c2076823` | Tests croisés, inventaire et retour arrière |
 | Suivi E/F | `c770f98f` | Répétition Media3 par occurrence et invalidation cloud au changement de compte |
 | Suivi F | `60a549df` | Réutilisation des métadonnées normalisées dans l’index de recherche |
 | Suivi C/F | `e4380932` | Refus des inventaires fournisseurs dont les pages sont discontinues |
 | Suivi E/F | `aae00050` | Mise à jour des dossiers Media3 après vérification cloud |
 | Suivi E | `7fb77fe4` | Suivi du bilan cloud après actualisation confirmée |
 | Suivi C/F | `10b35096` | Acquittement des relectures sans régression du dernier bilan |
+| Suivi D/F | `df6550d6`, `f675f725` | Vérification HTTP de la reprise et utilisation des métadonnées persistées pendant une panne Deezer |
+| Suivi F | `1b544698` | Rejeu du contrat playlist avec Supabase Auth et PostgREST locaux |
+
+Historique complet depuis le point de départ avec
+`git log --oneline 03133655..fix/playlist-sync-program`.
 
 ## Ordre de livraison proposé
 
@@ -141,15 +146,20 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
   une autre image locale Linux amd64 dotée des dépendances de
   `server/pyproject.toml`. Le harnais monte le code candidat en lecture
   seule et partage uniquement la boucle locale du conteneur PostgreSQL,
-  sans port publié. Caddy fournit le certificat de test. Supabase Auth crée deux
-  comptes synthétiques et signe leurs jetons. FastAPI vérifie ces jetons et
-  exécute les RPC via le client Supabase d’Aura et PostgREST.
+  sans port publié. Caddy sert HTTPS sur HTTP/1.1 avec un certificat de
+  test. Supabase Auth crée deux comptes synthétiques et signe leurs
+  jetons. FastAPI vérifie ces jetons et
+  exécute les RPC via le client Supabase d’Aura et PostgREST. Deux
+  processus démarrent également le worker via le cycle de vie normal de
+  FastAPI. Le premier est interrompu en cours de tentative, le second
+  traite les intentions après expiration simulée des baux. Le worker
+  utilise un manifeste synthétique et une fixture audio locale.
 
 ## Résultats obtenus
 
 | Vérification | Résultat |
 | --- | --- |
-| Python | 399 réussites |
+| Python | 400 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
@@ -161,6 +171,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Suite Android complète | 169 sur 169 au commit `10b35096`. L’indexation des 50 000 titres prend 2,48 s sur ce rejeu, 1,29 à 2,68 s sur les rejeux précédents après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
 | PostgreSQL et HTTP | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
 | Supabase Auth et PostgREST locaux | Deux comptes et deux sessions distinctes du propriétaire. La seconde session retrouve la référence Deezer, le bilan, le morceau ajouté et ses métadonnées avec l’occurrence manuelle intacte. Rejeu stable de l’actualisation et de l’action cloud. Un inventaire invalide laisse le snapshot intact. Accès anonyme et accès croisé refusés. |
+| Démarrage et reprise du worker via PostgREST | Le démarrage FastAPI reprend le même job après interruption et sert les octets du fichier synthétique. L’entrée sans source autorisée reçoit un statut explicite. Le second compte peut lire via le cache natif authentifié, avec sa bibliothèque personnelle intacte. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
 antérieur sur les deux branches. Les mesures de cette section proviennent
@@ -190,7 +201,9 @@ appareil.
   [Guide Spotify](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide)
   [Politique Spotify](https://developer.spotify.com/policy)
 - Vérification de la procédure de publication et des sources audio
-  autorisées. Aucun test ne requiert de téléchargement de contenu tiers.
+  autorisées. Vérifier les droits de récupération, de stockage et de
+  lecture via le cache natif partagé entre comptes authentifiés. Les
+  tests utilisent des fichiers synthétiques.
 - Vérification sur l’environnement de préproduction avec sa configuration
   Supabase, ses versions de composants et son mode de signature des jetons.
   Le rejeu local Supabase couvre une configuration HS256 avec certificats

@@ -477,6 +477,31 @@ def test_transient_worker_read_failure_does_not_leave_unretryable_active_row(ser
     asyncio.run(scenario())
 
 
+def test_playlist_worker_read_failure_before_audio_leaves_job_queued_for_recovery(service, monkeypatch):
+    instance, db = service
+    db.rows = [row(playlist_acquisition=True)]
+    get_job = instance.get_job
+    calls = 0
+
+    def transient(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ProviderUnavailable('synthetic transient storage failure')
+        return get_job(*args)
+
+    monkeypatch.setattr(instance, 'get_job', transient)
+
+    async def scenario():
+        await instance._start_download_task(DownloadJob.from_dict(db.rows[0]))
+        assert db.rows[0]['status'] == 'queued'
+        assert db.rows[0]['error_code'] == 'playlist_worker_storage_unavailable'
+        assert db.rows[0]['attempt_count'] == 1
+        assert not instance._attempts
+
+    asyncio.run(scenario())
+
+
 def test_create_cache_lookup_side_effects_are_fenced(service, monkeypatch):
     instance, db = service
     calls = []

@@ -135,6 +135,11 @@ l’expiration de son bail. La relance vérifie à nouveau le manifeste.
 Quand l’intention conserve le titre et l’artiste, le téléchargement
 utilise ces métadonnées persistées et la source audio autorisée même
 pendant une panne du catalogue Deezer.
+Si PostgREST est temporairement indisponible pendant le passage à l’état
+`running`, le job de playlist reste récupérable avec le même identifiant.
+Le poller reprend l’intention à sa prochaine échéance et revérifie le
+manifeste avant de démarrer une nouvelle tentative. Cette reprise couvre
+la transition qui précède la lecture ou la publication d’un fichier.
 Le déploiement actuel du downloader utilise un processus d’exécution.
 Les baux empêchent deux pollers de réserver ou redémarrer le même job
 avec le même compteur. Le lancement d’un second processus de

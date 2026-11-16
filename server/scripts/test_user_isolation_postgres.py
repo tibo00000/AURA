@@ -18,8 +18,8 @@ MIGRATION = ROOT / "supabase/migrations/20261017200822_secure_user_data_isolatio
 RESTART_PROVIDER_TRACK = "track:deezer:900000000001"
 
 
-def run(args, **kwargs):
-    result = subprocess.run(args, capture_output=True, timeout=120, **kwargs)
+def run(args, *, timeout=120, **kwargs):
+    result = subprocess.run(args, capture_output=True, timeout=timeout, **kwargs)
     if result.returncode:
         # All data in these containers is synthetic; no production env/files mounted.
         raise RuntimeError(result.stderr.decode(errors="replace")[-4000:])
@@ -72,6 +72,9 @@ ALTER FUNCTION auth.uid() OWNER TO supabase_auth_admin;
         gateway = start("caddy:2.8-alpine", {"AURA_FIXTURE_CADDYFILE": """{
     admin off
     auto_https disable_redirects
+    servers {
+        protocols h1
+    }
 }
 https://localhost:8443 {
     bind 127.0.0.1
@@ -98,9 +101,10 @@ https://localhost:8443 {
         result = run([*common, "--rm", "-i", *flags, "--platform", "linux/amd64",
                       "--mount", f"type=bind,source={ROOT / 'server/app'},target=/repo/app,readonly",
                       "--mount", f"type=bind,source={ROOT / 'server/scripts/playlist_supabase_http_fixture.py'},target=/fixture.py,readonly",
+                      "--mount", f"type=bind,source={ROOT / 'server/scripts/playlist_worker_restart_fixture.py'},target=/playlist_worker_restart_fixture.py,readonly",
                       "--workdir", "/tmp", "-e", "PYTHONPATH=/repo", "--entrypoint", "python",
                       backend_image, "-B", "/fixture.py"],
-                     env=env, input=ca.stdout)
+                     env=env, input=ca.stdout, timeout=180)
         return json.loads(result)
     except RuntimeError:
         for service in sidecars[:2]:

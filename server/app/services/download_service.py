@@ -35,6 +35,10 @@ from app.services.replacement_history import ReplacementHistory
 
 logger = logging.getLogger(__name__)
 
+class _DownloadStartUnavailable(ProviderUnavailable):
+    """The job could not enter its running state before touching audio."""
+
+
 def _resolve_downloads_dir() -> Path:
     env_dir = os.getenv("DOWNLOADS_DIR")
     if env_dir:
@@ -1252,7 +1256,7 @@ class DownloadService:
             return True
         return await self._with_attempt(attempt, update)
 
-    async def _record_stopped_attempt(self, attempt, *, failed=False):
+    async def _record_stopped_attempt(self, attempt, *, failed=False, start_unavailable=False):
         """A stopped attempt may only finish its own still-active row, never publish.
 
         A completed DELETE has no row. A transient SQL failure must not strand a
@@ -1266,9 +1270,12 @@ class DownloadService:
                 if (current.attempt_count == attempt.job.attempt_count
                         and current.track_id == attempt.job.track_id
                         and current.status in ('queued', 'running')):
-                    resumable = self._closing and current.playlist_acquisition
+                    resumable = current.playlist_acquisition and (self._closing or start_unavailable)
+                    error_code = 'download_interrupted'
+                    if resumable:
+                        error_code = 'playlist_worker_shutdown' if self._closing else 'playlist_worker_storage_unavailable'
                     self._mutate_job(current, dict(status='queued' if resumable else ('failed' if failed else 'cancelled'),
-                        error_code='playlist_worker_shutdown' if resumable else 'download_interrupted',
+                        error_code=error_code,
                         error_message=None if resumable else 'Download interrupted; retry available'))
             try:
                 await blocking(finish)
@@ -1348,6 +1355,7 @@ class DownloadService:
 
     async def _run_download_job(self, attempt, source_hint=None):
         failed = False
+        start_unavailable = False
         try:
             if attempt.job.operation_type == 'manual_reassign':
                 def audit(current):
@@ -1362,20 +1370,21 @@ class DownloadService:
                         await self._run_download_job_impl(attempt, source_hint)
         except asyncio.CancelledError:
             attempt.cancelled.set()
-        except Exception:
+        except Exception as exc:
             failed = True
+            start_unavailable = isinstance(exc, _DownloadStartUnavailable)
             logger.warning('Download attempt failed for %s', attempt.job.id)
         finally:
-            attempt.finalizer = self._finalizers.start(self._finalize_attempt(attempt, failed))
+            attempt.finalizer = self._finalizers.start(self._finalize_attempt(attempt, failed, start_unavailable))
             await drain(attempt.finalizer, on_cancel=attempt.cancelled.set)
 
-    async def _finalize_attempt(self, attempt, failed):
+    async def _finalize_attempt(self, attempt, failed, start_unavailable=False):
         if attempt.native_future is not None:
             await drain(attempt.native_future, on_cancel=attempt.cancelled.set)
         if attempt.progress_tasks:
             await drain(asyncio.gather(*tuple(attempt.progress_tasks), return_exceptions=True))
         if failed or attempt.cancelled.is_set():
-            await self._record_stopped_attempt(attempt, failed=failed)
+            await self._record_stopped_attempt(attempt, failed=failed, start_unavailable=start_unavailable)
         if attempt.job.operation_type == 'manual_reassign':
             try:
                 await blocking(ReplacementHistory(_get_sync_base()).settle, attempt, attempt.cancelled.is_set())
@@ -1427,7 +1436,11 @@ class DownloadService:
             return path
 
     async def _run_download_job_impl(self, attempt: DownloadAttempt, source_hint=None):
-        if not await self._update_job_status(attempt, status='running', progress_percent=0.0):
+        try:
+            started = await self._update_job_status(attempt, status='running', progress_percent=0.0)
+        except ProviderUnavailable:
+            raise _DownloadStartUnavailable from None
+        if not started:
             return
         if attempt.job.playlist_acquisition and not (source_hint or {}).get('resolved_video_id'):
             await self._update_job_status(attempt, status='failed', error_code='authorized_audio_source_missing',
