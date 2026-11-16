@@ -133,6 +133,17 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
   pendant les deux tentatives. Le transport SQL du harnais
   utilise `psql` sur un conteneur sans réseau. FastAPI vérifie des JWT
   signés pour le test, puis le harnais transmet le sujet à PostgreSQL.
+- Ajouter `--playlist-supabase-http` à la même commande pour tester le
+  transport Supabase d’Aura. Préparer les images locales
+  `supabase/gotrue:v2.197.0`, `postgrest/postgrest:v14.18`, `caddy:2.8-alpine`
+  et `aura-security-lot5:sec0052-20261023-amd64`. Les trois premières sont
+  publiques. Pour le runtime Python, `--playlist-backend-image` accepte
+  une autre image locale Linux amd64 dotée des dépendances de
+  `server/pyproject.toml`. Le harnais monte le code candidat en lecture
+  seule et partage uniquement la boucle locale du conteneur PostgreSQL,
+  sans port publié. Caddy fournit le certificat de test. Supabase Auth crée deux
+  comptes synthétiques et signe leurs jetons. FastAPI vérifie ces jetons et
+  exécute les RPC via le client Supabase d’Aura et PostgREST.
 
 ## Résultats obtenus
 
@@ -149,6 +160,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 169 sur 169 au commit `10b35096`. L’indexation des 50 000 titres prend 2,48 s sur ce rejeu, 1,29 à 2,68 s sur les rejeux précédents après optimisation et 5,31 s sur le commit de départ. Le seuil de 3 s est conservé. |
 | PostgreSQL et HTTP | Sept migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
+| Supabase Auth et PostgREST locaux | Deux comptes et deux sessions distinctes du propriétaire. La seconde session retrouve la référence Deezer, le bilan, le morceau ajouté et ses métadonnées avec l’occurrence manuelle intacte. Rejeu stable de l’actualisation et de l’action cloud. Un inventaire invalide laisse le snapshot intact. Accès anonyme et accès croisé refusés. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
 antérieur sur les deux branches. Les mesures de cette section proviennent
@@ -179,9 +191,10 @@ appareil.
   [Politique Spotify](https://developer.spotify.com/policy)
 - Vérification de la procédure de publication et des sources audio
   autorisées. Aucun test ne requiert de téléchargement de contenu tiers.
-- Vérification sur un environnement de préproduction avec Supabase
-  Auth et PostgREST. Le rejeu local vérifie le JWT dans FastAPI et
-  substitue un adaptateur `psql` au transport PostgREST.
+- Vérification sur l’environnement de préproduction avec sa configuration
+  Supabase, ses versions de composants et son mode de signature des jetons.
+  Le rejeu local Supabase couvre une configuration HS256 avec certificats
+  éphémères et comptes synthétiques.
 
 Aucune révision de production, OTA ou base réelle n’entre dans la
 validation locale. Chaque intervention distante doit faire l’objet d’une

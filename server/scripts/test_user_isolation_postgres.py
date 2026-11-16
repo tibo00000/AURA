@@ -26,6 +26,97 @@ def run(args, **kwargs):
     return result.stdout
 
 
+def verify_playlist_supabase_http(container, nonce, sql, backend_image):
+    """Share the isolated PostgreSQL loopback namespace with the HTTP services."""
+    jwt_secret = secrets.token_urlsafe(48)
+    issuer = "https://localhost:8443/auth/v1"
+    sql("""
+CREATE ROLE authenticator LOGIN NOINHERIT;
+GRANT anon, authenticated, service_role TO authenticator;
+CREATE ROLE supabase_auth_admin LOGIN NOINHERIT CREATEROLE;
+ALTER ROLE supabase_auth_admin SET search_path = auth;
+GRANT CREATE ON DATABASE postgres TO supabase_auth_admin;
+ALTER SCHEMA auth OWNER TO supabase_auth_admin;
+ALTER FUNCTION auth.uid() OWNER TO supabase_auth_admin;
+""")
+    sidecars = []
+    common = ["docker", "run", "--pull", "never", "--network", "container:" + container,
+              "--label", "aura.sec002=" + nonce]
+
+    def docker_env(values):
+        options = [arg for key in values for arg in ("-e", key)]
+        return options, {**os.environ, **values}
+
+    def start(image, values, *, options=(), command=()):
+        flags, env = docker_env(values)
+        service = run([*common, "-d", *flags, *options, image, *command], env=env).decode().strip()
+        assert re.fullmatch(r"[0-9a-f]{64}", service)
+        sidecars.append(service)
+        return service
+
+    try:
+        start("supabase/gotrue:v2.197.0", {
+            "API_EXTERNAL_URL": issuer, "GOTRUE_SITE_URL": "https://localhost:8443",
+            "GOTRUE_API_HOST": "127.0.0.1", "GOTRUE_API_PORT": "9999",
+            "GOTRUE_DB_DRIVER": "postgres",
+            "GOTRUE_DB_DATABASE_URL": "postgres://supabase_auth_admin@127.0.0.1:5432/postgres?sslmode=disable",
+            "GOTRUE_JWT_SECRET": jwt_secret, "GOTRUE_JWT_ISSUER": issuer,
+            "GOTRUE_JWT_AUD": "authenticated", "GOTRUE_JWT_DEFAULT_GROUP_NAME": "authenticated",
+            "GOTRUE_EXTERNAL_EMAIL_ENABLED": "true", "GOTRUE_MAILER_AUTOCONFIRM": "true",
+        })
+        start("postgrest/postgrest:v14.18", {
+            "PGRST_DB_URI": "postgres://authenticator@127.0.0.1:5432/postgres?sslmode=disable",
+            "PGRST_DB_SCHEMAS": "public", "PGRST_DB_ANON_ROLE": "anon", "PGRST_JWT_SECRET": jwt_secret,
+            "PGRST_SERVER_HOST": "127.0.0.1",
+        })
+        gateway = start("caddy:2.8-alpine", {"AURA_FIXTURE_CADDYFILE": """{
+    admin off
+    auto_https disable_redirects
+}
+https://localhost:8443 {
+    bind 127.0.0.1
+    tls internal
+    handle_path /auth/v1/* {
+        reverse_proxy 127.0.0.1:9999
+    }
+    handle_path /rest/v1/* {
+        reverse_proxy 127.0.0.1:3000
+    }
+}
+"""}, options=["--entrypoint", "/bin/sh"], command=[
+            "-ec", "printf '%s\\n' \"$AURA_FIXTURE_CADDYFILE\" > /tmp/Caddyfile; exec caddy run --config /tmp/Caddyfile",
+        ])
+        for _ in range(40):
+            ca = subprocess.run(["docker", "exec", gateway, "cat", "/data/caddy/pki/authorities/local/root.crt"],
+                                capture_output=True, timeout=10)
+            if ca.returncode == 0:
+                break
+            time.sleep(0.25)
+        else:
+            raise RuntimeError("Local TLS gateway CA did not become ready")
+        flags, env = docker_env({"SUPABASE_JWT_SECRET": jwt_secret})
+        result = run([*common, "--rm", "-i", *flags, "--platform", "linux/amd64",
+                      "--mount", f"type=bind,source={ROOT / 'server/app'},target=/repo/app,readonly",
+                      "--mount", f"type=bind,source={ROOT / 'server/scripts/playlist_supabase_http_fixture.py'},target=/fixture.py,readonly",
+                      "--workdir", "/tmp", "-e", "PYTHONPATH=/repo", "--entrypoint", "python",
+                      backend_image, "-B", "/fixture.py"],
+                     env=env, input=ca.stdout)
+        return json.loads(result)
+    except RuntimeError:
+        for service in sidecars[:2]:
+            diagnostics = subprocess.run(["docker", "logs", "--tail", "8", service], capture_output=True, timeout=10)
+            output = (diagnostics.stdout + diagnostics.stderr).decode(errors="replace")
+            print(output.replace(jwt_secret, "[fixture secret]"), file=sys.stderr)
+        raise
+    finally:
+        for service in reversed(sidecars):
+            inspected = subprocess.run(["docker", "inspect", service], capture_output=True, timeout=10)
+            if inspected.returncode == 0:
+                labels = json.loads(inspected.stdout)[0]["Config"]["Labels"]
+                assert labels.get("aura.sec002") == nonce
+                run(["docker", "rm", "-f", service])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", default="postgres:16-alpine")
@@ -35,16 +126,22 @@ def main():
                         help="Also apply and verify the playlist candidate on the disposable database")
     parser.add_argument("--playlist-worker-restart", action="store_true",
                         help="Run the playlist worker across a process crash with local backend dependencies")
+    parser.add_argument("--playlist-supabase-http", action="store_true",
+                        help="Verify the user API via real Supabase Auth and PostgREST on isolated loopback")
+    parser.add_argument("--playlist-backend-image", default="aura-security-lot5:sec0052-20261023-amd64",
+                        help="Local Linux amd64 image with Aura backend Python dependencies")
     args = parser.parse_args()
     if args.playlist_worker_restart and not args.playlist_sync:
         parser.error("--playlist-worker-restart requires --playlist-sync")
+    if args.playlist_supabase_http and not args.playlist_sync:
+        parser.error("--playlist-supabase-http requires --playlist-sync")
     endpoint = run(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]).decode().strip()
     if not endpoint.startswith(("npipe://", "unix://")) or os.environ.get("DOCKER_HOST", endpoint) != endpoint:
         raise RuntimeError("A local Docker socket is required; remote Docker is forbidden")
     nonce = uuid.uuid4().hex
     container = run(["docker", "run", "--rm", "-d", "--network", "none", "--label", "aura.sec002="+nonce,
                      "--tmpfs", "/var/lib/postgresql/data:rw", "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
-                     args.image, "-c", "listen_addresses="]).decode().strip()
+                     args.image, "-c", "listen_addresses=" + ("127.0.0.1" if args.playlist_supabase_http else "")]).decode().strip()
     assert re.fullmatch(r"[0-9a-f]{64}", container)
     try:
         for _ in range(50):
@@ -180,6 +277,9 @@ WHERE i.status = 'available' AND j.status = 'succeeded' AND j.attempt_count = 2;
 SELECT count(*) FROM public.download_jobs;
 """).stdout.decode().splitlines()
                     assert final_job == [original_job, "1"], final_job
+        supabase_http = verify_playlist_supabase_http(
+            container, nonce, sql, args.playlist_backend_image,
+        ) if args.playlist_supabase_http else None
         info = json.loads(run(["docker","inspect",container]))[0]
         assert not info["HostConfig"]["PortBindings"] and info["HostConfig"]["NetworkMode"] == "none"
         version = sql("SHOW server_version").stdout.decode().strip()
@@ -187,8 +287,10 @@ SELECT count(*) FROM public.download_jobs;
                           "playlist_scenarios":playlist_scenarios,
                           "playlist_inventory_fixture_checked":args.playlist_sync,
                           "playlist_worker_restart_checked":args.playlist_worker_restart,
+                          "playlist_supabase_http":supabase_http,
                           "failed":0,"skipped":0,"network":"none","ports_published":False,
-                          "auth_uid_source":"synthetic local claim setting, not Supabase Auth/PostgREST","container_cleanup":"finally"}))
+                          "auth_uid_source":"synthetic local claim setting for SQL-only tests",
+                          "container_cleanup":"finally"}))
     finally:
         # Remove only the newly created container with the exact per-run ownership label.
         info = json.loads(run(["docker","inspect",container]))[0]
