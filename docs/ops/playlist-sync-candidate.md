@@ -5,6 +5,73 @@ Le chantier de démarrage Android et les protections de session intégrés
 à ce commit font partie du point de comparaison. La version client reste
 0.4.3, code 7, pendant la préparation du candidat.
 
+## Déploiement backend autorisé du 17 novembre 2026
+
+L’utilisateur a autorisé les neuf migrations nommées ci-dessous et le
+déploiement du backend avec les acquisitions automatiques désactivées.
+Le backend actif provient du commit
+`2e2b9559bd58330e39f7ca813486e3d37c1e20d1`, image Docker
+`sha256:8fcab820e8b0c0da25a2c1f7087b51899ef23bb2ae679298c86618dc503563f0`.
+La vérification des 59 fichiers applicatifs de l’image correspond au commit.
+La branche de travail reste distincte de `main`.
+
+Les neuf migrations ont été appliquées à `neosgkuccazvgkzwzjzh` puis
+contrôlées dans l’historique distant. Le prérequis `operation_type` des jobs
+était déjà présent. Le conteneur `aura-api` est sain, `/health` répond 200,
+les quatre nouvelles routes sont présentes et les consultations anonymes
+du snapshot et du bilan sont refusées avec 401. Le snapshot exécuté sous
+le rôle authentifié restitue 4 playlists et 251 occurrences au propriétaire,
+et aucune au second compte sans playlist. Toutes les tables playlist ont
+RLS activé. Les RPC de worker sont inaccessibles aux rôles clients.
+
+Les valeurs effectives sont `ENABLE_PLAYLIST_ACQUISITION_WORKER=false`,
+`ENABLE_STARTUP_RECOVERY=false`, `ENABLE_CACHE_BACKFILL=false` et
+`PLAYLIST_AUTHORIZED_AUDIO_MANIFEST` vide. Une actualisation peut ajouter
+les titres et persister une intention audio, mais le worker ne télécharge
+pas les fichiers manquants. Les routes de téléchargement manuel historiques
+conservent leur fonctionnement. Après redémarrage, les neuf tables exportées
+sont identiques sur tous leurs champs préexistants, y compris les 449 jobs.
+Les 5 038 fichiers sauvegardés sont présents avec leur taille initiale.
+Aucun traceback ni ligne ERROR n’a été relevé dans les logs de démarrage.
+
+La sauvegarde est exclusivement sur le VPS, dans le répertoire privé
+`/root/aura-playlist-sync-20261117-2e2b9559` (0700). Elle comprend
+`database-before.json`, `schema-before.json`, `audio-before.tar` et la
+configuration antérieure privée. L’export des données est vérifié par
+SHA-256 `2426265dba7d13f7c4a35ca2f764668aa5cb8b664072cbb00427817a47bb62bf`.
+L’archive audio fait 7 562 864 640 octets et son SHA-256 est
+`5e16a75896084a587c53f891fb53013376c9c6a4c2d7a378d35e64f2560bee53`.
+Elle conserve les liens physiques. Les données et l’archive audio n’ont
+pas été rapatriées. La copie locale temporaire du catalogue de schéma a
+été transférée puis supprimée après contrôle. Conserver la sauvegarde
+jusqu’à la validation explicite du fonctionnement en production par
+l’utilisateur, puis supprimer uniquement les fichiers de sauvegarde.
+Ne pas supprimer le répertoire entier, qui contient aussi l’override actif
+`compose.playlists.json` et les preuves d’intervention.
+
+Le retour arrière backend utilise l’image antérieure conservée
+`sha256:cd2a68b333fcafd5753a3654d34be12a5dc5a492d11f0469ffb9446d7d824e91`
+et la liste Compose de `plan.json` sans son dernier override playlist.
+Conserver les schémas additifs et les données, ainsi que les trois flags
+d’exécution désactivés. L’ancien backend perd les protections applicatives
+décrites dans la section Retour arrière, même si les triggers persistent.
+
+L’advisor Supabase ne signale pas d’erreur. Les nouvelles observations
+concernent les trois RPC SECURITY DEFINER volontairement exposées au rôle
+authentifié, les deux tables consultables avec RLS et la table d’exclusions
+dont RLS interdit tout accès client direct. Les fonctions exposées contrôlent
+`auth.uid()`, la propriété de la playlist et leur `search_path` est vide.
+Les avertissements de catalogue et de protection des mots de passe existaient
+avant l’intervention. Références
+[RPC SECURITY DEFINER](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable),
+[visibilité GraphQL](https://supabase.com/docs/guides/database/database-linter?lint=0027_pg_graphql_authenticated_table_exposed)
+et [RLS sans politique](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
+
+L’OTA publiée reste 0.4.3/code 7, avec l’empreinte APK
+`7967b5f5ecb070755af442fd8bcf255e0108208e26d7cd0d131226410c0f719f`.
+L’APK candidat local conserve le certificat et l’empreinte consignés plus bas.
+L’installation sur téléphone et les parcours réels restent à effectuer.
+
 | Lot | Commit | Périmètre |
 | --- | --- | --- |
 | A | `f14e98d1` | Snapshot PostgreSQL, réconciliation Room et outbox Android/Desktop |
@@ -40,9 +107,8 @@ cette playlist. Une nouvelle association à la source sera alors nécessaire,
 et les exclusions et bilans de la playlist supprimée repartiront à zéro.
 
 1. Préparer le backend et les migrations nommées ci-dessous après validation
-   distincte de leur application. Au contrôle du 17 novembre, le serveur
-   répond à `/health`, mais les nouvelles routes playlist sont absentes de
-   son OpenAPI.
+   distincte de leur application. Cette étape et le déploiement backend
+   sont réalisés le 17 novembre, avec les contrôles consignés ci-dessus.
 2. Préparer l’APK standard à la version courante, vérifier son certificat
    contre la version installée et son empreinte SHA-256. Une installation
    par-dessus garde la base locale et exécute les migrations Room.
@@ -215,7 +281,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Vérification | Résultat |
 | --- | --- |
 | Python | 406 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. Les tests couvrent la lecture croisée des identifiants fournisseur exacts, l’isolation privée, la lecture par plage et la priorité d’une copie privée déjà disponible. |
-| Correction des échecs CI | 406 tests backend réussis sur le runtime Linux local après retrait des mocks globaux installés à la collecte. Les 20 tests Android Media3 et contrôleurs passent dans un checkout avec l’origine HTTPS fictive désormais fournie par la CI. |
+| Correction des échecs CI | 406 tests backend réussis sur Python 3.12 Linux après chargement des dépendances audio réelles depuis `conftest.py`, avant les substitutions conditionnelles des anciens modules de test. Aucun changement du runtime applicatif. Les 20 tests Android Media3 et contrôleurs passent dans un checkout avec l’origine HTTPS fictive désormais fournie par la CI. |
 | Recréation d’une playlist | Nouveau scénario PostgreSQL réussi. Suppressions batch et REST limitées à la playlist, occurrences et exclusions des autres playlists conservées, job et intention partagés inchangés. Le contrôle HTTP local retrouve aussi les mêmes empreintes audio/métadonnées et une réponse de lecture partielle 206. |
 | APK pour l’essai direct | `:androidApp:assembleDebug` réussi. Package `com.aura.music`, version 0.4.3/code 7. Signature v2 vérifiée, certificat SHA-256 `9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307` identique à l’APK publié. Empreinte du candidat `2c3c74fcb0a785c2c35de11ef99c92e65c33e7bd1dc81d1ceb133793be3b1859`. Copie de la version publiée téléchargée et vérifiée. Installation en attente du backend compatible et d’un téléphone connecté. |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
