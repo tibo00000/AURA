@@ -54,9 +54,9 @@ def read_entry(root: Path, name: str):
         return None
 
 
-def lookup(base: Path, track_id: str):
+def lookup(base: Path, track_id: str, *, aliases: list[str] | None = None):
     root = directory(base)
-    for alias in get_track_id_aliases(track_id):
+    for alias in get_track_id_aliases(track_id) if aliases is None else aliases:
         found = read_entry(root, key(alias))
         if found:
             return found

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+import re
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,10 @@ _PREFIX_BY_KIND = {
     "track": "trk",
 }
 _KIND_BY_PREFIX = {value: key for key, value in _PREFIX_BY_KIND.items()}
+_CATALOG_TRACK_IDS = {
+    "deezer": re.compile(r"[1-9][0-9]{0,19}"),
+    "spotify": re.compile(r"[A-Za-z0-9]{22}"),
+}
 
 
 def build_aura_id(entity_kind: str, provider_name: str, provider_id: str) -> str:
@@ -183,4 +188,23 @@ def get_track_id_aliases(track_id: str) -> list[str]:
             result.append(c)
 
     return result
+
+
+def get_streaming_track_id_aliases(track_id: str) -> list[str]:
+    """Also read exact historical catalogue storage keys without expanding deletions."""
+    aliases = get_track_id_aliases(track_id)
+    raw = track_id.strip()
+    for alias in aliases:
+        provider, _, provider_id = alias.partition(":")
+        pattern = _CATALOG_TRACK_IDS.get(provider)
+        if pattern is None or not pattern.fullmatch(provider_id):
+            continue
+        canonical = build_aura_id("track", provider, provider_id)
+        legacy = f"trk_{provider}_{provider_id}"
+        exact_inputs = {canonical, legacy, alias, f"track:{alias}"}
+        if provider == "deezer":
+            exact_inputs.add(provider_id)
+        if raw in exact_inputs:
+            return list(dict.fromkeys([*aliases, canonical, legacy]))
+    return aliases
 

@@ -183,10 +183,10 @@ def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[boo
         return False, "application/octet-stream"
 
 
-def _find_globally_cached_track(track_id):
+def _find_globally_cached_track(track_id, *, aliases=None):
     """Pure lookup in the native-published namespace; never backfill on read."""
     try:
-        return download_cache.lookup(_get_sync_base(), track_id)
+        return download_cache.lookup(_get_sync_base(), track_id, aliases=aliases)
     except (OSError, ValueError):
         return None
 

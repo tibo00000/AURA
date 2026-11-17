@@ -173,7 +173,8 @@ async def assert_http_availability(container, track_id, legacy_track_id):
         assert acquisition["track_id"] == track_id and acquisition["availability"] == "available"
         assert acquisition["job_status"] == "succeeded"
         assert (await client.get(audio_url)).status_code == 401
-        for playable_id in (track_id, legacy_track_id):
+        legacy_catalog_id = "trk_" + legacy_track_id.removeprefix("track:").replace(":", "_", 1)
+        for playable_id in (track_id, legacy_track_id, legacy_catalog_id):
             audio = await client.get(f"/me/sync/files/{playable_id}", headers=headers(OWNER) | {"Range": "bytes=0-3"})
             assert audio.status_code == 206, (playable_id, audio.status_code)
             assert audio.content == b"RIFF"

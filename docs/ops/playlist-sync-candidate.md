@@ -166,7 +166,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 
 | Vérification | Résultat |
 | --- | --- |
-| Python | 400 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. |
+| Python | 405 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. Cinq tests vérifient la lecture croisée des identifiants fournisseur exacts, l’isolation privée et la lecture par plage depuis le cache natif. |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
@@ -190,6 +190,10 @@ appareil.
 
 ## Preuves encore requises pour l’activation
 
+- Vérifier l’acquisition d’une occurrence rattachée à Spotify ou Deezer
+  qui conserve un identifiant local opaque. La lecture croisée validée
+  ici couvre les identifiants fournisseur explicites et les formes Aura
+  correspondantes.
 - Parcours réels Android, Android Auto et reprise par le système, avec
   une playlist mixte contenant des doublons volontaires. Choisir la
   deuxième occurrence, changer de piste, tester les modes aléatoire et

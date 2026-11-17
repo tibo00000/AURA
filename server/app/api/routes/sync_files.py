@@ -176,10 +176,10 @@ def _list_playable_sync_files(user_id: str) -> list[dict[str, Any]]:
 
 
 def find_playable_sync_file(user_id: str, track_id: str):
-    from app.core.aura_id_codec import get_track_id_aliases
+    from app.core.aura_id_codec import get_streaming_track_id_aliases
     from app.services.download_service import _find_globally_cached_track
 
-    aliases = get_track_id_aliases(track_id)
+    aliases = get_streaming_track_id_aliases(track_id)
     target_file: Path | None = None
     metadata: dict[str, Any] | None = None
 
@@ -199,7 +199,7 @@ def find_playable_sync_file(user_id: str, track_id: str):
     # STREAMING ÉPHÉMÈRE : on sert directement le fichier audio du cache global
     # SANS créer de hardlink silencieux ni de fichier .json dans l'espace personnel de l'utilisateur (zéro pollution de bibliothèque / quota).
     if target_file is None:
-        cached = _find_globally_cached_track(track_id)
+        cached = _find_globally_cached_track(track_id, aliases=aliases)
         if cached:
             cached_audio, cached_meta = cached
             target_file = cached_audio

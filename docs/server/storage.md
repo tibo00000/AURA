@@ -21,6 +21,12 @@ repli par copie avec réservation additionnelle si les liens sont indisponibles)
 Le remplacement partagé explicite reste volontaire : cache natif remplacé puis
 propagation aux seules références natives prouvées, comme en SEC-003.
 
+La lecture cloud retrouve la forme Aura canonique et l’ancienne forme
+`trk_deezer_…` ou `trk_spotify_…` d’un même identifiant fournisseur exact.
+Elle conserve la priorité de la copie du compte, puis consulte le cache
+natif vérifié. Cette correspondance de lecture n’entraîne aucune copie et
+ne change pas la portée d’une suppression.
+
 Avant tout parsing multipart : authentification vérifiée, admission de deux
 uploads maximum par compte, réservation de l'espace de spooling et de staging.
 Le parseur reçoit au plus51Mio de corps, un fichier de50Mio, huit champs de64Kio

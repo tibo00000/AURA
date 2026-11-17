@@ -109,6 +109,39 @@ def test_private_upload_stays_private_even_under_catalogue_or_job_name(api, trac
     assert not (module._get_sync_base() / '_global_cache').exists()
 
 
+@pytest.mark.parametrize(('provider', 'provider_id'), [('deezer', '987654'), ('spotify', '0123456789ABCDEFGHIJKL')])
+@pytest.mark.parametrize('store_legacy', [False, True])
+def test_legacy_catalogue_occurrence_plays_the_owners_exact_audio(api, provider, provider_id, store_legacy):
+    client, _, _ = api
+    client.app.include_router(sync_files.router)
+    canonical = build_aura_id('track', provider, provider_id)
+    legacy = f'trk_{provider}_{provider_id}'
+    stored, requested = (legacy, canonical) if store_legacy else (canonical, legacy)
+    content = b'ID3-PRIVATE-CATALOGUE-AUDIO'
+    assert client.post('/me/sync/files/' + stored, headers=bearer(A),
+                       files={'file': ('sample.mp3', content, 'audio/mpeg')}).status_code == 201
+
+    playback = client.get('/me/sync/files/' + requested, headers=bearer(A))
+    assert playback.status_code == 200 and playback.content == content
+    assert client.get('/me/sync/files/' + requested, headers=bearer(B)).status_code == 404
+    assert client.get('/me/sync/files/track:local:' + provider_id, headers=bearer(A)).status_code == 404
+    assert client.delete('/me/sync/files/' + requested, headers=bearer(A)).json()['data']['deleted'] is False
+    assert client.get('/me/sync/files/' + stored, headers=bearer(A)).content == content
+
+
+def test_legacy_catalogue_occurrence_streams_existing_native_audio_without_copy(api, tmp_path):
+    client, _, _ = api
+    client.app.include_router(sync_files.router)
+    canonical = build_aura_id('track', 'deezer', '987654')
+    source = tmp_path / 'native.mp3'
+    source.write_bytes(b'ID3-NATIVE-CATALOGUE-AUDIO')
+    assert register_native(A, canonical, source)
+
+    response = client.get('/me/sync/files/trk_deezer_987654', headers=bearer(B) | {'Range': 'bytes=0-2'})
+    assert response.status_code == 206 and response.content == b'ID3'
+    assert client.get('/me/sync/files', headers=bearer(B)).json()['data']['items'] == []
+
+
 def test_upload_replacement_detaches_native_hardlink_and_keeps_shared_bytes(api, tmp_path):
     client, instance, db = api
     client.app.include_router(sync_files.router)
