@@ -122,8 +122,8 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Create local.properties if missing
-        run: touch local.properties
+      - name: Configure synthetic HTTPS origin for Android tests
+        run: printf '%s\n' 'API_BASE_URL=https://api.example.invalid' > local.properties
 
       - name: Compile Android Debug, run unit tests & Lint
         run: |

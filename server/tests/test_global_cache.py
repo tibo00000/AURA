@@ -23,20 +23,7 @@ from pathlib import Path
 TEST_TEMP_DIR = Path(tempfile.mkdtemp(prefix="aura_test_sync_"))
 os.environ["SYNC_FILES_DIR"] = str(TEST_TEMP_DIR)
 
-import sys
-from unittest.mock import MagicMock, patch
-
-# Mock external optional audio libraries if not present in local test venv
-for mod in ("yt_dlp", "ytmusicapi"):
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
-try:
-    import rapidfuzz  # noqa: F401
-except ImportError:
-    sys.modules["rapidfuzz"] = MagicMock()
-    sys.modules["rapidfuzz.fuzz"] = MagicMock()
-
-
+from unittest.mock import patch
 
 from app.services.download_service import (
     _get_sync_base,

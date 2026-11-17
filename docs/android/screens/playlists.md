@@ -44,6 +44,7 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - Le menu `Consulter le bilan cloud` ouvre le bilan d’une playlist synchronisée. Il se recharge après un résultat d’actualisation, à l’ouverture de la fiche synchronisée et au retour du réseau. La fiche le vérifie périodiquement tant qu’une acquisition est en cours ou que le bilan est ouvert. Une erreur de lecture ou une coupure réseau conserve le dernier bilan confirmé, quand il existe. `Réessayer la lecture` consulte le bilan sans créer de demande de téléchargement.
 - Avant « Rendre disponible dans le cloud » ou « Réessayer », Aura synchronise les éditions locales en attente de cette playlist. Si elles n’ont pas pu être confirmées, la fiche affiche l’erreur et la consultation du bilan reste indépendante. Les modifications d’une autre playlist n’entraînent pas de synchronisation supplémentaire.
 - Le rejeu d’une actualisation acquitte sa demande locale et conserve le bilan le plus récent de la même source, même si un autre appareil a actualisé la playlist entre-temps.
+- La suppression d’une playlist retire ses occurrences, son association, ses bilans et ses exclusions. Les jobs et les fichiers audio partagés restent rattachés aux titres. Une playlist recréée retrouve une nouvelle identité et peut être associée de nouveau à sa source.
 
 ## Import / Export Engine
 - **Parsing universel** : Détection automatique des encodages (BOM UTF-8, UTF-16, Latin-1, Windows-1252), détection dynamique des délimiteurs CSV (`,`, `;`, `\t`) et mapping d'en-têtes multilingues.

@@ -32,6 +32,33 @@ Le chantier de démarrage Android et les protections de session intégrés
 Historique complet depuis le point de départ avec
 `git log --oneline 03133655..fix/playlist-sync-program`.
 
+## Essai direct sur téléphone
+
+Le parcours retenu pour l’usage personnel commence par une playlist dédiée.
+Sa suppression et sa recréation sont acceptées si un problème reste limité à
+cette playlist. Une nouvelle association à la source sera alors nécessaire,
+et les exclusions et bilans de la playlist supprimée repartiront à zéro.
+
+1. Préparer le backend et les migrations nommées ci-dessous après validation
+   distincte de leur application. Au contrôle du 17 novembre, le serveur
+   répond à `/health`, mais les nouvelles routes playlist sont absentes de
+   son OpenAPI.
+2. Préparer l’APK standard à la version courante, vérifier son certificat
+   contre la version installée et son empreinte SHA-256. Une installation
+   par-dessus garde la base locale et exécute les migrations Room.
+3. Choisir une seule playlist d’essai et relever son contenu. Vérifier
+   l’association, deux actualisations successives, le retrait d’un titre et
+   son absence au prochain rafraîchissement, puis la lecture.
+4. Comparer une autre playlist contenant le même titre et lire son audio.
+   Si une recréation devient utile, désigner explicitement la playlist avant
+   sa suppression. Étendre ensuite les essais aux playlists usuelles.
+
+Le test `playlist_recreation_scope.sql` vérifie les suppressions batch et REST,
+les autres comptes et occurrences, ainsi que la conservation du job partagé.
+Le contrôle HTTP local compare aussi les empreintes des octets audio et des
+métadonnées avant et après recréation. L’environnement de test durable sera
+repris après ce parcours sur téléphone.
+
 ## Ordre de livraison proposé
 
 1. Exporter et vérifier les tables de playlists, occurrences et opérations
@@ -154,7 +181,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
   `server`, avec configuration synthétique et stockage jetable.
 - PostgreSQL et reprise via `python -B server/scripts/test_user_isolation_postgres.py --image postgres:17.11-alpine --download-cancellation --playlist-sync --playlist-worker-restart`.
   Le test exige les dépendances Python du backend. Il rejoue les neuf
-  migrations, les six scénarios playlist, 97 assertions d’isolation,
+  migrations, les scénarios playlist, 97 assertions d’isolation,
   10 assertions d’annulation et trois contrôles de rollback. Il lance
   deux processus séparés, interrompt le premier après l’écriture du job,
   rend l’intention à nouveau éligible, puis vérifie le même job à la
@@ -188,6 +215,9 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Vérification | Résultat |
 | --- | --- |
 | Python | 406 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. Les tests couvrent la lecture croisée des identifiants fournisseur exacts, l’isolation privée, la lecture par plage et la priorité d’une copie privée déjà disponible. |
+| Correction des échecs CI | 406 tests backend réussis sur le runtime Linux local après retrait des mocks globaux installés à la collecte. Les 20 tests Android Media3 et contrôleurs passent dans un checkout avec l’origine HTTPS fictive désormais fournie par la CI. |
+| Recréation d’une playlist | Nouveau scénario PostgreSQL réussi. Suppressions batch et REST limitées à la playlist, occurrences et exclusions des autres playlists conservées, job et intention partagés inchangés. Le contrôle HTTP local retrouve aussi les mêmes empreintes audio/métadonnées et une réponse de lecture partielle 206. |
+| APK pour l’essai direct | `:androidApp:assembleDebug` réussi. Package `com.aura.music`, version 0.4.3/code 7. Signature v2 vérifiée, certificat SHA-256 `9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307` identique à l’APK publié. Empreinte du candidat `2c3c74fcb0a785c2c35de11ef99c92e65c33e7bd1dc81d1ceb133793be3b1859`. Copie de la version publiée téléchargée et vérifiée. Installation en attente du backend compatible et d’un téléphone connecté. |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
