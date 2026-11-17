@@ -13,6 +13,7 @@ import com.aura.music.data.local.PlaylistEntity
 import com.aura.music.data.local.PlaylistSyncStateEntity
 import com.aura.music.data.local.SyncOutboxEntity
 import com.aura.music.data.local.UserSettingsEntity
+import com.aura.music.data.media.MediaStoreAudioDataSource
 import com.aura.music.data.network.AuraResponse
 import com.aura.music.data.network.BootstrapResponseDto
 import com.aura.music.data.network.KtorAuraApiService
@@ -26,17 +27,23 @@ import com.aura.music.data.network.SyncTokenDto
 import com.aura.music.data.playlist.PlaylistSourceReadException
 import com.aura.music.data.playlist.PlaylistSourceReader
 import com.aura.music.data.playlist.PlaylistSourceRepository
+import com.aura.music.domain.player.PlaylistPlayback
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -83,7 +90,7 @@ class PlaylistAcquisitionRequestTest {
         db.close()
     }
 
-    private fun repository(): PlaylistSourceRepository {
+    private fun repository(readReport: () -> List<PlaylistAcquisitionStatus>? = { acquisitions }): PlaylistSourceRepository {
         client = HttpClient(MockEngine { request ->
             val path = request.url.encodedPath
             calls.add(request.method to path)
@@ -107,7 +114,14 @@ class PlaylistAcquisitionRequestTest {
                     Json.encodeToString(AuraResponse(data = PlaylistSnapshotResponse("A", 1, 0, listOf(entry), 2, 1)))
                 }
                 "/me/sync/bootstrap" -> Json.encodeToString(AuraResponse(data = BootstrapResponseDto(SyncTokenDto("st_test", stamp), JsonObject(emptyMap()))))
-                "/me/playlists/mix/acquisitions" -> Json.encodeToString(AuraResponse(data = acquisitions))
+                "/me/playlists/mix/acquisitions" -> {
+                    val report = if (request.method == HttpMethod.Get) readReport() else acquisitions
+                    if (report == null) {
+                        return@MockEngine respond("{}", status = HttpStatusCode.ServiceUnavailable,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json"))
+                    }
+                    Json.encodeToString(AuraResponse(data = report))
+                }
                 else -> error("Unexpected endpoint $path")
             }
             respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
@@ -163,4 +177,52 @@ class PlaylistAcquisitionRequestTest {
         assertTrue(result.exceptionOrNull() is CancellationException)
         assertTrue(calls.isEmpty())
     }
+
+    @Test
+    fun failedReportReadKeepsConfirmedAudioAndRetryOnlyReads() = runBlocking {
+        val available = listOf(acquisitions.single().copy(availability = "available"))
+        val responses = listOf(available, null, emptyList()).iterator()
+        val repo = repository { responses.next() }
+        val worker = Job(coroutineContext[Job])
+        try {
+            val playback = reportPlayback(repo, CoroutineScope(coroutineContext + worker))
+            playback.verifyLater("mix")
+            withTimeout(5_000) { playback.statuses.first { it["mix"] == available } }
+
+            playback.verifyLater("mix")
+            withTimeout(5_000) { playback.verificationFailures.first { "mix" in it } }
+            assertEquals(available, playback.statuses.value["mix"])
+
+            playback.verifyLater("mix")
+            withTimeout(5_000) { playback.verificationFailures.first { it.isEmpty() } }
+            assertEquals(emptyList<PlaylistAcquisitionStatus>(), playback.statuses.value["mix"])
+            assertEquals(List(3) { HttpMethod.Get to "/me/playlists/mix/acquisitions" }, calls)
+        } finally {
+            worker.cancel()
+        }
+    }
+
+    @Test
+    fun failedFirstReportReadHasNoConfirmedDataAndClearsOnLogout() = runBlocking {
+        val repo = repository { null }
+        val worker = Job(coroutineContext[Job])
+        try {
+            val playback = reportPlayback(repo, CoroutineScope(coroutineContext + worker))
+            playback.verifyLater("mix")
+            withTimeout(5_000) { playback.verificationFailures.first { "mix" in it } }
+            assertTrue(playback.statuses.value.isEmpty())
+
+            auth.logout()
+            withTimeout(5_000) { playback.verificationFailures.first { it.isEmpty() } }
+            playback.verifyLater("mix")
+            assertEquals(listOf(HttpMethod.Get to "/me/playlists/mix/acquisitions"), calls)
+        } finally {
+            worker.cancel()
+        }
+    }
+
+    private fun reportPlayback(repo: PlaylistSourceRepository, worker: CoroutineScope) = PlaylistPlayback(
+        auth, repo, worker, { emptySet() }, { error("Only reading the cloud report") },
+        MediaStoreAudioDataSource(RuntimeEnvironment.getApplication()),
+    )
 }

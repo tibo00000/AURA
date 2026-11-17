@@ -133,7 +133,9 @@ fun PlaylistDetailScreenNew(
     val cloudFileRepository = appContainer.cloudFileRepository
     val playlistPlayback = appContainer.playlistPlayback
     val acquisitionStatusMap by playlistPlayback.statuses.collectAsState()
-    val acquisitionStatuses = acquisitionStatusMap[playlistId].orEmpty()
+    val verificationFailures by playlistPlayback.verificationFailures.collectAsState()
+    val acquisitionReport = acquisitionStatusMap[playlistId]
+    val acquisitionStatuses = acquisitionReport.orEmpty()
     val acquisitionsByTrack = remember(acquisitionStatuses) { acquisitionStatuses.associateBy { it.trackId } }
     val inProgress = remember(acquisitionStatuses) { acquisitionStatuses.count { it.isAcquisitionInProgress() } }
     var showAcquisitionReport by remember(playlistId, auraScope) { mutableStateOf(false) }
@@ -504,6 +506,15 @@ fun PlaylistDetailScreenNew(
                                             requestCloud()
                                         },
                                     )
+                                    if (sourceState != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Consulter le bilan cloud") },
+                                            onClick = {
+                                                showMenuOpen = false
+                                                showAcquisitionReport = true
+                                            },
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text(if (sourceName == null) "Associer une source" else "Changer la source") },
                                         enabled = !isSavingSource,
@@ -656,11 +667,19 @@ fun PlaylistDetailScreenNew(
             title = { Text("Disponibilité cloud") },
             text = {
                 LazyColumn(Modifier.height(260.dp)) {
-                    if (!isOnline) {
-                        item { Text("Hors connexion · dernier bilan connu") }
-                    }
-                    if (acquisitionStatuses.isEmpty() && isOnline) {
-                        item { Text("Bilan en attente de confirmation.") }
+                    when {
+                        !isOnline -> item {
+                            Text(if (acquisitionReport == null) "Hors connexion" else "Hors connexion · dernier bilan connu")
+                        }
+                        playlistId in verificationFailures -> item {
+                            Text("Bilan temporairement indisponible.")
+                            if (acquisitionReport != null) Text("Dernier bilan connu")
+                            TextButton(onClick = { playlistPlayback.verifyLater(playlistId) }) {
+                                Text("Réessayer la lecture")
+                            }
+                        }
+                        acquisitionReport == null -> item { Text("Bilan en attente de confirmation.") }
+                        acquisitionReport.isEmpty() -> item { Text("Aucun titre dans ce bilan.") }
                     }
                     itemsIndexed(acquisitionStatuses, key = { _, row -> row.trackId }) { _, row ->
                         Column(Modifier.padding(vertical = 6.dp)) {

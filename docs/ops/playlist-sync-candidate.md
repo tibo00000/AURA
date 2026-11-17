@@ -22,6 +22,9 @@ Le chantier de démarrage Android et les protections de session intégrés
 | Suivi C/F | `10b35096` | Acquittement des relectures sans régression du dernier bilan |
 | Suivi D/F | `df6550d6`, `f675f725` | Vérification HTTP de la reprise et utilisation des métadonnées persistées pendant une panne Deezer |
 | Suivi F | `1b544698` | Rejeu du contrat playlist avec Supabase Auth et PostgREST locaux |
+| Suivi D/F | `64a1b7cc`, `a130805d`, `aad6ad6b` | Reprise des admissions, lecture des fichiers catalogue historiques et audio des occurrences locales rattachées |
+| Suivi C/F | `2b6cf2b5` | Exclusions confirmées conservées lors d’une suppression manuelle |
+| Suivi E/F | `c9e8121b`, `51686b9f` | Éditions acquittées avant la demande cloud et contrôle local groupé des URI MediaStore |
 
 Historique complet depuis le point de départ avec
 `git log --oneline 03133655..fix/playlist-sync-program`.
@@ -179,13 +182,13 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
 | Entrées MediaStore disparues | Deux tests avec MediaStore simulé couvrent le filtrage à la restauration, le recours au cloud confirmé, la conservation des occurrences et le regroupement de 501 identifiants en deux requêtes. Un lot en erreur conserve son dernier état connu. |
-| Bilan cloud Android | 10 tests ciblés réussis avec la lecture et la navigation. Le suivi reste actif pendant un traitement ou une reprise transitoire et s’arrête quand le statut est définitif ou requiert un choix. |
+| Bilan cloud Android | 11 tests ciblés réussis sur les demandes, les statuts et la file de lecture. Une réponse HTTP 503 préserve le dernier bilan et la relance de la consultation utilise exclusivement GET. Un bilan vide est un résultat confirmé. Une première erreur reste distincte d’un bilan confirmé et son état est effacé à la déconnexion. Le suivi continue pendant une acquisition active et s’arrête pour les états définitifs ou qui requièrent un choix. |
 | Demande cloud Android | Quatre tests Room/Ktor vérifient l’ordre des appels, l’absence de demande si la synchronisation échoue, la consultation du bilan et le refus d’une requête après déconnexion. Une édition d’une autre playlist ne force aucune synchronisation. |
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Rejeu d’une actualisation Android | 11 tests ciblés avec migration Room et lecteurs fournisseur. Un accusé retardé acquitte la demande correspondante et préserve le bilan plus récent provenant d’un autre appareil. |
 | Lint Android | 0 erreur, 51 avertissements au commit `51686b9f`. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 176 sur 176 après le rattachement audio. L’indexation des 50 000 titres passe le seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. |
+| Suite Android complète | 178 sur 178 après l’ajout de la consultation du bilan. L’indexation des 50 000 titres passe le seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. |
 | PostgreSQL et HTTP | Neuf migrations rejouées, six scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
 | Supabase Auth et PostgREST locaux | Deux comptes et deux sessions distinctes du propriétaire. La seconde session retrouve la référence Deezer, le bilan, le morceau ajouté et ses métadonnées avec l’occurrence manuelle intacte. Rejeu stable de l’actualisation et de l’action cloud. Un inventaire invalide laisse le snapshot intact. Accès anonyme et accès croisé refusés. |
 | Démarrage et reprise du worker via PostgREST | Le démarrage FastAPI reprend le même job après interruption et sert les octets du fichier synthétique. L’entrée sans source autorisée reçoit un statut explicite. Le second compte peut lire via le cache natif authentifié, avec sa bibliothèque personnelle intacte. |
@@ -212,6 +215,9 @@ appareil.
   Ouvrir dans Android Auto une playlist composée uniquement de titres
   cloud lors d’un démarrage sans cache, puis vérifier que le dossier
   affiche les titres quand le serveur confirme leur disponibilité.
+  Ouvrir le bilan depuis le menu d’une playlist synchronisée. Simuler
+  une indisponibilité du serveur, vérifier l’affichage du dernier bilan
+  connu et relancer sa lecture sans créer de demande de téléchargement.
 - Mesures comparables de démarrage à froid et d’ouverture d’une grande
   playlist, sur le même appareil et avec le même corpus. Relever les
   temps jusqu’à l’affichage et au premier titre lisible ainsi que les

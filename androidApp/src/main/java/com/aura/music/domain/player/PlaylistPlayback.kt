@@ -11,6 +11,7 @@ import com.aura.music.data.network.PlaylistAcquisitionStatus
 import com.aura.music.data.playlist.PlaylistSourceRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +103,8 @@ class PlaylistPlayback(
     private var cacheScope: AuthSessionManager.Scope? = null
     private val _statuses = MutableStateFlow<Map<String, List<PlaylistAcquisitionStatus>>>(emptyMap())
     val statuses = _statuses.asStateFlow()
+    private val _verificationFailures = MutableStateFlow<Set<String>>(emptySet())
+    internal val verificationFailures = _verificationFailures.asStateFlow()
     private val verificationJobs = mutableMapOf<String, Job>()
     private val requestVersions = mutableMapOf<String, Long>()
     private val pendingMutationVersions = mutableMapOf<String, Long>()
@@ -117,6 +120,7 @@ class PlaylistPlayback(
         if (cacheScope == current) return
         cacheScope = current
         _statuses.value = emptyMap()
+        _verificationFailures.value = emptySet()
         verificationJobs.values.forEach { it.cancel() }
         verificationJobs.clear()
         requestVersions.clear()
@@ -155,20 +159,30 @@ class PlaylistPlayback(
         if (verificationJobs[playlistId]?.isActive == true || playlistId in pendingMutationVersions) return
         val version = ++requestVersion
         requestVersions[playlistId] = version
-        verificationJobs[playlistId] = applicationScope.launch {
+        val job = applicationScope.launch(start = CoroutineStart.LAZY) {
+            var confirmed: List<PlaylistAcquisitionStatus>? = null
+            var failed = false
             try {
-                val statuses = source.getAcquisitions(playlistId, owner)
-                publish(playlistId, owner, version, statuses)
+                confirmed = source.getAcquisitions(playlistId, owner)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                // A transport failure is not evidence that any audio disappeared.
+                failed = true
             } finally {
                 synchronized(this@PlaylistPlayback) {
-                    if (requestVersions[playlistId] == version) verificationJobs.remove(playlistId)
+                    resetScope()
+                    if (cacheScope != owner || requestVersions[playlistId] != version) return@synchronized
+                    verificationJobs.remove(playlistId)
+                    if (failed) {
+                        _verificationFailures.value = (_verificationFailures.value - playlistId + playlistId)
+                            .toList().takeLast(32).toSet()
+                    }
+                    confirmed?.let { publish(playlistId, owner, version, it) }
                 }
             }
         }
+        verificationJobs[playlistId] = job
+        job.start()
     }
 
     internal suspend fun request(
@@ -200,5 +214,6 @@ class PlaylistPlayback(
         if (cacheScope != owner || requestVersions[playlistId] != version) return
         _statuses.value = (_statuses.value - playlistId + (playlistId to statuses)).entries.toList()
             .takeLast(32).associate { it.key to it.value }
+        _verificationFailures.value -= playlistId
     }
 }
