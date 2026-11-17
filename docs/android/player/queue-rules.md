@@ -46,6 +46,10 @@ absence, l’occurrence utilise une autre copie locale ou un fichier cloud
 déjà confirmé quand il existe. Sinon elle reste dans la playlist, sans
 entrer dans la file. Une réponse MediaStore indisponible laisse l’état
 précédent en place.
+Une occurrence locale rattachée à un titre du catalogue garde son ID Aura
+dans Media3. Lorsque le serveur confirme le fichier, le chemin de lecture
+cloud utilise l’identifiant audio renvoyé dans le bilan. Un lien local
+lisible garde la priorité.
 Le navigateur Media3 peut afficher les titres connus immédiatement.
 Quand une vérification change les titres admissibles, il signale la mise
 à jour du dossier aux navigateurs abonnés, sans toucher à la file active.

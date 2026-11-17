@@ -163,18 +163,35 @@ async def playlist_acquisitions(
     supabase=Depends(get_current_user_client),
 ):
     def get_status():
-        rows = supabase.rpc("aura_get_playlist_acquisitions", {
-            "p_playlist_id": playlist_id,
-            "p_enqueue": request.method == "POST" and retry_track_id is None,
-            "p_retry_track_id": retry_track_id if request.method == "POST" else None,
-        }).execute().data
-        if rows is None:
-            raise HTTPException(status_code=404, detail="Playlist unavailable")
-        if not isinstance(rows, list):
-            raise ValueError("Invalid playlist acquisition snapshot")
+        def get_rows(*, enqueue=False, retry=None, existing=()):
+            arguments = {"p_playlist_id": playlist_id, "p_enqueue": enqueue, "p_retry_track_id": retry}
+            if existing:
+                arguments["p_existing_track_ids"] = existing
+            result = supabase.rpc("aura_get_playlist_acquisitions", arguments).execute().data
+            if result is None:
+                raise HTTPException(status_code=404, detail="Playlist unavailable")
+            if not isinstance(result, list):
+                raise ValueError("Invalid playlist acquisition snapshot")
+            return result
+
+        files = {}
+
+        def playable(track_id):
+            if track_id not in files:
+                source, _ = find_playable_sync_file(current_user.id, track_id)
+                files[track_id] = source is not None
+            return files[track_id]
+
+        rows = get_rows()
+        if request.method == "POST":
+            existing = [row["track_id"] for row in rows if row.get("audio_track_id") and playable(row["track_id"])]
+            rows = get_rows(enqueue=retry_track_id is None, retry=retry_track_id, existing=existing)
         for row in rows:
-            source, _ = find_playable_sync_file(current_user.id, row["track_id"])
-            if source is not None:
+            audio_track_id = row.get("audio_track_id")
+            if playable(row["track_id"]):
+                row.pop("audio_track_id", None)
+                row["availability"] = "available"
+            elif audio_track_id and playable(audio_track_id):
                 row["availability"] = "available"
             else:
                 row["availability"] = "missing"

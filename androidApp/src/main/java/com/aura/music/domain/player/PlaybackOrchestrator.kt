@@ -967,7 +967,7 @@ class PlaybackOrchestrator(
         val uri = if (track.playlistCloudAvailable != null) {
             track.contentUri ?: if (track.playlistCloudAvailable == true) {
                 val base = java.net.URI(BuildConfig.API_BASE_URL)
-                runCatching { com.aura.music.core.PrivateStreamPolicy(base).uriFor(track.trackId).toString() }
+                runCatching { com.aura.music.core.PrivateStreamPolicy(base).uriFor(track.playlistCloudTrackId ?: track.trackId).toString() }
                     .getOrNull() ?: return null
             } else return null
         } else when (val resolution = playbackResolver.resolve(track)) {

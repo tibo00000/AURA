@@ -36,10 +36,14 @@ internal fun MediaMetadata.Builder.withOccurrence(id: String?): MediaMetadata.Bu
 internal fun buildPlaylistQueue(
     rows: List<PlaylistTrackRow>,
     cloudTrackIds: Set<String>,
+    cloudTrackAliases: Map<String, String> = emptyMap(),
 ): List<QueuedTrack> = rows.mapNotNull { row ->
     val uri = row.contentUri?.takeIf { it.startsWith("content://") || it.startsWith("file:") || it.startsWith('/') }
+    val cloudAlias = cloudTrackAliases[row.trackId]
+    val cloudAvailable = row.trackId in cloudTrackIds &&
+        (cloudAlias == null || com.aura.music.core.PrivateStreamPolicy.validTrackId(cloudAlias))
     if (!com.aura.music.core.PrivateStreamPolicy.validTrackId(row.trackId) ||
-        (uri == null && row.trackId !in cloudTrackIds)) return@mapNotNull null
+        (uri == null && !cloudAvailable)) return@mapNotNull null
     QueuedTrack(
         trackId = row.trackId,
         title = row.title,
@@ -49,7 +53,8 @@ internal fun buildPlaylistQueue(
         durationMs = row.durationMs,
         coverUri = row.coverUri,
         internalId = row.playlistItemId,
-        playlistCloudAvailable = row.trackId in cloudTrackIds,
+        playlistCloudAvailable = cloudAvailable,
+        playlistCloudTrackId = cloudAlias.takeIf { cloudAvailable },
     )
 }
 
@@ -125,7 +130,9 @@ class PlaylistPlayback(
         val confirmed = status.asSequence()
             .filter { it.availability == "available" }.map { it.trackId }.toSet()
         val knownMissing = status.asSequence().filter { it.availability == "missing" }.map { it.trackId }.toSet()
-        return buildPlaylistQueue(rows, confirmed + (existingCloudIds() - knownMissing))
+        val aliases = status.mapNotNull { row -> row.audioTrackId?.takeIf { row.availability == "available" }
+            ?.let { row.trackId to it } }.toMap()
+        return buildPlaylistQueue(rows, confirmed + (existingCloudIds() - knownMissing), aliases)
     }
 
     suspend fun prepare(playlistId: String, rows: List<PlaylistTrackRow>): List<QueuedTrack> {

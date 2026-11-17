@@ -625,7 +625,7 @@ internal fun changedPlaylistBrowseFolders(
 ): List<String> {
     fun List<PlaylistAcquisitionStatus>?.knownAvailability() = orEmpty().asSequence()
         .filter { it.availability == "available" || it.availability == "missing" }
-        .associate { it.trackId to it.availability }
+        .associate { it.trackId to (it.availability to it.audioTrackId.takeIf { _ -> it.availability == "available" }) }
     // A cache eviction does not invalidate an already published folder.
     // An empty map signals a change of account.
     val folders = if (current.isEmpty()) previous.keys else current.keys
@@ -686,7 +686,7 @@ internal fun QueuedTrack.toPlaylistMediaItem(context: android.content.Context, b
     val builder = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().withOccurrence(internalId).build())
     if (contentUri == null && browsePlaylistId == null) {
         val origin = java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)
-        builder.setUri(com.aura.music.core.PrivateStreamPolicy(origin).uriFor(trackId))
+        builder.setUri(com.aura.music.core.PrivateStreamPolicy(origin).uriFor(playlistCloudTrackId ?: trackId))
     }
     if (browsePlaylistId != null) {
         builder.setMediaId("playlist-entry:${Uri.encode(browsePlaylistId)}:${Uri.encode(internalId)}")

@@ -382,7 +382,9 @@ class QueueManager {
     fun invalidatePlaylistCloudSources() {
         _state.update { state ->
             fun QueuedTrack.needsCloud() = playlistCloudAvailable == true && contentUri == null
-            fun QueuedTrack.withoutCloud() = if (playlistCloudAvailable == true) copy(playlistCloudAvailable = false) else this
+            fun QueuedTrack.withoutCloud() = if (playlistCloudAvailable == true) {
+                copy(playlistCloudAvailable = false, playlistCloudTrackId = null)
+            } else this
 
             val active = state.currentTrack
             val context = state.context

@@ -667,6 +667,7 @@ fun PlaylistDetailScreenNew(
                             Text(titles[row.trackId] ?: "Titre de la playlist")
                             val label = when {
                                 row.availability == "available" -> "Disponible dans le cloud"
+                                row.errorCode == "source_identity_ambiguous" -> "Plusieurs versions sont associées à ce titre. Vérifie les correspondances de la playlist."
                                 row.status == "source_not_authorized" -> "Source audio autorisée introuvable"
                                 row.errorCode == "cloud_file_missing" -> "Fichier cloud introuvable · téléchargement à relancer"
                                 row.errorCode == "acquisition_temporarily_unavailable" -> "Serveur temporairement indisponible · reprise automatique"
@@ -678,7 +679,7 @@ fun PlaylistDetailScreenNew(
                                 else -> "En attente ou en cours"
                             }
                             Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                            if (row.availability != "available" &&
+                            if (row.availability != "available" && row.errorCode != "source_identity_ambiguous" &&
                                 row.status in listOf("source_not_authorized", "failed", "cancelled")
                             ) TextButton(enabled = !requestingCloud, onClick = { requestCloud(row.trackId) }) { Text("Réessayer") }
                             if (row.availability != "available" && row.jobStatus == "requires_resolution") {

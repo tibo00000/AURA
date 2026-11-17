@@ -38,8 +38,9 @@ Historique complet depuis le point de départ avec
    `20261114181513_playlist_acquisition_intents.sql`,
    `20261114181653_playlist_refresh_and_exclusions.sql`,
    `20261114183022_playlist_acquisition_leases.sql`,
-   `20261114184616_playlist_playback_occurrence.sql` puis
-   `20261116223507_playlist_confirmed_exclusions.sql`.
+   `20261114184616_playlist_playback_occurrence.sql`,
+   `20261116223507_playlist_confirmed_exclusions.sql` puis
+   `20261117115916_playlist_linked_audio.sql`.
    Vérifier aussi la présence de la migration existante
    `005_add_download_job_operation_type.sql`.
 3. Déployer le backend seul et vérifier les contrats historiques, le nouvel
@@ -64,7 +65,7 @@ Historique complet depuis le point de départ avec
 | `POST /me/sync/push-batch` | Les clients migrés envoient `playlist_sync_version=2` et lisent la révision acquittée par mutation. Les clients historiques conservent les mutations historiques. |
 | `PUT /me/playlists/{id}/source` | Référence facultative et contrôle de révision. Le retrait utilise une référence nulle. |
 | `POST /me/playlists/{id}/refresh` | Inventaire complet fourni par Android, révision de source attendue et identifiant stable au rejeu. Le bilan confirmé est disponible dans le snapshot. |
-| `GET/POST /me/playlists/{id}/acquisitions` | Bilan groupé contrôlé par compte. POST admet des intentions, avec reprise ciblée facultative. La disponibilité est vérifiée dans le stockage. |
+| `GET/POST /me/playlists/{id}/acquisitions` | Bilan groupé contrôlé par compte. `audio_track_id` est facultatif et indique la source audio d’un rattachement confirmé. `track_id` garde l’identité dans la playlist. POST admet des intentions, avec reprise ciblée facultative. |
 | `GET/PUT /me/playback-snapshot` et sync batch | Champ nullable `playlist_occurrence_id`. La restauration historique utilise le titre lorsqu’il identifie une occurrence unique. |
 | `GET /me/sync/files` | Forme inchangée. Une entrée de métadonnées exige désormais un fichier audio présent et non vide. |
 | Routes historiques de téléchargement | Les jobs nés d’une intention sont relancés depuis la playlist avec le manifeste. Les jobs indépendants gardent leur comportement antérieur. |
@@ -73,6 +74,8 @@ Les migrations Room 5 → 9 préservent les playlists existantes, les
 mutations locales en attente et les liens audio locaux. Le code de
 version minimal peut rester au seuil actuel si les vérifications de
 compatibilité sur la cible confirment les contrats historiques.
+Pour le parcours des occurrences locales rattachées, vérifier la version
+Android qui lit `audio_track_id` avec le backend candidat avant activation.
 
 ## Retour arrière
 
@@ -103,6 +106,11 @@ Si un retour arrière s’impose, restaurer la définition précédente de la
 fonction via une migration ciblée avec les mêmes droits. Conserver les
 exclusions enregistrées.
 
+Si le rattachement audio doit être désactivé, suspendre le worker puis
+restaurer ensemble le backend et la définition précédente du RPC de
+bilan. Les intentions, jobs et fichiers déjà enregistrés restent utilisables
+sous leur identifiant catalogue. Les occurrences locales restent en place.
+
 ## Inventaire avant nettoyage éventuel
 
 Relever pour chaque playlist ses identifiants et positions, ses occurrences
@@ -132,8 +140,8 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 - Backend via `python -B -m pytest -p no:cacheprovider tests -q` dans
   `server`, avec configuration synthétique et stockage jetable.
 - PostgreSQL et reprise via `python -B server/scripts/test_user_isolation_postgres.py --image postgres:17.11-alpine --download-cancellation --playlist-sync --playlist-worker-restart`.
-  Le test exige les dépendances Python du backend. Il rejoue les huit
-  migrations, les cinq scénarios playlist, 97 assertions d’isolation,
+  Le test exige les dépendances Python du backend. Il rejoue les neuf
+  migrations, les six scénarios playlist, 97 assertions d’isolation,
   10 assertions d’annulation et trois contrôles de rollback. Il lance
   deux processus séparés, interrompt le premier après l’écriture du job,
   rend l’intention à nouveau éligible, puis vérifie le même job à la
@@ -166,7 +174,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 
 | Vérification | Résultat |
 | --- | --- |
-| Python | 405 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. Cinq tests vérifient la lecture croisée des identifiants fournisseur exacts, l’isolation privée et la lecture par plage depuis le cache natif. |
+| Python | 406 réussites. Une panne temporaire de PostgREST avant le début du téléchargement laisse le job de playlist récupérable. Les tests couvrent la lecture croisée des identifiants fournisseur exacts, l’isolation privée, la lecture par plage et la priorité d’une copie privée déjà disponible. |
 | Tests Android ciblés | 18 réussites, dont reprise Room et changement de compte |
 | Rejeu ciblé Media3, file et contrôleurs | 21 réussites. ExoPlayer vérifie la position de reprise et la transition entre deux occurrences du même enregistrement en répétition. Les tests vérifient aussi le passage de l’identifiant dans le Bundle Media3, la perte d’une source et le changement de compte. |
 | Rejeu ciblé de navigation Media3 | 17 réussites, dont la mise à jour du dossier après confirmation cloud, l’absence de notification sur un simple changement de progression et la pagination des grandes listes. |
@@ -175,12 +183,13 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Demande cloud Android | Quatre tests Room/Ktor vérifient l’ordre des appels, l’absence de demande si la synchronisation échoue, la consultation du bilan et le refus d’une requête après déconnexion. Une édition d’une autre playlist ne force aucune synchronisation. |
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Rejeu d’une actualisation Android | 11 tests ciblés avec migration Room et lecteurs fournisseur. Un accusé retardé acquitte la demande correspondante et préserve le bilan plus récent provenant d’un autre appareil. |
-| Lint Android | 0 erreur, 51 avertissements restant au rapport. Deux diagnostics d’indentation corrigés. |
+| Lint Android | 0 erreur, 51 avertissements au commit `51686b9f`. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 175 sur 175 après le correctif MediaStore. L’indexation des 50 000 titres passe le seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. |
-| PostgreSQL et HTTP | Huit migrations rejouées, cinq scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
+| Suite Android complète | 176 sur 176 après le rattachement audio. L’indexation des 50 000 titres passe le seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. |
+| PostgreSQL et HTTP | Neuf migrations rejouées, six scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
 | Supabase Auth et PostgREST locaux | Deux comptes et deux sessions distinctes du propriétaire. La seconde session retrouve la référence Deezer, le bilan, le morceau ajouté et ses métadonnées avec l’occurrence manuelle intacte. Rejeu stable de l’actualisation et de l’action cloud. Un inventaire invalide laisse le snapshot intact. Accès anonyme et accès croisé refusés. |
 | Démarrage et reprise du worker via PostgREST | Le démarrage FastAPI reprend le même job après interruption et sert les octets du fichier synthétique. L’entrée sans source autorisée reçoit un statut explicite. Le second compte peut lire via le cache natif authentifié, avec sa bibliothèque personnelle intacte. |
+| Occurrence locale rattachée | PostgreSQL et Supabase Auth/PostgREST confirment qu’une occurrence locale et une occurrence catalogue de deux playlists partagent le même job jusqu’après redémarrage. Le bilan préserve les identifiants côté playlist. Media3 conserve l’occurrence et sa position de reprise en utilisant l’identifiant audio confirmé pour le flux. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
 antérieur sur les deux branches. Les mesures de cette section proviennent
@@ -190,10 +199,6 @@ appareil.
 
 ## Preuves encore requises pour l’activation
 
-- Vérifier l’acquisition d’une occurrence rattachée à Spotify ou Deezer
-  qui conserve un identifiant local opaque. La lecture croisée validée
-  ici couvre les identifiants fournisseur explicites et les formes Aura
-  correspondantes.
 - Parcours réels Android, Android Auto et reprise par le système, avec
   une playlist mixte contenant des doublons volontaires. Choisir la
   deuxième occurrence, changer de piste, tester les modes aléatoire et

@@ -194,12 +194,30 @@ async def verify(ca_file):
         assert (await aura.get(playlist + "/acquisitions", headers=other)).status_code == 404
         assert (await aura.get(snapshot)).status_code == 401
 
+        linked_playlist = playlists + "/linked-local-fixture"
+        await data("POST", playlists, owner_first, json={"id": "linked-local-fixture", "name": "Linked local playlist"})
+        linked_entry = {"id": "local-occurrence", "track_id": "track:local:42", "position": 0}
+        await data("POST", linked_playlist + "/tracks", owner_first, json=linked_entry)
+        await data("PUT", linked_playlist + "/source", owner_first, json={
+            "provider": "deezer", "external_id": "123", "expected_revision": 0,
+        })
+        linked_refresh = refresh | {"request_id": str(uuid4()), "confirmed_links": {track_id: linked_entry["id"]}}
+        link = await data("POST", linked_playlist + "/refresh", owner_first, json=linked_refresh)
+        assert link["present_count"] == 1 and link["added_count"] == 0
+        linked, = await data("POST", linked_playlist + "/acquisitions", owner_second)
+        assert linked["track_id"] == linked_entry["track_id"] and linked["audio_track_id"] == track_id
+        assert linked["status"] == "pending"
+
         job_id = await asyncio.to_thread(verify_started_worker, restored["user_id"], track_id, ca_file.parent)
         published = await data("GET", playlist + "/acquisitions", owner_second)
         by_track = {row["track_id"]: row for row in published}
         audio = by_track[track_id]
         assert audio["job_id"] == job_id and audio["job_status"] == "succeeded"
         assert audio["status"] == "available" and audio["availability"] == "available"
+        linked, = await data("GET", linked_playlist + "/acquisitions", owner_second)
+        assert linked["job_id"] == job_id and linked["availability"] == "available"
+        assert linked["track_id"] == linked_entry["track_id"] and linked["audio_track_id"] == track_id
+        assert (await aura.get(linked_playlist + "/acquisitions", headers=other)).status_code == 404
         manual_audio = by_track[entry["track_id"]]
         assert manual_audio["status"] == "source_not_authorized", manual_audio["status"]
         assert manual_audio["job_id"] is None
@@ -227,4 +245,4 @@ if __name__ == "__main__":
     print(json.dumps({"signed_in_accounts": 2, "owner_sessions": 2, "https_verified": True,
                       "source_refresh_and_intent_replayed": True, "invalid_inventory_rolled_back": True,
                       "cross_account_isolation": True, "worker_started_by_lifespan_and_resumed": True,
-                      "partial_audio_and_private_library_verified": True}))
+                      "partial_audio_and_private_library_verified": True, "linked_local_occurrence_reuses_job": True}))

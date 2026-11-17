@@ -152,6 +152,13 @@ le worker peut confirmer un fichier déjà lisible ou retrouver un job actif
 et affiche une source non autorisée pour les autres titres. Il ne lance
 aucune recherche heuristique pour ces intentions.
 
+Une occurrence locale rattachée explicitement à Spotify ou Deezer utilise
+l’identifiant Aura du catalogue pour demander l’acquisition. Le même job
+peut ainsi servir l’occurrence locale et les occurrences du catalogue.
+La copie cloud existante du compte est prioritaire. Des rattachements
+contradictoires pour le même titre local dans une playlist demandent une
+correction humaine avant une acquisition automatique.
+
 La coordination concerne un seul processus Uvicorn et une seule instance de service
 responsable des mutations. Une exécution multiworker nécessite une coordination
 interprocessus avant activation. Le passage à une image corrigée doit terminer les

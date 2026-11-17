@@ -87,7 +87,8 @@ class TrackPlaybackResolver(
         }
 
         if (track.trackId.isNotBlank() && track.playlistCloudAvailable != false) {
-            val streamUrl = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/${track.trackId}"
+            val streamTrackId = track.playlistCloudTrackId ?: track.trackId
+            val streamUrl = "${com.aura.music.data.network.BuildConfig.API_BASE_URL.trimEnd('/')}/me/sync/files/$streamTrackId"
             return PlayableResolution.CloudStream(streamUrl)
         }
 

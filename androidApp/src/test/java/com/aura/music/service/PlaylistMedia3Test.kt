@@ -87,6 +87,24 @@ class PlaylistMedia3Test {
     }
 
     @Test
+    fun linkedLocalOccurrenceStreamsTheConfirmedCatalogIdAndRetainsItsIdentity() {
+        val trackId = "track:local:42"
+        val streamId = "trk_confirmed"
+        val occurrence = "original-occurrence"
+        val ready = buildPlaylistQueue(listOf(row(occurrence, trackId, uri = null)), setOf(trackId), mapOf(trackId to streamId))
+        val restored = restorePlaylistMediaItems(context, QueueManager(), playlistId, ready,
+            snapshot(occurrence).copy(currentTrackId = trackId))
+        val media = restored.mediaItems.single()
+
+        assertEquals(trackId, media.mediaId)
+        assertEquals(occurrence, media.occurrenceId())
+        assertEquals(streamId, media.localConfiguration?.uri?.lastPathSegment)
+        assertEquals(4200L, restored.startPositionMs)
+        assertTrue(buildPlaylistQueue(listOf(row(occurrence, trackId, uri = null)), setOf(trackId),
+            mapOf(trackId to "../invalid")).isEmpty())
+    }
+
+    @Test
     fun restorationUsesOnlyEligibleOccurrencesAndResetsOffsetAfterLoss() {
         val queue = QueueManager()
         val eligible = buildPlaylistQueue(listOf(row("occ:first"), row("occ:second", uri = null)), emptySet())

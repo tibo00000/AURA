@@ -482,6 +482,13 @@ Renvoie la disponibilité vérifiée des pistes et l’état des intentions du
 compte. `POST` sur la même route inscrit les intentions manquantes.
 `POST ?retry_track_id=…` demande une reprise pour une piste de la playlist.
 La présence du fichier est vérifiée par le même résolveur que le streaming.
+`track_id` reste l’identifiant de la piste dans Aura. Quand l’audio
+disponible provient d’un rattachement fournisseur confirmé, le champ
+facultatif `audio_track_id` donne l’identifiant à utiliser pour le flux.
+Le client utilise cet identifiant seulement avec `availability=available`.
+Avec une copie cloud déjà présente sous `track_id`, la réponse privilégie
+cette copie. `source_identity_ambiguous` signale des rattachements
+contradictoires qui empêchent l’acquisition automatique.
 Une erreur de vérification rend l’appel indisponible et n’établit pas
 l’absence d’un fichier.
 

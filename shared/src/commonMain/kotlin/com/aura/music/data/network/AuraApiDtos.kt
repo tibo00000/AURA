@@ -546,6 +546,7 @@ data class PlaylistAcquisitionStatus(
     @SerialName("job_id") val jobId: String? = null,
     @SerialName("job_status") val jobStatus: String? = null,
     @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("audio_track_id") val audioTrackId: String? = null,
 )
 
 @Serializable
