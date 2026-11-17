@@ -27,6 +27,7 @@ import com.aura.music.domain.player.findPlaylistResumeIndex
 import com.aura.music.domain.player.RepeatMode
 import com.aura.music.data.player.PersistedPlaybackSnapshot
 import com.aura.music.data.player.QueueManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -315,31 +316,29 @@ class PlaybackService : MediaLibraryService() {
             privatePlaybackReady.await() // Admit no source until the non-blocking session observer is ready.
             val container = (application as AuraApplication).container
             val repository = container.localLibraryRepository
-            val playlistRequest = mediaItems.singleOrNull()?.mediaId?.takeIf { it.startsWith("playlist-entry:") }
-            val browsedPlaylist = lastBrowsedFolderId?.takeIf { it.startsWith("playlist:") }
-            val requestsBrowsedTrack = browsedPlaylist != null && mediaItems.singleOrNull()?.mediaId?.isNotBlank() == true
-            if (!controllerTrust.isInternal(controller) && (playlistRequest != null || requestsBrowsedTrack)) {
-                val sessionScope = container.authSessionManager.sessionScope.value
-                val selectedReference = playlistRequest?.let(::decodePlaylistBrowseId)
-                if (playlistRequest != null && selectedReference == null) return emptyList()
-                val playlistId = selectedReference?.first ?: browsedPlaylist?.removePrefix("playlist:") ?: return emptyList()
-                val rows = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
-                val eligible = container.playlistPlayback.prepare(playlistId, rows)
-                container.playlistPlayback.verifyLater(playlistId)
-                val index = if (selectedReference != null) eligible.indexOfFirst { it.internalId == selectedReference.second }
-                else eligible.indexOfFirst { it.trackId == mediaItems.single().mediaId }
-                if (index < 0 || container.authSessionManager.sessionScope.value != sessionScope) return emptyList()
-                container.queueManager.setContext("playlist", playlistId, eligible, index)
-                return listOfNotNull(eligible[index], container.queueManager.peekNext())
-                    .distinctBy { it.internalId }.map { it.toPlaylistMediaItem(this@PlaybackService) }
-            }
             val queueManager = container.queueManager
             val owner = container.authSessionManager.sessionScope.value
+            if (!controllerTrust.isInternal(controller)) {
+                resolvePlaylistBrowseItems(
+                    mediaItems.singleOrNull(), this@PlaybackService, queueManager,
+                    prepare = { playlistId ->
+                        val rows = repository.getPlaylistDetail(playlistId)?.tracks.orEmpty()
+                        val eligible = container.playlistPlayback.prepare(playlistId, rows)
+                        if (container.authSessionManager.sessionScope.value == owner) {
+                            container.playlistPlayback.verifyLater(playlistId)
+                        }
+                        eligible
+                    },
+                    isCurrent = { container.authSessionManager.sessionScope.value == owner },
+                )?.let { return it }
+            }
             val admittedItems = ControllerMediaResolver(this@PlaybackService, controllerTrust,
                 com.aura.music.core.PrivateStreamPolicy(java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)),
                 repository::getTrackById, { repository.searchLocalTracks(it, limit = 20) }
             ).resolve(controller, mediaItems, queueManager.state.value)
-            if (container.authSessionManager.sessionScope.value != owner) return emptyList()
+            if (container.authSessionManager.sessionScope.value != owner) {
+                throw CancellationException("La session de lecture a changé.")
+            }
             val connectedPackages = mediaSession?.connectedControllers?.map { it.packageName } ?: emptyList()
 
             val resolvedItems = mutableListOf<MediaItem>()
@@ -347,7 +346,7 @@ class PlaybackService : MediaLibraryService() {
             // Resolution de la file d'attente (reprise du contexte de navigation)
             if (admittedItems.size == 1 && !controllerTrust.isInternal(controller)) {
                 val targetTrackId = admittedItems[0].mediaId
-                var parentFolderId = lastBrowsedFolderId
+                var parentFolderId = lastBrowsedFolderId?.takeUnless { it.startsWith("playlist:") }
 
                 // Helper function to load context tracks dynamically
                 suspend fun getTracksForFolder(folderId: String): List<TrackListRow> {
@@ -704,6 +703,28 @@ internal fun decodePlaylistBrowseId(mediaId: String): Pair<String, String>? {
     val playlistId = Uri.decode(parts[0])
     val occurrenceId = Uri.decode(parts[1])
     return if (playlistId.isNotBlank() && occurrenceId.isNotBlank()) playlistId to occurrenceId else null
+}
+
+/** A null result leaves an ordinary library request to the standard resolver. */
+internal suspend fun resolvePlaylistBrowseItems(
+    request: MediaItem?,
+    context: android.content.Context,
+    queue: QueueManager,
+    prepare: suspend (String) -> List<QueuedTrack>,
+    isCurrent: () -> Boolean,
+): List<MediaItem>? {
+    val browseId = request?.mediaId?.takeIf { it.startsWith("playlist-entry:") } ?: return null
+    val (playlistId, occurrenceId) = decodePlaylistBrowseId(browseId)
+        ?: throw IllegalArgumentException("L’identifiant de l’occurrence est invalide.")
+    val eligible = prepare(playlistId)
+    if (!isCurrent()) throw CancellationException("La session de lecture a changé.")
+    val index = eligible.indexOfFirst { it.internalId == occurrenceId }
+    // A successful empty list makes Media3 replace the current queue with an empty one.
+    if (index < 0) throw IllegalStateException("Cette occurrence n’est plus disponible.")
+
+    queue.setContext("playlist", playlistId, eligible, index)
+    return listOfNotNull(eligible[index], queue.peekNext()).distinctBy { it.internalId }
+        .map { it.toPlaylistMediaItem(context) }
 }
 
 internal fun restorePlaylistMediaItems(

@@ -56,6 +56,12 @@ déjà résolu.
 Le navigateur Media3 peut afficher les titres connus immédiatement.
 Quand une vérification change les titres admissibles, il signale la mise
 à jour du dossier aux navigateurs abonnés, sans toucher à la file active.
+Seul l’identifiant d’occurrence émis par un dossier playlist choisit une
+occurrence dans ce dossier. Une demande portant sur un identifiant de titre
+ordinaire suit la résolution de la bibliothèque, même après la navigation
+dans une playlist. Une occurrence qui a cessé d’être lisible est refusée.
+Une sélection refusée renvoie une erreur à Media3 et préserve la file
+en cours de lecture.
 À la fin de la file, la répétition de la playlist prépare sa première
 occurrence dans Media3. Pour une playlist à une seule occurrence, Media3
 répète le média en place. Le prochain titre inspecté et la transition

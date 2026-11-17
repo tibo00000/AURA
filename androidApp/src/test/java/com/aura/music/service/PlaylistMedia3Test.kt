@@ -22,6 +22,8 @@ import com.aura.music.domain.player.buildPlaylistQueue
 import com.aura.music.domain.player.matchesQueueTrack
 import com.aura.music.domain.player.occurrenceId
 import com.aura.music.domain.player.resolvePlaylistLocalSources
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -84,6 +86,58 @@ class PlaylistMedia3Test {
         assertTrue(browse.last().mediaMetadata.isPlayable == true)
         assertFalse(MediaItem.fromUri(Uri.parse(content)).buildUpon().setMediaId("recording").build()
             .matchesQueueTrack(eligible.last()))
+    }
+
+    @Test
+    fun plainTrackRequestsStayInTheLibraryEvenWithAPlaylistContext() = runBlocking {
+        val eligible = buildPlaylistQueue(listOf(row("occ:first"), row("occ:second")), emptySet())
+        val queue = QueueManager().apply { setContext("playlist", playlistId, eligible, 1) }
+        val before = queue.state.value
+
+        for (trackId in listOf("recording", "different-track")) {
+            val request = MediaItem.Builder().setMediaId(trackId).build()
+            assertNull(resolvePlaylistBrowseItems(request, context, queue,
+                prepare = { error("A library request must not prepare a playlist") }, isCurrent = { true }))
+        }
+        assertEquals(before, queue.state.value)
+    }
+
+    @Test
+    fun browseRequestSelectsItsExplicitOccurrenceAndRefusesUnavailableOrStaleRequests() = runBlocking {
+        val eligible = buildPlaylistQueue(listOf(row("occ:first"), row("occ:second")), emptySet())
+        val queue = QueueManager()
+        val request = eligible.last().toPlaylistMediaItem(context, playlistId)
+        val resolved = resolvePlaylistBrowseItems(request, context, queue, prepare = { id ->
+            assertEquals(playlistId, id)
+            eligible
+        }, isCurrent = { true })
+        assertEquals("occ:second", resolved?.first()?.occurrenceId())
+        assertEquals("occ:second", queue.state.value.currentTrack?.internalId)
+        val before = queue.state.value
+
+        val unavailable = runCatching {
+            resolvePlaylistBrowseItems(request, context, queue, prepare = { eligible.take(1) }, isCurrent = { true })
+        }.exceptionOrNull()
+        assertTrue(unavailable is IllegalStateException)
+        var sessionIsCurrent = true
+        val stale = runCatching {
+            resolvePlaylistBrowseItems(
+                eligible.first().toPlaylistMediaItem(context, playlistId), context, queue,
+                prepare = {
+                    sessionIsCurrent = false
+                    eligible
+                },
+                isCurrent = { sessionIsCurrent },
+            )
+        }.exceptionOrNull()
+        assertTrue(stale is CancellationException)
+        val malformed = MediaItem.Builder().setMediaId("playlist-entry:missing-occurrence").build()
+        val invalid = runCatching {
+            resolvePlaylistBrowseItems(malformed, context, queue,
+                prepare = { error("Malformed IDs must not reach Room") }, isCurrent = { true })
+        }.exceptionOrNull()
+        assertTrue(invalid is IllegalArgumentException)
+        assertEquals(before, queue.state.value)
     }
 
     @Test
