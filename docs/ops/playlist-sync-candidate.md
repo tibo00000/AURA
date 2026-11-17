@@ -27,6 +27,7 @@ Le chantier de démarrage Android et les protections de session intégrés
 | Suivi E/F | `c9e8121b`, `51686b9f` | Éditions acquittées avant la demande cloud et contrôle local groupé des URI MediaStore |
 | Suivi E/F | `614456e9` | Consultation et reprise de la lecture du bilan cloud sans demande de téléchargement |
 | Suivi E/F | `61e654ac` | Source audio de la file préparée conservée jusqu’au service Media3 |
+| Suivi E/F | `d702b95c` | Sélection d’une occurrence explicite dans Media3 et conservation de la lecture en cas de refus |
 
 Historique complet depuis le point de départ avec
 `git log --oneline 03133655..fix/playlist-sync-program`.
@@ -49,18 +50,24 @@ Historique complet depuis le point de départ avec
    Vérifier aussi la présence de la migration existante
    `005_add_download_job_operation_type.sql`.
 3. Déployer le backend seul et vérifier les contrats historiques, le nouvel
-   inventaire et les RPC en lecture avec un compte de validation. Garder
-   `ENABLE_PLAYLIST_ACQUISITION_WORKER=false` et
-   `ENABLE_STARTUP_RECOVERY=false` au premier contrôle.
+   inventaire et les RPC en lecture avec un compte de validation. Vérifier dans
+   la configuration effective du processus que `ENABLE_PLAYLIST_ACQUISITION_WORKER`,
+   `ENABLE_STARTUP_RECOVERY` et `ENABLE_CACHE_BACKFILL` valent `false` et que
+   `PLAYLIST_AUTHORIZED_AUDIO_MANIFEST` est vide. Relever l’état des jobs et du
+   cache avant et après le démarrage pour confirmer qu’ils n’ont pas été repris
+   ou alimentés par les traitements historiques.
 4. Préparer les clients Android et Desktop, vérifier les migrations Room
    successives et l’aller-retour d’une playlist historique. L’activation
    fournisseur dépend des droits de lecture réels du compte et de
    l’application Aura. Relever le code de version minimal uniquement si
    des clients historiques doivent être retirés lors d’une release.
 5. Activer le worker sur une seule instance d’exécution après la preuve de
-   reprise et la revue des paramètres. Garder le manifeste d’autorisation
-   vide tant que la provenance de chaque audio et les droits de
-   téléchargement et de stockage ne sont pas validés.
+   reprise et la revue des paramètres. Garder `ENABLE_STARTUP_RECOVERY=false`
+   et `ENABLE_CACHE_BACKFILL=false` pendant l’activation. En préproduction,
+   la preuve de reprise peut utiliser un manifeste de test et un fichier
+   autorisé. En production, renseigner `PLAYLIST_AUTHORIZED_AUDIO_MANIFEST`
+   uniquement après validation de la provenance et des droits de
+   téléchargement, de stockage et de lecture des sources concernées.
 
 ## Contrats à vérifier
 
@@ -86,7 +93,8 @@ Android qui lit `audio_track_id` avec le backend candidat avant activation.
 
 En cas d’incident d’acquisition, couper d’abord le worker avec
 `ENABLE_PLAYLIST_ACQUISITION_WORKER=false` et garder
-`ENABLE_STARTUP_RECOVERY=false`. Laisser expirer les baux et conserver
+`ENABLE_STARTUP_RECOVERY=false` et `ENABLE_CACHE_BACKFILL=false`.
+Laisser expirer les baux et conserver
 les intentions, les jobs et les fichiers. Ce réglage suspend le
 traitement. Les actualisations peuvent encore enregistrer des intentions.
 
@@ -188,7 +196,7 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Demande cloud Android | Quatre tests Room/Ktor vérifient l’ordre des appels, l’absence de demande si la synchronisation échoue, la consultation du bilan et le refus d’une requête après déconnexion. Une édition d’une autre playlist ne force aucune synchronisation. |
 | Lecteurs Spotify/Deezer | 8 tests sur fixtures, dont une page sautée ou répétée avec total inchangé, une entrée Spotify malformée et une lecture Deezer complète sur deux pages. |
 | Rejeu d’une actualisation Android | 11 tests ciblés avec migration Room et lecteurs fournisseur. Un accusé retardé acquitte la demande correspondante et préserve le bilan plus récent provenant d’un autre appareil. |
-| Lint Android | 0 erreur, 51 avertissements au commit `51686b9f`. |
+| Lint Android | 0 erreur, 51 avertissements au commit `d702b95c`, soit les mêmes totaux qu’au dernier relevé `51686b9f`. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
 | Suite Android complète | 181 sur 181 après la correction des sélections Media3. Sur la même révision, l’indexation des 50 000 titres a pris 3,25 s après compilation puis 1,08 s au rejeu à un worker, pour un seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. Le démarrage Android sur appareil reste à mesurer. |
 | PostgreSQL et HTTP | Neuf migrations rejouées, six scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
