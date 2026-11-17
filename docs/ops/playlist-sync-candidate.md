@@ -25,6 +25,7 @@ Le chantier de démarrage Android et les protections de session intégrés
 | Suivi D/F | `64a1b7cc`, `a130805d`, `aad6ad6b` | Reprise des admissions, lecture des fichiers catalogue historiques et audio des occurrences locales rattachées |
 | Suivi C/F | `2b6cf2b5` | Exclusions confirmées conservées lors d’une suppression manuelle |
 | Suivi E/F | `c9e8121b`, `51686b9f` | Éditions acquittées avant la demande cloud et contrôle local groupé des URI MediaStore |
+| Suivi E/F | `614456e9` | Consultation et reprise de la lecture du bilan cloud sans demande de téléchargement |
 
 Historique complet depuis le point de départ avec
 `git log --oneline 03133655..fix/playlist-sync-program`.
@@ -188,11 +189,12 @@ occurrences et des références fournisseur pour toute décision de nettoyage.
 | Rejeu d’une actualisation Android | 11 tests ciblés avec migration Room et lecteurs fournisseur. Un accusé retardé acquitte la demande correspondante et préserve le bilan plus récent provenant d’un autre appareil. |
 | Lint Android | 0 erreur, 51 avertissements au commit `51686b9f`. |
 | Suites complètes Shared / Desktop | 12 tests Shared Android, 12 Shared Desktop et 30 Desktop réussis |
-| Suite Android complète | 178 sur 178 après l’ajout de la consultation du bilan. L’indexation des 50 000 titres passe le seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. |
+| Suite Android complète | 179 sur 179 au rejeu après la correction Media3. L’indexation des 50 000 titres a pris 3,24 s au premier passage et 1,07 s au rejeu, pour un seuil de 3 s. Elle prenait 2,48 s au commit `10b35096` et 5,31 s sur le commit de départ. Ces mesures JVM ne couvrent pas le démarrage Android sur appareil. |
 | PostgreSQL et HTTP | Neuf migrations rejouées, six scénarios playlist, tests d’isolation et d’annulation réussis. Inventaire synthétique, reprise du même job dans deux processus, bilan isolé par compte et flux HTTP partiel vérifiés. |
 | Supabase Auth et PostgREST locaux | Deux comptes et deux sessions distinctes du propriétaire. La seconde session retrouve la référence Deezer, le bilan, le morceau ajouté et ses métadonnées avec l’occurrence manuelle intacte. Rejeu stable de l’actualisation et de l’action cloud. Un inventaire invalide laisse le snapshot intact. Accès anonyme et accès croisé refusés. |
 | Démarrage et reprise du worker via PostgREST | Le démarrage FastAPI reprend le même job après interruption et sert les octets du fichier synthétique. L’entrée sans source autorisée reçoit un statut explicite. Le second compte peut lire via le cache natif authentifié, avec sa bibliothèque personnelle intacte. |
 | Occurrence locale rattachée | PostgreSQL et Supabase Auth/PostgREST confirment qu’une occurrence locale et une occurrence catalogue de deux playlists partagent le même job jusqu’après redémarrage. Le bilan préserve les identifiants côté playlist. Media3 conserve l’occurrence et sa position de reprise en utilisant l’identifiant audio confirmé pour le flux. |
+| Admission Media3 depuis l’application | 21 tests ciblés réussis. Le service garde la copie locale résolue ou le fichier cloud confirmé pour chaque occurrence de la file. Un contrôleur externe ne peut pas utiliser les métadonnées d’occurrence fournies par le client pour choisir la source. |
 
 Le test de coalescence PERF-FAV a également expiré lors d'un passage
 antérieur sur les deux branches. Les mesures de cette section proviennent

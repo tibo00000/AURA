@@ -3,12 +3,18 @@ package com.aura.music.service
 import android.app.Application
 import android.os.Bundle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import com.aura.music.core.PrivateStreamPolicy
 import com.aura.music.data.local.TrackListRow
+import com.aura.music.data.network.BuildConfig
+import com.aura.music.data.player.QueueManager
+import com.aura.music.domain.player.QueuedTrack
+import com.aura.music.domain.player.occurrenceId
+import com.aura.music.domain.player.withOccurrence
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -140,6 +146,35 @@ class Sec004ControllerTest {
         val items=rows.map { MediaItem.Builder().setMediaId(it.id).setUri("https://attacker.invalid/ignored").build() }
         val resolved=resolver(rows).resolve(controller("android",1000,true),items)
         assertEquals(rows.map { it.contentUri },resolved.map { it.localConfiguration?.uri.toString() })
+    }
+
+    @Test fun internalPlaylistUsesPreparedSourcesAndPreservesOccurrenceIdentity() = runBlocking {
+        val track = "track:local:42"
+        val staleUri = "content://media/external/audio/media/42"
+        val localUri = "file:///synthetic/downloads/retained.mp3"
+        val alias = "trk_confirmed"
+        val cloud = QueuedTrack(track, "Synthetic", "Artist", internalId = "original-occurrence",
+            playlistCloudAvailable = true, playlistCloudTrackId = alias)
+        val local = cloud.copy(internalId = "second-occurrence", contentUri = localUri)
+        val queue = QueueManager().apply { setContext("playlist", "mix", listOf(cloud, local), 0) }
+        val policy = PrivateStreamPolicy(URI(BuildConfig.API_BASE_URL))
+        val resolver = ControllerMediaResolver(context, ControllerTrustPolicy(context), policy,
+            { row(track, staleUri) }, { emptyList() })
+        val items = listOf(cloud, local).map {
+            MediaItem.Builder().setMediaId(track).setUri("https://caller.example.invalid/audio")
+                .setMediaMetadata(MediaMetadata.Builder().withOccurrence(it.internalId).build()).build()
+        }
+
+        val prepared = resolver.resolve(internal(), items, queue.state.value)
+        assertEquals(listOf(policy.uriFor(alias).toString(), localUri), prepared.map { it.localConfiguration?.uri.toString() })
+        assertEquals(listOf(cloud.internalId, local.internalId), prepared.map { it.occurrenceId() })
+
+        val stale = items.first().buildUpon()
+            .setMediaMetadata(MediaMetadata.Builder().withOccurrence("different-occurrence").build()).build()
+        val unrelated = resolver.resolve(internal(), listOf(stale), queue.state.value).single()
+        assertEquals(staleUri, unrelated.localConfiguration?.uri.toString())
+        val external = resolver.resolve(controller("android", 1000, true), items, queue.state.value)
+        assertTrue(external.all { it.localConfiguration?.uri.toString() == staleUri && it.occurrenceId() == null })
     }
 
     @Test fun legacyRequestMetadataDoesNotAuthorizeAnExternalSource() = runBlocking {

@@ -333,11 +333,13 @@ class PlaybackService : MediaLibraryService() {
                 return listOfNotNull(eligible[index], container.queueManager.peekNext())
                     .distinctBy { it.internalId }.map { it.toPlaylistMediaItem(this@PlaybackService) }
             }
+            val queueManager = container.queueManager
+            val owner = container.authSessionManager.sessionScope.value
             val admittedItems = ControllerMediaResolver(this@PlaybackService, controllerTrust,
                 com.aura.music.core.PrivateStreamPolicy(java.net.URI(com.aura.music.data.network.BuildConfig.API_BASE_URL)),
                 repository::getTrackById, { repository.searchLocalTracks(it, limit = 20) }
-            ).resolve(controller, mediaItems)
-            val queueManager = container.queueManager
+            ).resolve(controller, mediaItems, queueManager.state.value)
+            if (container.authSessionManager.sessionScope.value != owner) return emptyList()
             val connectedPackages = mediaSession?.connectedControllers?.map { it.packageName } ?: emptyList()
 
             val resolvedItems = mutableListOf<MediaItem>()

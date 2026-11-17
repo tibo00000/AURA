@@ -49,7 +49,10 @@ précédent en place.
 Une occurrence locale rattachée à un titre du catalogue garde son ID Aura
 dans Media3. Lorsque le serveur confirme le fichier, le chemin de lecture
 cloud utilise l’identifiant audio renvoyé dans le bilan. Un lien local
-lisible garde la priorité.
+lisible garde la priorité. Pour le contrôleur interne, Media3 conserve
+la source de cette occurrence dans la file préparée. Une référence Room
+devenue invalide ne remplace pas le fichier cloud confirmé ni le lien local
+déjà résolu.
 Le navigateur Media3 peut afficher les titres connus immédiatement.
 Quand une vérification change les titres admissibles, il signale la mise
 à jour du dossier aux navigateurs abonnés, sans toucher à la file active.
