@@ -5,6 +5,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.aura.music.core.AuthSessionManager
 import com.aura.music.data.local.PlaylistTrackRow
+import com.aura.music.data.media.MediaStoreAudioDataSource
+import com.aura.music.data.media.UriPathParser
 import com.aura.music.data.network.PlaylistAcquisitionStatus
 import com.aura.music.data.playlist.PlaylistSourceRepository
 import kotlinx.coroutines.CancellationException
@@ -62,12 +64,35 @@ internal fun findPlaylistResumeIndex(tracks: List<QueuedTrack>, trackId: String,
     return found
 }
 
+internal fun resolvePlaylistLocalSources(
+    tracks: List<QueuedTrack>,
+    missingMediaStoreUris: Set<String>,
+    resolve: (QueuedTrack) -> PlayableResolution,
+): List<QueuedTrack> {
+    val checked = mutableMapOf<Pair<String, String>, PlayableResolution>()
+    return tracks.mapNotNull { track ->
+        val uri = track.contentUri ?: return@mapNotNull track
+        val missing = uri in missingMediaStoreUris
+        if (!missing && UriPathParser.isContentUri(uri)) return@mapNotNull track
+        val result = checked.getOrPut(track.trackId to uri) {
+            resolve(if (missing) track.copy(contentUri = null) else track)
+        }
+        when (result) {
+            is PlayableResolution.LocalFile -> track.copy(contentUri = result.uri)
+            is PlayableResolution.ScopedContent -> track.copy(contentUri = result.contentUri)
+            is PlayableResolution.CloudStream -> track.copy(contentUri = null)
+            is PlayableResolution.NotAvailable -> null
+        }
+    }
+}
+
 class PlaylistPlayback(
     private val auth: AuthSessionManager,
     private val source: PlaylistSourceRepository,
     private val applicationScope: CoroutineScope,
     private val existingCloudIds: () -> Set<String>,
     private val resolver: () -> TrackPlaybackResolver,
+    private val mediaStore: MediaStoreAudioDataSource,
 ) {
     private var cacheScope: AuthSessionManager.Scope? = null
     private val _statuses = MutableStateFlow<Map<String, List<PlaylistAcquisitionStatus>>>(emptyMap())
@@ -106,21 +131,12 @@ class PlaylistPlayback(
     suspend fun prepare(playlistId: String, rows: List<PlaylistTrackRow>): List<QueuedTrack> {
         val owner = auth.sessionScope.value
         val tracks = eligible(playlistId, rows)
-        if (tracks.none { it.contentUri?.let { uri -> !uri.startsWith("content://") } == true }) {
+        if (tracks.none { it.contentUri != null }) {
             return if (auth.sessionScope.value == owner) tracks else emptyList()
         }
         val cleaned = withContext(Dispatchers.IO) {
-            val checked = mutableMapOf<Pair<String, String>, PlayableResolution>()
-            tracks.mapNotNull { track ->
-                val uri = track.contentUri ?: return@mapNotNull track
-                if (uri.startsWith("content://")) return@mapNotNull track
-                when (val result = checked.getOrPut(track.trackId to uri) { resolver().resolve(track) }) {
-                    is PlayableResolution.LocalFile -> track.copy(contentUri = result.uri)
-                    is PlayableResolution.ScopedContent -> track.copy(contentUri = result.contentUri)
-                    is PlayableResolution.CloudStream -> track.copy(contentUri = null)
-                    is PlayableResolution.NotAvailable -> null
-                }
-            }
+            val missing = mediaStore.missingPlaylistAudioUris(tracks.mapNotNull(QueuedTrack::contentUri))
+            resolvePlaylistLocalSources(tracks, missing, resolver()::resolve)
         }
         return if (auth.sessionScope.value == owner) cleaned else emptyList()
     }

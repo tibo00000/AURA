@@ -40,6 +40,12 @@ de l’appareil ou du compte Aura. Une vérification cloud groupée actualise
 l’état pour les prochaines actions. Elle ne change jamais la file active.
 Une coupure laisse la disponibilité inconnue. Les IDs d’occurrence restent
 distincts pour le choix de départ, la navigation et la reprise Media3.
+Avant de préparer la file, Aura vérifie hors du thread principal les
+références MediaStore par lots. Quand une requête locale confirme une
+absence, l’occurrence utilise une autre copie locale ou un fichier cloud
+déjà confirmé quand il existe. Sinon elle reste dans la playlist, sans
+entrer dans la file. Une réponse MediaStore indisponible laisse l’état
+précédent en place.
 Le navigateur Media3 peut afficher les titres connus immédiatement.
 Quand une vérification change les titres admissibles, il signale la mise
 à jour du dossier aux navigateurs abonnés, sans toucher à la file active.

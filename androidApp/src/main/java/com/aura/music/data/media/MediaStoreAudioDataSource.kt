@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Size
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -47,6 +48,43 @@ class MediaStoreAudioDataSource(
 
     companion object {
         private const val MIN_DURATION_MS = 30_000L
+        private const val PLAYLIST_QUERY_BATCH_SIZE = 500
+    }
+
+    /** Called on I/O. A failed lookup provides no evidence that a locally indexed track disappeared. */
+    internal fun missingPlaylistAudioUris(uris: List<String>): Set<String> {
+        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val prefix = "$collection/"
+        val candidates = mutableMapOf<Long, String>()
+        for (uri in uris) {
+            val id = uri.removePrefix(prefix).toLongOrNull() ?: continue
+            if (id > 0 && uri == "$prefix$id") candidates[id] = uri
+        }
+        if (candidates.isEmpty() || !hasReadPermission()) return emptySet()
+
+        val idColumn = MediaStore.Audio.Media._ID
+        return buildSet {
+            for (batch in candidates.keys.chunked(PLAYLIST_QUERY_BATCH_SIZE)) {
+                val present: Set<Long>? = try {
+                    val slots = batch.joinToString(",") { "?" }
+                    context.contentResolver.query(
+                        collection, arrayOf(idColumn), "$idColumn IN ($slots)",
+                        batch.map { it.toString() }.toTypedArray(), null,
+                    )?.use { cursor ->
+                        buildSet<Long> {
+                            while (cursor.moveToNext()) add(cursor.getLong(0))
+                        }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: RuntimeException) {
+                    null
+                }
+                if (present != null) {
+                    for (id in batch) if (id !in present) add(candidates.getValue(id))
+                }
+            }
+        }
     }
 
     /**

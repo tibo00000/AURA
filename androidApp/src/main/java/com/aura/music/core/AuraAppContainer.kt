@@ -144,6 +144,7 @@ class AuraAppContainer(context: Context) {
         com.aura.music.domain.player.PlaylistPlayback(
             authSessionManager, playlistSourceRepository, applicationScope, cloudFileRepository::getCachedCloudTrackIds,
             resolver = { trackPlaybackResolver },
+            mediaStore = mediaStoreAudioDataSource,
         )
     }
 
