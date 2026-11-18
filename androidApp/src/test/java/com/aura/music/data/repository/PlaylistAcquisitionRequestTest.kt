@@ -179,6 +179,21 @@ class PlaylistAcquisitionRequestTest {
     }
 
     @Test
+    fun reusesOnlyAProvenCatalogueAliasWithoutChangingOccurrenceOrMetadata() = runBlocking {
+        val identity = com.aura.music.data.playlist.PlaylistRecordingIdentity("spotify", "0123456789ABCDEFGHIJKL")
+        val legacy = "track:spotify:${identity.id}"
+        db.trackDao().upsertTrack(com.aura.music.data.local.TrackEntity(legacy, null, null, "My edit", "my edit", "Artist", canonicalAudioSourceType = "local", isLiked = true, isDownloadedByAura = false, createdAt = 1, updatedAt = 1))
+        db.trackDao().upsertTrackMediaLinks(listOf(com.aura.music.data.local.TrackMediaLinkEntity("media", legacy, 42, "content://media/42", availabilityStatus = "available", lastScannedAt = 1)))
+        val row = com.aura.music.data.local.PlaylistTrackRow("occurrence-kept", "mix", identity.canonicalId, 0, 1, "Title", "Artist", null, null, null, null)
+        val repo = repository()
+        val resolved = repo.resolveKnownLocalAudio(listOf(row)).single()
+        assertEquals(row.copy(contentUri = "content://media/42"), resolved)
+        assertEquals(listOf(row.copy(trackId = "track:local:42")), repo.resolveKnownLocalAudio(listOf(row.copy(trackId = "track:local:42"))))
+        assertTrue(calls.isEmpty())
+        assertEquals("My edit", db.trackDao().getTrackById(legacy)?.title)
+    }
+
+    @Test
     fun failedReportReadKeepsConfirmedAudioAndRetryOnlyReads() = runBlocking {
         val available = listOf(acquisitions.single().copy(availability = "available"))
         val responses = listOf(available, null, emptyList()).iterator()

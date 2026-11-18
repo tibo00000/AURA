@@ -7,6 +7,8 @@ Le chantier de démarrage Android et les protections de session intégrés
 
 ## Déploiement backend autorisé du 17 novembre 2026
 
+Le suivi Android du 18 novembre ci-dessous ne modifie pas ce déploiement.
+
 L’utilisateur a autorisé les neuf migrations nommées ci-dessous et le
 déploiement du backend avec les acquisitions automatiques désactivées.
 Le backend actif provient du commit
@@ -100,6 +102,66 @@ Historique complet depuis le point de départ avec
 `git log --oneline 03133655..fix/playlist-sync-program`.
 
 ## Essai direct sur téléphone
+
+### Retours Android du 18 novembre
+
+Le premier APK a été installé manuellement. Le test sur quatre titres a
+confirmé la persistance des choix de correspondance et l’ajout d’une nouveauté,
+mais a montré une validation trop répétitive, une source perdue lors de
+l’import et un nuage affiché pour un titre sans fichier cloud confirmé.
+La copie locale de NUEVAYoL a été observée dans MediaStore. Cette observation
+ne prouve pas à elle seule l’identité catalogue de l’entrée Spotify et du
+fichier déjà indexé : les anciens enregistrements ne sont pas fusionnés.
+
+Le correctif est limité à Android, avec les contrats backend et Room
+existants. L’import Spotify/Deezer utilise le lecteur fournisseur complet,
+conserve les identifiants et associe sa source dans Aura. Il réutilise
+l’actualisation et ses intentions persistantes, puis récupère le snapshot
+avant d’ouvrir la playlist. Une synchronisation désactivée est signalée
+avant création ; une erreur ultérieure conserve l’identité de la playlist
+créée et ouvre celle-ci avec un message explicite. Les routes historiques
+de téléchargement ne sont pas appelées par cet import.
+
+Pour les anciennes références, une confirmation groupée des propositions
+uniques remplace les validations répétées. Les copies dans la bibliothèque,
+même hors de la playlist, peuvent être choisies explicitement. Plusieurs
+occurrences ou plusieurs versions de source demandent un choix individuel.
+La résolution automatique d’une copie audio locale exige un identifiant
+catalogue exact, conserve les occurrences et ne réécrit aucune métadonnée.
+Une entrée déjà ajoutée sous une référence différente n’est pas réaffectée
+automatiquement ; son éventuelle réconciliation reste un choix utilisateur.
+
+Le nuage signifie un fichier confirmé. Les demandes en attente utilisent
+l’indicateur de file existant ; seul un job réellement actif est présenté
+comme un transfert. Un fichier local passe avant une demande cloud en
+attente. Le résumé permanent des ajouts est retiré, le compteur cloud
+disparaît quand tout est disponible et le détail reste accessible au menu.
+Les propositions sont calculées sur `Dispatchers.Default`, à l’ouverture
+de la fiche ou à l’actualisation, sans nouveau traitement au démarrage.
+Les créations et ajouts issus d’un import ou d’une confirmation vérifient
+la session dans leur transaction Room + outbox ; un changement de compte
+annule les deux écritures. La synchronisation garde le même scope.
+
+Reprise du stash `5688e03f` dans un worktree sur
+`fix/playlist-sync-program`, sans modifier les travaux Desktop présents
+dans le worktree principal. Le stash est conservé. Le fichier préexistant
+`ATABLE_VPS_PREFLIGHT.md` est exclu du correctif.
+
+La suite Android complète a réussi avec 197 tests, sans échec ni test ignoré.
+Le lint passe avec 0 erreur, 69 avertissements et 3 informations ; les
+avertissements restent consignés dans le rapport et ne sont pas présentés
+comme résolus. Commandes ciblées `:androidApp:testDebugUnitTest` et
+`:androidApp:lintDebug` via le wrapper, à un worker.
+Elle couvre six scénarios d’import et d’interruption, les annulations
+transactionnelles, les alias catalogue et les états d’affichage. Les tests
+Room utilisent Java 21 x64 ; Java ARM64 provoquait une erreur du runtime
+natif Robolectric sur Windows avant exécution des scénarios SQLite.
+L’essai visuel du nouveau client sur téléphone reste à réaliser.
+Le suivi ne change ni la version 0.4.3/code 7, ni l’OTA, ni les acquisitions
+automatiques désactivées. Aucune migration ni mise à jour backend requise.
+Un nouvel assemblage puis une installation de l’APK Android sont nécessaires
+pour rendre ces corrections visibles sur le téléphone. Cette reprise ne
+lance ni packaging ni installation.
 
 Le parcours retenu pour l’usage personnel commence par une playlist dédiée.
 Sa suppression et sa recréation sont acceptées si un problème reste limité à

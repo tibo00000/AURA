@@ -29,7 +29,9 @@ data class RawImportTrack(
     val durationS: Int = 0,
     val isrc: String? = null,
     val coverUrl: String? = null,
-    val pathOrUri: String? = null
+    val pathOrUri: String? = null,
+    val provider: String? = null,
+    val providerId: String? = null,
 )
 
 data class MatchedTrack(
@@ -54,8 +56,11 @@ data class ImportReport(
     val matchedLocalCount: Int,
     val missingCount: Int,
     val tracks: List<MatchedTrack>,
-    val isPartial: Boolean = false
+    val isPartial: Boolean = false,
+    val sourceReference: PlaylistSourceReference? = null,
 )
+
+class PlaylistImportCreatedException(val playlistId: String, message: String) : Exception(message)
 
 data class ExportReport(
     val playlistName: String,
@@ -92,11 +97,14 @@ class SpotifyAuthRequiredException(val sessionExpired: Boolean) : Exception("Aut
  * - Réconciliation Zero-Jank par lots sur Dispatchers.Default avec progression continue sans violation de Flow context.
  * - Export standardisé .m3u8 avec résolution des chemins réels.
  */
-class PlaylistImportExportManager(
+class PlaylistImportExportManager internal constructor(
     private val context: Context,
     private val libraryRepository: LocalLibraryRepository,
     private val spotifyAuthManager: SpotifyAuthManager,
-    private val downloadRepository: com.aura.music.data.repository.DownloadRepository
+    private val downloadRepository: com.aura.music.data.repository.DownloadRepository,
+    private val sourceRepository: PlaylistSourceRepository,
+    private val sourceReader: PlaylistSourceReader,
+    private val auth: com.aura.music.core.AuthSessionManager = com.aura.music.core.AuthSessionManager.getInstance(context),
 ) {
     companion object {
         private const val TAG = "PlaylistImportExportMgr"
@@ -182,12 +190,14 @@ class PlaylistImportExportManager(
     fun importFromSpotifySelection(summary: SpotifyPlaylistSummary): Flow<ImportStage> = channelFlow {
         send(ImportStage.FetchingMetadata)
         try {
-            val (playlistName, rawTracks) = if (summary.isLikedSongs) {
+            val (playlistName, fetchedTracks) = if (summary.isLikedSongs) {
                 fetchSpotifyLikedSongs()
             } else {
                 fetchSpotifyPlaylistById(summary.id)
             }
 
+            val reference = if (summary.isLikedSongs) null else PlaylistSourceReference.spotify(summary.id)
+            val rawTracks = fetchedTracks
             if (rawTracks.isEmpty()) {
                 send(ImportStage.Error("Aucun morceau trouvé dans la sélection Spotify."))
                 return@channelFlow
@@ -205,7 +215,8 @@ class PlaylistImportExportManager(
                 totalTracks = matchedTracks.size,
                 matchedLocalCount = localMatchedCount,
                 missingCount = matchedTracks.size - localMatchedCount,
-                tracks = matchedTracks
+                tracks = matchedTracks,
+                sourceReference = reference,
             )
 
             send(ImportStage.ReadyToCreate(report))
@@ -216,6 +227,7 @@ class PlaylistImportExportManager(
                 sessionExpired = e.sessionExpired
             ))
         } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
             Log.e(TAG, "Erreur import Spotify direct", t)
             send(ImportStage.Error(t.message ?: "Erreur lors de la récupération de la playlist Spotify"))
         }
@@ -228,12 +240,15 @@ class PlaylistImportExportManager(
         send(ImportStage.FetchingMetadata)
         try {
             val cleanUrl = url.trim()
-            val (playlistName, rawTracks) = when {
+            val reference = resolveImportReference(cleanUrl)
+                ?: throw PlaylistSourceReadException("Utilise le lien complet de la playlist Spotify ou Deezer.")
+            val (playlistName, fetchedTracks) = when {
                 cleanUrl.contains("deezer", ignoreCase = true) -> fetchDeezerPlaylist(cleanUrl)
                 cleanUrl.contains("spotify", ignoreCase = true) -> fetchSpotifyPlaylist(cleanUrl)
                 else -> throw IllegalArgumentException("Format de lien non reconnu. Utilisez un lien Deezer ou Spotify.")
             }
 
+            val rawTracks = fetchedTracks
             if (rawTracks.isEmpty()) {
                 send(ImportStage.Error("Aucun morceau trouvé dans la playlist distante."))
                 return@channelFlow
@@ -251,7 +266,8 @@ class PlaylistImportExportManager(
                 totalTracks = matchedTracks.size,
                 matchedLocalCount = localMatchedCount,
                 missingCount = matchedTracks.size - localMatchedCount,
-                tracks = matchedTracks
+                tracks = matchedTracks,
+                sourceReference = reference,
             )
 
             send(ImportStage.ReadyToCreate(report))
@@ -262,6 +278,7 @@ class PlaylistImportExportManager(
                 sessionExpired = e.sessionExpired
             ))
         } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
             Log.e(TAG, "Erreur import web", t)
             send(ImportStage.Error(t.message ?: "Erreur lors de la récupération de la playlist"))
         }
@@ -314,6 +331,9 @@ class PlaylistImportExportManager(
         onProgress: ((current: Int, total: Int, trackName: String) -> Unit)? = null
     ): String = withContext(Dispatchers.IO) {
         val finalName = playlistCustomName?.takeIf { it.isNotBlank() } ?: report.playlistName
+        if (report.sourceReference != null) {
+            return@withContext commitAssociatedImport(report, finalName, onProgress)
+        }
         val playlistId = libraryRepository.createPlaylist(finalName)
         val total = report.tracks.size
 
@@ -358,6 +378,62 @@ class PlaylistImportExportManager(
 
         Log.i(TAG, "Playlist importée créée avec succès ID=$playlistId (${report.totalTracks} titres ajoutés dont ${report.matchedLocalCount} locaux)")
         playlistId
+    }
+
+    private suspend fun readImportTracks(reference: PlaylistSourceReference): List<RawImportTrack> =
+        sourceReader.read(reference).map { track ->
+            RawImportTrack(track.title, track.artist, track.album, ((track.durationMs ?: 0L) / 1000L).toInt(),
+                coverUrl = track.coverUri, provider = track.provider, providerId = track.providerId)
+        }
+
+    private suspend fun resolveImportReference(url: String): PlaylistSourceReference? = withContext(Dispatchers.IO) {
+        PlaylistSourceReference.parse(url)?.let { return@withContext it }
+        val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull()
+        if (host !in setOf("link.deezer.com", "deezer.page.link")) return@withContext null
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
+            connection.connect()
+            PlaylistSourceReference.parse(connection.url.toString())
+        } finally { connection.disconnect() }
+    }
+
+    private suspend fun commitAssociatedImport(
+        report: ImportReport, name: String, onProgress: ((Int, Int, String) -> Unit)?,
+    ): String {
+        val reference = requireNotNull(report.sourceReference)
+        if (!auth.isLoggedIn.value) throw PlaylistSourceReadException("Connecte-toi à Aura pour importer et associer cette playlist.")
+        val owner = auth.captureScope()
+        sourceRepository.requireImportReady(owner)
+        val id = libraryRepository.createPlaylist(name) { auth.isCurrent(owner) }
+        try {
+            val device = android.provider.Settings.Secure.getString(context.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID) ?: "android_pixel_device"
+            if (!auth.isCurrent(owner)) throw kotlinx.coroutines.CancellationException("Playlist session changed")
+            sourceRepository.set(id, device, reference, 0)?.let { throw PlaylistSourceReadException(it) }
+            val links = mutableMapOf<String, String>()
+            for ((index, item) in report.tracks.withIndex()) {
+                if (!auth.isCurrent(owner)) throw kotlinx.coroutines.CancellationException("Playlist session changed")
+                // Reuse only catalogue identity proof. Metadata-only suggestions need an explicit choice later.
+                if (item.isMatchedLocally && item.localTrackId != null) {
+                    val result = libraryRepository.addTrackToPlaylist(id, item.localTrackId, contextType = "playlist_import", allowDuplicate = true, isCurrent = { auth.isCurrent(owner) })
+                    if (result is com.aura.music.data.repository.AddToPlaylistResult.Error) throw PlaylistSourceReadException(result.message)
+                    val occurrence = libraryRepository.getPlaylistDetail(id)?.tracks?.lastOrNull { it.trackId == item.localTrackId }
+                    val identity = PlaylistRecordingIdentity.from(item.raw.provider, item.raw.providerId)
+                    if (occurrence != null && identity != null) links.putIfAbsent(identity.canonicalId, occurrence.playlistItemId)
+                }
+                onProgress?.invoke(index + 1, report.tracks.size, "${item.raw.artist} - ${item.raw.title}")
+            }
+            if (!auth.isCurrent(owner)) throw kotlinx.coroutines.CancellationException("Playlist session changed")
+            sourceRepository.refresh(id, device, confirmedLinks = links)
+            sourceRepository.pullImportedPlaylist(device, owner)
+            return id
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            throw PlaylistImportCreatedException(id, "La playlist a été créée. ${failure.message ?: "Son association ou son actualisation reste à confirmer."}")
+        }
     }
 
     /**
@@ -451,27 +527,7 @@ class PlaylistImportExportManager(
         }
 
         val title = root.optString("title", "Playlist Deezer")
-        val tracksArray = root.optJSONObject("tracks")?.optJSONArray("data")
-            ?: root.optJSONArray("data")
-            ?: org.json.JSONArray()
-
-        val rawTracks = mutableListOf<RawImportTrack>()
-        for (i in 0 until tracksArray.length()) {
-            val t = tracksArray.optJSONObject(i) ?: continue
-            rawTracks.add(
-                RawImportTrack(
-                    title = t.optString("title", "Sans titre"),
-                    artist = t.optJSONObject("artist")?.optString("name", "Inconnu") ?: "Inconnu",
-                    album = t.optJSONObject("album")?.optString("title"),
-                    durationS = t.optInt("duration", 0),
-                    isrc = t.optString("isrc").takeIf { it.isNotBlank() },
-                    coverUrl = t.optJSONObject("album")?.optString("cover_big")
-                        ?: t.optJSONObject("album")?.optString("cover_medium")
-                )
-            )
-        }
-
-        Pair(title, rawTracks)
+        Pair(title, readImportTracks(PlaylistSourceReference("deezer", playlistId)))
     }
 
     private suspend fun fetchSpotifyPlaylist(urlStr: String): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
@@ -501,76 +557,7 @@ class PlaylistImportExportManager(
 
         val root = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
         val title = root.optString("name", "Playlist Spotify")
-        val itemsObj = root.optJSONObject("items") ?: root.optJSONObject("tracks")
-
-        val rawTracks = mutableListOf<RawImportTrack>()
-        var currentItemsArray = itemsObj?.optJSONArray("items") ?: root.optJSONArray("items")
-
-        fun parseSpotifyItems(arr: org.json.JSONArray?) {
-            if (arr == null) return
-            for (i in 0 until arr.length()) {
-                val entry = arr.optJSONObject(i) ?: continue
-                val t = entry.optJSONObject("item") ?: entry.optJSONObject("track") ?: continue
-
-                val artistsArr = t.optJSONArray("artists")
-                val artistNames = if (artistsArr != null && artistsArr.length() > 0) {
-                    val list = mutableListOf<String>()
-                    for (a in 0 until artistsArr.length()) {
-                        val aObj = artistsArr.optJSONObject(a)
-                        if (aObj != null) {
-                            val name = aObj.optString("name", "")
-                            if (name.isNotBlank()) list.add(name)
-                        }
-                    }
-                    list.joinToString(", ").ifBlank { "Inconnu" }
-                } else "Inconnu"
-
-                val albumObj = t.optJSONObject("album")
-                val imagesArr = albumObj?.optJSONArray("images")
-                val cover = if (imagesArr != null && imagesArr.length() > 0) {
-                    imagesArr.optJSONObject(0)?.optString("url")
-                } else null
-
-                val trackTitle = t.optString("name", "").takeIf { it.isNotBlank() } ?: continue
-
-                rawTracks.add(
-                    RawImportTrack(
-                        title = trackTitle,
-                        artist = artistNames,
-                        album = albumObj?.optString("name"),
-                        durationS = t.optInt("duration_ms", 0) / 1000,
-                        isrc = t.optJSONObject("external_ids")?.optString("isrc"),
-                        coverUrl = cover
-                    )
-                )
-            }
-        }
-
-        parseSpotifyItems(currentItemsArray)
-
-        // Pagination complète à travers `next`
-        var nextUrl = itemsObj?.optString("next", null)
-        while (!nextUrl.isNullOrBlank() && nextUrl != "null") {
-            try {
-                val nextConn = URL(nextUrl).openConnection() as HttpURLConnection
-                nextConn.setRequestProperty("Authorization", "Bearer $token")
-                nextConn.connectTimeout = 10_000
-                nextConn.readTimeout = 10_000
-
-                if (nextConn.responseCode in 200..299) {
-                    val nextObj = JSONObject(nextConn.inputStream.bufferedReader().use { it.readText() })
-                    parseSpotifyItems(nextObj.optJSONArray("items"))
-                    nextUrl = nextObj.optString("next", null)
-                } else {
-                    break
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Arrêt pagination Spotify suite à erreur", e)
-                break
-            }
-        }
-
-        Pair(title, rawTracks)
+        Pair(title, readImportTracks(requireNotNull(PlaylistSourceReference.spotify(playlistId))))
     }
 
     private suspend fun fetchSpotifyLikedSongs(): Pair<String, List<RawImportTrack>> = withContext(Dispatchers.IO) {
@@ -836,6 +823,11 @@ class PlaylistImportExportManager(
             val normArtist = SearchNormalizer.normalize(local.artistName)
             Triple(local, normTitle, normArtist)
         }
+        val byCatalogueIdentity = normalizedLocal.mapNotNull { local ->
+            PlaylistRecordingIdentity.parse(local.first.id)?.let { it to local }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, copies) ->
+            copies.firstOrNull { !it.first.contentUri.isNullOrBlank() } ?: copies.first()
+        }
 
         val batchSize = 25
         for (i in rawTracks.indices) {
@@ -844,11 +836,12 @@ class PlaylistImportExportManager(
             val normRawArtist = SearchNormalizer.normalize(raw.artist)
 
             // Matching par priorité : 1. Exact normalisé (Titre + Artiste), 2. Titre exact si artiste match partiel, 3. Titre contenu
-            var match = normalizedLocal.firstOrNull { (_, localT, localA) ->
+            val identity = PlaylistRecordingIdentity.from(raw.provider, raw.providerId)
+            var match = if (identity != null) byCatalogueIdentity[identity] else normalizedLocal.firstOrNull { (_, localT, localA) ->
                 normRawTitle == localT && (normRawArtist == localA || normRawArtist.contains(localA) || localA.contains(normRawArtist))
             }
 
-            if (match == null) {
+            if (match == null && identity == null) {
                 match = normalizedLocal.firstOrNull { (_, localT, _) ->
                     normRawTitle.length >= 4 && normRawTitle == localT
                 }

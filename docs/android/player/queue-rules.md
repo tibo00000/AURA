@@ -54,6 +54,11 @@ la source de cette occurrence dans la file préparée. Une référence Room
 devenue invalide ne remplace pas le fichier cloud confirmé ni le lien local
 déjà résolu.
 Le navigateur Media3 peut afficher les titres connus immédiatement.
+Avant cette préparation, les variantes d’un même identifiant Spotify ou
+Deezer peuvent retrouver une copie locale déjà indexée. Cette recherche
+groupée reste locale, hors du thread principal, et conserve l’identifiant
+du titre, celui de l’occurrence et les métadonnées éditées. Une ressemblance
+de titre et d’artiste ne suffit pas à substituer un fichier audio.
 Quand une vérification change les titres admissibles, il signale la mise
 à jour du dossier aux navigateurs abonnés, sans toucher à la file active.
 Seul l’identifiant d’occurrence émis par un dossier playlist choisit une

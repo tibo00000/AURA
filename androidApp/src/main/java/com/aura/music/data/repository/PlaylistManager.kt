@@ -50,7 +50,7 @@ class PlaylistManager(
         )
     }
 
-    suspend fun createPlaylist(name: String): String = withContext(Dispatchers.IO) {
+    suspend fun createPlaylist(name: String, isCurrent: () -> Boolean = { true }): String = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val playlistId = "playlist:${normalize(name)}:${UUID.randomUUID().toString().take(8)}"
         val outboxOp = syncRepository.createOutboxEntity(
@@ -67,6 +67,7 @@ class PlaylistManager(
         )
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
+                if (!isCurrent()) throw kotlinx.coroutines.CancellationException("Playlist session changed")
                 database.playlistDao().insertPlaylist(
                     PlaylistEntity(
                         id = playlistId,
@@ -78,6 +79,7 @@ class PlaylistManager(
                     ),
                 )
                 database.syncOutboxDao().insert(outboxOp)
+                if (!isCurrent()) throw kotlinx.coroutines.CancellationException("Playlist session changed")
             }
         }
         syncRepository.triggerManualSync()
@@ -134,10 +136,12 @@ class PlaylistManager(
         albumTitle: String? = null,
         durationMs: Long? = null,
         coverUri: String? = null,
+        isCurrent: () -> Boolean = { true },
     ): AddToPlaylistResult = withContext(Dispatchers.IO) {
         try {
             val result = database.useWriterConnection { transactor ->
                 transactor.immediateTransaction {
+                    if (!isCurrent()) throw kotlinx.coroutines.CancellationException("Playlist session changed")
                     val playlistSummary = database.playlistDao().getPlaylistDetail(playlistId)
                     val playlistName = playlistSummary?.name ?: "Playlist"
 
@@ -180,6 +184,7 @@ class PlaylistManager(
                     )
                     database.playlistDao().touchPlaylist(playlistId, now)
                     database.syncOutboxDao().insert(outboxOp)
+                    if (!isCurrent()) throw kotlinx.coroutines.CancellationException("Playlist session changed")
                     AddToPlaylistResult.Success(playlistName)
                 }
             }
@@ -202,6 +207,7 @@ class PlaylistManager(
 
             result
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("PlaylistManager", "Failed to add track $trackId to playlist $playlistId", e)
             AddToPlaylistResult.Error(e.message ?: "Erreur lors de l'ajout à la playlist")
         }

@@ -65,6 +65,9 @@ import com.aura.music.data.repository.PlaylistDetail
 import com.aura.music.data.playlist.PlaylistSourceReference
 import com.aura.music.data.playlist.PlaylistSourceReadException
 import com.aura.music.data.network.PlaylistRefreshResult
+import com.aura.music.data.playlist.metadataMatchKey
+import com.aura.music.data.playlist.suggestedPlaylistLinks
+import com.aura.music.data.playlist.suggestedLibraryTracks
 import com.aura.music.ui.RouteScaffold
 import com.aura.music.ui.player.PlayerViewModel
 import com.aura.music.ui.theme.BlazeOrange
@@ -146,6 +149,44 @@ fun PlaylistDetailScreenNew(
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val snackbarHostState = remember { SnackbarHostState() }
+    var knownLocalUris by remember(playlistId, auraScope, detail?.tracks) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var libraryCandidates by remember(playlistId, auraScope, lastRefresh?.requestId) {
+        mutableStateOf<List<com.aura.music.data.local.TrackListRow>>(emptyList())
+    }
+    var inPlaylistSuggestions by remember(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks) {
+        mutableStateOf<Map<String, String>>(emptyMap())
+    }
+    var inLibrarySuggestions by remember(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks, libraryCandidates) {
+        mutableStateOf<Map<String, com.aura.music.data.local.TrackListRow>>(emptyMap())
+    }
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks, libraryCandidates) {
+        val owner = auraScope ?: return@LaunchedEffect
+        val (playlistLinks, libraryLinks) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val uncertain = lastRefresh?.uncertain.orEmpty()
+            val rows = detail?.tracks.orEmpty()
+            suggestedPlaylistLinks(uncertain, rows) to suggestedLibraryTracks(uncertain, libraryCandidates, rows)
+        }
+        if (appContainer.authSessionManager.isCurrent(owner)) {
+            inPlaylistSuggestions = playlistLinks
+            inLibrarySuggestions = libraryLinks
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, detail?.tracks) {
+        val owner = auraScope ?: return@LaunchedEffect
+        val resolved = sourceRepository.resolveKnownLocalAudio(detail?.tracks.orEmpty())
+        if (appContainer.authSessionManager.isCurrent(owner)) {
+            knownLocalUris = resolved.mapNotNull { row -> row.contentUri?.let { row.trackId to it } }.toMap()
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, lastRefresh?.requestId) {
+        val owner = auraScope ?: return@LaunchedEffect
+        if (lastRefresh?.uncertain.isNullOrEmpty()) return@LaunchedEffect
+        val candidates = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val keys = lastRefresh?.uncertain.orEmpty().mapNotNull { metadataMatchKey(it.title, it.artist) }.toSet()
+            repository.getAllTracks().filter { metadataMatchKey(it.title, it.artistName) in keys }
+        }
+        if (appContainer.authSessionManager.isCurrent(owner)) libraryCandidates = candidates
+    }
     androidx.compose.runtime.LaunchedEffect(
         playlistId, auraScope, sourceState?.userId, lastRefresh?.requestId,
         showAcquisitionReport, isOnline, inProgress > 0,
@@ -162,12 +203,29 @@ fun PlaylistDetailScreenNew(
         context.contentResolver, android.provider.Settings.Secure.ANDROID_ID,
     ) ?: "android_pixel_device"
 
-    fun refreshSource(confirmed: List<String> = emptyList(), links: Map<String, String> = emptyMap()) {
+    fun refreshSource(
+        confirmed: List<String> = emptyList(), links: Map<String, String> = emptyMap(),
+        libraryLinks: Map<String, com.aura.music.data.local.TrackListRow> = emptyMap(),
+    ) {
         if (isRefreshingSource) return
+        val owner = auraScope ?: return
+        if (!appContainer.authSessionManager.isCurrent(owner)) return
         isRefreshingSource = true
         scope.launch {
             try {
-                val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, links)
+                val confirmedLinks = links.toMutableMap()
+                for ((sourceId, candidate) in libraryLinks) {
+                    if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
+                    val added = repository.addTrackToPlaylist(playlistId, candidate.id, contextType = "playlist_source_link", isCurrent = { appContainer.authSessionManager.isCurrent(owner) })
+                    if (added is AddToPlaylistResult.Error) throw PlaylistSourceReadException(added.message)
+                    if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
+                    val occurrence = repository.getPlaylistDetail(playlistId)?.tracks?.lastOrNull { it.trackId == candidate.id }
+                        ?: throw PlaylistSourceReadException("Le titre n’a pas pu être retrouvé dans la playlist.")
+                    confirmedLinks[sourceId] = occurrence.playlistItemId
+                }
+                if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
+                val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, confirmedLinks)
+                if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
                 snackbarHostState.showSnackbar("${result.addedCount} titre(s) ajouté(s) · ${result.uncertain.size} à vérifier")
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -302,17 +360,15 @@ fun PlaylistDetailScreenNew(
                             if (completed != null) {
                                 Text("Dernière actualisation · $completed", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                             }
-                            Text("${lastRefresh.addedCount} ajouté(s) · ${lastRefresh.excludedCount} exclu(s)", style = MaterialTheme.typography.bodySmall)
                             if (lastRefresh.uncertain.isNotEmpty()) {
                                 TextButton(onClick = { showUncertainTracks = true }, enabled = !isRefreshingSource) {
-                                    Text("Vérifier ${lastRefresh.uncertain.size} correspondance(s)")
+                                    Text("Retrouver ${lastRefresh.uncertain.size} titre(s) déjà connus")
                                 }
                             }
                         }
-                        if (acquisitionStatuses.any { it.status != "not_requested" }) {
-                            val available = acquisitionStatuses.count { it.availability == "available" }
+                        if (showPlaylistCloudSummary(acquisitionStatuses)) {
                             TextButton(onClick = { showAcquisitionReport = true }) {
-                                Text("$available disponible(s) dans le cloud · $inProgress en cours")
+                                Text(playlistCloudSummaryLabel(acquisitionStatuses))
                             }
                         }
                     }
@@ -634,7 +690,7 @@ fun PlaylistDetailScreenNew(
                             }
                         }
                         PlaylistTrackRowItem(
-                            track = track,
+                            track = track.copy(contentUri = track.contentUri ?: knownLocalUris[track.trackId]),
                             playlistId = detail.summary.id,
                             repository = repository,
                             onPlayTrack = onPlayTrackClick,
@@ -649,6 +705,7 @@ fun PlaylistDetailScreenNew(
                             canMoveDown = index < detail.tracks.lastIndex,
                             cloudFileRepository = cloudFileRepository,
                             job = jobsByTrack[track.trackId],
+                            acquisition = acquisitionsByTrack[track.trackId],
                             snackbarHostState = snackbarHostState,
                             onEditMetadata = { t -> trackToEditMetadata = t }
                         )
@@ -751,20 +808,35 @@ fun PlaylistDetailScreenNew(
     if (showUncertainTracks && lastRefresh != null) {
         AlertDialog(
             onDismissRequest = { showUncertainTracks = false },
-            title = { Text("Correspondances à vérifier") },
+            title = { Text("Retrouver les titres existants") },
             text = {
-                LazyColumn(Modifier.height(220.dp)) {
+                LazyColumn(Modifier.height(360.dp)) {
+                    item {
+                        Text("Ces titres ressemblent à des morceaux déjà dans Aura. Vérifie les propositions pour réutiliser tes fichiers. Tu peux garder séparées les autres versions.", style = MaterialTheme.typography.bodySmall)
+                        val suggestions = inPlaylistSuggestions
+                        val librarySuggestions = inLibrarySuggestions
+                        if (suggestions.isNotEmpty() || librarySuggestions.isNotEmpty()) TextButton(onClick = {
+                            showUncertainTracks = false
+                            refreshSource(links = suggestions, libraryLinks = librarySuggestions)
+                        }, enabled = !isRefreshingSource) { Text("Utiliser les ${suggestions.size + librarySuggestions.size} titres proposés") }
+                    }
                     itemsIndexed(lastRefresh.uncertain, key = { index, track -> track.trackId ?: index }) { _, track ->
-                        Column {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("${track.title} · ${track.artist}")
+                            track.album?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = TextSecondary) }
+                            val key = metadataMatchKey(track.title, track.artist)
+                            val proposed = detail?.tracks.orEmpty().filter { key != null && metadataMatchKey(it.title, it.artistName) == key }
+                            if (proposed.size == 1) Text("Proposition · ${proposed.single().title} · ${proposed.single().artistName}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            val fromLibrary = inLibrarySuggestions[track.trackId]
+                            if (fromLibrary != null) Text("Bibliothèque · ${fromLibrary.title} · ${fromLibrary.artistName}\n${fromLibrary.albumTitle.orEmpty()}${if (!fromLibrary.contentUri.isNullOrBlank()) " · Sur le téléphone" else ""}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                             TextButton(onClick = {
                                 showUncertainTracks = false
                                 track.trackId?.let { refreshSource(listOf(it)) }
-                            }, enabled = track.trackId != null) { Text("Ajouter comme titre distinct") }
+                            }, enabled = track.trackId != null && !isRefreshingSource) { Text("Ajouter comme titre distinct") }
                             TextButton(onClick = {
                                 showUncertainTracks = false
                                 trackToLink = track
-                            }, enabled = track.trackId != null) { Text("Associer à une occurrence") }
+                            }, enabled = track.trackId != null && !isRefreshingSource) { Text("Utiliser un titre déjà présent") }
                         }
                     }
                 }
@@ -777,14 +849,25 @@ fun PlaylistDetailScreenNew(
     if (linkCandidate != null && detail != null) {
         AlertDialog(
             onDismissRequest = { trackToLink = null },
-            title = { Text("Occurrence pour ${linkCandidate.title}") },
+            title = { Text("Quel titre correspond à ${linkCandidate.title} ?") },
             text = {
-                LazyColumn(Modifier.height(260.dp)) {
+                LazyColumn(Modifier.height(360.dp)) {
+                    item { Text("Dans cette playlist", style = MaterialTheme.typography.labelLarge) }
                     itemsIndexed(detail.tracks, key = { _, track -> track.playlistItemId }) { index, track ->
                         TextButton(onClick = {
                             trackToLink = null
                             linkCandidate.trackId?.let { refreshSource(links = mapOf(it to track.playlistItemId)) }
-                        }) { Text("${index + 1}. ${track.title} · ${track.artistName.orEmpty()}") }
+                        }) { Text("${index + 1}. ${track.title} · ${track.artistName.orEmpty()}\n${track.albumTitle.orEmpty()}${if (!track.contentUri.isNullOrBlank()) " · Sur le téléphone" else ""}") }
+                    }
+                    val existingIds = detail.tracks.mapTo(mutableSetOf()) { it.trackId }
+                    val key = metadataMatchKey(linkCandidate.title, linkCandidate.artist)
+                    val otherCopies = libraryCandidates.filter { it.id !in existingIds && key != null && metadataMatchKey(it.title, it.artistName) == key }
+                    if (otherCopies.isNotEmpty()) item { Text("Dans ta bibliothèque", style = MaterialTheme.typography.labelLarge) }
+                    itemsIndexed(otherCopies, key = { _, row -> "library:${row.id}" }) { _, candidate ->
+                        TextButton(onClick = {
+                            trackToLink = null
+                            linkCandidate.trackId?.let { refreshSource(libraryLinks = mapOf(it to candidate)) }
+                        }) { Text("${candidate.title} · ${candidate.artistName}\n${candidate.albumTitle.orEmpty()}${if (!candidate.contentUri.isNullOrBlank()) " · Sur le téléphone" else ""}") }
                     }
                 }
             },
@@ -925,6 +1008,7 @@ private fun PlaylistTrackRowItem(
     canMoveDown: Boolean,
     cloudFileRepository: com.aura.music.data.repository.CloudFileRepository,
     job: com.aura.music.data.local.DownloadJobEntity?,
+    acquisition: com.aura.music.data.network.PlaylistAcquisitionStatus?,
     snackbarHostState: SnackbarHostState,
     onEditMetadata: ((com.aura.music.data.local.TrackListRow) -> Unit)? = null,
 ) {
@@ -987,14 +1071,8 @@ private fun PlaylistTrackRowItem(
     }
 
     val isDownloadedLocally = !track.contentUri.isNullOrBlank()
-    val isCloudOnly = !isDownloadedLocally
-    val downloadStatus = when {
-        job != null && job.status == "queued" -> TrackDownloadStatus.Queued
-        job != null && job.status == "running" -> TrackDownloadStatus.Downloading(job.progressPercent ?: 0f)
-        job != null && job.status == "failed" -> TrackDownloadStatus.Failed(job.errorMessage ?: "Échec du téléchargement")
-        isDownloadedLocally -> TrackDownloadStatus.Downloaded
-        else -> TrackDownloadStatus.NotDownloaded
-    }
+    val isCloudOnly = !isDownloadedLocally && verifiedCloud
+    val downloadStatus = playlistTrackDownloadStatus(isDownloadedLocally, verifiedCloud, acquisition, job)
 
     val onTrackRowClick = onPlayTrack
 

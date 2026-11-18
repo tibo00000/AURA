@@ -515,8 +515,8 @@ class LocalLibraryRepository(
             }
         }.distinctUntilChanged()
 
-    suspend fun createPlaylist(name: String): String =
-        playlistManager.createPlaylist(name)
+    suspend fun createPlaylist(name: String, isCurrent: () -> Boolean = { true }): String =
+        playlistManager.createPlaylist(name, isCurrent)
 
     suspend fun renamePlaylist(playlistId: String, name: String) =
         playlistManager.renamePlaylist(playlistId, name)
@@ -534,6 +534,7 @@ class LocalLibraryRepository(
         albumTitle: String? = null,
         durationMs: Long? = null,
         coverUri: String? = null,
+        isCurrent: () -> Boolean = { true },
     ): AddToPlaylistResult = playlistManager.addTrackToPlaylist(
         playlistId = playlistId,
         trackId = trackId,
@@ -544,6 +545,7 @@ class LocalLibraryRepository(
         albumTitle = albumTitle,
         durationMs = durationMs,
         coverUri = coverUri,
+        isCurrent = isCurrent,
     )
 
     suspend fun removeTrackFromPlaylist(playlistId: String, playlistItemId: String) =

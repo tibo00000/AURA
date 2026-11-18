@@ -251,6 +251,10 @@ fun PlaylistImportDialog(
                         Toast.makeText(context, "Playlist « $customName » créée avec succès !", Toast.LENGTH_SHORT).show()
                         onPlaylistCreated(plId)
                         onDismiss()
+                    } catch (e: com.aura.music.data.playlist.PlaylistImportCreatedException) {
+                        Toast.makeText(context, e.message, Toast.LENGTH_LONG).show()
+                        onPlaylistCreated(e.playlistId)
+                        onDismiss()
                     } catch (e: Exception) {
                         if (e !is kotlinx.coroutines.CancellationException) {
                             Toast.makeText(context, "Erreur création playlist : ${e.message}", Toast.LENGTH_LONG).show()
@@ -961,9 +965,9 @@ fun PlaylistImportSummaryDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = SemanticSuccess, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Déjà disponibles sur AURA :", color = TextSecondary)
+                                  Text("Déjà identifiés dans AURA :", color = TextSecondary)
                             }
-                            Text("${report.matchedLocalCount} titres prêts", fontWeight = FontWeight.Bold, color = SemanticSuccess)
+                                Text("${report.matchedLocalCount} références reconnues", fontWeight = FontWeight.Bold, color = SemanticSuccess)
                         }
                         if (report.missingCount > 0) {
                             Row(
@@ -974,7 +978,7 @@ fun PlaylistImportSummaryDialog(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("À télécharger sur le Cloud :", color = TextSecondary)
+                                    Text(if (report.sourceReference != null) "À ajouter ou à vérifier :" else "À télécharger sur le Cloud :", color = TextSecondary)
                                 }
                                 Text("${report.missingCount} nouveaux titres", fontWeight = FontWeight.Bold, color = BlazeOrange)
                             }
@@ -984,13 +988,15 @@ fun PlaylistImportSummaryDialog(
 
                 if (report.missingCount > 0) {
                     Text(
-                        text = "💡 Les ${report.missingCount} nouveaux morceaux seront ajoutés à votre playlist et automatiquement téléchargés par le serveur sur votre Cloud personnel.",
+                        text = if (report.sourceReference != null)
+                            "La playlist sera associée à ${report.sourceDescription}. Aura ajoutera les nouveautés et proposera les copies possibles déjà présentes dans ta bibliothèque. Un titre sans fichier ne sera pas présenté comme disponible dans le cloud."
+                        else "💡 Les ${report.missingCount} nouveaux morceaux seront ajoutés à votre playlist et automatiquement téléchargés par le serveur sur votre Cloud personnel.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
                 } else {
                     Text(
-                        text = "Tous les morceaux de cette playlist sont déjà disponibles sur votre Cloud AURA.",
+                        text = "Tous les morceaux de cette playlist sont déjà connus dans AURA.",
                         style = MaterialTheme.typography.bodySmall,
                         color = SemanticSuccess
                     )

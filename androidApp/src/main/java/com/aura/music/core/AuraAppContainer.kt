@@ -153,7 +153,9 @@ class AuraAppContainer(context: Context) {
             context = appContext,
             libraryRepository = localLibraryRepository,
             spotifyAuthManager = spotifyAuthManager,
-            downloadRepository = downloadRepository
+            downloadRepository = downloadRepository,
+            sourceRepository = playlistSourceRepository,
+            sourceReader = com.aura.music.data.playlist.PlaylistSourceReader(spotifyAuthManager::getValidAccessToken),
         )
     }
 

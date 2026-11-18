@@ -141,7 +141,9 @@ class PlaylistPlayback(
 
     suspend fun prepare(playlistId: String, rows: List<PlaylistTrackRow>): List<QueuedTrack> {
         val owner = auth.sessionScope.value
-        val tracks = eligible(playlistId, rows)
+        val localRows = source.resolveKnownLocalAudio(rows)
+        if (auth.sessionScope.value != owner) return emptyList()
+        val tracks = eligible(playlistId, localRows)
         if (tracks.none { it.contentUri != null }) {
             return if (auth.sessionScope.value == owner) tracks else emptyList()
         }

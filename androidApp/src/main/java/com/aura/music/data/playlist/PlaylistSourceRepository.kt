@@ -15,7 +15,6 @@ import com.aura.music.data.network.PlaylistAcquisitionStatus
 import com.aura.music.data.network.PlaylistRefreshRequest
 import com.aura.music.data.network.PlaylistRefreshResult
 import com.aura.music.data.repository.SyncRepository
-import com.aura.music.domain.search.SearchNormalizer
 import io.ktor.client.call.body
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
@@ -76,6 +75,35 @@ class PlaylistSourceRepository internal constructor(
     private val sourceReader: PlaylistSourceReader,
 ) {
     private val refreshMutex = Mutex()
+
+    internal suspend fun requireImportReady(owner: AuthSessionManager.Scope) {
+        if (!auth.isCurrent(owner)) throw CancellationException("Playlist session changed")
+        if (database.userSettingsDao().getSettings()?.syncEnabled != true) {
+            throw PlaylistSourceReadException("Active la synchronisation Aura pour importer une playlist avec sa source.")
+        }
+    }
+
+    internal suspend fun pullImportedPlaylist(deviceId: String, owner: AuthSessionManager.Scope) {
+        if (!auth.isCurrent(owner)) throw CancellationException("Playlist session changed")
+        if (!sync.performSync(deviceId, force = true, scope = owner)) {
+            throw PlaylistSourceReadException("La playlist est enregistrée sur Aura. Sa récupération sur cet appareil reste à confirmer.")
+        }
+    }
+
+    internal suspend fun resolveKnownLocalAudio(rows: List<com.aura.music.data.local.PlaylistTrackRow>): List<com.aura.music.data.local.PlaylistTrackRow> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val identities = rows.filter { it.contentUri.isNullOrBlank() }
+                .mapNotNull { PlaylistRecordingIdentity.parse(it.trackId) }.toSet()
+            if (identities.isEmpty()) return@withContext rows
+            val ids = identities.flatMap { it.aliases() }.distinct()
+            val local = ids.chunked(400).flatMap { database.trackDao().getTracksByIds(it) }
+                .filter { !it.contentUri.isNullOrBlank() }
+                .groupBy { PlaylistRecordingIdentity.parse(it.id) }
+            rows.map { row ->
+                val copy = local[PlaylistRecordingIdentity.parse(row.trackId)]?.firstOrNull()
+                if (row.contentUri.isNullOrBlank() && copy != null) row.copy(contentUri = copy.contentUri) else row
+            }
+        }
 
     internal suspend fun getAcquisitions(
         playlistId: String,
@@ -158,22 +186,24 @@ class PlaylistSourceRepository internal constructor(
         val tracks = pending?.tracks ?: sourceReader.read(PlaylistSourceReference(provider, externalId))
         if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
         // A pending manual removal must reach the server before automatic additions.
-        if (!sync.performSync(deviceId, force = true)) {
+        if (!sync.performSync(deviceId, force = true, scope = scope)) {
             throw PlaylistSourceReadException("Synchronise les modifications locales avant de réessayer.")
         }
         val current = dao.getPlaylistSyncState(playlistId)
         if (current?.userId != scope.userId || current.sourceRevision != state.sourceRevision) {
             throw PlaylistSourceReadException("La source de la playlist a changé. Réessaie.")
         }
-        val localIdentities = dao.getPlaylistTracks(playlistId).mapTo(mutableSetOf()) { row ->
-            SearchNormalizer.normalize(row.title) to SearchNormalizer.normalize(row.artistName.orEmpty())
+        val (localIdentities, catalogueIdentities) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val rows = database.trackDao().getAllTracks()
+            rows.mapNotNullTo(mutableSetOf()) { row -> metadataMatchKey(row.title, row.artistName) } to
+                rows.mapNotNullTo(mutableSetOf()) { row -> PlaylistRecordingIdentity.parse(row.id) }
         }
         val request = pending ?: PlaylistRefreshRequest(
             requestId = UUID.randomUUID().toString(),
             sourceRevision = state.sourceRevision,
             tracks = tracks.map {
-                val key = SearchNormalizer.normalize(it.title) to SearchNormalizer.normalize(it.artist)
-                it.copy(requiresConfirmation = key in localIdentities)
+                val key = metadataMatchKey(it.title, it.artist)
+                it.copy(requiresConfirmation = key in localIdentities && it.recordingIdentity() !in catalogueIdentities)
             },
             confirmedDistinct = confirmedDistinct,
             confirmedLinks = confirmedLinks,
@@ -256,7 +286,7 @@ class PlaylistSourceRepository internal constructor(
             val dao = database.playlistDao()
             var state = dao.getPlaylistSyncState(playlistId)
             if (state == null) {
-                sync.performSync(deviceId, force = true)
+                sync.performSync(deviceId, force = true, scope = scope)
                 state = dao.getPlaylistSyncState(playlistId)
             }
             if (state?.userId != scope.userId || !auth.isCurrent(scope)) {
