@@ -159,9 +159,22 @@ natif Robolectric sur Windows avant exécution des scénarios SQLite.
 L’essai visuel du nouveau client sur téléphone reste à réaliser.
 Le suivi ne change ni la version 0.4.3/code 7, ni l’OTA, ni les acquisitions
 automatiques désactivées. Aucune migration ni mise à jour backend requise.
-Un nouvel assemblage puis une installation de l’APK Android sont nécessaires
-pour rendre ces corrections visibles sur le téléphone. Cette reprise ne
-lance ni packaging ni installation.
+L’assemblage Android a ensuite été demandé explicitement par l’utilisateur.
+`:androidApp:assembleDebug` a réussi depuis le commit
+`5d5e61e9414426c5f868ed217e31c859b076eda8` :
+`aura-playlist-sync-20261118.apk`, 92 596 281 octets, package `com.aura.music`,
+version 0.4.3/code 7. SHA-256
+`ca2f1b2ec76abb0f9bd213ee7f7649d750e4f32d95a779d07e4fa69da4b4b73f`.
+La signature v2 est valide et le certificat est identique à celui du
+candidat installé le 17 novembre, SHA-256
+`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`.
+La copie de livraison possède la même empreinte que la sortie Gradle.
+Les marqueurs des nouveaux helpers sont présents dans le DEX, les classes
+de test sont absentes et la cible backend est celle du candidat précédent.
+Le manifeste `aura-playlist-sync-20261118.verification.json` accompagne l’APK.
+L’installation par-dessus avec `adb install -r` et l’essai sont laissés
+à l’utilisateur, conformément à sa demande. Aucune installation ni OTA
+n’a été exécutée par l’agent.
 
 Le parcours retenu pour l’usage personnel commence par une playlist dédiée.
 Sa suppression et sa recréation sont acceptées si un problème reste limité à
