@@ -28,8 +28,27 @@ La préparation distante vérifie les empreintes des trois modules de l'image
 de départ et teste l'image candidate avant de remplacer le seul service API.
 La sauvegarde réelle reste uniquement sur le VPS et n'est pas supprimée.
 
-À la demande de l'utilisateur, les cinq autres APK locaux et la copie de build
-ont été nettoyés (cinq fichiers au total, 471 671 221 octets). Le seul APK
+Activation exécutée le 19 novembre sur instruction explicite de l'utilisateur.
+Image active `sha256:18d1001b948deadbc14d8ab5d2fe4fe56168ec1dcf8265aa5f45d4d5780bba2f`,
+code `b671b8509ac9f113e9a651515a275f0f677aa3e6`. L'image déployée a repassé les
+61 tests ciblés hors réseau. Worker actif, mode `automatic`, service sain ;
+`/health` répond 200 et les deux consultations playlist anonymes testées
+répondent 401. Les montages audio et manifeste sont identiques. Recovery et
+backfill restent désactivés. La comparaison Compose ne trouve que l'image et
+le nouveau mode comme différences. Aucune écriture de playlist ou de statut
+d'intention n'a été forcée par l'intervention.
+
+Préparation et commande de retour arrière conservées sur le VPS dans
+`/root/aura-playlist-automatic-20261119/activation-plan.json`. Le retour remet
+l'image précédente et le mode manifeste, sans supprimer de fichier audio ou
+restaurer la base. Les reprises de titres absents du manifeste attendront
+alors une nouvelle activation automatique. Les deux anciens refus consultés
+n'ont plus de référence active ; ils ne sont pas relancés en masse. Pour un
+refus encore visible dans une playlist, utiliser Bilan de synchronisation →
+Relancer, ce qui reprend les contrôles habituels et conserve les occurrences.
+
+À la demande de l'utilisateur, les cinq copies APK autres que r3, y compris
+la sortie de build, ont été supprimées (471 671 221 octets). Le seul APK
 restant dans les artefacts de ce chat est r3, empreinte inchangée. Les références
 historiques à r1/r2 ci-dessous documentent les essais ; ces binaires locaux ne
 sont plus conservés. L'APK OTA et les fichiers audio du VPS sont inchangés.
