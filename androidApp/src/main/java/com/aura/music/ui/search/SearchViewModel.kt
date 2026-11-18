@@ -144,29 +144,33 @@ class SearchViewModel(
         loadHybridSearch(query)
     }
 
-    fun refreshDisplayedLocalResults() {
-        val state = _uiState.value
-        val query = state.currentFullSearchResult?.query ?: return
-        if (query.length < 3) return
+    private var localRefreshJob: kotlinx.coroutines.Job? = null
+    private var localRefreshGeneration = 0L
 
-        viewModelScope.launch {
+    fun refreshDisplayedLocalResults() {
+        localRefreshJob?.cancel()
+        val generation = ++localRefreshGeneration
+        val state = _uiState.value
+        val query = state.query.trim().takeIf { it.length >= 3 } ?: state.currentFullSearchResult?.query ?: return
+        if (query.length < 3) return
+        localRefreshJob = viewModelScope.launch {
             try {
-                val refreshedLocal = withContext(Dispatchers.IO) {
-                    searchRepository.getLocalSuggestions(query)
-                }
+                val refreshed = withContext(Dispatchers.IO) { searchRepository.getLocalSuggestions(query) }
                 _uiState.update { current ->
-                    val currentResult = current.currentFullSearchResult ?: return@update current
+                    if (generation != localRefreshGeneration) return@update current
+                    val full = current.currentFullSearchResult
+                    val suggestions = current.localSuggestions
                     current.copy(
-                        currentFullSearchResult = currentResult.copy(
-                            localTracks = refreshedLocal.localTracks,
-                            localArtists = refreshedLocal.localArtists,
-                            localAlbums = refreshedLocal.localAlbums,
-                        )
+                        currentFullSearchResult = if (full?.query == query) full.copy(
+                            localTracks = refreshed.localTracks, localArtists = refreshed.localArtists, localAlbums = refreshed.localAlbums,
+                        ) else full,
+                        localSuggestions = if (suggestions?.query == query) suggestions.copy(
+                            localTracks = refreshed.localTracks, localArtists = refreshed.localArtists, localAlbums = refreshed.localAlbums,
+                        ) else suggestions,
                     )
                 }
-            } catch (e: Exception) {
-                // Keep the current result; refresh is opportunistic after returning from detail screens.
-            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Keep the current results during a temporary local read failure. */ }
         }
     }
 

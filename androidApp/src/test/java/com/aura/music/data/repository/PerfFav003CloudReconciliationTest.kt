@@ -17,6 +17,9 @@ import com.aura.music.data.local.PlaylistItemEntity
 import com.aura.music.data.local.TrackEntity
 import com.aura.music.data.local.TrackLikeEntity
 import com.aura.music.data.local.TrackMediaLinkEntity
+import com.aura.music.data.media.MediaStoreAudioDataSource
+import com.aura.music.data.network.AuraApiService
+import com.aura.music.ui.utils.TrackLookupIndex
 import com.aura.music.data.network.ApiError
 import com.aura.music.data.network.AuraResponse
 import com.aura.music.data.network.KtorAuraApiService
@@ -95,6 +98,8 @@ class PerfFav003CloudReconciliationTest {
             name = File(temp.root, "perf-fav-003.db").absolutePath,
             factory = { AuraDatabaseConstructor.initialize() }
         ).setDriver(AndroidSQLiteDriver()).build()
+        // Schema/native SQLite initialization is fixture setup, not fetch coalescing latency.
+        runBlocking { db.trackDao().getAllTracks() }
     }
 
     @After
@@ -113,6 +118,7 @@ class PerfFav003CloudReconciliationTest {
 
     private fun newCloudRepo(
         auth: AuthSessionManager,
+        onChanged: () -> Unit = {},
         handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData
     ): CloudFileRepository {
         val client = HttpClient(MockEngine { request ->
@@ -127,7 +133,8 @@ class PerfFav003CloudReconciliationTest {
             apiService = apiService,
             context = context,
             authTokenProvider = { auth.getBearerHeader() },
-            authSessionManagerProvider = { auth }
+            authSessionManagerProvider = { auth },
+            onLibraryChanged = onChanged,
         )
     }
 
@@ -146,6 +153,55 @@ class PerfFav003CloudReconciliationTest {
             status = HttpStatusCode.OK,
             headers = headersOf(HttpHeaders.ContentType, "application/json")
         )
+    }
+
+    @Test
+    fun completedPlaylistAcquisition_refreshesWarmLibraryAndSearch_withoutRepeatedInvalidation() = runBlocking {
+        val auth = newAuthManager("A")
+        val unusedApi = java.lang.reflect.Proxy.newProxyInstance(
+            AuraApiService::class.java.classLoader, arrayOf(AuraApiService::class.java)
+        ) { _, _, _ -> error("Local search must not request the network") } as AuraApiService
+        val library = LocalLibraryRepository(
+            database = db,
+            mediaStoreAudioDataSource = MediaStoreAudioDataSource(context),
+            syncRepositoryProvider = { error("Unused in local search") },
+            apiService = unusedApi,
+            context = context,
+        )
+        val trackId = "spotify:track:paroboy"
+        db.trackDao().upsertTrack(TrackEntity(
+            id = trackId, primaryArtistId = null, albumId = null,
+            title = "paroboy", normalizedTitle = "paroboy", displayArtistName = "disiz",
+            displayAlbumTitle = "on s'en rappellera pas", durationMs = 207_666L,
+            canonicalAudioSourceType = "online", isLiked = false, isDownloadedByAura = false,
+            createdAt = 10L, updatedAt = 10L,
+        ))
+        val oldIndex = library.getOrBuildSearchIndex()
+        assertTrue(library.searchLocalTracks("paroboy").isEmpty())
+        var items = emptyList<SyncedFileResponseData>()
+        var invalidations = 0
+        val repo = newCloudRepo(auth, onChanged = {
+            invalidations++
+            library.invalidateSearchIndex()
+        }) { jsonOk(AuraResponse(data = SyncedFileListResponseData(items))) }
+        assertTrue(repo.getOrFetchCloudFiles().isSuccess)
+        items = listOf(SyncedFileResponseData(
+            trackId = trackId, title = "paroboy", artistName = "disiz",
+            albumTitle = "on s'en rappellera pas", durationMs = 207_666L,
+        ))
+        assertTrue(repo.getOrFetchCloudFiles(forceRefresh = true).isSuccess)
+        assertEquals("cloud", db.trackDao().getRawTrackById(trackId)?.canonicalAudioSourceType)
+        assertTrue(library.getAllTracks().any { it.id == trackId })
+        assertEquals(trackId, library.searchLocalTracks("paroboy").single().id)
+        assertTrue(repo.syncedTrackIds.value.contains(trackId))
+        assertTrue(TrackLookupIndex.buildCloudOnly(repo.cachedCloudFiles.value, repo.syncedTrackIds.value)
+            .isCloudSynced("deezer:track:other-id", "paroboy", "disiz", "on s'en rappellera pas"))
+        val freshIndex = library.getOrBuildSearchIndex()
+        assertFalse(oldIndex === freshIndex)
+        assertEquals(1, invalidations)
+        assertTrue(repo.getOrFetchCloudFiles(forceRefresh = true).isSuccess)
+        assertEquals(1, invalidations)
+        assertTrue(freshIndex === library.getOrBuildSearchIndex())
     }
 
     @Test

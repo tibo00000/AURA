@@ -51,6 +51,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -125,6 +127,7 @@ sealed interface TrackDownloadStatus {
     data object Idle : TrackDownloadStatus
     data object NotDownloaded : TrackDownloadStatus
     data object Queued : TrackDownloadStatus
+    /** Normalized fraction (0..1), as supplied by Android job presenters. */
     data class Downloading(val progressPercent: Float = 0f) : TrackDownloadStatus
     data object Downloaded : TrackDownloadStatus
     data class Failed(val errorCode: String? = null, val message: String? = null) : TrackDownloadStatus
@@ -587,6 +590,7 @@ fun SharedTrackRowItem(
     onChangeAudioVersion: (() -> Unit)? = null,
     onMovePlaylistItemUp: (() -> Unit)? = null,
     onMovePlaylistItemDown: (() -> Unit)? = null,
+    isCloudPending: Boolean = false,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var menuPage by remember { mutableStateOf(0) } // 0 = Principal, 1 = Avancé (Fichiers & Données)
@@ -674,7 +678,7 @@ fun SharedTrackRowItem(
                                 .background(Color.Black.copy(alpha = 0.55f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            val progress = (downloadStatus.progressPercent / 100f).coerceIn(0f, 1f)
+                            val progress = downloadStatus.progressPercent.coerceIn(0f, 1f)
                             if (progress > 0f) {
                                 CircularProgressIndicator(
                                     progress = { progress },
@@ -728,7 +732,10 @@ fun SharedTrackRowItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                if (isCloudOnly) {
+                if (isCloudPending) {
+                    Icon(Icons.Rounded.Schedule, contentDescription = "En attente de téléchargement cloud",
+                        tint = TextSecondary, modifier = Modifier.size(13.dp))
+                } else if (isCloudOnly) {
                     Icon(
                         imageVector = Icons.Rounded.Cloud,
                         contentDescription = "Disponible sur le Cloud",
@@ -778,7 +785,7 @@ fun SharedTrackRowItem(
 
             if (downloadStatus is TrackDownloadStatus.Downloading) {
                 CircularProgressIndicator(
-                    progress = { (downloadStatus as TrackDownloadStatus.Downloading).progressPercent },
+                    progress = { (downloadStatus as TrackDownloadStatus.Downloading).progressPercent.coerceIn(0f, 1f) },
                     modifier = Modifier.size(24.dp),
                     color = BlazeOrange,
                     strokeWidth = 2.dp
@@ -890,7 +897,8 @@ fun SharedTrackRowItem(
                                         },
                                         onClick = {
                                             menuPage = 1
-                                        }
+                                        },
+                                        leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                                     )
                                 }
                             } else {
@@ -901,15 +909,16 @@ fun SharedTrackRowItem(
                                     leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = BlazeOrange) }
                                 )
                                 listOfNotNull(
-                                    onMovePlaylistItemUp?.let { "Monter dans la playlist" to it },
-                                    onMovePlaylistItemDown?.let { "Descendre dans la playlist" to it },
-                                ).forEach { (label, action) ->
+                                    onMovePlaylistItemUp?.let { Triple("Monter dans la playlist", Icons.Rounded.ArrowUpward, it) },
+                                    onMovePlaylistItemDown?.let { Triple("Descendre dans la playlist", Icons.Rounded.ArrowDownward, it) },
+                                ).forEach { (label, icon, action) ->
                                     DropdownMenuItem(
                                         text = { Text(label) },
                                         onClick = {
                                             menuExpanded = false
                                             action()
                                         },
+                                        leadingIcon = { Icon(icon, contentDescription = null) },
                                     )
                                 }
                                 if (onRemoveFromPlaylist != null) {

@@ -47,6 +47,7 @@ class PlaylistAssociatedImportTest {
     private lateinit var client: HttpClient
     private lateinit var importer: PlaylistImportExportManager
     private lateinit var library: LocalLibraryRepository
+    private lateinit var source: PlaylistSourceRepository
     private val paths = mutableListOf<String>()
     private var playlistId: String? = null
     private var revision = 0L
@@ -122,7 +123,7 @@ class PlaylistAssociatedImportTest {
         val sourceReader = PlaylistSourceReader({ error("Spotify must not be used") }) { _, _ ->
             JSONObject("""{"total":1,"next":null,"data":[{"id":789,"title":"Title","artist":{"name":"Artist"},"duration":185}]}""")
         }
-        val source = PlaylistSourceRepository(db, api, auth, sync, sourceReader)
+        source = PlaylistSourceRepository(db, api, auth, sync, sourceReader)
         library = LocalLibraryRepository(db, MediaStoreAudioDataSource(context), { sync }, apiService = api, context = context)
         importer = PlaylistImportExportManager(context, library, SpotifyAuthManager(context), DownloadRepository(db, api, context) { auth }, source, sourceReader, auth)
     }
@@ -147,6 +148,22 @@ class PlaylistAssociatedImportTest {
         assertEquals(playlistId, (failure as PlaylistImportCreatedException).playlistId)
         assertNotNull(db.playlistDao().getPlaylistEntity(failure.playlistId))
         assertFalse(paths.any { it.endsWith("/refresh") })
+    }
+
+    @Test fun knownCatalogueAliasReusesTheLocalAudioWithoutAConfirmation() = runBlocking {
+        val alias = "track:deezer:789"
+        db.trackDao().upsertTrack(TrackEntity(alias, null, null, "Title", "title", "Artist",
+            canonicalAudioSourceType = "local", isLiked = true, isDownloadedByAura = false, createdAt = 1, updatedAt = 1))
+        db.trackDao().upsertTrackMediaLinks(listOf(TrackMediaLinkEntity("alias-media", alias, 42, "content://media/42",
+            availabilityStatus = "available", lastScannedAt = 1)))
+        val id = importer.commitImport(report)
+        val rows = db.playlistDao().getPlaylistTracks(id)
+        val ready = source.resolveKnownLocalAudio(rows).single()
+        assertEquals("content://media/42", ready.contentUri)
+        assertEquals("source-occurrence", ready.playlistItemId)
+        assertEquals(identity.canonicalId, ready.trackId)
+        assertEquals("Title", db.trackDao().getTrackById(alias)?.title)
+        assertTrue(requireNotNull(lastRefresh).uncertain.isEmpty())
     }
 
     @Test fun disabledSyncPreventsCreatingAnEmptyPlaylist() = runBlocking {

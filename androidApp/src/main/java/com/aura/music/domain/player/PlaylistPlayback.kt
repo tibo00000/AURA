@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal const val PLAYLIST_OCCURRENCE_KEY = "aura.playlist.occurrence"
 
@@ -99,16 +101,21 @@ class PlaylistPlayback(
     private val existingCloudIds: () -> Set<String>,
     private val resolver: () -> TrackPlaybackResolver,
     private val mediaStore: MediaStoreAudioDataSource,
+    private val refreshDownloadJobs: (suspend (AuthSessionManager.Scope) -> Boolean)? = null,
 ) {
     private var cacheScope: AuthSessionManager.Scope? = null
     private val _statuses = MutableStateFlow<Map<String, List<PlaylistAcquisitionStatus>>>(emptyMap())
     val statuses = _statuses.asStateFlow()
+    private val _librarySyncPending = MutableStateFlow<Set<String>>(emptySet())
+    internal val librarySyncPending = _librarySyncPending.asStateFlow()
     private val _verificationFailures = MutableStateFlow<Set<String>>(emptySet())
     internal val verificationFailures = _verificationFailures.asStateFlow()
     private val verificationJobs = mutableMapOf<String, Job>()
     private val requestVersions = mutableMapOf<String, Long>()
     private val pendingMutationVersions = mutableMapOf<String, Long>()
     private var requestVersion = 0L
+    private val linkedJobsMutex = Mutex()
+    private val linkedJobStates = linkedMapOf<String, String?>()
 
     init {
         applicationScope.launch { auth.sessionScope.collect { synchronized(this@PlaylistPlayback) { resetScope() } } }
@@ -120,11 +127,13 @@ class PlaylistPlayback(
         if (cacheScope == current) return
         cacheScope = current
         _statuses.value = emptyMap()
+        _librarySyncPending.value = emptySet()
         _verificationFailures.value = emptySet()
         verificationJobs.values.forEach { it.cancel() }
         verificationJobs.clear()
         requestVersions.clear()
         pendingMutationVersions.clear()
+        linkedJobStates.clear()
     }
 
     @Synchronized
@@ -155,10 +164,11 @@ class PlaylistPlayback(
     }
 
     @Synchronized
-    fun verifyLater(playlistId: String) {
+    fun verifyLater(playlistId: String): Job? {
         resetScope()
-        val owner = cacheScope ?: return
-        if (verificationJobs[playlistId]?.isActive == true || playlistId in pendingMutationVersions) return
+        val owner = cacheScope ?: return null
+        verificationJobs[playlistId]?.takeIf { it.isActive }?.let { return it }
+        if (playlistId in pendingMutationVersions) return null
         val version = ++requestVersion
         requestVersions[playlistId] = version
         val job = applicationScope.launch(start = CoroutineStart.LAZY) {
@@ -166,6 +176,7 @@ class PlaylistPlayback(
             var failed = false
             try {
                 confirmed = source.getAcquisitions(playlistId, owner)
+                noteLibrarySync(playlistId, owner, refreshLinkedJobs(owner, confirmed))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -185,6 +196,7 @@ class PlaylistPlayback(
         }
         verificationJobs[playlistId] = job
         job.start()
+        return job
     }
 
     internal suspend fun request(
@@ -202,10 +214,44 @@ class PlaylistPlayback(
         try {
             val statuses = source.requestAcquisitions(playlistId, deviceId, trackId, owner)
             publish(playlistId, owner, version, statuses)
+            noteLibrarySync(playlistId, owner, refreshLinkedJobs(owner, statuses))
             return statuses
         } finally {
             synchronized(this) {
                 if (pendingMutationVersions[playlistId] == version) pendingMutationVersions.remove(playlistId)
+            }
+        }
+    }
+
+    @Synchronized
+    private fun noteLibrarySync(playlistId: String, owner: AuthSessionManager.Scope, confirmed: Boolean) {
+        resetScope()
+        if (cacheScope != owner) return
+        _librarySyncPending.value = if (confirmed) _librarySyncPending.value - playlistId
+            else (_librarySyncPending.value + playlistId).toList().takeLast(32).toSet()
+    }
+
+    private suspend fun refreshLinkedJobs(owner: AuthSessionManager.Scope, rows: List<PlaylistAcquisitionStatus>): Boolean {
+        val refresh = refreshDownloadJobs ?: return true
+        val linked = rows.mapNotNull { row -> row.jobId?.let { it to row.jobStatus } }.toMap()
+        if (linked.isEmpty()) return true
+        return linkedJobsMutex.withLock {
+            val changed = synchronized(this) {
+                resetScope()
+                cacheScope == owner && linked.any { (id, status) -> !linkedJobStates.containsKey(id) || linkedJobStates[id] != status }
+            }
+            if (!auth.isCurrent(owner)) return@withLock false
+            if (!changed) return@withLock true
+            try {
+                if (!refresh(owner)) return@withLock false
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { return@withLock false }
+            synchronized(this) {
+                resetScope()
+                if (cacheScope != owner) return@synchronized false
+                linkedJobStates.putAll(linked)
+                while (linkedJobStates.size > 256) linkedJobStates.remove(linkedJobStates.keys.first())
+                true
             }
         }
     }

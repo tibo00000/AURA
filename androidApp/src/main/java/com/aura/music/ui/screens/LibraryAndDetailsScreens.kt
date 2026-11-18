@@ -3520,9 +3520,7 @@ fun LibraryTracksScreen(
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     var localTracksList by remember { mutableStateOf<List<TrackListRow>?>(null) }
-    LaunchedEffect(repository, refreshTick, refreshToken) {
-        localTracksList = repository.getAllTracks()
-    }
+    val libraryRevision by repository.searchIndexRevision.collectAsState()
     val scope = rememberCoroutineScope()
     var activeTrackForPlaylist by remember { mutableStateOf<TrackListRow?>(null)}
     var pendingDuplicatePrompt by remember { mutableStateOf<AddToPlaylistResult.AlreadyExists?>(null) }
@@ -3557,12 +3555,13 @@ fun LibraryTracksScreen(
     val appContainer = remember(context) { (context.applicationContext as com.aura.music.AuraApplication).container }
     val cloudFileRepository = appContainer.cloudFileRepository
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
-    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshTick, refreshToken) {
-        cloudFileRepository.listCloudFiles().collect { res ->
-            res.onSuccess { value = it }
-        }
+    val cloudFiles by cloudFileRepository.cachedCloudFiles.collectAsState()
+    LaunchedEffect(repository, refreshTick, refreshToken, libraryRevision, cloudFiles) {
+        localTracksList = repository.getAllTracks()
     }
-    val cloudFiles = cloudFilesState.value
+    LaunchedEffect(cloudFileRepository, refreshTick, refreshToken) {
+        cloudFileRepository.getOrFetchCloudFiles()
+    }
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val snackbarHostState = remember { SnackbarHostState() }
 

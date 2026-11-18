@@ -526,19 +526,19 @@ class DownloadRepository(
     /**
      * Fetches active jobs from the backend server to sync the local database state.
      */
-    suspend fun syncActiveJobs(userToken: String) = withContext(Dispatchers.IO) {
+    suspend fun syncActiveJobs(userToken: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val authManager = authSessionManagerProvider()
             val initialSessionScope = authManager.sessionScope.value
             if (initialSessionScope == null && userToken.isBlank()) {
-                return@withContext
+                return@withContext false
             }
 
             val response = apiService.listDownloads(token = userToken)
-            val items = response.data?.items ?: return@withContext
+            val items = response.data?.items?.takeIf { response.error == null && response.meta?.partialFailure != true } ?: return@withContext false
             if (authManager.sessionScope.value != initialSessionScope) {
                 Log.i(TAG, "Aborting syncActiveJobs writes: auth session changed during network fetch")
-                return@withContext
+                return@withContext false
             }
 
             val now = System.currentTimeMillis()
@@ -570,7 +570,7 @@ class DownloadRepository(
                 database.trackDao().getRawTrackById(it.trackId) == null
             }
             if (missingTrackItems.isNotEmpty()) {
-                if (authManager.sessionScope.value != initialSessionScope) return@withContext
+                if (authManager.sessionScope.value != initialSessionScope) return@withContext false
                 database.useWriterConnection { transactor ->
                     transactor.immediateTransaction {
                         if (authManager.sessionScope.value != initialSessionScope) return@immediateTransaction
@@ -602,7 +602,7 @@ class DownloadRepository(
                 }
             }
 
-            if (authManager.sessionScope.value != initialSessionScope) return@withContext
+            if (authManager.sessionScope.value != initialSessionScope) return@withContext false
 
             // 2. Safely upsert only modified/new jobs now that parent tracks are guaranteed to exist
             val changedJobs = jobs.filter { job ->
@@ -622,7 +622,7 @@ class DownloadRepository(
                 Log.d(TAG, "Download jobs sync: 0/${jobs.size} jobs changed, skipping write")
             }
 
-            if (!isScopeValid()) return@withContext
+            if (!isScopeValid()) return@withContext false
 
             // Auto-start polling if there are pending/running jobs
             if (jobs.any { it.status == "queued" || it.status == "running" }) {
@@ -630,7 +630,7 @@ class DownloadRepository(
             }
 
             for (item in items) {
-                if (!isScopeValid()) return@withContext
+                if (!isScopeValid()) return@withContext false
                 if (item.status == "succeeded") {
                     val existingJob = existingJobsById[item.id]
                     val isReassign = item.operationType == "manual_reassign" ||
@@ -653,8 +653,12 @@ class DownloadRepository(
                     }
                 }
             }
+            isScopeValid()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sync active jobs with backend", e)
+            false
         }
     }
 

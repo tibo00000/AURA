@@ -5,9 +5,85 @@ Le chantier de démarrage Android et les protections de session intégrés
 à ce commit font partie du point de comparaison. La version client reste
 0.4.3, code 7, pendant la préparation du candidat.
 
+## Essai ciblé Paroboy du 18 novembre 2026
+
+À la demande de l'utilisateur, le worker existant a été activé pour l'essai
+de **paroboy — disiz**. Cette section remplace les valeurs de configuration
+historiques du 17 novembre ci-dessous : `ENABLE_PLAYLIST_ACQUISITION_WORKER=true`
+et `PLAYLIST_AUTHORIZED_AUDIO_MANIFEST=/run/aura/playlist-authorized-audio.json`.
+La récupération au démarrage et le backfill restent désactivés. Le manifeste
+contient une seule entrée, pour l'identifiant Aura exact correspondant à
+Spotify `0D2f6DZdN712Xs39JflCFp`, et la vidéo précise
+[audio officiel disiz](https://www.youtube.com/watch?v=yS0NlRTPSoc).
+L'activation ne fournit aucune autorisation générale pour les autres titres.
+
+L'image backend, les volumes audio et les autres services sont inchangés.
+Aucune migration ni OTA n'a été appliquée pendant cet essai. Le job
+`job_01M7QVV5FHS2EKWV2DV5MN82DC` a terminé à 100 %, sans erreur.
+Le fichier obtenu fait 9 694 608 octets ; ffprobe confirme 207,751837 secondes
+d'audio MP3. SHA-256 :
+`a4b490b95468d524551bd4b0c182fe0ab106cb1b7d8bf0330ad9814a0ce3a483`.
+Le serveur le retourne dans l'inventaire de bibliothèque du compte et
+l'utilisateur confirme sa lecture depuis la playlist.
+
+La configuration et les preuves sont conservées uniquement sur le VPS dans
+`/root/aura-playlist-paroboy-test-20261118` (0700). Le fichier
+`activation-plan.json` contient les commandes d'activation et de retour à la
+configuration précédente. Ce retour désactive le worker sans restauration
+de base ni suppression de fichier. Conserver les sauvegardes de données du
+17 novembre jusqu'à validation explicite de l'ensemble par l'utilisateur.
+
+Le suivi Android corrige la propagation du résultat vers les téléchargements,
+Tous les titres et la recherche : nouvelle lecture des jobs seulement lorsque
+leur identifiant ou état change, inventaire partagé publié après Room et
+invalidation de l'index local. Les réponses identiques conservent le cache,
+les transactions sans changement restent évitées et l'index se construit à la
+demande hors UI, avec protection contre une invalidation concurrente.
+Le bilan devient accessible uniquement par le menu ; les intentions sans job
+affichent une horloge fixe, les jobs réels seuls affichent une progression.
+La validation visuelle et les mesures de démarrage sur téléphone restent requises.
+
+Vérification locale du suivi : 32 tests ciblés puis 201 tests Android complets
+réussis, dont PERF-FAV (cache partagé, coalescence, sessions, absence d'écritures
+identiques, liens locaux et concurrence). L'index de 50 000 titres se construit
+en 1 258 ms sur la machine de développement ; recherches en 10 et 8 ms.
+Le seuil existant de 3 s est conservé. Cinq tests d'affichage ont ensuite été
+rejoués après l'alignement de la progression sur la fraction 0..1 utilisée par
+les autres écrans. Lint : 0 erreur, 69 avertissements et 3 informations.
+L'initialisation SQLite est préparée dans la fixture des tests de coalescence,
+hors délai mesuré ; aucune assertion ni limite n'a été relâchée.
+
+APK local de ce suivi : `aura-playlist-sync-20261118-r2.apk`, 95 886 221 octets,
+SHA-256 `f40684c9cce9f0d2d2635a2f9781a7c6f4d967c731091ce38d50e59ba0e76676`.
+Package `com.aura.music`, version 0.4.3/code 7 inchangés. Signature v2 vérifiée,
+certificat SHA-256
+`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`,
+identique au candidat précédent. Copie locale et sortie Gradle identiques.
+Le fichier `aura-playlist-sync-20261118-r2.verification.json` conserve les
+contrôles et le commit source ; aucune installation ni publication OTA.
+
+Après installation du nouveau client par-dessus l'existant, sans désinstallation :
+
+1. Ouvrir la playlist, lire Paroboy et vérifier que les occurrences existantes
+   sont conservées. Le bilan ne s'affiche pas spontanément.
+2. Ouvrir Tous les titres avec le filtre Tous : Paroboy apparaît avec son état
+   cloud et reste lisible. Il ne devient pas téléchargé sur le téléphone.
+3. Rechercher Paroboy localement, puis en ligne : le résultat local est présent
+   et le résultat en ligne est reconnu comme déjà dans le cloud.
+4. Ouvrir le bilan par le menu, revenir à la liste et rouvrir l'application :
+   pas de nouveau téléchargement ni confirmation pour une référence déjà résolue.
+5. Couper le réseau : les titres locaux restent lisibles, l'échec temporaire
+   d'accès cloud ne supprime ni les occurrences ni les fichiers locaux. Rétablir
+   le réseau et contrôler la reprise de la consultation.
+
+En cas d'écart, relever l'écran, le filtre actif, le titre, l'heure et la version
+du candidat. Récupérer `adb logcat -d -v threadtime` après reproduction, avec les
+tags `CloudFileRepository`, `DownloadRepository` et les exceptions Android ;
+transmettre le journal par un canal privé après vérification des données sensibles.
+
 ## Déploiement backend autorisé du 17 novembre 2026
 
-Le suivi Android du 18 novembre ci-dessous ne modifie pas ce déploiement.
+L'essai ciblé du 18 novembre ci-dessus conserve l'image de ce déploiement.
 
 L’utilisateur a autorisé les neuf migrations nommées ci-dessous et le
 déploiement du backend avec les acquisitions automatiques désactivées.

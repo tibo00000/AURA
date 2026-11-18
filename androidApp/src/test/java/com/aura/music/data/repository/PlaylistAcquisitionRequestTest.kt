@@ -236,8 +236,60 @@ class PlaylistAcquisitionRequestTest {
         }
     }
 
-    private fun reportPlayback(repo: PlaylistSourceRepository, worker: CoroutineScope) = PlaylistPlayback(
+    @Test
+    fun linkedJobsReachTheDownloadsListWithoutRefreshingAnUnchangedState() = runBlocking {
+        var report = acquisitions
+        var refreshed = 0
+        val repo = repository { report }
+        val worker = Job(coroutineContext[Job])
+        try {
+            val playback = reportPlayback(repo, CoroutineScope(coroutineContext + worker)) { owner ->
+                assertTrue(auth.isCurrent(owner))
+                refreshed++
+                true
+            }
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(0, refreshed)
+            report = listOf(acquisitions.single().copy(status = "admitted", jobId = "job-linked", jobStatus = "running"))
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(1, refreshed)
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(1, refreshed)
+            report = listOf(report.single().copy(status = "available", availability = "available", jobStatus = "succeeded"))
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(2, refreshed)
+            auth.logout()
+            withTimeout(5_000) { playback.statuses.first { it.isEmpty() } }
+            assertEquals(null, playback.verifyLater("mix"))
+            assertEquals(2, refreshed)
+        } finally { worker.cancel() }
+    }
+
+    @Test
+    fun failedDownloadsRefreshCanRetryWithoutLosingTheConfirmedReport() = runBlocking {
+        val report = listOf(acquisitions.single().copy(status = "admitted", jobId = "job-linked", jobStatus = "running"))
+        var attempted = 0
+        val repo = repository { report }
+        val worker = Job(coroutineContext[Job])
+        try {
+            val playback = reportPlayback(repo, CoroutineScope(coroutineContext + worker)) { ++attempted > 1 }
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(report, playback.statuses.value["mix"])
+            assertTrue("mix" in playback.librarySyncPending.value)
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(2, attempted)
+            assertTrue(playback.librarySyncPending.value.isEmpty())
+            withTimeout(5_000) { playback.verifyLater("mix")?.join() }
+            assertEquals(2, attempted)
+        } finally { worker.cancel() }
+    }
+
+    private fun reportPlayback(
+        repo: PlaylistSourceRepository, worker: CoroutineScope,
+        refresh: (suspend (AuthSessionManager.Scope) -> Boolean)? = null,
+    ) = PlaylistPlayback(
         auth, repo, worker, { emptySet() }, { error("Only reading the cloud report") },
         MediaStoreAudioDataSource(RuntimeEnvironment.getApplication()),
+        refreshDownloadJobs = refresh,
     )
 }

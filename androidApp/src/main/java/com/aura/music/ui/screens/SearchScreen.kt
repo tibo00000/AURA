@@ -166,22 +166,21 @@ fun SearchScreen(
     }
     val playlists = playlistsState.value
 
-    val localTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken) {
+    val libraryRevision by repository.searchIndexRevision.collectAsState()
+    val localTracksState = produceState(initialValue = emptyList<TrackListRow>(), repository, refreshToken, libraryRevision) {
         value = repository.getAllTracks()
     }
     val localTracks = localTracksState.value
 
-    val cloudFilesState = produceState(initialValue = emptyList<com.aura.music.data.network.SyncedFileResponseData>(), cloudFileRepository, refreshToken) {
-        cloudFileRepository.listCloudFiles().collect { res ->
-            res.onSuccess { value = it }
-        }
+    val cloudFiles by cloudFileRepository.cachedCloudFiles.collectAsState()
+    LaunchedEffect(cloudFileRepository, refreshToken) {
+        cloudFileRepository.getOrFetchCloudFiles()
     }
-    val cloudFiles = cloudFilesState.value
     val lookupIndex = remember(localTracks, cloudFiles, syncedCloudTrackIds) {
         TrackLookupIndex.build(localTracks, cloudFiles, syncedCloudTrackIds)
     }
 
-    LaunchedEffect(refreshToken) {
+    LaunchedEffect(refreshToken, libraryRevision, cloudFiles) {
         viewModel.refreshDisplayedLocalResults()
     }
 

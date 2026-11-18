@@ -26,6 +26,17 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.automirrored.rounded.FactCheck
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -126,6 +137,7 @@ fun PlaylistDetailScreenNew(
         else -> null
     }
     var sourceEditRevision by remember(playlistId, auraScope) { mutableStateOf<Long?>(null) }
+    var showSyncOptions by remember(playlistId, auraScope) { mutableStateOf(false) }
     var isSavingSource by remember(playlistId, auraScope) { mutableStateOf(false) }
     var isRefreshingSource by remember(playlistId, auraScope) { mutableStateOf(false) }
     var showUncertainTracks by remember(playlistId, auraScope) { mutableStateOf(false) }
@@ -133,14 +145,19 @@ fun PlaylistDetailScreenNew(
     val lastRefresh = remember(sourceState?.lastRefreshJson) {
         sourceState?.lastRefreshJson?.let { runCatching { Json.decodeFromString<PlaylistRefreshResult>(it) }.getOrNull() }
     }
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, lastRefresh?.requestId) {
+        if (lastRefresh?.uncertain?.isNotEmpty() == true) showUncertainTracks = true
+    }
     val cloudFileRepository = appContainer.cloudFileRepository
     val playlistPlayback = appContainer.playlistPlayback
     val acquisitionStatusMap by playlistPlayback.statuses.collectAsState()
     val verificationFailures by playlistPlayback.verificationFailures.collectAsState()
+    val librarySyncPending by playlistPlayback.librarySyncPending.collectAsState()
     val acquisitionReport = acquisitionStatusMap[playlistId]
     val acquisitionStatuses = acquisitionReport.orEmpty()
     val acquisitionsByTrack = remember(acquisitionStatuses) { acquisitionStatuses.associateBy { it.trackId } }
     val inProgress = remember(acquisitionStatuses) { acquisitionStatuses.count { it.isAcquisitionInProgress() } }
+    val needsCloudCheck = inProgress > 0 || playlistId in librarySyncPending
     var showAcquisitionReport by remember(playlistId, auraScope) { mutableStateOf(false) }
     var requestingCloud by remember(playlistId, auraScope) { mutableStateOf(false) }
     var choosingVersion by remember(playlistId, auraScope) { mutableStateOf<Pair<String, List<com.aura.music.data.network.YtmCandidateDto>>?>(null) }
@@ -189,10 +206,10 @@ fun PlaylistDetailScreenNew(
     }
     androidx.compose.runtime.LaunchedEffect(
         playlistId, auraScope, sourceState?.userId, lastRefresh?.requestId,
-        showAcquisitionReport, isOnline, inProgress > 0,
+        showAcquisitionReport, isOnline, needsCloudCheck,
     ) {
         if (!isOnline) return@LaunchedEffect
-        if (showAcquisitionReport || inProgress > 0) {
+        if (showAcquisitionReport || needsCloudCheck) {
             while (true) {
                 playlistPlayback.verifyLater(playlistId)
                 kotlinx.coroutines.delay(10_000)
@@ -226,7 +243,8 @@ fun PlaylistDetailScreenNew(
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
                 val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, confirmedLinks)
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
-                snackbarHostState.showSnackbar("${result.addedCount} titre(s) ajouté(s) · ${result.uncertain.size} à vérifier")
+                if (result.uncertain.isEmpty()) snackbarHostState.showSnackbar("Playlist actualisée")
+                else showUncertainTracks = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -282,7 +300,7 @@ fun PlaylistDetailScreenNew(
                 if (!auth.isCurrent(owner)) return@launch
                 playlistPlayback.request(playlistId, currentDeviceId(), trackId, owner)
                 if (!auth.isCurrent(owner)) return@launch
-                showAcquisitionReport = true
+                snackbarHostState.showSnackbar("Demande cloud enregistrée")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -349,28 +367,7 @@ fun PlaylistDetailScreenNew(
                             Text("Source · $sourceName", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                         }
                         if (isRefreshingSource) Text("Actualisation en cours…", style = MaterialTheme.typography.bodySmall)
-                        if (lastRefresh != null) {
-                            val completed = remember(lastRefresh.completedAt) {
-                                runCatching {
-                                    java.time.Instant.parse(lastRefresh.completedAt)
-                                        .atZone(java.time.ZoneId.systemDefault())
-                                        .format(java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT))
-                                }.getOrNull()
-                            }
-                            if (completed != null) {
-                                Text("Dernière actualisation · $completed", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                            }
-                            if (lastRefresh.uncertain.isNotEmpty()) {
-                                TextButton(onClick = { showUncertainTracks = true }, enabled = !isRefreshingSource) {
-                                    Text("Retrouver ${lastRefresh.uncertain.size} titre(s) déjà connus")
-                                }
-                            }
-                        }
-                        if (showPlaylistCloudSummary(acquisitionStatuses)) {
-                            TextButton(onClick = { showAcquisitionReport = true }) {
-                                Text(playlistCloudSummaryLabel(acquisitionStatuses))
-                            }
-                        }
+
                     }
                 }
 
@@ -540,7 +537,7 @@ fun PlaylistDetailScreenNew(
 
                             Box {
                                 IconButton(
-                                    onClick = { showMenuOpen = true },
+                                    onClick = { showSyncOptions = false; showMenuOpen = true },
                                     modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
@@ -552,102 +549,117 @@ fun PlaylistDetailScreenNew(
 
                                 DropdownMenu(
                                     expanded = showMenuOpen,
-                                    onDismissRequest = { showMenuOpen = false },
+                                    onDismissRequest = { showMenuOpen = false; showSyncOptions = false },
                                 ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Rendre disponible dans le cloud") },
-                                        enabled = !requestingCloud,
-                                        onClick = {
-                                            showMenuOpen = false
-                                            requestCloud()
-                                        },
-                                    )
-                                    if (sourceState != null) {
+                                    if (showSyncOptions) {
                                         DropdownMenuItem(
-                                            text = { Text("Consulter le bilan cloud") },
-                                            onClick = {
-                                                showMenuOpen = false
-                                                showAcquisitionReport = true
-                                            },
+                                            text = { Text("Retour") },
+                                            leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null) },
+                                            onClick = { showSyncOptions = false },
                                         )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text(if (sourceName == null) "Associer une source" else "Changer la source") },
-                                        enabled = !isSavingSource,
-                                        onClick = {
-                                            sourceEditRevision = sourceState?.sourceRevision ?: 0
-                                            showMenuOpen = false
-                                        },
-                                    )
-                                    if (sourceName != null) {
+                                        if (sourceName != null) {
+                                            DropdownMenuItem(
+                                                text = { Text("Changer la source") },
+                                                leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
+                                                enabled = !isSavingSource,
+                                                onClick = { sourceEditRevision = sourceState?.sourceRevision ?: 0; showMenuOpen = false },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Retirer la source") },
+                                                leadingIcon = { Icon(Icons.Rounded.LinkOff, contentDescription = null) },
+                                                enabled = !isSavingSource,
+                                                onClick = { showMenuOpen = false; sourceState?.let { saveSource(null, it.sourceRevision) } },
+                                            )
+                                        }
                                         DropdownMenuItem(
-                                            text = { Text("Actualiser depuis $sourceName") },
+                                            text = { Text("Demander les fichiers cloud") },
+                                            leadingIcon = { Icon(Icons.Rounded.CloudDownload, contentDescription = null) },
+                                            enabled = !requestingCloud,
+                                            onClick = { showMenuOpen = false; requestCloud() },
+                                        )
+                                    } else {
+                                        DropdownMenuItem(
+                                            text = { Text(if (sourceName == null) "Associer une source" else "Actualiser depuis $sourceName") },
+                                            leadingIcon = { Icon(if (sourceName == null) Icons.Rounded.Link else Icons.Rounded.Refresh, contentDescription = null) },
                                             enabled = !isSavingSource && !isRefreshingSource,
                                             onClick = {
                                                 showMenuOpen = false
-                                                refreshSource()
+                                                if (sourceName == null) sourceEditRevision = sourceState?.sourceRevision ?: 0 else refreshSource()
                                             },
+                                        )
+                                        if (lastRefresh?.uncertain?.isNotEmpty() == true) {
+                                            DropdownMenuItem(
+                                                text = { Text("Vérifier les titres") },
+                                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.FactCheck, contentDescription = null) },
+                                                enabled = !isRefreshingSource,
+                                                onClick = { showMenuOpen = false; showUncertainTracks = true },
+                                            )
+                                        }
+                                        if (sourceState != null) {
+                                            DropdownMenuItem(
+                                                text = { Text("Bilan de synchronisation") },
+                                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.FactCheck, contentDescription = null) },
+                                                onClick = { showMenuOpen = false; showAcquisitionReport = true },
+                                            )
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text("Options de synchronisation") },
+                                            leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                                            onClick = { showSyncOptions = true },
+                                        )
+                                        androidx.compose.material3.HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("Renommer") },
+                                            onClick = {
+                                                showRenameDialog = true
+                                                showMenuOpen = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("Retirer la source") },
-                                            enabled = !isSavingSource,
+                                            text = { Text("Supprimer les doublons") },
                                             onClick = {
                                                 showMenuOpen = false
-                                                sourceState?.let { saveSource(null, it.sourceRevision) }
+                                                scope.launch {
+                                                    try {
+                                                        val removed = repository.deduplicatePlaylist(playlistId)
+                                                        refreshTick++
+                                                        if (removed > 0) {
+                                                            snackbarHostState.showSnackbar("$removed doublon(s) supprimé(s)")
+                                                        } else {
+                                                            snackbarHostState.showSnackbar("Aucun doublon trouvé")
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        snackbarHostState.showSnackbar("Erreur : ${e.message}")
+                                                    }
+                                                }
                                             },
+                                            leadingIcon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = BlazeOrange) },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Exporter (.m3u8)") },
+                                            onClick = {
+                                                showMenuOpen = false
+                                                scope.launch {
+                                                    try {
+                                                        val report = appContainer.playlistImportExportManager.exportPlaylistToM3U8(playlistId)
+                                                        exportReport = report
+                                                    } catch (e: Exception) {
+                                                        android.widget.Toast.makeText(context, "Erreur export : ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            },
+                                            leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null, tint = BlazeOrange) },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Supprimer la playlist", color = Color.Red) },
+                                            onClick = {
+                                                showDeleteDialog = true
+                                                showMenuOpen = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color.Red) },
                                         )
                                     }
-                                    DropdownMenuItem(
-                                        text = { Text("Renommer") },
-                                        onClick = {
-                                            showRenameDialog = true
-                                            showMenuOpen = false
-                                        },
-                                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Supprimer les doublons") },
-                                        onClick = {
-                                            showMenuOpen = false
-                                            scope.launch {
-                                                try {
-                                                    val removed = repository.deduplicatePlaylist(playlistId)
-                                                    refreshTick++
-                                                    if (removed > 0) {
-                                                        snackbarHostState.showSnackbar("$removed doublon(s) supprimé(s)")
-                                                    } else {
-                                                        snackbarHostState.showSnackbar("Aucun doublon trouvé")
-                                                    }
-                                                } catch (e: Exception) {
-                                                    snackbarHostState.showSnackbar("Erreur : ${e.message}")
-                                                }
-                                            }
-                                        },
-                                        leadingIcon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = BlazeOrange) },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Exporter (.m3u8)") },
-                                        onClick = {
-                                            showMenuOpen = false
-                                            scope.launch {
-                                                try {
-                                                    val report = appContainer.playlistImportExportManager.exportPlaylistToM3U8(playlistId)
-                                                    exportReport = report
-                                                } catch (e: Exception) {
-                                                    android.widget.Toast.makeText(context, "Erreur export : ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        },
-                                        leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null, tint = BlazeOrange) },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Supprimer la playlist", color = Color.Red) },
-                                        onClick = {
-                                            showDeleteDialog = true
-                                            showMenuOpen = false
-                                        },
-                                        leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color.Red) },
-                                    )
                                 }
                             }
                         }
@@ -721,9 +733,21 @@ fun PlaylistDetailScreenNew(
         val titles = remember(detail?.tracks) { detail?.tracks.orEmpty().associate { it.trackId to it.title } }
         AlertDialog(
             onDismissRequest = { showAcquisitionReport = false },
-            title = { Text("Disponibilité cloud") },
+            title = { Text("Bilan de synchronisation") },
             text = {
                 LazyColumn(Modifier.height(260.dp)) {
+                    lastRefresh?.let { result ->
+                        item {
+                            Text("Dernière actualisation", style = MaterialTheme.typography.titleSmall)
+                            Text("${result.addedCount} ajouté(s) · ${result.presentCount} déjà présent(s) · ${result.excludedCount} exclu(s)",
+                                style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            if (result.uncertain.isNotEmpty()) TextButton(onClick = {
+                                showAcquisitionReport = false; showUncertainTracks = true
+                            }) { Icon(Icons.AutoMirrored.Rounded.FactCheck, contentDescription = null); Text("Vérifier les titres") }
+                            Spacer(Modifier.height(12.dp))
+                        }
+                    }
+
                     when {
                         !isOnline -> item {
                             Text(if (acquisitionReport == null) "Hors connexion" else "Hors connexion · dernier bilan connu")
@@ -752,9 +776,19 @@ fun PlaylistDetailScreenNew(
                                 row.jobStatus == "requires_resolution" -> "Choix de version nécessaire"
                                 row.status == "not_requested" -> "Aucune demande"
                                 row.status == "cancelled" -> "Demande annulée"
-                                else -> "En attente ou en cours"
+                                row.jobStatus == "running" -> "Téléchargement en cours"
+                                row.jobStatus == "queued" -> "Dans la file des téléchargements"
+                                else -> "En attente de prise en charge"
                             }
-                            Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(when {
+                                    row.availability == "available" -> Icons.Rounded.CloudDone
+                                    row.status == "failed" || row.status == "source_not_authorized" -> Icons.Rounded.ErrorOutline
+                                    row.jobStatus == "running" -> Icons.Rounded.CloudDownload
+                                    else -> Icons.Rounded.Schedule
+                                }, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                                Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
                             if (row.availability != "available" && row.errorCode != "source_identity_ambiguous" &&
                                 row.status in listOf("source_not_authorized", "failed", "cancelled")
                             ) TextButton(enabled = !requestingCloud, onClick = { requestCloud(row.trackId) }) { Text("Réessayer") }
@@ -812,13 +846,16 @@ fun PlaylistDetailScreenNew(
             text = {
                 LazyColumn(Modifier.height(360.dp)) {
                     item {
-                        Text("Ces titres ressemblent à des morceaux déjà dans Aura. Vérifie les propositions pour réutiliser tes fichiers. Tu peux garder séparées les autres versions.", style = MaterialTheme.typography.bodySmall)
+                        Text("Choisis les copies à réutiliser. Les autres versions peuvent rester séparées.", style = MaterialTheme.typography.bodySmall)
                         val suggestions = inPlaylistSuggestions
                         val librarySuggestions = inLibrarySuggestions
                         if (suggestions.isNotEmpty() || librarySuggestions.isNotEmpty()) TextButton(onClick = {
                             showUncertainTracks = false
                             refreshSource(links = suggestions, libraryLinks = librarySuggestions)
-                        }, enabled = !isRefreshingSource) { Text("Utiliser les ${suggestions.size + librarySuggestions.size} titres proposés") }
+                        }, enabled = !isRefreshingSource) {
+                            Icon(Icons.Rounded.Link, contentDescription = null)
+                            Text("Utiliser les ${suggestions.size + librarySuggestions.size} titres proposés")
+                        }
                     }
                     itemsIndexed(lastRefresh.uncertain, key = { index, track -> track.trackId ?: index }) { _, track ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -829,14 +866,28 @@ fun PlaylistDetailScreenNew(
                             if (proposed.size == 1) Text("Proposition · ${proposed.single().title} · ${proposed.single().artistName}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                             val fromLibrary = inLibrarySuggestions[track.trackId]
                             if (fromLibrary != null) Text("Bibliothèque · ${fromLibrary.title} · ${fromLibrary.artistName}\n${fromLibrary.albumTitle.orEmpty()}${if (!fromLibrary.contentUri.isNullOrBlank()) " · Sur le téléphone" else ""}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                            TextButton(onClick = {
-                                showUncertainTracks = false
-                                track.trackId?.let { refreshSource(listOf(it)) }
-                            }, enabled = track.trackId != null && !isRefreshingSource) { Text("Ajouter comme titre distinct") }
-                            TextButton(onClick = {
-                                showUncertainTracks = false
-                                trackToLink = track
-                            }, enabled = track.trackId != null && !isRefreshingSource) { Text("Utiliser un titre déjà présent") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = {
+                                    showUncertainTracks = false
+                                    val id = track.trackId ?: return@TextButton
+                                    val occurrence = inPlaylistSuggestions[id]
+                                    when {
+                                        occurrence != null -> refreshSource(links = mapOf(id to occurrence))
+                                        fromLibrary != null -> refreshSource(libraryLinks = mapOf(id to fromLibrary))
+                                        else -> trackToLink = track
+                                    }
+                                }, enabled = track.trackId != null && !isRefreshingSource) {
+                                    Icon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text(if (inPlaylistSuggestions.containsKey(track.trackId) || fromLibrary != null) "Réutiliser" else "Choisir")
+                                }
+                                TextButton(onClick = {
+                                    showUncertainTracks = false
+                                    track.trackId?.let { refreshSource(listOf(it)) }
+                                }, enabled = track.trackId != null && !isRefreshingSource) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text("Autre version")
+                                }
+                            }
                         }
                     }
                 }
@@ -1131,6 +1182,7 @@ private fun PlaylistTrackRowItem(
         isLiked = track.isLiked,
         downloadStatus = downloadStatus,
         isCloudOnly = isCloudOnly,
+        isCloudPending = playlistCloudPending(isDownloadedLocally, verifiedCloud, acquisition),
         onRemoveFromPlaylist = onRemoveClick,
         onAddToQueue = onAddToQueue,
         onAddToPlaylist = onAddToPlaylistClick,

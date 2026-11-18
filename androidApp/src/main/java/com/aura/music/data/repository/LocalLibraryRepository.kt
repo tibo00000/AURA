@@ -40,6 +40,11 @@ import com.aura.music.domain.search.LocalSearchEngine
 import com.aura.music.domain.search.LocalSearchIndex
 import java.util.concurrent.atomic.AtomicReference
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.ensureActive
 
 data class LibraryDashboardSummary(
     val hasAudioPermission: Boolean,
@@ -77,6 +82,10 @@ class LocalLibraryRepository(
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val syncRepository: SyncRepository get() = syncRepositoryProvider()
     private val searchIndexRef = AtomicReference<LocalSearchIndex?>(null)
+    private val searchIndexLock = Any()
+    private val searchIndexBuildMutex = Mutex()
+    private val _searchIndexRevision = MutableStateFlow(0L)
+    val searchIndexRevision = _searchIndexRevision.asStateFlow()
 
     private val localMediaScanner by lazy {
         com.aura.music.data.media.LocalMediaScanner(
@@ -119,22 +128,36 @@ class LocalLibraryRepository(
     private fun getAuthToken(): String = com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader()
 
     suspend fun getOrBuildSearchIndex(): LocalSearchIndex {
-        val cached = searchIndexRef.get()
-        if (cached != null) return cached
-
+        synchronized(searchIndexLock) { searchIndexRef.get()?.let { return it } }
         return withContext(Dispatchers.Default) {
-            val allTracks = database.trackDao().getAllTracks()
-            val allArtists = database.artistDao().getAllBrowseArtists()
-            val allAlbums = database.albumDao().getAllBrowseAlbums()
-
-            val built = LocalSearchIndex.build(allTracks, allArtists, allAlbums)
-            searchIndexRef.set(built)
-            built
+            searchIndexBuildMutex.withLock {
+                var ready: LocalSearchIndex? = null
+                while (ready == null) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val revision = synchronized(searchIndexLock) {
+                        ready = searchIndexRef.get()
+                        _searchIndexRevision.value
+                    }
+                    if (ready != null) break
+                    val tracks = database.trackDao().getAllTracks()
+                    val artists = database.artistDao().getAllBrowseArtists()
+                    val albums = database.albumDao().getAllBrowseAlbums()
+                    val built = LocalSearchIndex.build(tracks, artists, albums)
+                    synchronized(searchIndexLock) {
+                        if (_searchIndexRevision.value == revision) {
+                            searchIndexRef.set(built)
+                            ready = built
+                        }
+                    }
+                }
+                requireNotNull(ready)
+            }
         }
     }
 
-    fun invalidateSearchIndex() {
+    fun invalidateSearchIndex() = synchronized(searchIndexLock) {
         searchIndexRef.set(null)
+        _searchIndexRevision.value += 1L
     }
     suspend fun ensureDefaults() = withContext(Dispatchers.IO) {
         if (database.userSettingsDao().getSettings() == null) {

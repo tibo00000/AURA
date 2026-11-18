@@ -51,6 +51,7 @@ class CloudFileRepository(
     private val downloadRepositoryProvider: (() -> DownloadRepository)? = null,
     private val authTokenProvider: () -> String = { com.aura.music.core.AuthSessionManager.getInstance(context).getBearerHeader() },
     private val authSessionManagerProvider: () -> com.aura.music.core.AuthSessionManager = { com.aura.music.core.AuthSessionManager.getInstance(context) },
+    private val onLibraryChanged: () -> Unit = {},
 ) {
     companion object {
         private const val TAG = "CloudFileRepository"
@@ -259,6 +260,8 @@ class CloudFileRepository(
             }
 
             val items = data.items
+            // Publish the shared inventory only once Room and the local index agree.
+            reconcileCloudTracksWithDatabase(items, expectedScope = requestScope)
             var scopeRemainsCurrent = true
             synchronized(refreshLock) {
                 val liveScope = captureAuthScope()
@@ -276,7 +279,6 @@ class CloudFileRepository(
                 return@withContext Result.success(emptyList())
             }
 
-            reconcileCloudTracksWithDatabase(items, expectedScope = requestScope)
             if (!isScopeStillValid(requestScope)) {
                 return@withContext Result.success(emptyList())
             }
@@ -503,10 +505,10 @@ class CloudFileRepository(
                 }
 
                 // 3. Apply all mutations atomically in a single immediate transaction
-                withContext(NonCancellable) {
+                val committed = withContext(NonCancellable) {
                     database.useWriterConnection { transactor ->
-                        transactor.immediateTransaction<Unit> {
-                            if (!isScopeStillValid(expectedScope)) return@immediateTransaction
+                        transactor.immediateTransaction {
+                            if (!isScopeStillValid(expectedScope)) return@immediateTransaction false
                             if (orphanIds.isNotEmpty()) {
                                 val liveActiveJobTrackIds = try {
                                     database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()
@@ -568,13 +570,16 @@ class CloudFileRepository(
                                 database.trackDao().upsertTracks(safeTracks)
                                 Log.d(TAG, "Batch-reconciled ${safeTracks.size} Cloud TrackEntity rows in single transaction")
                             }
+                            true
                         }
                     }
                 }
+                if (committed && isScopeStillValid(expectedScope)) onLibraryChanged()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to reconcile cloud tracks with database", e)
+                throw e
             }
         }
     }

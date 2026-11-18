@@ -37,7 +37,7 @@ class AuraAppContainer(context: Context) {
         )
     }
 
-    val localLibraryRepository by lazy {
+    val localLibraryRepository: LocalLibraryRepository by lazy {
         LocalLibraryRepository(
             database = database,
             mediaStoreAudioDataSource = mediaStoreAudioDataSource,
@@ -57,7 +57,8 @@ class AuraAppContainer(context: Context) {
             database = database,
             apiService = auraApiService,
             context = appContext,
-            downloadRepositoryProvider = { downloadRepository }
+            downloadRepositoryProvider = { downloadRepository },
+            onLibraryChanged = { localLibraryRepository.invalidateSearchIndex() },
         )
     }
 
@@ -145,6 +146,17 @@ class AuraAppContainer(context: Context) {
             authSessionManager, playlistSourceRepository, applicationScope, cloudFileRepository::getCachedCloudTrackIds,
             resolver = { trackPlaybackResolver },
             mediaStore = mediaStoreAudioDataSource,
+            refreshDownloadJobs = { owner ->
+                val bearer = authSessionManager.validSession(scope = owner).bearer
+                val jobsConfirmed = downloadRepository.syncActiveJobs(bearer)
+                if (!authSessionManager.isCurrent(owner)) false else {
+                    localLibraryRepository.invalidateSearchIndex()
+                    val inventory = cloudFileRepository.getOrFetchCloudFiles(forceRefresh = true)
+                    if (!authSessionManager.isCurrent(owner)) false else {
+                        jobsConfirmed && inventory.isSuccess
+                    }
+                }
+            },
         )
     }
 
