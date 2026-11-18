@@ -371,6 +371,8 @@ Resultat attendu :
 
 ## Journal des changements
 
+- 2026-11-19T00:25:14+01:00 | code, docs, test | `docs/server/jobs.md`, `docs/ops/playlist-sync-candidate.md` | Sur demande utilisateur, préparation du mode automatique sans liste de titres : résolveur existant, vidéo précise avant admission, baux et exclusions inchangés. 61 tests ciblés et 414 backend complets réussis ; Coming Up Roses résolu sans écriture. Nettoyage de cinq APK locaux, r3 seul conservé (471 671 221 octets libérés). Aucune migration ni modification Android.
+
 - 2026-11-19T00:04:16+01:00 | test, docs | `docs/ops/playlist-sync-candidate.md` | PLAYLIST-SYNC-E vérifié par 204 tests Android, dont PERF-FAV, et lint sans erreur avec totaux inchangés. APK r3 0.4.3/code 7 assemblé, signature v2 et certificat identiques à r2, SHA-256 `2caa0c9d22f37c7018f6fd921de84390f6a375bd5b3fb9eeca64e45549d02f31`. Installation et contrôle visuel laissés à l'utilisateur ; aucune migration, OTA ou écriture distante.
 
 - 2026-11-18T23:58:43+01:00 | code, docs, test | `docs/android/screens/playlists.md`, `docs/ops/playlist-sync-candidate.md` | PLAYLIST-SYNC-E corrige le résumé d'import à largeur réduite, distingue les copies possibles des références reconnues, illustre les dialogues et filtre leurs propositions. L'acquisition sans source conserve un état visible. Dix-neuf tests ciblés réussis ; contrôle VPS en lecture seule : worker actif, manifeste mono-titre, Coming Up Roses sans source et sans job. Aucun changement distant.

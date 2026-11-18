@@ -19,7 +19,8 @@ async def lifespan(app: FastAPI):
     worker = None
     worker_task = None
     if settings.enable_playlist_acquisition_worker and settings.app_env != "test":
-        worker = PlaylistAcquisitionWorker(download_service, settings.playlist_authorized_audio_manifest)
+        worker = PlaylistAcquisitionWorker(download_service, settings.playlist_authorized_audio_manifest,
+            automatic_sources=settings.playlist_audio_source_mode == "automatic")
         worker_task = asyncio.create_task(worker.run())
     if settings.enable_startup_recovery and worker is None and settings.app_env != "test":
         try:

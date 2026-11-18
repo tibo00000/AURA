@@ -145,12 +145,26 @@ Les baux empêchent deux pollers de réserver ou redémarrer le même job
 avec le même compteur. Le lancement d’un second processus de
 téléchargement nécessite d’abord des verrous de publication interprocessus.
 
-`ENABLE_PLAYLIST_ACQUISITION_WORKER` active le poll serveur. Pour autoriser
+`ENABLE_PLAYLIST_ACQUISITION_WORKER` active le poll serveur. En mode `manifest`, pour autoriser
 un transfert, le manifeste local au backend désigne l’enregistrement, la
 vidéo exacte, l’autorisation cloud et sa provenance. Sans entrée validée,
 le worker peut confirmer un fichier déjà lisible ou retrouver un job actif
 et affiche une source non autorisée pour les autres titres. Il ne lance
 aucune recherche heuristique pour ces intentions.
+
+Pour les essais sans liste de titres, `PLAYLIST_AUDIO_SOURCE_MODE=automatic`
+autorise le worker à utiliser le résolveur YouTube Music existant avant
+l'admission du job. La valeur par défaut reste `manifest`. Une entrée explicite
+du manifeste garde la priorité. Le worker transmet toujours une vidéo précise
+au service de téléchargement : ses gardes de bail, d'identité, de compte et
+d'exclusion restent identiques. Ce mode exprime un choix d'exécution du serveur,
+pas une vérification des droits sur les sources audio.
+
+Une recherche ambiguë ne sélectionne pas arbitrairement le premier résultat :
+l'intention indique `audio_source_ambiguous`, sans démarrer de transfert. Une
+absence de résultat donne `audio_source_unresolved`. Une erreur technique de
+résolution conserve la reprise avec temporisation. Les intentions déjà refusées
+peuvent être relancées par l'action cloud de la playlist, sans recréer ses entrées.
 
 Une occurrence locale rattachée explicitement à Spotify ou Deezer utilise
 l’identifiant Aura du catalogue pour demander l’acquisition. Le même job

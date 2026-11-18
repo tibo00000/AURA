@@ -5,6 +5,35 @@ Le chantier de démarrage Android et les protections de session intégrés
 à ce commit font partie du point de comparaison. La version client reste
 0.4.3, code 7, pendant la préparation du candidat.
 
+## Ouverture des acquisitions automatiques du 19 novembre
+
+L'utilisateur demande de retirer la restriction à Paroboy pour les essais.
+Le mode serveur `PLAYLIST_AUDIO_SOURCE_MODE=automatic` réutilise le résolveur
+audio existant pour les autres titres, sans liste manuelle par morceau. Une
+entrée explicite du manifeste reste prioritaire ; la valeur par défaut du code
+reste `manifest`. Le worker transmet toujours une vidéo résolue au downloader.
+Les gardes de bail, les exclusions, l'isolation des comptes et les routes des
+anciens clients restent inchangées. Aucune migration ni mise à jour APK requise.
+
+Le résolveur existant trouve Coming Up Roses avec la vidéo `M4qX5wzx-wY` dans un
+conteneur jetable, sans écriture de base ni téléchargement audio. Les cas sans
+résultat clair sont explicitement indisponibles ; ils ne sont pas téléchargés
+arbitrairement. Les réponses positives sont mises en cache cinq minutes avec
+une borne de 128 entrées, et une relance explicite force une nouvelle résolution.
+
+Vérification : 61 tests ciblés puis 414 tests backend complets réussis dans
+Docker sans réseau, avec stockage jetable dimensionné pour la réserve de
+sécurité de 10 Gio. Aucun changement des seuils de stockage en production.
+La préparation distante vérifie les empreintes des trois modules de l'image
+de départ et teste l'image candidate avant de remplacer le seul service API.
+La sauvegarde réelle reste uniquement sur le VPS et n'est pas supprimée.
+
+À la demande de l'utilisateur, les cinq autres APK locaux et la copie de build
+ont été nettoyés (cinq fichiers au total, 471 671 221 octets). Le seul APK
+restant dans les artefacts de ce chat est r3, empreinte inchangée. Les références
+historiques à r1/r2 ci-dessous documentent les essais ; ces binaires locaux ne
+sont plus conservés. L'APK OTA et les fichiers audio du VPS sont inchangés.
+
 ## Retours des captures Android du 18 novembre au soir
 
 Le résumé d'import sépare maintenant les références catalogue reconnues, les

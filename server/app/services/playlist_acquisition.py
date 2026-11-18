@@ -3,24 +3,29 @@ import asyncio
 import json
 import logging
 import re
+import time
+from collections import OrderedDict
 from pathlib import Path
 
 from app.api.routes.sync_files import find_playable_sync_file
 from app.core.id_generator import generate_id
 from app.services.download_lifecycle import blocking
-from app.services.exceptions import NotFound
+from app.services.exceptions import NotFound, RequiresResolutionException
 
 logger = logging.getLogger(__name__)
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 
 
 class PlaylistAcquisitionWorker:
-    def __init__(self, downloads, manifest_path="", *, poll_seconds=10, is_playable=None, authorize=None):
+    def __init__(self, downloads, manifest_path="", *, poll_seconds=10, is_playable=None, authorize=None,
+                 automatic_sources=False):
         self.downloads = downloads
         self.manifest_path = manifest_path
         self.poll_seconds = poll_seconds
         self.is_playable = is_playable or self._is_playable
         self.authorize = authorize or self._authorized_hint
+        self.automatic_sources = automatic_sources
+        self._resolved_sources = OrderedDict()
         self.stopping = asyncio.Event()
 
     @staticmethod
@@ -29,18 +34,38 @@ class PlaylistAcquisitionWorker:
         return source is not None
 
     def _authorized_hint(self, intent):
-        if not self.manifest_path:
-            return None
-        with Path(self.manifest_path).open(encoding="utf-8") as handle:
-            manifest = json.load(handle)
         track_id = intent["track_id"]
-        entry = manifest.get(track_id) if isinstance(manifest, dict) else None
-        video_id = entry.get("video_id") if isinstance(entry, dict) else None
+        if not track_id.startswith("trk_"):
+            return None
+        entry = None
+        if self.manifest_path:
+            with Path(self.manifest_path).open(encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            entry = manifest.get(track_id) if isinstance(manifest, dict) else None
+        metadata = intent["metadata"]
+        if entry is not None:
+            if not isinstance(entry, dict) or entry.get("authorized_for_cloud") is not True or not entry.get("provenance"):
+                return None
+            video_id = entry.get("video_id")
+        elif self.automatic_sources:
+            title, artist = metadata.get("title"), metadata.get("artist")
+            if not isinstance(title, str) or not title.strip() or not isinstance(artist, str) or not artist.strip():
+                return None
+            key = (intent["user_id"], track_id, artist, title, metadata.get("album"))
+            cached = self._resolved_sources.pop(key, None)
+            if cached and time.monotonic() - cached[0] < 300 and intent.get("error_code") != "retry_requested":
+                video_id = cached[1]
+            else:
+                video_id = self.downloads._resolve_official_video_id(artist, title, metadata.get("album"))
+            if isinstance(video_id, str) and _VIDEO_ID.fullmatch(video_id):
+                self._resolved_sources[key] = (time.monotonic(), video_id)
+                while len(self._resolved_sources) > 128:
+                    self._resolved_sources.popitem(last=False)
+            logger.info("Playlist automatic source resolved for %s: %s", track_id, video_id)
+        else:
+            return None
         if not isinstance(video_id, str) or not _VIDEO_ID.fullmatch(video_id):
             return None
-        if entry.get("authorized_for_cloud") is not True or not entry.get("provenance"):
-            return None
-        metadata = intent["metadata"]
         return {
             "resolved_video_id": video_id,
             "title": metadata.get("title"),
@@ -79,7 +104,8 @@ class PlaylistAcquisitionWorker:
                 retry=intent.get("error_code") == "retry_requested",
             )
             if job is None:
-                await self._finish(intent, "source_not_authorized", error="authorized_audio_source_missing")
+                code = "audio_source_unresolved" if self.automatic_sources else "authorized_audio_source_missing"
+                await self._finish(intent, "source_not_authorized", error=code)
             elif job.status == "requires_resolution":
                 await self._finish(intent, "admitted", job=job.id, retry_after=300)
             elif job.status == "succeeded":
@@ -91,6 +117,8 @@ class PlaylistAcquisitionWorker:
                 await self._finish(intent, "failed", job=job.id, error=job.error_code or "download_failed")
             else:
                 await self._finish(intent, "admitted", job=job.id, retry_after=30)
+        except RequiresResolutionException:
+            await self._finish(intent, "source_not_authorized", error="audio_source_ambiguous")
         except NotFound:
             await self._finish(intent, "cancelled", error="download_job_removed")
         except Exception as exc:

@@ -11,6 +11,8 @@ from app.api.routes import me, sync_files
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.user_client import get_current_user_client
 from app.services.playlist_acquisition import PlaylistAcquisitionWorker
+from app.services.exceptions import RequiresResolutionException
+from app.config import Settings
 
 
 def test_fresh_worker_reuses_durable_job_with_no_client_running():
@@ -122,3 +124,76 @@ def test_personal_cloud_listing_excludes_missing_and_empty_audio(tmp_path, monke
 
     response = asyncio.run(sync_files.list_sync_files(AuthenticatedUser(id="account", token="synthetic")))
     assert response.data == {"items": [{"track_id": "ready"}]}
+
+
+def automatic_intent(**overrides):
+    return {"user_id": "account-a", "track_id": "trk_other_title", "status": "pending",
+            "lease_token": "lease", "reserved_job_id": "job_reserved", "job_id": None,
+            "failure_count": 0, "metadata": {"title": "Another song", "artist": "Artist", "album": "Album"},
+            **overrides}
+
+
+def test_automatic_source_resolution_is_opt_in_and_validated():
+    assert Settings(_env_file=None).playlist_audio_source_mode == "manifest"
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, playlist_audio_source_mode="typo")
+    downloads = SimpleNamespace(_resolve_official_video_id=MagicMock())
+    worker = PlaylistAcquisitionWorker(downloads)
+    assert worker._authorized_hint(automatic_intent()) is None
+    downloads._resolve_official_video_id.assert_not_called()
+
+
+def test_automatic_mode_resolves_any_title_and_reuses_positive_results_but_refreshes_on_retry():
+    resolver = MagicMock(side_effect=["fixture0001", "fixture0002", "fixture0003"])
+    worker = PlaylistAcquisitionWorker(SimpleNamespace(_resolve_official_video_id=resolver), automatic_sources=True)
+    intent = automatic_intent()
+    assert worker._authorized_hint(intent)["resolved_video_id"] == "fixture0001"
+    assert worker._authorized_hint(intent)["resolved_video_id"] == "fixture0001"
+    assert resolver.call_count == 1
+    assert worker._authorized_hint(automatic_intent(track_id="trk_another"))["resolved_video_id"] == "fixture0002"
+    assert worker._authorized_hint({**intent, "error_code": "retry_requested"})["resolved_video_id"] == "fixture0003"
+    resolver.assert_called_with("Artist", "Another song", "Album")
+
+
+def test_explicit_manifest_source_keeps_priority_in_automatic_mode(tmp_path):
+    manifest = tmp_path / "sources.json"
+    manifest.write_text(json.dumps({"trk_other_title": {"video_id": "fixture0000",
+        "authorized_for_cloud": True, "provenance": "fixture"}}))
+    resolver = MagicMock()
+    worker = PlaylistAcquisitionWorker(SimpleNamespace(_resolve_official_video_id=resolver), str(manifest), automatic_sources=True)
+    assert worker._authorized_hint(automatic_intent())["resolved_video_id"] == "fixture0000"
+    manifest.write_text(json.dumps({"trk_other_title": {"video_id": "fixture0000", "authorized_for_cloud": False}}))
+    assert worker._authorized_hint(automatic_intent()) is None
+    resolver.assert_not_called()
+
+
+@pytest.mark.parametrize("intent", [automatic_intent(track_id="local:42"), automatic_intent(metadata={"title": "No artist"})])
+def test_incomplete_or_non_catalogue_sources_do_not_reach_the_resolver(intent):
+    resolver = MagicMock()
+    worker = PlaylistAcquisitionWorker(SimpleNamespace(_resolve_official_video_id=resolver), automatic_sources=True)
+    assert worker._authorized_hint(intent) is None
+    resolver.assert_not_called()
+
+
+@pytest.mark.parametrize("failure, expected", [(RequiresResolutionException([]), "audio_source_ambiguous"),
+                                             (TimeoutError(), "acquisition_temporarily_unavailable")])
+def test_ambiguous_sources_and_temporary_network_failures_remain_distinct(failure, expected):
+    downloads = SimpleNamespace(_resolve_official_video_id=MagicMock(side_effect=failure),
+                                admit_playlist_acquisition=AsyncMock())
+    worker = PlaylistAcquisitionWorker(downloads, automatic_sources=True, is_playable=lambda *_: False)
+    worker._rpc = AsyncMock(side_effect=[automatic_intent(), True])
+    assert asyncio.run(worker.run_once())
+    assert worker._rpc.await_args.kwargs["p_error_code"] == expected
+    downloads.admit_playlist_acquisition.assert_not_awaited()
+
+
+def test_automatic_resolution_still_uses_reserved_job_and_existing_lease_guard():
+    downloads = SimpleNamespace(_resolve_official_video_id=MagicMock(return_value="fixture0001"),
+        admit_playlist_acquisition=AsyncMock(return_value=SimpleNamespace(id="job_reserved", status="running")))
+    worker = PlaylistAcquisitionWorker(downloads, automatic_sources=True, is_playable=lambda *_: False)
+    worker._rpc = AsyncMock(side_effect=[automatic_intent(), True])
+    assert asyncio.run(worker.run_once())
+    args = downloads.admit_playlist_acquisition.await_args.args
+    assert args[:4] == ("account-a", "trk_other_title", "job_reserved", None)
+    assert args[4]["resolved_video_id"] == "fixture0001"
+    assert args[5] == "lease"
