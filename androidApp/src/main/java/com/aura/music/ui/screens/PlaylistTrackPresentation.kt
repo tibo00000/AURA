@@ -21,3 +21,14 @@ internal fun playlistTrackDownloadStatus(
 internal fun playlistCloudPending(hasLocalAudio: Boolean, cloudAvailable: Boolean, acquisition: PlaylistAcquisitionStatus?): Boolean =
     !hasLocalAudio && !cloudAvailable && acquisition?.isAcquisitionInProgress() == true &&
         (acquisition.jobId == null || acquisition.jobStatus !in setOf("queued", "running"))
+
+internal fun playlistCloudUnavailableReason(hasLocalAudio: Boolean, cloudAvailable: Boolean, acquisition: PlaylistAcquisitionStatus?, job: DownloadJobEntity? = null): String? {
+    if (hasLocalAudio || cloudAvailable) return null
+    if (job?.status in listOf("queued", "running", "requires_resolution")) return null
+    return when (acquisition?.status) {
+        "source_not_authorized" -> "Source audio indisponible"
+        "failed" -> "Échec du téléchargement cloud"
+        "cancelled" -> "Téléchargement cloud annulé"
+        else -> null
+    }
+}

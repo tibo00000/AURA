@@ -5,6 +5,57 @@ Le chantier de démarrage Android et les protections de session intégrés
 à ce commit font partie du point de comparaison. La version client reste
 0.4.3, code 7, pendant la préparation du candidat.
 
+## Retours des captures Android du 18 novembre au soir
+
+Le résumé d'import sépare maintenant les références catalogue reconnues, les
+copies possibles et les titres sans correspondance. Les compteurs sont calculés
+une fois pendant l'analyse ; la saisie du nom ne rescane pas la playlist. Le
+libellé prend la largeur restante et le nombre conserve sa largeur propre.
+Le contenu est défilable et les phrases longues sont raccourcies.
+
+Les dialogues de correspondance affichent des pochettes Coil asynchrones avec
+une icône de repli, l'artiste, l'album et la disponibilité déjà connue. Le
+choix individuel présente d'abord les copies du même titre/artiste ; les autres
+entrées restent accessibles pour un titre renommé manuellement. Les occurrences
+volontaires et les copies distinctes sont préservées. Une validation groupée
+explicite reste possible pour les propositions uniques ; aucune fusion nouvelle
+fondée uniquement sur les métadonnées n'a été introduite.
+
+Contrôle distant en lecture seule : le worker est actif, le manifeste monté
+contient toujours une seule entrée, la récupération au démarrage et le backfill
+restent désactivés. `Coming Up Roses` est `source_not_authorized`, avec
+`authorized_audio_source_missing` et aucun job ; Paroboy reste disponible avec
+son job réussi. Le premier état ne signifie ni un transfert interrompu ni une
+désactivation du worker. La ligne garde désormais un pictogramme et le libellé
+« Source audio indisponible ». Un vrai job actif et un fichier local/cloud
+confirmé gardent la priorité sur ce message.
+
+Tests ciblés : 19 réussites sur les identités, les filtres des copies, le résumé
+et les états d'acquisition. Suite complète Android : 204 tests réussis, aucun
+échec ni ignoré. Les tests PERF-FAV passent ; indexation de 50 000 titres en
+1 218 ms, recherches en 19 et 9 ms sur la machine de développement. Lint :
+0 erreur, 69 avertissements et 3 informations, mêmes totaux que r2.
+Le téléphone connecté est un OnePlus CPH2465,
+densité 480 et échelle de police 1, lus sans modification. Les captures fournies
+montrent l'ancien rendu ; l'installation et la validation visuelle du nouveau
+candidat restent à effectuer. Aucune donnée réelle, configuration distante,
+migration, sauvegarde ni OTA n'a été modifiée pendant ce suivi.
+
+APK de ce suivi : `aura-playlist-sync-20261118-r3.apk`, 95 912 513 octets,
+SHA-256 `2caa0c9d22f37c7018f6fd921de84390f6a375bd5b3fb9eeca64e45549d02f31`.
+Version 0.4.3/code 7 inchangée, signature v2 et certificat identiques à r2 ;
+copie de livraison identique à la sortie Gradle. Le manifeste local
+`aura-playlist-sync-20261118-r3.verification.json` conserve les vérifications
+et le commit source. Installation par-dessus l'application laissée à
+l'utilisateur. Aucune migration ou modification backend requise pour ce suivi.
+
+Contrôle manuel du candidat : vérifier que les trois compteurs totalisent le
+nombre de titres, que les nombres ne se découpent pas en colonne, puis ouvrir
+le choix de `Tu connais` : ses deux copies restent distinguables par album et
+disponibilité, sans Pétunias ni NUEVAYoL dans les propositions principales.
+Vérifier le pictogramme et le message de Coming Up Roses, sans nuage ni fausse
+progression. Rejouer avec une police agrandie et revenir au réglage initial.
+
 ## Essai ciblé Paroboy du 18 novembre 2026
 
 À la demande de l'utilisateur, le worker existant a été activé pour l'essai

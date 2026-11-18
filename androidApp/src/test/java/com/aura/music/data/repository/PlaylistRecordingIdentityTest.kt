@@ -6,6 +6,7 @@ import com.aura.music.data.network.PlaylistTrackMetadata
 import com.aura.music.data.playlist.PlaylistRecordingIdentity
 import com.aura.music.data.playlist.suggestedLibraryTracks
 import com.aura.music.data.playlist.suggestedPlaylistLinks
+import com.aura.music.data.playlist.playlistMatchCandidates
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -43,5 +44,18 @@ class PlaylistRecordingIdentityTest {
         assertEquals(mapOf("source" to candidate), suggestedLibraryTracks(listOf(source), listOf(candidate), emptyList()))
         assertTrue(suggestedLibraryTracks(listOf(source), listOf(candidate, library("other-recording")), emptyList()).isEmpty())
         assertTrue(suggestedLibraryTracks(listOf(source), listOf(candidate), listOf(row("already-there"))).isEmpty())
+    }
+
+    @Test fun individualChoicesFilterUnrelatedTitlesAndKeepIntentionalOccurrencesAndDistinctCopies() {
+        val first = row("first", "already-here")
+        val second = row("second", "already-here")
+        val cloudCopy = library("cloud-copy").copy(contentUri = null)
+        val phoneCopy = library("phone-copy")
+        val candidates = playlistMatchCandidates(source,
+            listOf(first, row("wrong-title", title = "Pétunias"), second, row("wrong-artist", artist = "Another artist")),
+            listOf(cloudCopy, library("already-here"), phoneCopy, phoneCopy, library("wrong").copy(title = "Tu connais")))
+        assertEquals(listOf("first", "second"), candidates.playlist.map { it.playlistItemId })
+        assertEquals(listOf("phone-copy", "cloud-copy"), candidates.library.map { it.id })
+        assertTrue(playlistMatchCandidates(source.copy(artist = ""), listOf(first), listOf(phoneCopy)).library.isEmpty())
     }
 }

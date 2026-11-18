@@ -141,6 +141,29 @@ class PlaylistAssociatedImportTest {
         assertTrue(paths.indexOfFirst { it.endsWith("/source") } < paths.indexOfFirst { it.endsWith("/refresh") })
     }
 
+    @Test fun importSummarySeparatesProofFromPossibleCopiesWithoutMergingMetadata() = runBlocking {
+        for ((id, title) in listOf("track:deezer:789" to "Known", "local:1" to "Possible", "local:2" to "Possible")) {
+            db.trackDao().upsertTrack(TrackEntity(id, null, null, title, title.lowercase(), "Artist",
+                canonicalAudioSourceType = "local", isLiked = false, isDownloadedByAura = false, createdAt = 1, updatedAt = 1))
+        }
+        val inputs = listOf(
+            RawImportTrack("Known", "Artist", provider = "deezer", providerId = "789"),
+            RawImportTrack("Possible", "Artist", provider = "deezer", providerId = "790"),
+            RawImportTrack("New", "Artist", provider = "deezer", providerId = "791"),
+        )
+        val matches = importer.reconcileTracksWithProgress(inputs) { }
+        val summary = ImportReport("Fixture", "Deezer", 3, matches.count { it.isMatchedLocally },
+            matches.count { !it.isMatchedLocally }, matches)
+        assertEquals(1, summary.matchedLocalCount)
+        assertEquals(1, summary.possibleMatchCount)
+        assertEquals(1, summary.unmatchedCount)
+        assertEquals(2, matches[1].possibleLibraryMatchCount)
+        assertNull(matches[1].localTrackId)
+        assertFalse(matches[1].isMatchedLocally)
+        assertEquals("track:deezer:789", matches[0].localTrackId)
+        assertTrue(paths.isEmpty())
+    }
+
     @Test fun interruptedAssociationKeepsOneCreatedPlaylistAndReportsItsIdentity() = runBlocking {
         rejectSource = true
         val failure = runCatching { importer.commitImport(report) }.exceptionOrNull()

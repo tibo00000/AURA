@@ -38,4 +38,16 @@ class PlaylistTrackPresentationTest {
         assertFalse(playlistCloudPending(false, false, pending.copy(status = "failed")))
         assertEquals(TrackDownloadStatus.Downloading(1f), playlistTrackDownloadStatus(false, false, pending, job.copy(progressPercent = 150f)))
     }
+
+    @Test fun missingAuthorizedSourceRemainsVisibleWithoutInventingAJobOrCloudFile() {
+        val blocked = pending.copy(status = "source_not_authorized", errorCode = "authorized_audio_source_missing")
+        assertEquals("Source audio indisponible", playlistCloudUnavailableReason(false, false, blocked))
+        assertFalse(playlistCloudPending(false, false, blocked))
+        assertEquals(TrackDownloadStatus.NotDownloaded, playlistTrackDownloadStatus(false, false, blocked, null))
+        assertNull(playlistCloudUnavailableReason(true, false, blocked))
+        assertNull(playlistCloudUnavailableReason(false, true, blocked))
+        assertNull(playlistCloudUnavailableReason(false, false, blocked, job))
+        assertNull(playlistCloudUnavailableReason(false, false, pending))
+        assertEquals("Téléchargement cloud annulé", playlistCloudUnavailableReason(false, false, blocked.copy(status = "cancelled")))
+    }
 }

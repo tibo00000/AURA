@@ -76,3 +76,22 @@ internal fun suggestedLibraryTracks(
         track.trackId?.let { it to row }
     }.toMap()
 }
+
+internal data class PlaylistMatchCandidates(
+    val playlist: List<PlaylistTrackRow> = emptyList(),
+    val library: List<TrackListRow> = emptyList(),
+)
+
+/** Filter suggestions only; selecting one still requires the user's explicit confirmation. */
+internal fun playlistMatchCandidates(
+    source: PlaylistTrackMetadata, rows: List<PlaylistTrackRow>, library: List<TrackListRow>,
+): PlaylistMatchCandidates {
+    val key = metadataMatchKey(source.title, source.artist) ?: return PlaylistMatchCandidates()
+    val existingIds = rows.mapTo(hashSetOf()) { it.trackId }
+    return PlaylistMatchCandidates(
+        playlist = rows.filter { metadataMatchKey(it.title, it.artistName) == key },
+        library = library.distinctBy { it.id }.filter {
+            it.id !in existingIds && metadataMatchKey(it.title, it.artistName) == key
+        }.sortedBy { it.contentUri.isNullOrBlank() },
+    )
+}

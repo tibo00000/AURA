@@ -39,7 +39,8 @@ data class MatchedTrack(
     val localTrackId: String? = null,
     val matchedTitle: String? = null,
     val matchedArtist: String? = null,
-    val isMatchedLocally: Boolean = false
+    val isMatchedLocally: Boolean = false,
+    val possibleLibraryMatchCount: Int = 0,
 )
 
 data class ImportProgress(
@@ -58,7 +59,11 @@ data class ImportReport(
     val tracks: List<MatchedTrack>,
     val isPartial: Boolean = false,
     val sourceReference: PlaylistSourceReference? = null,
-)
+) {
+    // Snapshot counts once; editing the name must not rescan the playlist on each keystroke.
+    val possibleMatchCount: Int = tracks.count { !it.isMatchedLocally && it.possibleLibraryMatchCount > 0 }
+    val unmatchedCount: Int = tracks.count { !it.isMatchedLocally && it.possibleLibraryMatchCount == 0 }
+}
 
 class PlaylistImportCreatedException(val playlistId: String, message: String) : Exception(message)
 
@@ -809,7 +814,7 @@ class PlaylistImportExportManager internal constructor(
     // Réconciliation & Matching Zero-Jank par Lots
     // =========================================================================
 
-    private suspend fun reconcileTracksWithProgress(
+    internal suspend fun reconcileTracksWithProgress(
         rawTracks: List<RawImportTrack>,
         onProgress: suspend (ImportProgress) -> Unit
     ): List<MatchedTrack> = withContext(Dispatchers.Default) {
@@ -828,6 +833,7 @@ class PlaylistImportExportManager internal constructor(
         }.groupBy({ it.first }, { it.second }).mapValues { (_, copies) ->
             copies.firstOrNull { !it.first.contentUri.isNullOrBlank() } ?: copies.first()
         }
+        val copiesByMetadata = normalizedLocal.groupingBy { (_, title, artist) -> title to artist }.eachCount()
 
         val batchSize = 25
         for (i in rawTracks.indices) {
@@ -858,7 +864,10 @@ class PlaylistImportExportManager internal constructor(
                     )
                 )
             } else {
-                matchedList.add(MatchedTrack(raw = raw, isMatchedLocally = false))
+                val possibleCopies = if (normRawTitle.isNotBlank() && normRawArtist.isNotBlank()) {
+                    copiesByMetadata[normRawTitle to normRawArtist] ?: 0
+                } else 0
+                matchedList.add(MatchedTrack(raw = raw, possibleLibraryMatchCount = possibleCopies))
             }
 
             if (i % batchSize == 0 || i == total - 1) {

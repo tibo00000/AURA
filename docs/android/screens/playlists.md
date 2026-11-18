@@ -86,4 +86,10 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : requetes Room playlists et playlist_items
 ## Cohérence Android après acquisition
 
+Le résumé d'import distingue les références catalogue reconnues, les titres avec copies possibles dans la bibliothèque et les titres sans correspondance. Une copie possible n'est ni un nouveau titre certain ni une association automatique. Les compteurs sont des nombres courts, séparés de leurs libellés et lisibles à grande taille de police.
+
+Les choix de correspondance utilisent des pochettes asynchrones, le titre, l'artiste, l'album et l'état local/cloud confirmé. Le choix individuel filtre les copies sur le titre et l'artiste normalisés ; les occurrences volontaires restent distinctes. Les propositions non ambiguës peuvent être validées en une action explicite. Les métadonnées seules ne fusionnent jamais les identifiants.
+
+Une acquisition refusée faute de source audio garde un pictogramme et le libellé « Source audio indisponible » dans la liste. Son état ne devient ni disponible ni téléchargement actif. Les fichiers locaux ou cloud déjà confirmés ont priorité sur ce refus.
+
 La fin d'un job lié à une playlist actualise l'inventaire cloud partagé et invalide l'index local de recherche. L'inventaire n'est publié qu'après la réconciliation Room réussie. Les écrans bibliothèque et recherche observent ce cache ; aucune requête réseau n'est ajoutée pendant la frappe. Une réponse identique conserve l'index et évite les écritures SQLite inutiles. Un calcul d'index invalidé pendant sa construction ne peut pas remettre en cache son ancien résultat.

@@ -591,6 +591,7 @@ fun SharedTrackRowItem(
     onMovePlaylistItemUp: (() -> Unit)? = null,
     onMovePlaylistItemDown: (() -> Unit)? = null,
     isCloudPending: Boolean = false,
+    cloudUnavailableReason: String? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var menuPage by remember { mutableStateOf(0) } // 0 = Principal, 1 = Avancé (Fichiers & Données)
@@ -735,6 +736,9 @@ fun SharedTrackRowItem(
                 if (isCloudPending) {
                     Icon(Icons.Rounded.Schedule, contentDescription = "En attente de téléchargement cloud",
                         tint = TextSecondary, modifier = Modifier.size(13.dp))
+                } else if (cloudUnavailableReason != null) {
+                    Icon(Icons.Rounded.ErrorOutline, contentDescription = cloudUnavailableReason,
+                        tint = TextSecondary, modifier = Modifier.size(13.dp))
                 } else if (isCloudOnly) {
                     Icon(
                         imageVector = Icons.Rounded.Cloud,
@@ -770,6 +774,11 @@ fun SharedTrackRowItem(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+            }
+            if (cloudUnavailableReason != null) {
+                Text(cloudUnavailableReason, style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary, maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         Row(

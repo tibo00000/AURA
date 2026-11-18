@@ -11,6 +11,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,6 +71,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -910,6 +914,7 @@ fun PlaylistImportSummaryDialog(
         onDismissRequest = onDismiss,
         containerColor = ElevatedGraphite,
         shape = RoundedCornerShape(24.dp),
+        icon = { Icon(Icons.Rounded.MusicNote, null, tint = BlazeOrange) },
         title = {
             Text(
                 text = "Résumé de l'import",
@@ -922,6 +927,7 @@ fun PlaylistImportSummaryDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -942,55 +948,22 @@ fun PlaylistImportSummaryDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(DarkGraphite)
-                        .padding(16.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Total de la playlist :", color = TextSecondary)
-                            Text("${report.totalTracks} morceaux", fontWeight = FontWeight.Bold, color = TextPrimary)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = SemanticSuccess, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                  Text("Déjà identifiés dans AURA :", color = TextSecondary)
-                            }
-                                Text("${report.matchedLocalCount} références reconnues", fontWeight = FontWeight.Bold, color = SemanticSuccess)
-                        }
-                        if (report.missingCount > 0) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = BlazeOrange, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(if (report.sourceReference != null) "À ajouter ou à vérifier :" else "À télécharger sur le Cloud :", color = TextSecondary)
-                                }
-                                Text("${report.missingCount} nouveaux titres", fontWeight = FontWeight.Bold, color = BlazeOrange)
-                            }
-                        }
-                    }
+                Text("${report.totalTracks} titres · ${report.sourceDescription}",
+                    style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImportSummaryCountRow("Références reconnues", report.matchedLocalCount,
+                        Icons.Rounded.CheckCircle, SemanticSuccess)
+                    if (report.possibleMatchCount > 0) ImportSummaryCountRow("Copies possibles",
+                        report.possibleMatchCount, Icons.Rounded.Link, BlazeOrange)
+                    if (report.unmatchedCount > 0) ImportSummaryCountRow("Sans correspondance",
+                        report.unmatchedCount, Icons.Rounded.MusicNote, TextSecondary)
                 }
 
                 if (report.missingCount > 0) {
                     Text(
                         text = if (report.sourceReference != null)
-                            "La playlist sera associée à ${report.sourceDescription}. Aura ajoutera les nouveautés et proposera les copies possibles déjà présentes dans ta bibliothèque. Un titre sans fichier ne sera pas présenté comme disponible dans le cloud."
-                        else "💡 Les ${report.missingCount} nouveaux morceaux seront ajoutés à votre playlist et automatiquement téléchargés par le serveur sur votre Cloud personnel.",
+                            "La playlist restera liée à ${report.sourceDescription}. Tu pourras valider les copies proposées ensemble. Les fichiers manquants dépendent d'une source audio disponible."
+                        else "Les titres manquants seront ajoutés à la playlist et leur téléchargement cloud sera demandé.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
@@ -1021,6 +994,17 @@ fun PlaylistImportSummaryDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ImportSummaryCountRow(label: String, count: Int, icon: ImageVector, color: Color) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        Text(count.toString(), style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold, color = color, softWrap = false)
+    }
 }
 
 @Composable
