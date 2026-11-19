@@ -108,7 +108,8 @@ data class TrackSummary(
     @SerialName("is_downloaded_by_aura")
     val isDownloadedByAura: Boolean = false,
     @SerialName("is_available_in_cloud")
-    val isAvailableInCloud: Boolean = false
+    val isAvailableInCloud: Boolean = false,
+    val artists: List<ArtistCreditDto> = emptyList(),
 ) : BestMatchItem
 
 @Serializable
@@ -218,7 +219,8 @@ data class SourceHintDto(
     @SerialName("artist_name") val artistName: String? = null,
     @SerialName("album_title") val albumTitle: String? = null,
     @SerialName("cover_uri") val coverUri: String? = null,
-    @SerialName("resolved_video_id") val resolvedVideoId: String? = null
+    @SerialName("resolved_video_id") val resolvedVideoId: String? = null,
+    val artists: List<ArtistCreditDto> = emptyList(),
 )
 
 @Serializable
@@ -241,6 +243,7 @@ data class DownloadTrackMetadataDto(
     val album: String? = null,
     @SerialName("duration_ms") val durationMs: Long? = null,
     @SerialName("cover_uri") val coverUri: String? = null,
+    val artists: List<ArtistCreditDto> = emptyList(),
 )
 
 @Serializable
@@ -527,6 +530,7 @@ data class PlaylistTrackMetadata(
     @SerialName("cover_uri") val coverUri: String? = null,
     @SerialName("requires_confirmation") val requiresConfirmation: Boolean = false,
     @SerialName("track_id") val trackId: String? = null,
+    val artists: List<ArtistCreditDto> = emptyList(),
 )
 
 @Serializable
@@ -635,6 +639,9 @@ data class SyncedFileResponseData(
     @SerialName("uploaded_at") val uploadedAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("artist_correction") val artistCorrection: CloudArtistCorrection? = null,
+    val artists: List<ArtistCreditDto> = emptyList(),
+    @SerialName("metadata_transition_version") val metadataTransitionVersion: Int = 0,
+    @SerialName("metadata_transition_status") val metadataTransitionStatus: String? = null,
 )
 
 @Serializable
@@ -657,7 +664,11 @@ data class SyncedFileMetadataUpdateRequest(
     @SerialName("duration_ms") val durationMs: Long? = null,
     @SerialName("artist_id") val artistId: String? = null,
     @SerialName("album_id") val albumId: String? = null,
-    @SerialName("cover_uri") val coverUri: String? = null
+    @SerialName("cover_uri") val coverUri: String? = null,
+    val artists: List<ArtistCreditDto>? = null,
+    @SerialName("fill_missing_only") val fillMissingOnly: Boolean = false,
+    @SerialName("expected_updated_at") val expectedUpdatedAt: String? = null,
+    @SerialName("metadata_transition_version") val metadataTransitionVersion: Int? = null,
 )
 
 @Serializable

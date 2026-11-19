@@ -116,6 +116,27 @@ class PlaylistSourceReaderTest {
         assertEquals(2, reads)
     }
 
+    @Test
+    fun structuredCreditsKeepPunctuationAndPrincipalBeforeContributors() = runBlocking {
+        val reader = PlaylistSourceReader({ "fixture" }) { uri, _ ->
+            if (uri.host == "api.spotify.com") JSONObject("""{"id":"0123456789ABCDEFGHIJKN","name":"Song","artists":[{"id":"0123456789ABCDEFGHIJKL","name":"Tyler, The Creator"},{"id":"0123456789ABCDEFGHIJKM","name":"Guest"}]}""")
+            else JSONObject("""{"id":19,"title":"Song","artist":{"id":1,"name":"Principal"},"contributors":[{"id":2,"name":"Guest"},{"id":1,"name":"Principal"}]}""")
+        }
+        val spotify = reader.readTrackMetadata("trk_" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("v1:track:spotify:0123456789ABCDEFGHIJKN".toByteArray()))!!
+        assertEquals(listOf("Tyler, The Creator","Guest"), spotify.artists.map { it.name })
+        val deezer = reader.readTrackMetadata("track:deezer:19")!!
+        assertEquals(listOf("Principal","Guest"), deezer.artists.map { it.name })
+        assertEquals(listOf("primary","performer"), deezer.artists.map { it.role })
+    }
+
+    @Test
+    fun metadataLookupDistinguishesRemovedSourcesFromTemporaryFailures() = runBlocking {
+        val removed = PlaylistSourceReader({ null }) { _,_ -> throw PlaylistSourceReadException("Removed", retryable=false) }
+        assertEquals(null,removed.readTrackMetadata("track:deezer:19"))
+        val offline = PlaylistSourceReader({ null }) { _,_ -> throw PlaylistSourceReadException("Offline") }
+        assertTrue(runCatching { offline.readTrackMetadata("track:deezer:19") }.exceptionOrNull() is PlaylistSourceReadException)
+    }
+
     private fun page(trackId: String, title: String, next: String?, total: Int, offset: Int = 0): JSONObject = JSONObject("""
         {"total":$total,"offset":$offset,"items":[{"item":{
             "id":"$trackId","name":"$title","artists":[{"name":"Artist"}],"duration_ms":210000,

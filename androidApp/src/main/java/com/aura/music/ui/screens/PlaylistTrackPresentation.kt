@@ -27,6 +27,7 @@ internal fun playlistCloudUnavailableReason(hasLocalAudio: Boolean, cloudAvailab
     if (job?.status in listOf("queued", "running", "requires_resolution")) return null
     return when (acquisition?.status) {
         "source_not_authorized" -> when (acquisition.errorCode) {
+            "existing_copy_needs_confirmation" -> "Copie existante à vérifier"
             "audio_source_ambiguous" -> "Version audio à identifier"
             "audio_source_unresolved" -> "Aucun fichier audio trouvé"
             "source_identity_ambiguous" -> "Correspondances à vérifier"

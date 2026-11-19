@@ -18,6 +18,10 @@ async def lifespan(app: FastAPI):
 
     worker = None
     worker_task = None
+    metadata_task = None
+    if settings.app_env != "test":
+        from app.services.metadata_transition import resume_transitions
+        metadata_task = asyncio.create_task(resume_transitions(download_service.deezer_client))
     if settings.enable_playlist_acquisition_worker and settings.app_env != "test":
         worker = PlaylistAcquisitionWorker(download_service, settings.playlist_authorized_audio_manifest,
             automatic_sources=settings.playlist_audio_source_mode == "automatic")
@@ -38,6 +42,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         try:
+            if metadata_task is not None:
+                metadata_task.cancel()
+                await asyncio.gather(metadata_task, return_exceptions=True)
             if worker is not None:
                 worker.stopping.set()
                 await worker_task

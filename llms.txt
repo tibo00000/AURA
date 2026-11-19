@@ -110,3 +110,5 @@ Verification Tools
 - `docs/ops/security-lot3-candidate.md`: SEC-003.3, réserves R1/R2, image autonome locale et preuves embarquées, limites et gates avant activation.
 
 - `docs/ops/security-lot3-preflight.md`: SEC-003.4 terminé, SEC-003.3 déployé et production rouverte le21 octobre ;329 tests VPS,110 hashes, téléchargement/DELETE/streaming réels, reçus expurgés et wrapper courant six fichiers.
+
+- [Transition multi-artistes](docs/architecture/multi-artist-transition.md): contrats, reprise unique et conservation des données.

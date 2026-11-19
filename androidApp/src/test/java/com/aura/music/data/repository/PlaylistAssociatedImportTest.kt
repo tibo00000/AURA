@@ -60,6 +60,7 @@ class PlaylistAssociatedImportTest {
     private var items = emptyList<PlaylistItemResponse>()
     private var lastRefresh: PlaylistRefreshResult? = null
     private var rejectSource = false
+    private var expectConfirmation = false
     private var logoutAfterSource = false
     private val identity = PlaylistRecordingIdentity("deezer", "789")
     private val report get() = ImportReport("Import fixture", "Deezer", 1, 0, 1,
@@ -97,6 +98,7 @@ class PlaylistAssociatedImportTest {
                         sourceRevision = sourceRevision, lastRefresh = lastRefresh)
                     Json.encodeToString(AuraResponse(data = PlaylistSnapshotResponse("A", 1, items.size, listOf(entry), revision, 1)))
                 }
+                path == "/me/sync/files" -> Json.encodeToString(AuraResponse(data = SyncedFileListResponseData()))
                 path == "/me/sync/bootstrap" -> Json.encodeToString(AuraResponse(data = BootstrapResponseDto(SyncTokenDto("st_fixture", stamp), JsonObject(emptyMap()))))
                 path == "/me/sync/pull-batch" -> Json.encodeToString(AuraResponse(data = PullBatchResponseDto(emptyList(), SyncTokenDto("st_fixture", stamp), false)))
                 path.endsWith("/source") -> {
@@ -112,7 +114,7 @@ class PlaylistAssociatedImportTest {
                 path.endsWith("/refresh") -> {
                     val refresh = Json.decodeFromString<PlaylistRefreshRequest>(body())
                     assertEquals("789", refresh.tracks.single().providerId)
-                    assertFalse(refresh.tracks.single().requiresConfirmation)
+                    assertEquals(expectConfirmation, refresh.tracks.single().requiresConfirmation)
                     items = listOf(PlaylistItemResponse("source-occurrence", requireNotNull(playlistId), identity.canonicalId, 0, stamp,
                         sourceMetadata = refresh.tracks.single()))
                     lastRefresh = PlaylistRefreshResult(refresh.requestId, sourceRevision, stamp, 1, 0, 0)
@@ -217,6 +219,18 @@ class PlaylistAssociatedImportTest {
         assertEquals(identity.canonicalId, ready.trackId)
         assertEquals("Title", db.trackDao().getTrackById(alias)?.title)
         assertTrue(requireNotNull(lastRefresh).uncertain.isEmpty())
+    }
+
+    @Test fun unavailableImportedReferenceDoesNotHideAPlayableDifferentCopy() = runBlocking {
+        val id = importer.commitImport(report)
+        val localId="track:local:separate"
+        db.trackDao().upsertTrack(TrackEntity(localId,null,null,"Title","title","Artist, Guest",
+            canonicalAudioSourceType="local",isLiked=false,isDownloadedByAura=false,createdAt=1,updatedAt=1))
+        db.trackDao().upsertTrackMediaLinks(listOf(TrackMediaLinkEntity("local-media",localId,43,"content://media/43",
+            availabilityStatus="available",lastScannedAt=1)))
+        expectConfirmation=true
+        source.refresh(id,"fixture-device")
+        assertEquals(1,db.playlistDao().getPlaylistTracks(id).size)
     }
 
     @Test fun disabledSyncPreventsCreatingAnEmptyPlaylist() = runBlocking {

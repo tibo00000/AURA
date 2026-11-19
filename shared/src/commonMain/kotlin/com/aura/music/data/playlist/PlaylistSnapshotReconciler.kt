@@ -2,6 +2,7 @@ package com.aura.music.data.playlist
 
 import androidx.room3.immediateTransaction
 import androidx.room3.useWriterConnection
+import com.aura.music.data.metadata.prepareArtistCredits
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.PlaylistEntity
 import com.aura.music.data.local.PlaylistItemEntity
@@ -64,6 +65,8 @@ class PlaylistSnapshotReconciler(
                 val playlistDao = database.playlistDao()
                 val observedRevision = playlistDao.getSnapshotRevision(userId)
                 if (observedRevision != null && snapshot.revision < observedRevision) return@immediateTransaction
+                val creditedTracks = linkedMapOf<String, TrackEntity>()
+                val incomingCredits = linkedMapOf<String, List<com.aura.music.data.network.ArtistCreditDto>>()
                 val protectedPlaylists = mutableSetOf<String>()
                 val outbox = database.syncOutboxDao()
                 for (op in outbox.getUnresolvedPlaylistOperations()) {
@@ -194,10 +197,16 @@ class PlaylistSnapshotReconciler(
                             )
                         } else track
                         if (updatedTrack != track) trackDao.upsertTrack(updatedTrack)
+                        if (!metadata?.artists.isNullOrEmpty()) {
+                            creditedTracks[item.trackId] = updatedTrack
+                            incomingCredits[item.trackId] = metadata!!.artists
+                        }
                         if (item != previousById[item.id]) playlistDao.upsertPlaylistItem(item)
                     }
                     if (synced != state) playlistDao.upsertPlaylistSyncState(state)
                 }
+                if (incomingCredits.isNotEmpty()) prepareArtistCredits(database, creditedTracks, incomingCredits,
+                    snapshot.playlists.maxOfOrNull { parseTimestamp(it.updatedAt) } ?: 0L).apply(database, isCurrentSession)
                 for (synced in playlistDao.getPlaylistSyncStates(userId)) {
                     val appliedRevision = synced.appliedRevision ?: continue
                     if (snapshot.revision > appliedRevision &&

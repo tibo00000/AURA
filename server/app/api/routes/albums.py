@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Path
 from fastapi.responses import JSONResponse
 
+from app.schemas.artist_credits import deezer_artist_credits
 from ...config import get_settings
 from ...core.aura_id_codec import build_aura_id
 from ...providers.deezer.adapter import DeezerAdapter
@@ -44,10 +45,12 @@ def _to_track_summary(track) -> TrackSummaryResponse:
     artist_name = track.artist.display_name if track.artist else None
     artist_id = build_aura_id("artist", track.artist.provider_name, track.artist.provider_id) if track.artist else None
     album_id = build_aura_id("album", track.album.provider_name, track.album.provider_id) if track.album else None
+    credits = deezer_artist_credits(track.metadata) if track.provider_name == "deezer" else []
     return TrackSummaryResponse(
+        artists=credits,
         id=track_id,
         title=track.display_title,
-        display_artist_name=artist_name or "Unknown Artist",
+        display_artist_name=", ".join(a["name"] for a in credits) if credits else artist_name or "Unknown Artist",
         display_album_title=track.album.display_title if track.album else None,
         duration_ms=track.duration_ms,
         cover_uri=(track.album.metadata.get("cover_medium") or track.album.metadata.get("cover")) if track.album else None,

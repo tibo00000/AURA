@@ -242,34 +242,52 @@ async def update_sync_file_metadata(
     payload: dict[str, Any],
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    target_file, metadata_file = _paths(current_user.id, track_id)
-    existing = _read_metadata(metadata_file) or {
-        "track_id": track_id,
-        "synced": True,
-        "size_bytes": target_file.stat().st_size if target_file.exists() else 0,
-        "mime_type": "audio/mpeg",
-        "uploaded_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    now = datetime.now(timezone.utc).isoformat()
-    if "title" in payload and payload["title"]:
-        existing["title"] = payload["title"]
-    if "artist_name" in payload and payload["artist_name"]:
-        existing["artist_name"] = payload["artist_name"]
-    if "album_title" in payload:
-        existing["album_title"] = payload["album_title"]
-    if "duration_ms" in payload and payload["duration_ms"]:
-        existing["duration_ms"] = payload["duration_ms"]
-    if "artist_id" in payload:
-        existing["artist_id"] = payload["artist_id"]
-    if "album_id" in payload:
-        existing["album_id"] = payload["album_id"]
-    if "cover_uri" in payload:
-        existing["cover_uri"] = payload["cover_uri"]
-    existing["updated_at"] = now
-
-    metadata_file.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+    existing = await blocking(apply_metadata_update, current_user.id, track_id, payload)
     return ResponseEnvelope(data=existing)
+
+
+def apply_metadata_update(user_id, track_id, payload):
+    from app.schemas.artist_credits import ArtistCredit
+    from app.services.metadata_transition import fill_missing
+    from app.services.storage_safety import STORAGE_LOCK
+    artists = payload.get("artists")
+    if artists is not None:
+        if not isinstance(artists,list) or len(artists)>32:
+            raise HTTPException(422,"Invalid artist credits")
+        try: artists=[ArtistCredit.model_validate(a).model_dump(exclude_none=True) for a in artists]
+        except Exception: raise HTTPException(422,"Invalid artist identity") from None
+        if len({a['id'] for a in artists}) != len(artists): raise HTTPException(422,"Repeated artist identity")
+    with STORAGE_LOCK:
+        target_file,metadata_file=_paths(user_id,track_id)
+        existing=_read_metadata(metadata_file)
+        if payload.get('fill_missing_only'):
+            if not existing or not target_file.is_file():raise HTTPException(404,"Cloud file unavailable")
+            if existing.get('updated_at') != payload.get('expected_updated_at'):
+                raise HTTPException(409,"Metadata changed concurrently")
+            if existing.get('metadata_transition_version',0)>=1 and (existing.get('metadata_transition_status')=='resolved' or not artists):return existing
+            result=dict(payload,status='resolved' if artists else 'unidentified',artists=artists or [])
+            updated=fill_missing(existing,result)
+        else:
+            existing=existing or dict(track_id=track_id,synced=True,
+                size_bytes=target_file.stat().st_size if target_file.exists() else 0,mime_type='audio/mpeg',
+                uploaded_at=datetime.now(timezone.utc).isoformat())
+            updated=dict(existing)
+            for key in ('title','artist_name','duration_ms'):
+                if payload.get(key):updated[key]=payload[key]
+            for key in ('album_title','artist_id','album_id','cover_uri'):
+                if key in payload:updated[key]=payload[key]
+            if artists is not None:
+                updated['artists']=artists;updated['artists_origin']='manual'
+            elif payload.get('artist_name') and payload['artist_name'] != existing.get('artist_name'):
+                known=existing.get('artists') or []
+                labels=[existing.get('artist_name'),', '.join(a['name'] for a in known)]
+                if payload['artist_name'] not in labels:
+                    updated['artists']=[];updated['artists_origin']='manual'
+        if updated==existing:return existing
+        updated['updated_at']=datetime.now(timezone.utc).isoformat()
+        staged=stage_json(metadata_file,updated)
+        os.replace(staged,metadata_file)
+        return updated
 
 
 @router.post(
@@ -280,40 +298,14 @@ async def batch_update_sync_files_metadata(
     payload: list[dict[str, Any]],
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    now = datetime.now(timezone.utc).isoformat()
     updated_count = 0
     for item in payload:
         track_id = item.get("track_id")
-        if not track_id:
-            continue
-        target_file, metadata_file = _paths(current_user.id, track_id)
-        existing = _read_metadata(metadata_file) or {
-            "track_id": track_id,
-            "synced": True,
-            "size_bytes": target_file.stat().st_size if target_file.exists() else 0,
-            "mime_type": "audio/mpeg",
-            "uploaded_at": now,
-        }
-        if item.get("title"):
-            existing["title"] = item["title"]
-        if item.get("artist_name"):
-            existing["artist_name"] = item["artist_name"]
-        if "album_title" in item:
-            existing["album_title"] = item["album_title"]
-        if item.get("duration_ms"):
-            existing["duration_ms"] = item["duration_ms"]
-        if "artist_id" in item:
-            existing["artist_id"] = item["artist_id"]
-        if "album_id" in item:
-            existing["album_id"] = item["album_id"]
-        if "cover_uri" in item:
-            existing["cover_uri"] = item["cover_uri"]
-        existing["updated_at"] = now
-
-        metadata_file.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+        if not track_id: continue
+        await blocking(apply_metadata_update,current_user.id,track_id,item)
         updated_count += 1
+    return ResponseEnvelope(data={"updated_count":updated_count})
 
-    return ResponseEnvelope(data={"updated_count": updated_count})
 
 
 @router.delete(

@@ -25,13 +25,18 @@ import androidx.sqlite.execSQL
         TrackEntity::class,
         TrackLikeEntity::class,
         TrackMediaLinkEntity::class,
+        TrackArtistEntity::class,
+        MetadataTransitionStateEntity::class,
+        MetadataTransitionRunEntity::class,
         UserSettingsEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 @ConstructedBy(AuraDatabaseConstructor::class)
 abstract class AuraDatabase : RoomDatabase() {
+    abstract fun trackArtistDao(): TrackArtistDao
+    abstract fun metadataTransitionDao(): MetadataTransitionDao
     abstract fun artistDao(): ArtistDao
     abstract fun albumDao(): AlbumDao
     abstract fun trackDao(): TrackDao
@@ -46,6 +51,26 @@ abstract class AuraDatabase : RoomDatabase() {
     abstract fun syncOutboxDao(): SyncOutboxDao
 
     companion object {
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("""CREATE TABLE track_artists (
+                    track_id TEXT NOT NULL, artist_id TEXT NOT NULL, position INTEGER NOT NULL,
+                    role TEXT NOT NULL, origin TEXT NOT NULL, PRIMARY KEY(track_id,artist_id),
+                    FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                    FOREIGN KEY(artist_id) REFERENCES artists(id) ON DELETE CASCADE)""")
+                connection.execSQL("CREATE INDEX index_track_artists_artist_id ON track_artists(artist_id)")
+                connection.execSQL("CREATE UNIQUE INDEX index_track_artists_track_id_position ON track_artists(track_id,position)")
+                connection.execSQL("""INSERT INTO track_artists(track_id,artist_id,position,role,origin)
+                    SELECT tracks.id,artists.id,0,'primary','legacy' FROM tracks
+                    JOIN artists ON artists.id=tracks.primary_artist_id""")
+                connection.execSQL("""CREATE TABLE metadata_transition_state (
+                    user_id TEXT NOT NULL, track_id TEXT NOT NULL, version INTEGER NOT NULL,
+                    status TEXT NOT NULL, attempts INTEGER NOT NULL, PRIMARY KEY(user_id,track_id,version),
+                    FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE)""")
+                connection.execSQL("CREATE INDEX index_metadata_transition_state_track_id ON metadata_transition_state(track_id)")
+                connection.execSQL("CREATE TABLE metadata_transition_runs (user_id TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY(user_id,version))")
+            }
+        }
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override suspend fun migrate(connection: SQLiteConnection) {
                 // Add new columns

@@ -11,6 +11,7 @@ from app.api.routes.sync_files import find_playable_sync_file
 from app.core.id_generator import generate_id
 from app.services.download_lifecycle import blocking
 from app.services.exceptions import NotFound, RequiresResolutionException
+from app.services.recording_candidates import ExistingCopyNeedsConfirmation, existing_copy_candidates
 
 logger = logging.getLogger(__name__)
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
@@ -43,6 +44,8 @@ class PlaylistAcquisitionWorker:
                 manifest = json.load(handle)
             entry = manifest.get(track_id) if isinstance(manifest, dict) else None
         metadata = intent["metadata"]
+        if existing_copy_candidates(intent):
+            raise ExistingCopyNeedsConfirmation()
         if entry is not None:
             if not isinstance(entry, dict) or entry.get("authorized_for_cloud") is not True or not entry.get("provenance"):
                 return None
@@ -68,6 +71,7 @@ class PlaylistAcquisitionWorker:
             return None
         return {
             "resolved_video_id": video_id,
+            "artists": metadata.get("artists", []),
             "title": metadata.get("title"),
             "artist_name": metadata.get("artist"),
             "album_title": metadata.get("album"),
@@ -117,6 +121,8 @@ class PlaylistAcquisitionWorker:
                 await self._finish(intent, "failed", job=job.id, error=job.error_code or "download_failed")
             else:
                 await self._finish(intent, "admitted", job=job.id, retry_after=30)
+        except ExistingCopyNeedsConfirmation:
+            await self._finish(intent, "source_not_authorized", error="existing_copy_needs_confirmation")
         except RequiresResolutionException as exc:
             code = "audio_source_ambiguous" if exc.candidates else "audio_source_unresolved"
             await self._finish(intent, "source_not_authorized", error=code)

@@ -331,3 +331,7 @@ sans interférence. Aucune suppression de marqueur existant n'est prévue.
 - tout le durable est synchronisable
 - les statistiques et leurs evenements ne montent que si le reseau autorise la sync en Wi-Fi
 - les jobs termines peuvent etre archives en cloud puis purges localement
+
+## Transition multi-artistes
+
+`20261119161443_multi_artist_credits_and_existing_copy_reuse.sql` ajoute `tracks.artists` JSONB (tableau) et reprend le principal connu. Elle remplace la RPC d'actualisation en conservant signature, RLS, auth.uid() et droits. Les nouvelles métadonnées restent aussi dans `playlist_items.source_metadata` et les intentions persistantes existantes. Les crédits de fichiers privés restent dans leurs métadonnées personnelles, sans réécriture du catalogue public depuis les fichiers utilisateur.

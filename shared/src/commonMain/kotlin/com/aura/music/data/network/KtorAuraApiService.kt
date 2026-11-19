@@ -30,6 +30,13 @@ class KtorAuraApiService(
 
     private val cleanBaseUrl = baseUrl.removeSuffix("/")
 
+    override suspend fun resolveMissingMetadata(token: String, request: MetadataResolveRequestDto): AuraResponse<MetadataResolveResultDto> =
+        client.post("$cleanBaseUrl/me/metadata/resolve") {
+            header("Authorization", token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
     override suspend fun search(
         query: String,
         limitTracks: Int,

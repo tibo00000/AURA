@@ -1,6 +1,8 @@
 package com.aura.music.core
 
 import android.content.Context
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.media.MediaStoreAudioDataSource
 import com.aura.music.data.network.AuraApiService
@@ -20,6 +22,20 @@ class AuraAppContainer(context: Context) {
     val applicationScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
     )
+
+    init {
+        // No database, token access or network work in the startup window.
+        applicationScope.launch {
+            kotlinx.coroutines.delay(30_000)
+            authSessionManager.sessionScope.collectLatest { owner ->
+                if (owner != null) com.aura.music.data.metadata.MetadataTransitionCoordinator(
+                    database, authSessionManager, auraApiService,
+                    com.aura.music.data.playlist.PlaylistSourceReader(spotifyAuthManager::getValidAccessToken),
+                    localLibraryRepository::invalidateSearchIndex,
+                ).run(owner)
+            }
+        }
+    }
 
     private val database by lazy { AuraDatabase.getInstance(appContext) }
     private val mediaStoreAudioDataSource by lazy { MediaStoreAudioDataSource(appContext) }

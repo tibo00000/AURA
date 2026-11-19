@@ -22,6 +22,7 @@ from app.core.aura_id_codec import parse_aura_id
 from app.core.id_generator import generate_id
 from app.domain.models import DownloadJob
 from app.providers.deezer.client import DeezerClient
+from app.schemas.artist_credits import deezer_artist_credits
 from app.services.audio_matching import artist_match_score, title_match_score
 from app.services.exceptions import AmbiguousMutation, BadRequest, Conflict, NotFound, ProviderUnavailable, RequiresResolutionException
 from app.services.download_lifecycle import (
@@ -223,7 +224,7 @@ def _link_cached_track_to_user(
         user_meta = {**metadata, 'track_id': track_id, 'synced': True,
                      'uploaded_at': now, 'updated_at': now, 'cache_origin': 'native_v1'}
         if override_metadata:
-            for name in ('title', 'artist_name', 'album_title', 'cover_uri', 'duration_ms', 'artist_id', 'album_id'):
+            for name in ('title', 'artist_name', 'album_title', 'cover_uri', 'duration_ms', 'artist_id', 'album_id', 'artists'):
                 if override_metadata.get(name):
                     user_meta[name] = override_metadata[name]
         with cached_audio.open('rb') as stream:
@@ -253,7 +254,7 @@ def _link_cached_track_to_user(
 
 
 def _auto_register_in_sync_files(user_id, track_id, audio_file, title=None, artist_name=None,
-        album_title=None, duration_ms=None, artist_id=None, album_id=None, cover_uri=None, *, attempt=None):
+        album_title=None, duration_ms=None, artist_id=None, album_id=None, cover_uri=None, *, artists=None, attempt=None):
     """Publish only an authorized attempt's private native output, never an arbitrary file."""
     if (attempt is None or attempt.job.user_id != user_id or attempt.job.track_id != track_id
             or attempt.cancelled.is_set() or attempt.workspace is None
@@ -268,7 +269,7 @@ def _auto_register_in_sync_files(user_id, track_id, audio_file, title=None, arti
     now = datetime.now(timezone.utc).isoformat()
     metadata = dict(track_id=track_id, synced=True, size_bytes=audio_file.stat().st_size,
         mime_type=mime, title=title, artist_name=artist_name, album_title=album_title,
-        duration_ms=duration_ms, artist_id=artist_id, album_id=album_id, cover_uri=cover_uri,
+        duration_ms=duration_ms, artist_id=artist_id, album_id=album_id, cover_uri=cover_uri, artists=artists or [],
         uploaded_at=now, updated_at=now)
     cached = download_cache.publish(_get_sync_base(), track_id, audio_file, metadata)
     return _link_cached_track_to_user(user_id, track_id, cached, metadata)
@@ -282,6 +283,7 @@ def _propagate_reassigned_track_to_all_users(
     album_title: Optional[str] = None,
     duration_ms: Optional[int] = None,
     cover_uri: Optional[str] = None,
+    artists=None,
 ) -> None:
     """
     Met à jour les hardlinks et metadata.json pour tous les utilisateurs ayant déjà ce track_id
@@ -1441,6 +1443,7 @@ class DownloadService:
         artist_id = None
         album_id = None
         cover_uri = None
+        artist_credits = []
         has_intent_metadata = (
             job.playlist_acquisition
             and source_hint is not None
@@ -1452,6 +1455,7 @@ class DownloadService:
             if ref.provider_name == "deezer" and not has_intent_metadata:
                 logger.info("Resolving Deezer metadata for track: %s", ref.provider_id)
                 track_data = await self.deezer_client.get_track(ref.provider_id)
+                artist_credits = deezer_artist_credits(track_data)
                 title = track_data.get("title", "")
                 artist = track_data.get("artist", {}).get("name", "")
                 album = track_data.get("album", {}).get("title", "")
@@ -1471,6 +1475,7 @@ class DownloadService:
             pass
 
         if source_hint:
+            artist_credits = source_hint.get("artists") or artist_credits
             if not title and source_hint.get("title"):
                 title = source_hint["title"]
             if not artist and source_hint.get("artist_name"):
@@ -1597,8 +1602,9 @@ class DownloadService:
         if result['status'] != 'succeeded':
             await self._update_job_status(attempt, **result)
             return
+        if artist_credits: artist_id = artist_credits[0]["id"]
         metadata = dict(title=title, artist_name=artist, album_title=album, duration_ms=duration_ms,
-                        artist_id=artist_id, album_id=album_id, cover_uri=cover_uri)
+                        artist_id=artist_id, album_id=album_id, cover_uri=cover_uri, artists=artist_credits)
         published = await self._publish_audio(attempt, result['audio'], metadata, source_hint)
         if published and job.operation_type == 'manual_reassign':
             try:

@@ -224,6 +224,7 @@ INSERT INTO public.history_items(id,user_id,track_id,listening_session_id) VALUE
                 "20261116223507_playlist_confirmed_exclusions.sql",
                 "20261117115916_playlist_linked_audio.sql",
                 "20261119005133_playlist_confirmed_occurrence_reuse.sql",
+                "20261119161443_multi_artist_credits_and_existing_copy_reuse.sql",
             )
             sql((ROOT/"server/app/db/migrations/005_add_download_job_operation_type.sql").read_text(encoding="utf-8-sig"))
             for filename in playlist_migrations:

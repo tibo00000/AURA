@@ -11,7 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
 
-internal class PlaylistSourceReadException(message: String) : IOException(message)
+internal class PlaylistSourceReadException(message: String, val retryable: Boolean = true) : IOException(message)
 
 internal class PlaylistSourceReader(
     private val spotifyToken: suspend () -> String?,
@@ -53,6 +53,21 @@ internal class PlaylistSourceReader(
                 if (value.optString("type") == "episode" || value.optBoolean("is_local")) return@mapNotNull null
                 value
             } else entry
+            parseTrack(track, reference.provider)
+        }.distinctBy { it.providerId }
+    }
+
+    internal suspend fun readTrackMetadata(trackId: String): PlaylistTrackMetadata? = withContext(Dispatchers.IO) {
+        val identity = PlaylistRecordingIdentity.parse(trackId) ?: return@withContext null
+        val spotify = identity.provider == "spotify"
+        val token = if (spotify) spotifyToken() ?: return@withContext null else null
+        val url = if (spotify) "https://api.spotify.com/v1/tracks/${identity.id}" else "https://api.deezer.com/track/${identity.id}"
+        try { parseTrack(request(URI(url), token), identity.provider) }
+        catch (failure: PlaylistSourceReadException) { if (failure.retryable) throw failure else null }
+    }
+
+    private fun parseTrack(track: JSONObject, provider: String): PlaylistTrackMetadata {
+        val spotify = provider == "spotify"
             val album = track.optJSONObject("album")
             val artist = if (spotify) {
                 val artists = track.getJSONArray("artists")
@@ -61,17 +76,27 @@ internal class PlaylistSourceReader(
             if (artist.isBlank()) throw PlaylistSourceReadException("Un titre n’a pas de nom d’artiste.")
             val cover = if (spotify) album?.optJSONArray("images")?.optJSONObject(0)?.optionalText("url")
             else album?.optionalText("cover_big") ?: album?.optionalText("cover_medium")
-            PlaylistTrackMetadata(
-                provider = reference.provider,
+            return PlaylistTrackMetadata(
+                provider = provider,
                 providerId = track.requiredText("id"),
                 title = track.requiredText(if (spotify) "name" else "title"),
                 artist = artist,
+                artists = (if (spotify) track.optJSONArray("artists")?.objects().orEmpty() else
+                    listOf(track.getJSONObject("artist")) + track.optJSONArray("contributors")?.objects().orEmpty()).mapIndexedNotNull { index, value ->
+                        val id = value.optionalText("id") ?: return@mapIndexedNotNull null
+                        val name = value.optionalText("name") ?: return@mapIndexedNotNull null
+                        com.aura.music.data.network.ArtistCreditDto(
+                            id = "art_" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                                "v1:artist:${provider}:$id".toByteArray(Charsets.UTF_8)),
+                            name = name, provider = provider, providerId = id,
+                            role = if (index == 0) "primary" else "performer",
+                        )
+                    }.distinctBy { it.id },
                 album = album?.optionalText(if (spotify) "name" else "title"),
                 durationMs = if (spotify) track.optLong("duration_ms", -1).takeIf { it >= 0 }
                 else track.optLong("duration", -1).takeIf { it in 0..999999L }?.times(1000),
                 coverUri = cover?.takeIf(allowedCover::matches),
             )
-        }.distinctBy { it.providerId }
     }
 
     private suspend fun readPages(start: URI, expected: URI, field: String, token: String?): List<JSONObject> {
@@ -140,14 +165,15 @@ private fun readSourceJson(uri: URI, token: String?): JSONObject {
     }
     try {
         when (connection.responseCode) {
-            401 -> throw PlaylistSourceReadException("Reconnecte le fournisseur pour actualiser cette playlist.")
-            403, 404 -> throw PlaylistSourceReadException("La playlist source est inaccessible avec ce compte.")
+            401 -> throw PlaylistSourceReadException("Reconnecte le fournisseur pour actualiser cette playlist.", retryable = false)
+            403, 404 -> throw PlaylistSourceReadException("La playlist source est inaccessible avec ce compte.", retryable = false)
             429 -> throw PlaylistSourceReadException("Le fournisseur limite les requêtes. Réessaie plus tard.")
             in 200..299 -> Unit
             else -> throw PlaylistSourceReadException("Le fournisseur est temporairement indisponible.")
         }
         val data = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-        if (data.has("error")) throw PlaylistSourceReadException("La playlist source est inaccessible.")
+        if (data.has("error")) throw PlaylistSourceReadException("La playlist source est inaccessible.",
+            retryable = data.optJSONObject("error")?.optInt("code") !in setOf(100, 200, 300, 800))
         return data
     } finally {
         connection.disconnect()

@@ -25,7 +25,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.id IN (SELECT t.id FROM tracks t WHERE t.primary_artist_id=artists.id UNION SELECT c.track_id FROM track_artists c WHERE c.artist_id=artists.id)
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         GROUP BY artists.id
         ORDER BY COUNT(DISTINCT tracks.id) DESC, artists.name ASC
@@ -44,7 +44,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.id IN (SELECT t.id FROM tracks t WHERE t.primary_artist_id=artists.id UNION SELECT c.track_id FROM track_artists c WHERE c.artist_id=artists.id)
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         GROUP BY artists.id
         ORDER BY lower(artists.name) ASC
@@ -62,7 +62,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.id IN (SELECT t.id FROM tracks t WHERE t.primary_artist_id=artists.id UNION SELECT c.track_id FROM track_artists c WHERE c.artist_id=artists.id)
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         GROUP BY artists.id
         ORDER BY lower(artists.name) ASC
@@ -80,7 +80,7 @@ interface ArtistDao {
             COUNT(DISTINCT albums.id) AS album_count,
             artists.updated_at AS updated_at
         FROM artists
-        INNER JOIN tracks ON tracks.primary_artist_id = artists.id
+        INNER JOIN tracks ON tracks.id IN (SELECT t.id FROM tracks t WHERE t.primary_artist_id=artists.id UNION SELECT c.track_id FROM track_artists c WHERE c.artist_id=artists.id)
         LEFT JOIN albums ON albums.primary_artist_id = artists.id
         WHERE lower(artists.name) LIKE '%' || lower(:query) || '%'
         GROUP BY artists.id
@@ -546,7 +546,7 @@ interface TrackDao {
             tracks.updated_at AS updated_at
         FROM tracks
         LEFT JOIN track_media_links ON track_media_links.track_id = tracks.id
-        WHERE tracks.primary_artist_id = :artistId
+        WHERE tracks.id IN (SELECT t.id FROM tracks t WHERE t.primary_artist_id=:artistId UNION SELECT c.track_id FROM track_artists c WHERE c.artist_id=:artistId)
         ORDER BY tracks.created_at DESC
         LIMIT :limit
         """

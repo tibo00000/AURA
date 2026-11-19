@@ -189,14 +189,14 @@ fun PlaylistDetailScreenNew(
     var inPlaylistSuggestions by remember(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks) {
         mutableStateOf<Map<String, String>>(emptyMap())
     }
-    var inLibrarySuggestions by remember(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks, libraryCandidates) {
+    var inLibrarySuggestions by remember(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks, libraryCandidates, confirmedPlaylistCloudIds) {
         mutableStateOf<Map<String, com.aura.music.data.local.TrackListRow>>(emptyMap())
     }
-    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks, libraryCandidates) {
+    androidx.compose.runtime.LaunchedEffect(playlistId, auraScope, lastRefresh?.requestId, detail?.tracks, libraryCandidates, confirmedPlaylistCloudIds) {
         val owner = auraScope ?: return@LaunchedEffect
         val (playlistLinks, libraryLinks) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val uncertain = lastRefresh?.uncertain.orEmpty()
-            val rows = detail?.tracks.orEmpty()
+            val rows = detail?.tracks.orEmpty().filter { !it.contentUri.isNullOrBlank() || it.trackId in confirmedPlaylistCloudIds }
             suggestedPlaylistLinks(uncertain, rows) to suggestedLibraryTracks(uncertain, libraryCandidates, rows)
         }
         if (appContainer.authSessionManager.isCurrent(owner)) {
@@ -255,12 +255,7 @@ fun PlaylistDetailScreenNew(
                 val confirmedLinks = links.toMutableMap()
                 for ((sourceId, candidate) in libraryLinks) {
                     if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
-                    val added = repository.addTrackToPlaylist(playlistId, candidate.id, contextType = "playlist_source_link", isCurrent = { appContainer.authSessionManager.isCurrent(owner) })
-                    if (added is AddToPlaylistResult.Error) throw PlaylistSourceReadException(added.message)
-                    if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
-                    val occurrence = repository.getPlaylistDetail(playlistId)?.tracks?.lastOrNull { it.trackId == candidate.id }
-                        ?: throw PlaylistSourceReadException("Le titre n’a pas pu être retrouvé dans la playlist.")
-                    confirmedLinks[sourceId] = occurrence.playlistItemId
+                    confirmedLinks[sourceId] = "aura-track-link:" + candidate.id
                 }
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
                 val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, confirmedLinks)
@@ -843,6 +838,7 @@ fun PlaylistDetailScreenNew(
                             val label = when {
                                 row.availability == "available" -> "Disponible dans le cloud"
                                 row.errorCode == "source_identity_ambiguous" -> "Plusieurs versions sont associées à ce titre. Vérifie les correspondances de la playlist."
+                                row.errorCode == "existing_copy_needs_confirmation" -> "Une copie existe déjà dans ta bibliothèque · confirme sa réutilisation"
                                 row.errorCode == "audio_source_ambiguous" -> "Version audio non identifiée avec certitude · aucun téléchargement lancé"
                                 row.errorCode == "audio_source_unresolved" -> "Aucun fichier audio trouvé · aucun téléchargement lancé"
                                 row.status == "source_not_authorized" -> "Source audio non activée sur le serveur · aucun téléchargement lancé"
@@ -866,7 +862,13 @@ fun PlaylistDetailScreenNew(
                                 }, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
                                 Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                             }
-                            if (row.availability != "available" && row.errorCode != "source_identity_ambiguous" &&
+                            if (row.availability != "available" && row.errorCode == "existing_copy_needs_confirmation") {
+                                TextButton(enabled = !isRefreshingSource, onClick = { refreshSource() }) {
+                                    Icon(Icons.AutoMirrored.Rounded.FactCheck, contentDescription = null)
+                                    Text("Vérifier les copies existantes")
+                                }
+                            }
+                            if (row.availability != "available" && row.errorCode !in setOf("source_identity_ambiguous", "existing_copy_needs_confirmation") &&
                                 row.status in listOf("source_not_authorized", "failed", "cancelled")
                             ) TextButton(enabled = !requestingCloud, onClick = { requestCloud(row.trackId) }) { Text("Réessayer") }
                             if (row.availability != "available" && (row.errorCode == "audio_source_ambiguous" ||
@@ -936,7 +938,7 @@ fun PlaylistDetailScreenNew(
     if (linkCandidate != null && detail != null) {
         PlaylistMatchDialog(
             source = linkCandidate,
-            rows = detail.tracks,
+            rows = detail.tracks.filter { !it.contentUri.isNullOrBlank() || it.trackId in confirmedPlaylistCloudIds },
             library = libraryCandidates,
             cloudIds = confirmedPlaylistCloudIds,
             localAudioIds = knownLocalUris.keys,

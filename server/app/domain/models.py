@@ -62,6 +62,7 @@ class Track:
     provider_references: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    artists: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -72,6 +73,7 @@ class Track:
             "artist_id": self.artist_id,
             "duration_ms": self.duration_ms,
             "provider_references": self.provider_references or {},
+            **({"artists": self.artists} if self.artists else {}),
         }
 
 

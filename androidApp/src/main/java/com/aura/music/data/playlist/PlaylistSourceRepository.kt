@@ -193,17 +193,21 @@ class PlaylistSourceRepository internal constructor(
         if (current?.userId != scope.userId || current.sourceRevision != state.sourceRevision) {
             throw PlaylistSourceReadException("La source de la playlist a changé. Réessaie.")
         }
-        val (localIdentities, catalogueIdentities) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val cloudResponse = api.listSyncFiles(auth.validSession(scope = scope).bearer)
+        if (!auth.isCurrent(scope)) throw CancellationException("Playlist session changed")
+        if (cloudResponse.error != null || cloudResponse.meta?.partialFailure == true || cloudResponse.data == null)
+            throw PlaylistSourceReadException("La bibliothèque cloud ne peut pas être vérifiée. Réessaie.")
+        val cloudIds = cloudResponse.data!!.items.mapTo(hashSetOf()) { it.trackId }
+        val candidates = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val rows = database.trackDao().getAllTracks()
-            rows.mapNotNullTo(mutableSetOf()) { row -> metadataMatchKey(row.title, row.artistName) } to
-                rows.mapNotNullTo(mutableSetOf()) { row -> PlaylistRecordingIdentity.parse(row.id) }
+            rows.filter { !it.contentUri.isNullOrBlank() || it.id in cloudIds }.groupBy { row -> metadataMatchKey(row.title, row.artistName) }
         }
         val request = pending ?: PlaylistRefreshRequest(
             requestId = UUID.randomUUID().toString(),
             sourceRevision = state.sourceRevision,
             tracks = tracks.map {
                 val key = metadataMatchKey(it.title, it.artist)
-                it.copy(requiresConfirmation = key in localIdentities && it.recordingIdentity() !in catalogueIdentities)
+                it.copy(requiresConfirmation = candidates[key].orEmpty().any { row -> PlaylistRecordingIdentity.parse(row.id) != it.recordingIdentity() })
             },
             confirmedDistinct = confirmedDistinct,
             confirmedLinks = confirmedLinks,

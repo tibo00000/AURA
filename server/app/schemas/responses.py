@@ -82,8 +82,12 @@ class AlbumSummaryResponse(BaseModel):
     release_type: Optional[Literal["album", "single", "ep", "compilation", "unknown"]] = None
 
 
+from app.schemas.artist_credits import ArtistCredit
+
+
 class TrackSummaryResponse(BaseModel):
     """Canonical summary for a track."""
+    artists: list[ArtistCredit] = Field(default_factory=list)
     id: str
     title: str
     display_artist_name: str

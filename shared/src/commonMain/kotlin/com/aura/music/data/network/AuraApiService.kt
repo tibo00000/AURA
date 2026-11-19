@@ -7,6 +7,7 @@ import io.ktor.client.statement.HttpResponse
  * Defines all public catalog, download, resolve, and sync endpoints.
  */
 interface AuraApiService {
+    suspend fun resolveMissingMetadata(token: String, request: MetadataResolveRequestDto): AuraResponse<MetadataResolveResultDto> = error("Metadata transition unsupported by this client")
 
     suspend fun search(
         query: String,

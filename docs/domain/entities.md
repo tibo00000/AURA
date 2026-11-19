@@ -147,3 +147,7 @@
 - `artworkUrl`
 - `previewUrl`
 - `streamCapability`
+
+## Crédits ordonnés d'un titre
+
+Un titre conserve son ID et son artiste principal de compatibilité. Il possède aussi une liste ordonnée d'identités artiste (`id`, `name`, `provider`, `provider_id`, `role`, `picture_uri`). Les tableaux fournisseur sont la source des crédits ; la ponctuation d'un nom ne crée pas d'identité. Aucun rapprochement de métadonnées ne fusionne automatiquement deux enregistrements. Les occurrences de playlist restent indépendantes des crédits.

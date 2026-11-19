@@ -49,7 +49,7 @@ class PlaylistSnapshotMigrationTest {
         factory = { AuraDatabaseConstructor.initialize() },
     ).setDriver(AndroidSQLiteDriver()).addMigrations(
         AuraDatabase.MIGRATION_5_6, AuraDatabase.MIGRATION_6_7, AuraDatabase.MIGRATION_7_8,
-        AuraDatabase.MIGRATION_8_9,
+        AuraDatabase.MIGRATION_8_9, AuraDatabase.MIGRATION_9_10,
     ).build()
 
     @Test
@@ -123,6 +123,9 @@ class PlaylistSnapshotMigrationTest {
             before.close()
         }
         AndroidSQLiteDriver().open(file.absolutePath).use { connection ->
+            connection.execSQL("DROP TABLE metadata_transition_state")
+            connection.execSQL("DROP TABLE metadata_transition_runs")
+            connection.execSQL("DROP TABLE track_artists")
             connection.execSQL("DROP TABLE playlist_snapshot_state")
             connection.execSQL("DROP TABLE playlist_sync_state")
             connection.execSQL("DROP TABLE playback_snapshots")

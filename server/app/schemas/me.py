@@ -38,11 +38,24 @@ class PlaybackSnapshotResponse(BaseModel):
     playlist_occurrence_id: str | None = Field(default=None, max_length=512)
 
 
+from app.schemas.artist_credits import ArtistCredit
+
+
+class MetadataResolveRequest(BaseModel):
+    track_id: str = Field(min_length=1, max_length=250)
+    title: str = Field(min_length=1, max_length=512)
+    artist_name: str = Field(min_length=1, max_length=512)
+    album_title: str | None = Field(default=None, max_length=512)
+    duration_ms: int | None = Field(default=None, ge=0, le=999999999)
+    artists: list[ArtistCredit] = Field(default_factory=list, max_length=32)
+
+
 class PlaylistTrackMetadata(BaseModel):
     provider: Literal["spotify", "deezer"]
     provider_id: str = Field(min_length=1, max_length=22)
     title: str = Field(min_length=1, max_length=512)
     artist: str = Field(min_length=1, max_length=512)
+    artists: list[ArtistCredit] = Field(default_factory=list, max_length=32)
     album: str | None = Field(default=None, max_length=512)
     duration_ms: int | None = Field(default=None, ge=0, le=999999999)
     cover_uri: str | None = Field(default=None, max_length=1200)

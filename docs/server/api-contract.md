@@ -878,3 +878,11 @@ future peut lire cette API et afficher les en-têtes ; aucun client n'est modifi
 - la `priority queue`
 - la pile de navigation
 - le niveau de scroll
+
+## Extension additive multi-artistes et rattrapage version 1
+
+Les résumés catalogue, métadonnées source de playlist et fichiers cloud acceptent `artists[]` ordonné ; les champs singuliers sont conservés. Une absence de tableau dans un ancien client ne doit pas effacer les crédits connus. `POST /me/metadata/resolve`, authentifié, complète des métadonnées publiques à partir d'une référence exacte ou d'une correspondance unique (titre/version, principal, durée et album connu). `resolved`, `needs_review` et `unidentified` sont distincts d'une erreur temporaire HTTP 503. Aucun lien audio n'est créé.
+
+Le PUT de métadonnées existant accepte `fill_missing_only`, `expected_updated_at` et `metadata_transition_version`. Il exige un vrai fichier cloud personnel et compare la révision sous le verrou existant (409 si édition concurrente). Les champs déjà renseignés et les crédits manuels sont conservés. Une transition non résolue peut être complétée ensuite depuis une référence fournisseur exacte. Les résultats contiennent `metadata_transition_version` et `metadata_transition_status`.
+
+Dans la RPC d'actualisation existante, une confirmation de bibliothèque `confirmed_links[source] = "aura-track-link:" + targetTrackId` réutilise directement le pointeur audio sans occurrence intermédiaire. Pour un titre déjà importé, seules ses occurrences source changent de pointeur ; IDs, ordre et éditions sont conservés. Les exclusions manuelles priment, les baux actifs ne sont pas écrasés.

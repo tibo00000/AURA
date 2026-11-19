@@ -356,8 +356,8 @@ class CloudFileRepository(
                         if (artistId != null && !artistsToInsert.containsKey(artistId)) {
                             artistsToInsert[artistId] = com.aura.music.data.local.ArtistEntity(
                                 id = artistId,
-                                name = artist,
-                                normalizedName = artist.lowercase().trim(),
+                                name = item.artists.firstOrNull { it.id == artistId }?.name ?: artist,
+                                normalizedName = (item.artists.firstOrNull { it.id == artistId }?.name ?: artist).lowercase().trim(),
                                 pictureUri = item.coverUri,
                                 artworkOrigin = null,
                                 artworkLastResolvedAt = null,
@@ -452,8 +452,8 @@ class CloudFileRepository(
                             if (resolvedArtistId != null && !artistsToInsert.containsKey(resolvedArtistId)) {
                                 artistsToInsert[resolvedArtistId] = com.aura.music.data.local.ArtistEntity(
                                     id = resolvedArtistId,
-                                    name = resolvedArtist,
-                                    normalizedName = resolvedArtist.lowercase().trim(),
+                                    name = item.artists.firstOrNull { it.id == resolvedArtistId }?.name ?: resolvedArtist,
+                                    normalizedName = (item.artists.firstOrNull { it.id == resolvedArtistId }?.name ?: resolvedArtist).lowercase().trim(),
                                     pictureUri = item.coverUri ?: existingTrack.coverUri,
                                     artworkOrigin = null,
                                     artworkLastResolvedAt = null,
@@ -505,7 +505,11 @@ class CloudFileRepository(
                     }
                 }
 
-                if (orphanIds.isEmpty() &&
+                val creditItems = items.filter { it.artists.isNotEmpty() }.associate { it.trackId to it.artists }
+                val creditTracks = existingById + tracksToUpsert.associateBy { it.id }
+                val creditsPlan = com.aura.music.data.metadata.prepareArtistCredits(database, creditTracks, creditItems, System.currentTimeMillis())
+
+                if (orphanIds.isEmpty() && !creditsPlan.hasChanges &&
                     artistsToInsert.isEmpty() &&
                     albumsToInsert.isEmpty() &&
                     tracksToUpsert.isEmpty()
@@ -584,6 +588,7 @@ class CloudFileRepository(
                                 database.trackDao().upsertTracks(safeTracks)
                                 Log.d(TAG, "Batch-reconciled ${safeTracks.size} Cloud TrackEntity rows in single transaction")
                             }
+                            creditsPlan.apply(database) { isScopeStillValid(expectedScope) }
                             true
                         }
                     }

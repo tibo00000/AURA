@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import anyio
+from app.schemas.me import MetadataResolveRequest
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from app.core.auth import AuthenticatedUser, get_current_user
@@ -905,3 +906,18 @@ async def remove_track_from_playlist(
             detail="Unable to complete user database request",
         )
 
+
+
+@router.post("/metadata/resolve", response_model=ResponseEnvelope[dict])
+async def resolve_missing_metadata(
+    payload: MetadataResolveRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    from app.services.metadata_transition import resolve_metadata
+    from app.api.routes.downloads import download_service
+    try:
+        result = await resolve_metadata(download_service.deezer_client, payload.track_id, payload.model_dump(exclude_none=True))
+        return ResponseEnvelope(data=result)
+    except Exception as exc:
+        logger.warning("Metadata resolution unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Metadata provider temporarily unavailable") from None

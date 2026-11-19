@@ -7,6 +7,7 @@ Matches the canonical contracts defined in docs/server/api-contract.md.
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.schemas.artist_credits import ArtistCredit
 
 
 class SourceHint(BaseModel):
@@ -18,6 +19,7 @@ class SourceHint(BaseModel):
     album_title: Optional[str] = None
     cover_uri: Optional[str] = None
     resolved_video_id: Optional[str] = None
+    artists: list[ArtistCredit] = Field(default_factory=list, max_length=32)
 
 
 class DownloadRequest(BaseModel):
@@ -49,6 +51,7 @@ class CandidatesQueryResponse(BaseModel):
 
 
 class DownloadTrackMetadata(BaseModel):
+    artists: list[ArtistCredit] = Field(default_factory=list, max_length=32)
     title: Optional[str] = None
     artist: Optional[str] = None
     album: Optional[str] = None

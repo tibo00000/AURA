@@ -406,3 +406,7 @@ Rules:
 - `android/app/src/main/java/com/aura/music/data/local/LocalEntities.kt` : entities Room correspondant aux tables ci-dessus
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : DAOs Room pour les queries et upserts
 - `android/app/src/main/java/com/aura/music/data/local/AuraDatabase.kt` : declaration de la base Room avec liste des entities et des DAOs
+
+## Crédits multi-artistes (Room 10)
+
+La migration additive 9→10 crée `track_artists` (clé titre/artiste, ordre unique par titre, index inverse artiste), ainsi que `metadata_transition_state` et `metadata_transition_runs`. Elle reprend uniquement le principal existant, sans découper un nom composé. Aucun identifiant, fichier, favori, occurrence ou outbox n'est remplacé. Les champs singuliers restent disponibles ; les pages artiste incluent les collaborations avec déduplication par ID. Le retour vers un APK Room 9 exige une correction vers l'avant, pas une désinstallation. Voir [transition multi-artistes](../architecture/multi-artist-transition.md).

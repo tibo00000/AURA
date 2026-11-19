@@ -1,5 +1,7 @@
 package com.aura.music.data.metadata
 
+import androidx.room3.useWriterConnection
+import androidx.room3.immediateTransaction
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.net.Uri
@@ -44,8 +46,12 @@ class AudioMetadataEditor(
             val title = newTitle.trim().ifBlank { existingTrack.title }
             val albumTitle = newAlbumTitle?.trim()?.ifBlank { null }
 
-            val artistId = artistIdOf(artistName)
-            val albumId = albumTitle?.let { albumIdOf(artistName, it) }
+            val oldCredits = database.trackArtistDao().getCredits(trackId)
+            val oldArtists = database.trackArtistDao().getArtists(trackId)
+            val keepCredits = artistName == existingTrack.displayArtistName && oldArtists.isNotEmpty()
+            val artistId = if (keepCredits) oldArtists.first().id else artistIdOf(artistName)
+            val principalName = if (keepCredits) oldArtists.first().name else artistName
+            val albumId = if (keepCredits && albumTitle == existingTrack.displayAlbumTitle) existingTrack.albumId else albumTitle?.let { albumIdOf(principalName, it) }
 
             // 1. Gestion et compression de la pochette (500x500 max, JPEG 80%)
             var finalCoverUri: String? = existingTrack.coverUri
@@ -137,17 +143,18 @@ class AudioMetadataEditor(
                 }
             }
 
-            // 3. Persistance Room (Artist, Album, Track)
+            // 3. Persist credits and the scalar compatibility fields together.
+            database.useWriterConnection { writer -> writer.immediateTransaction {
             val artistEntity = ArtistEntity(
                 id = artistId,
-                name = artistName,
-                normalizedName = normalize(artistName),
+                name = principalName,
+                normalizedName = normalize(principalName),
                 pictureUri = null,
                 summary = null,
                 createdAt = now,
                 updatedAt = now
             )
-            database.artistDao().upsertArtists(listOf(artistEntity))
+            database.artistDao().insertArtistsIgnore(listOf(artistEntity))
 
             if (albumId != null && !albumTitle.isNullOrBlank()) {
                 val albumEntity = AlbumEntity(
@@ -175,7 +182,15 @@ class AudioMetadataEditor(
                 updatedAt = now
             )
             database.trackDao().upsertTrack(updatedTrack)
+            if (!keepCredits) {
+                database.trackArtistDao().deleteCredits(trackId)
+                database.trackArtistDao().insertCredits(listOf(com.aura.music.data.local.TrackArtistEntity(
+                    trackId, artistId, 0, "primary", if (artistName == existingTrack.displayArtistName) "legacy" else "manual",
+                )))
+            }
+            } }
             onInvalidateSearchIndex()
+            val updatedTrack = database.trackDao().getRawTrackById(trackId) ?: error("Edited track disappeared")
 
             TrackListRow(
                 id = updatedTrack.id,
