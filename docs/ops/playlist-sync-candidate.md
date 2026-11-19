@@ -3,7 +3,46 @@
 Branche `fix/playlist-sync-program`, issue du commit `03133655`.
 Le chantier de démarrage Android et les protections de session intégrés
 à ce commit font partie du point de comparaison. La version client reste
-0.4.3, code 7, pendant la préparation du candidat.
+0.4.3, code 7, pendant la préparation du candidat. Les relevés ci-dessous
+conservent leur contexte historique ; la publication autorisée est décrite ici.
+
+## Publication Android 0.5.0 du 19 novembre
+
+Sur instruction explicite de l'utilisateur, `fix/playlist-sync-program` a été
+intégrée par avance rapide à `main`, puis publiée sur GitHub. Le commit de
+release `e04cf77999d35e975566d46d507cd4cdc4952220` change uniquement la version
+Android et ses notes par rapport au candidat `e6c2934b` : 0.5.0/code 8.
+Les optimisations et protections déjà présentes au départ `03133655` sont
+conservées. Aucun fichier Tauri n'est inclus dans l'intégration.
+
+L'APK `aura-0.5.0.apk` a été transféré dans un staging privé du VPS, vérifié,
+puis publié par renommage atomique avant le remplacement du descripteur OTA.
+SHA-256 : `a00ffa6e12df56f802a35a3e68709c0a325935eb6783594f0f2119fa6b08bbdc`,
+92 710 965 octets, package `com.aura.music`, certificat identique à 0.4.3.
+L'origine compilée est `https://aura-prod.duckdns.org`.
+Le 19 novembre à 01:27, heure de Paris, `/app/version`, l'empreinte du
+téléchargement HTTPS public et `/health` (200) ont été contrôlés.
+Le seuil minimal reste à 2 ; le backend déjà en service, les neuf migrations,
+les paramètres d'acquisition et la distribution Desktop ne sont pas modifiés.
+
+Preuves locales : 211 tests Android et lint sans erreur sur le candidat,
+puis assemblage ciblé, identité de package/version et signature de l'APK de
+release. L'emplacement local r3 reste le seul APK conservé et contient désormais
+la copie exacte de cette release ; l'empreinte et le fichier de vérification
+permettent de le distinguer des anciennes copies. Le client n'est pas installé
+automatiquement par l'agent. Utiliser Paramètres → Vérifier les mises à jour,
+sans désinstaller l'application, puis tester le geste et les confirmations.
+
+Retour arrière OTA : le descripteur précédent est sauvegardé uniquement sur
+le VPS sous `/root/aura-ota-0.5.0-20261119/version-before.json`. Le script
+`publish_ota.py rollback` de ce même dossier le rétablit atomiquement, en
+vérifiant qu'aucune autre release n'a été publiée. L'ancien APK reste disponible
+pour les téléchargements engagés. Cela arrête la proposition de 0.5.0, sans
+rétrograder les clients déjà installés ni annuler leurs migrations Room.
+Ne pas désinstaller pour rétrograder : une correction client doit utiliser
+un code de version supérieur. Aucun rollback backend ou base n'est effectué.
+La sauvegarde de données réelle reste uniquement sur le VPS, conservée jusqu'à
+validation explicite en production ; aucune donnée réelle n'est supprimée.
 
 ## Actualisation gestuelle et confirmations Android du 19 novembre
 
