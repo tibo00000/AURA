@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ArtistDao {
+    @Query("UPDATE artists SET name=:name, normalized_name=:normalized, updated_at=MAX(updated_at,:now) WHERE id=:id AND name=:expectedName AND name<>:name")
+    suspend fun repairCombinedArtistName(id: String, expectedName: String, name: String, normalized: String, now: Long): Int
+
     @Upsert
     suspend fun upsertArtists(items: List<ArtistEntity>)
 

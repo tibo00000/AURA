@@ -382,10 +382,13 @@ Resultat attendu :
 | ID | Statut | Périmètre | Référence |
 | --- | --- | --- | --- |
 | MULTI-001 | completed | Quatre copies audio confirmées réutilisées dans Titi ; 265 occurrences conservées, Parallèle non fusionné faute de preuve audio | `docs/architecture/multi-artist-transition.md` |
-| MULTI-002 | in_progress | Crédits ordonnés, relation Room 10, artistes invités consultables, prévention des copies cloud supplémentaires | même référence |
-| MULTI-003 | in_progress | Inventaire unique par compte/version, enrichissement des seuls champs manquants et reprise après interruption | même référence |
+| MULTI-002 | completed | Crédits ordonnés, relation Room 10, artistes invités consultables, prévention des copies cloud supplémentaires | même référence |
+| MULTI-003 | completed | Inventaire unique par compte/version, enrichissement des seuls champs manquants et reprise après interruption | même référence |
 
 ## Journal des changements
+
+- 2026-11-19T17:29:46+00:00 | code, schema, test, ops | MULTI-001..003 completed | Nettoyage de 4 doublons confirmés, 265 occurrences Titi conservées. Backend final `3b72b8fd4d52` et migration multi-artistes actifs ; compatibilité de 11 IDs audio historiques corrigée par `20261119171920_playlist_legacy_audio_identity_reuse.sql` (historique `20261119172246`, corps SQL normalisé `bb5160ce4e765f8c6d72a420cece9a22`). 97 assertions SQL d'isolation, 10 annulations, 3 rollbacks et 9 scénarios playlists réussis après ce correctif. Rattrapage cloud terminé : 1068 fichiers examinés, 583 résolus, 484 non identifiés, 1 à vérifier ; 1068 sauvegardes de métadonnées contrôlées, champs non vides et fichiers audio conservés (taille/date/inode). Relance d'un traitement terminé vérifiée sans appel fournisseur. Anciennes pages artiste regroupées corrigées sur identité canonique vérifiée sans toucher aux pochettes ni noms manuels ; 4 tests modèle, suite réconciliation cloud et 12 partagés Desktop réussis. Candidat Android compilé, validation téléphone restante. Aucun push, merge ou OTA ; version 0.5.1/code 9 conservée, sauvegardes exclusivement VPS.
+
 
 - 2026-11-19T17:12:54+00:00 | code, test, ops | MULTI-002..003 | Backend `3b72b8fd4d52` déployé après 441 tests de l'image immuable ; environnement, montages, commande et protections identiques. Santé 200 et accès anonymes fichiers/téléchargements/résolution 401 ; OTA 0.5.1 inchangée. Inventaire de transition explicite figé à 1068 fichiers cloud, sauvegardes et état persistés uniquement VPS, sans job audio actif au redémarrage. Traitement en cours. Révision locale de piste monotone même si un snapshot plus ancien complète ses crédits ; 3 tests Room ciblés et nouvel assemblage Android réussis. Protocole de validation téléphone documenté.
 

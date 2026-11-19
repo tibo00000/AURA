@@ -109,7 +109,7 @@ internal class MetadataTransitionCoordinator(
                             )
                             if (updated != enriched) database.trackDao().upsertTrack(updated.copy(updatedAt = System.currentTimeMillis()))
                             dao.save(state.copy(status = result.status, attempts = state.attempts + 1))
-                            changed = updated != expected
+                            changed = updated != expected || plan.hasChanges
                         } }
                         if (changed) dirty = true
                         confirmed++

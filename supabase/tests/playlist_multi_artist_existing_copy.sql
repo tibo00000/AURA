@@ -20,19 +20,19 @@ BEGIN
  result:=public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000092',1,jsonb_build_array(item||'{"requires_confirmation":true}'));
  IF jsonb_array_length(result->'uncertain')<>1 THEN RAISE EXCEPTION 'An already imported occurrence cannot be reviewed'; END IF;
  result:=public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000093',1,jsonb_build_array(item), '[]',
-   jsonb_build_object(recording,'aura-track-link:track:local:confirmed'));
+   jsonb_build_object(recording,'aura-track-link:track_legacy_owned'));
  IF result->>'status'<>'applied' OR (SELECT count(*) FROM public.playlist_items WHERE playlist_id='credits-fixture')<>1
- OR NOT EXISTS(SELECT 1 FROM public.playlist_items WHERE id=occurrence AND track_id='track:local:confirmed' AND position=saved_position AND added_at=saved_added) THEN
+ OR NOT EXISTS(SELECT 1 FROM public.playlist_items WHERE id=occurrence AND track_id='track_legacy_owned' AND position=saved_position AND added_at=saved_added) THEN
    RAISE EXCEPTION 'A library confirmation created a temporary occurrence or lost its identity';
  END IF;
- PERFORM public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000093',1,jsonb_build_array(item),'[]',jsonb_build_object(recording,'aura-track-link:track:local:confirmed'));
+ PERFORM public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000093',1,jsonb_build_array(item),'[]',jsonb_build_object(recording,'aura-track-link:track_legacy_owned'));
  result:=public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000094',1,jsonb_build_array((item-'artists')||'{"requires_confirmation":true}'));
  IF jsonb_array_length(result->'uncertain')<>0 OR (SELECT count(*) FROM public.playlist_items WHERE playlist_id='credits-fixture')<>1
  OR (SELECT jsonb_array_length(source_metadata->'artists') FROM public.playlist_items WHERE id=occurrence)<>1 THEN
    RAISE EXCEPTION 'Old clients or replay erased credits or repeated a confirmed choice';
  END IF;
  PERFORM public.aura_apply_playlist_operation('credits-remove','playlist_item',occurrence,'delete','{"playlist_id":"credits-fixture"}');
- result:=public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000095',1,jsonb_build_array(item), '[]',jsonb_build_object(recording,'aura-track-link:track:local:confirmed'));
+ result:=public.aura_commit_playlist_refresh('credits-fixture','00000000-0000-0000-0000-000000000095',1,jsonb_build_array(item), '[]',jsonb_build_object(recording,'aura-track-link:track_legacy_owned'));
  IF result->>'excluded_count'<>'1' OR EXISTS(SELECT 1 FROM public.playlist_items WHERE playlist_id='credits-fixture') THEN
    RAISE EXCEPTION 'Direct library reuse bypassed a manual exclusion';
  END IF;

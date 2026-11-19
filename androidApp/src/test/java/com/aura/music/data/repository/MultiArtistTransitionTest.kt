@@ -151,5 +151,23 @@ class MultiArtistTransitionTest {
         } finally { db.close() }
     }
 
+    @Test fun oldCombinedCanonicalPageIsRepairedWithoutOverwritingItsPicture() = runBlocking {
+        val db = open(temp.newFile("combined.db"))
+        try {
+            val canonical = ArtistEntity("principal","SDM, Josman","sdm, josman",pictureUri="file:keep",createdAt=1,updatedAt=20)
+            db.artistDao().insertArtistsIgnore(listOf(canonical))
+            val raw=track().copy(displayArtistName="SDM, Josman")
+            db.trackDao().upsertTrack(raw)
+            val plan=prepareArtistCredits(db,mapOf(raw.id to raw),mapOf(raw.id to credits),10)
+            db.useWriterConnection { writer -> writer.immediateTransaction { plan.apply(db) { true } } }
+            val artist=db.trackArtistDao().getArtistIdentities().first { it.id=="principal" }
+            assertEquals("SDM",artist.name)
+            assertEquals("file:keep",artist.pictureUri)
+            assertEquals(20L,artist.updatedAt)
+            val next=prepareArtistCredits(db,mapOf(raw.id to db.trackDao().getRawTrackById(raw.id)!!),mapOf(raw.id to credits),30)
+            assertFalse(next.hasChanges)
+        } finally { db.close() }
+    }
+
 }
 

@@ -11,13 +11,19 @@ class ArtistCreditsPlan internal constructor(
     private val newArtists: Map<String, ArtistEntity>,
     private val changes: List<Change>,
     private val now: Long,
+    private val renames: List<ArtistRename> = emptyList(),
 ) {
+    internal data class ArtistRename(val id: String, val expectedName: String, val name: String)
     internal data class Change(val expected: TrackEntity, val credits: List<TrackArtistEntity>, val label: String)
-    val hasChanges: Boolean get() = changes.isNotEmpty()
+    val hasChanges: Boolean get() = changes.isNotEmpty() || renames.isNotEmpty()
 
     suspend fun apply(database: AuraDatabase, isCurrent: () -> Boolean) {
         if (!isCurrent()) return
         val dao = database.trackArtistDao()
+        for (rename in renames) {
+            if (!isCurrent()) return
+            database.artistDao().repairCombinedArtistName(rename.id, rename.expectedName, rename.name, rename.name.lowercase().trim(), now)
+        }
         for (change in changes) {
             if (!isCurrent()) return
             val live = database.trackDao().getRawTrackById(change.expected.id) ?: continue
@@ -49,6 +55,7 @@ suspend fun prepareArtistCredits(
     val existingCredits = dao.getAllCredits().groupBy { it.trackId }
     val created = linkedMapOf<String, ArtistEntity>()
     val changes = mutableListOf<ArtistCreditsPlan.Change>()
+    val renames = linkedMapOf<String, ArtistCreditsPlan.ArtistRename>()
     for ((id, raw) in incoming) {
         val track = tracks[id] ?: continue
         val credits = raw.filter { it.id.isNotBlank() && it.name.isNotBlank() }.distinctBy { it.id }.take(32)
@@ -78,9 +85,16 @@ suspend fun prepareArtistCredits(
         val allowed = setOf(credits.first().name, label, "Téléchargement", "Artiste Inconnu", "Artiste inconnu", "Unknown artist", "Unknown Artist", "")
         if (track.displayArtistName !in allowed) continue // Preserve a custom legacy artist selection.
         val display = label
+        if (credits.size > 1) for ((artist, credit) in resolved) {
+            // Repair a legacy concatenated page only with the same verified canonical ID.
+            // A genuine comma in an individual artist name and custom names are preserved.
+            if (artist.id == credit.id && artist.name == label && artist.name != credit.name) {
+                renames[artist.id] = ArtistCreditsPlan.ArtistRename(artist.id, artist.name, credit.name)
+            }
+        }
         if (wanted != previous || track.primaryArtistId != wanted.first().artistId || display != track.displayArtistName) {
             changes += ArtistCreditsPlan.Change(track, wanted, display)
         }
     }
-    return ArtistCreditsPlan(created, changes, now)
+    return ArtistCreditsPlan(created, changes, now, renames.values.toList())
 }

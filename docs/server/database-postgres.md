@@ -335,3 +335,5 @@ sans interférence. Aucune suppression de marqueur existant n'est prévue.
 ## Transition multi-artistes
 
 `20261119161443_multi_artist_credits_and_existing_copy_reuse.sql` ajoute `tracks.artists` JSONB (tableau) et reprend le principal connu. Elle remplace la RPC d'actualisation en conservant signature, RLS, auth.uid() et droits. Les nouvelles métadonnées restent aussi dans `playlist_items.source_metadata` et les intentions persistantes existantes. Les crédits de fichiers privés restent dans leurs métadonnées personnelles, sans réécriture du catalogue public depuis les fichiers utilisateur.
+
+Migration complémentaire `20261119171920_playlist_legacy_audio_identity_reuse.sql` : accepte les identifiants audio historiques `track_…` lors de la réutilisation explicite ; précondition sur l’empreinte de la fonction, propriété, RLS et exclusions conservées. Appliquée avec autorisation générale explicite (historique distant `20261119172246`).
