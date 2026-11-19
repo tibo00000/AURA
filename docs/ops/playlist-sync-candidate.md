@@ -108,6 +108,64 @@ APK supplémentaire, installation ou migration distante n'a été effectué dans
 ce correctif. Le nettoyage cloud décrit ci-dessus est effectif. Essai physique
 des correctifs client et mesure du démarrage restent à faire.
 
+## Publication des correctifs 0.5.1 du 19 novembre
+
+Sur demande de publication, les correctifs `7c40fb46` et `d7cc1f2f`, puis le
+commit de release `62bf3a474d341d955f6f22983ac55db639d3b872`, sont intégrés à
+`main` par avance rapide et poussés sur GitHub. Le worktree Tauri est conservé
+intact. Version Android 0.5.1/code 9, sans nouvelle migration Room.
+
+L'APK signé est publié atomiquement sous `/app/updates/aura-0.5.1.apk` :
+92 710 965 octets, SHA-256
+`47eaa6bb49613e2298f9cec2080fc0921264152a7395bda9e349be10effbbbe9`.
+Package et certificat sont inchangés. À 15:38:54 heure de Paris, le descripteur,
+toutes les notes utilisateur, le SHA-256 du flux HTTPS public et `/health` 200
+sont vérifiés. Seuil minimal de version maintenu à 2 ; distribution Desktop
+inchangée. Installer via Paramètres → Vérifier les mises à jour, sans désinstaller.
+
+Validation : 216 tests Android complets avant le dernier correctif cloud,
+puis 13 tests ciblés cloud et 12 Shared Desktop après ce correctif. Lint :
+zéro erreur, 69 avertissements et trois informations. Assemblage Android ciblé,
+signature v2 et origine HTTPS de production vérifiés. Les 428 tests backend
+passent sur l'image finale sans réseau ni identifiants réels. Les tests SQL
+isolés décrits plus haut précèdent l'application distante. Les nouveaux parcours
+sur téléphone, Android Auto et les mesures de démarrage restent à confirmer.
+
+Image backend active :
+`sha256:b276eb36cb268783d856077028c8e571f7fb0399f898feccd2f02fc744e3bfe0`.
+Seuls quatre modules runtime sont remplacés : routes `me`, `audio_matching`,
+`download_service` et `playlist_acquisition`. Les dépendances, variables,
+montages, commande et protections du conteneur sont conservés. L'encodage UTF-8
+des messages existants a été restauré avant le dernier rejeu des 428 tests.
+Le worker reste activé en mode `automatic` ; le manifeste existant est conservé,
+aucune restriction supplémentaire de téléchargements n'est introduite.
+
+Autorisation distincte reçue : « Oui, appliquer cette migration en production ».
+`20261119005133_playlist_confirmed_occurrence_reuse.sql` est appliquée via
+Supabase, historique `20261119142451`. MD5 du corps de fonction attendu et lu :
+`112cc522ba20816534844e6a9be91d81`. ACL, SECURITY DEFINER et search_path
+inchangés. Les 264 lignes de Titi conservent leur empreinte
+`b0600f4125bd2f4b18b64c9294e765ff` et leur révision source 1.
+
+Les reçus et scripts de retour arrière restent uniquement dans le dossier VPS
+privé `/root/aura-playlist-followup-20261119`. `publish_ota.py rollback` remet
+le descripteur précédent après contrôle de version, sans désinstaller les
+clients ni supprimer d'APK. Une correction client publiée ensuite doit utiliser
+un versionCode supérieur. Les inspections privées et les overlays Compose
+conservent l'image backend précédente et ses protections. La définition SQL
+précédente est sauvegardée dans `playlist-refresh-function-before.sql` ; son
+rétablissement exige une nouvelle autorisation et réintroduirait le conflit Héra.
+Un ancien backend réintroduirait les recherches de collaborations trop strictes
+et le conflit présenté à tort comme un changement de source. Il ne faut ni
+effacer les occurrences nouvellement créées ni annuler les corrections de données.
+Les sauvegardes des nettoyages Titi restent conservées jusqu'à validation réelle.
+
+Après mise à jour : garder Titi, rouvrir les copies à vérifier (dont Héra),
+valider plusieurs choix sans fermeture du dialogue, puis relancer seulement les
+titres manquants depuis le bilan. Vérifier la conservation du défilement, les
+jobs créés après résolution et la lecture. Une ambiguïté ou une panne réseau
+doit être distinguée d'une absence confirmée. Aucun rejeu massif n'a été lancé.
+
 ## Publication Android 0.5.0 du 19 novembre
 
 Sur instruction explicite de l'utilisateur, `fix/playlist-sync-program` a été
