@@ -378,6 +378,8 @@ Resultat attendu :
 
 ## Journal des changements
 
+- 2026-11-19T15:26:42+01:00 | release, ops | Publication 0.5.1/code 9 préparée sur instruction utilisateur. APK signé vérifié ; backend actif après 428 tests sur image, configuration/montages/protections conservés. Migration 20261119005133 approuvée séparément et appliquée via Supabase (historique 20261119142451) : définition, droits et 264 occurrences de Titi inchangées contrôlés. OTA en staging, sauvegardes VPS conservées.
+
 - 2026-11-19T14:56:17+01:00 | ops, data, code, docs, test | PLAYLIST-CLEANUP-001 | Sur demande explicite puis clarification cloud, deux passes contrôlées retirent 23 nouvelles copies personnelles et réutilisent 35 copies existantes, sans réduire les 264 occurrences de Titi. Comparaison audio, sauvegardes et plans inverses uniquement VPS, contrôle des originaux/usages/favoris/jobs, santé 200 et OTA inchangés. Tout va bien corrigé en Dalí après accord distinct. Marqueur de correction conditionnelle ajouté au DTO cloud et au client : 13 tests Android, 12 Shared Desktop et lint sans erreur ; aucune nouvelle migration ni livraison distante du code.
 
 - 2026-11-19T14:21:37+01:00 | code, docs, test | PLAYLIST-SYNC-FIX-001, PLAYLIST-CLEANUP-001 | Suite aux captures, conservation des dialogues/défilement et erreurs sur place, rapprochement explicite des collaborations, statuts audio distincts, recherche fournisseur stricte et liens artiste/album manquants. Héra : deuxième référence confirmée conservée dans une nouvelle occurrence du même titre local, via migration locale 20261119005133. 216 tests Android puis 12 ciblés réussis, lint 0 erreur/69 avertissements/3 informations, 428 backend et huit scénarios PostgreSQL. Sonde sans téléchargement résout Monde/Maudit/En face. Inventaire Titi uniquement sur VPS ; aucune mutation de données réelles ni activation distante.
@@ -985,3 +987,17 @@ Publication Android facultative via `/app/updates/aura-0.4.3.apk` (`92022841` oc
 - Des menus plus lisibles expliquent et confirment les changements de source et les demandes de fichiers cloud.
 
 Publication Android facultative sur demande utilisateur, depuis `main` intégrant `fix/playlist-sync-program` par avance rapide, commit de release `e04cf77999d35e975566d46d507cd4cdc4952220`. APK `/app/updates/aura-0.5.0.apk`, 92 710 965 octets, SHA-256 `a00ffa6e12df56f802a35a3e68709c0a325935eb6783594f0f2119fa6b08bbdc`. Assemblage ciblé réussi ; package `com.aura.music`, version 0.5.0/code 8 et certificat identique à 0.4.3 (`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`) contrôlés. Les 211 tests Android du candidat et lint sans erreur ont précédé ce seul changement de version. Publication atomique ; descripteur OTA, SHA-256 du téléchargement HTTPS public et santé 200 vérifiés le 19 novembre à 01:27, heure de Paris. Seuil minimal inchangé à 2 ; backend et neuf migrations déjà en service, aucun nouveau redéploiement backend ni migration. Ancien descripteur et sauvegarde réelle conservés uniquement sur VPS ; aucun effacement de données. Installation laissée à l'utilisateur via Paramètres → Vérifier les mises à jour, sans désinstallation.
+
+
+### [RELEASE v0.5.1] - 2026-11-19 (versionCode: 9)
+
+**Nouveautés pour l'utilisateur :**
+
+- Vérifie plusieurs correspondances à la suite sans quitter le dialogue.
+- Retrouve ta position dans le bilan après une relance.
+- Aura reconnaît mieux les collaborations et propose les copies déjà présentes.
+- Les recherches audio distinguent les pannes temporaires des versions incertaines.
+- Les liens vers les pages artiste sont complétés et les corrections d’artiste confirmées sont reprises.
+- Réutilise une copie déjà associée à une autre édition sans perdre son ancienne association.
+
+Publication Android préparée sur demande utilisateur. APK de 92 710 965 octets, SHA-256 `47eaa6bb49613e2298f9cec2080fc0921264152a7395bda9e349be10effbbbe9`, signature v2 et certificat identiques à 0.5.0. Encodage UTF-8 des messages existants restauré et nouvelle image retestée. Backend `b276eb36cb26` actif après 428 tests sur image ; environnement, montages, commande et protections conservés. Migration `20261119005133_playlist_confirmed_occurrence_reuse.sql` approuvée explicitement et appliquée (historique Supabase `20261119142451`) : empreinte de la nouvelle fonction et droits vérifiés, empreinte des 264 occurrences de Titi inchangée. Aucun incrément de schéma Room ni changement du seuil minimal 2. Vérification de l'OTA publique à consigner après publication. Sauvegardes exclusivement VPS conservées.

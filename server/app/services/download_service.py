@@ -62,7 +62,7 @@ ytmusic = YTMusic()
 
 
 def _get_sync_base() -> Path:
-    """Retourne le chemin de base absolu pour les fichiers synchronisÃƒÆ’Ã‚Â©s."""
+    """Retourne le chemin de base absolu pour les fichiers synchronisés."""
     sync_base = Path(get_settings().sync_files_dir)
     return sync_base if sync_base.is_absolute() else Path.cwd() / sync_base
 
@@ -72,13 +72,13 @@ def _get_global_cache_dir() -> Path:
 
 
 def _get_track_key(track_id: str) -> str:
-    """Calcule la clÃƒÆ’Ã‚Â© canonique de stockage ÃƒÆ’Ã‚Â  partir du track_id fort."""
+    """Calcule la clé canonique de stockage à partir du track_id fort."""
     import hashlib
     return hashlib.sha256(track_id.encode("utf-8")).hexdigest()
 
 
 def _normalize_search_string(s: str | None) -> str:
-    """Normalise un titre ou un artiste pour le matching tolÃƒÆ’Ã‚Â©rant (diacritiques, casse, ponctuation)."""
+    """Normalise un titre ou un artiste pour le matching tolérant (diacritiques, casse, ponctuation)."""
     if not s:
         return ""
     import unicodedata
@@ -120,8 +120,8 @@ def is_track_in_global_cache(track_id, title=None, artist_name=None):
 
 def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[bool, str]:
     """
-    VÃƒÆ’Ã‚Â©rifie l'intÃƒÆ’Ã‚Â©gritÃƒÆ’Ã‚Â© minimale et les magic bytes d'un fichier audio.
-    Rejette les fichiers 0-octet, les pages d'erreur HTML/JSON et les flux tronquÃƒÆ’Ã‚Â©s.
+    Vérifie l'intégrité minimale et les magic bytes d'un fichier audio.
+    Rejette les fichiers 0-octet, les pages d'erreur HTML/JSON et les flux tronqués.
     Retourne (is_valid, mime_type).
     """
     if not file_path.exists():
@@ -137,7 +137,7 @@ def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[boo
         if len(header) < 16:
             return False, "application/octet-stream"
 
-        # Rejet immÃƒÆ’Ã‚Â©diat si c'est une page d'erreur HTML ou JSON
+        # Rejet immédiat si c'est une page d'erreur HTML ou JSON
         header_lower = header[:32].lower()
         if (
             header_lower.startswith(b"<!doc")
@@ -201,8 +201,8 @@ def _link_cached_track_to_user(
     override_metadata: Optional[dict] = None,
 ) -> bool:
     """
-    CrÃƒÆ’Ã‚Â©e un hardlink atomique depuis le cache global vers le rÃƒÆ’Ã‚Â©pertoire personnel d'un utilisateur.
-    ÃƒÆ’Ã¢â‚¬Â°crit le fichier metadata.json correspondant pour le dÃƒÆ’Ã‚Â©compte du quota logique.
+    Crée un hardlink atomique depuis le cache global vers le répertoire personnel d'un utilisateur.
+    Écrit le fichier metadata.json correspondant pour le décompte du quota logique.
     """
     import hashlib
     import json
@@ -284,8 +284,8 @@ def _propagate_reassigned_track_to_all_users(
     cover_uri: Optional[str] = None,
 ) -> None:
     """
-    Met ÃƒÆ’Ã‚Â  jour les hardlinks et metadata.json pour tous les utilisateurs ayant dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  ce track_id
-    dans leur rÃƒÆ’Ã‚Â©pertoire personnel sync_files.
+    Met à jour les hardlinks et metadata.json pour tous les utilisateurs ayant déjà ce track_id
+    dans leur répertoire personnel sync_files.
     """
     import hashlib
     import json
@@ -426,8 +426,8 @@ class DownloadService:
         self._supabase = supabase_client
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
         self._download_semaphore = asyncio.Semaphore(2)
-        # Verrouillage de concurrence par piste pour dÃƒÆ’Ã‚Â©ploiement mono-processus Uvicorn.
-        # NOTE : Si le backend est mis ÃƒÆ’Ã‚Â  l'ÃƒÆ’Ã‚Â©chelle sur plusieurs workers (Gunicorn --workers N),
+        # Verrouillage de concurrence par piste pour déploiement mono-processus Uvicorn.
+        # NOTE : Si le backend est mis à l'échelle sur plusieurs workers (Gunicorn --workers N),
         # migrer vers un verrou inter-processus (ex: fcntl.flock ou pg_advisory_lock).
         self._track_locks: Dict[str, asyncio.Lock] = {}
         self._track_locks_guard = asyncio.Lock()
@@ -454,14 +454,14 @@ class DownloadService:
         return supabase
 
     async def _get_track_lock(self, track_id: str) -> asyncio.Lock:
-        """Obtient ou crÃƒÆ’Ã‚Â©e un verrou asyncio pour le track_id donnÃƒÆ’Ã‚Â© (thread-safe mono-processus)."""
+        """Obtient ou crée un verrou asyncio pour le track_id donné (thread-safe mono-processus)."""
         async with self._track_locks_guard:
             if track_id not in self._track_locks:
                 self._track_locks[track_id] = asyncio.Lock()
             return self._track_locks[track_id]
 
     async def _prune_unused_locks(self) -> None:
-        """Purge d'hygiÃƒÆ’Ã‚Â¨ne mÃƒÆ’Ã‚Â©moire : supprime les verrous inactifs non dÃƒÆ’Ã‚Â©tenus du registre."""
+        """Purge d'hygiène mémoire : supprime les verrous inactifs non détenus du registre."""
         async with self._track_locks_guard:
             unlocked_keys = [k for k, lock in self._track_locks.items() if not lock.locked()]
             for k in unlocked_keys:
@@ -489,7 +489,7 @@ class DownloadService:
             self.supabase.table("download_jobs").update({
                 "status": "failed",
                 "error_code": "server_restarted",
-                "error_message": "TÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©chargement interrompu par le redÃƒÆ’Ã‚Â©marrage du serveur.",
+                "error_message": "Téléchargement interrompu par le redémarrage du serveur.",
             }).in_("status", ["running", "queued"]).execute()
             logger.info("Startup sweep: Marked orphaned 'running' and 'queued' download jobs as failed.")
         except Exception as e:
@@ -1125,7 +1125,7 @@ class DownloadService:
                     if current.status not in ('queued', 'running', 'requires_resolution'):
                         continue
                     await blocking(self._mutate_job, current, dict(status='superseded',
-                                   error_message='RemplacÃƒÆ’Ã‚Â© par une rÃƒÆ’Ã‚Â©assignation manuelle'))
+                                   error_message='Remplacé par une réassignation manuelle'))
                     previous = self._attempts.get(jid)
                     if previous is not None:
                         previous.cancelled.set()
@@ -1502,7 +1502,7 @@ class DownloadService:
             try:
                 resolved_video_id = await blocking(_run_resolve, on_cancel=attempt.cancelled.set)
             except RequiresResolutionException as e:
-                # Capture des candidats et mise ÃƒÆ’Ã‚Â  jour du job en requires_resolution
+                # Capture des candidats et mise à jour du job en requires_resolution
                 await self._update_job_status(
                     attempt,
                     status="requires_resolution",
@@ -1512,7 +1512,7 @@ class DownloadService:
                 return
             except Exception as e:
                 logger.error("Error during targeted search: %s", e)
-                # Si autre chose ÃƒÆ’Ã‚Â©choue, on continue avec le fallback de tÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©chargement normal par requÃƒÆ’Ã‚Âªte
+                # Si autre chose échoue, on continue avec le fallback de téléchargement normal par requête
 
         # Build download target
         if resolved_video_id:
