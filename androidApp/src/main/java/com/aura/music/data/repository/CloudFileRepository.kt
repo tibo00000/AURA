@@ -408,7 +408,7 @@ class CloudFileRepository(
                         existingById[existingTrack.id] = existingTrack
                         var trackToUpdate = existingTrack
 
-                        val isPlaceholderTitle = existingTrack.title.startsWith("Piste Cloud ") ||
+                        val isPlaceholderTitle = existingTrack.hasDownloadPlaceholder() ||
                             existingTrack.title.isBlank() ||
                             existingTrack.title == "Titre inconnu"
                         val isPlaceholderArtist = existingTrack.displayArtistName.isBlank() ||

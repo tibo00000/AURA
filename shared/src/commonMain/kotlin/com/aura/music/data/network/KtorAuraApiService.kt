@@ -193,6 +193,7 @@ class KtorAuraApiService(
             url { appendPathSegments(id, "acquisitions", encodeSlash = true) }
             header("Authorization", token)
             retryTrackId?.let { parameter("retry_track_id", it) }
+            if (retryTrackId == null) parameter("retry_failed", true)
         }.body()
 
     override suspend fun getLikes(token: String): AuraResponse<List<LikeResponse>> = client.get("$cleanBaseUrl/me/likes") {

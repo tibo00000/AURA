@@ -30,6 +30,7 @@ from app.schemas.responses import ErrorDetails, ResponseEnvelope
 from app.services.download_service import DownloadService, DOWNLOADS_DIR
 from app.services.exceptions import BadRequest, Conflict, NotFound, ProviderUnavailable
 from app.services.download_lifecycle import blocking, legacy_audio
+from app.api.routes.sync_files import find_playable_sync_file
 
 logger = logging.getLogger(__name__)
 
@@ -110,33 +111,53 @@ async def list_downloads(
 
     Supports filtering by status and cursor-based pagination.
     """
-    jobs, next_cursor = download_service.list_jobs(
-        user_id=current_user.id,
-        status=status_filter,
-        limit=limit,
-        cursor=cursor,
-    )
-
-    items = [
-        DownloadJobResponse(
-            id=job.id,
-            track_id=job.track_id,
-            provider_name=job.provider_name,
-            operation_type=job.operation_type,
-            status=job.status,
-            progress_percent=job.progress_percent,
-            error_code=job.error_code,
-            error_message=job.error_message,
-            attempt_count=job.attempt_count,
-            created_at=job.created_at,
-            updated_at=job.updated_at,
+    def read_page():
+        jobs, next_cursor = download_service.list_jobs(
+            user_id=current_user.id,
+            status=status_filter,
+            limit=limit,
+            cursor=cursor,
         )
-        for job in jobs
-    ]
+
+        # One owner-scoped lookup per page; no metadata from another account or a
+        # fuzzy title match. Historic jobs may outlive their private audio files.
+        metadata_rows = download_service.supabase.table("playlist_acquisition_intents").select(
+            "track_id,metadata"
+        ).eq("user_id", current_user.id).in_("track_id", list({job.track_id for job in jobs})).execute().data if jobs else []
+        metadata = {row["track_id"]: row["metadata"] for row in metadata_rows or []
+                    if isinstance(row.get("metadata"), dict)}
+        items = [
+            DownloadJobResponse(
+                id=job.id,
+                track_id=job.track_id,
+                provider_name=job.provider_name,
+                operation_type=job.operation_type,
+                status=job.status,
+                progress_percent=job.progress_percent,
+                error_code=job.error_code,
+                error_message=job.error_message,
+                attempt_count=job.attempt_count,
+                created_at=job.created_at,
+                updated_at=job.updated_at,
+                metadata=metadata.get(job.track_id),
+                audio_available=(find_playable_sync_file(current_user.id, job.track_id)[0] is not None
+                                 or legacy_audio(DOWNLOADS_DIR, job.id) is not None)
+                    if job.status == "succeeded" else None,
+            )
+            for job in jobs
+        ]
+
+        return items, next_cursor
+
+    try:
+        items, next_cursor = await blocking(read_page)
+    except Exception as exc:
+        logger.warning("Download metadata unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Download metadata temporarily unavailable") from None
 
     data = DownloadJobListResponse(
         items=items,
-        meta=PaginationMeta(next_cursor=next_cursor, total_count=len(jobs)),
+        meta=PaginationMeta(next_cursor=next_cursor, total_count=len(items)),
     )
     return ResponseEnvelope(data=data)
 

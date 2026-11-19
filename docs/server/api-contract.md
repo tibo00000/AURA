@@ -1,5 +1,24 @@
 # API Contract
 
+## Métadonnées des jobs et relance des fichiers de playlist
+
+`GET /downloads` fournit deux champs facultatifs : `metadata` (titre, artiste,
+album, durée et pochette issus de l'intention privée de même identifiant) et
+`audio_available` (présence actuelle du fichier pour un job de playlist terminé).
+Un succès historique sans fichier ne prouve pas une disponibilité cloud.
+Android répare uniquement ses libellés provisoires, sans toucher aux éditions
+manuelles, favoris, identifiants ou liens audio locaux. Une réponse identique
+ne déclenche pas de nouvelle écriture Room.
+
+`POST /me/playlists/{id}/acquisitions?retry_failed=true` demande les fichiers
+manquants et relance aussi les anciennes demandes terminales de cette playlist.
+Les fichiers confirmés, jobs actifs et correspondances d'identité ambiguës
+restent protégés. Chaque relance utilise la RPC existante et ses gardes de bail ;
+une interruption peut laisser une partie des relances enregistrée, sans doublon
+au rejeu. Le paramètre absent conserve le comportement antérieur.
+Un résultat audio ambigu ne crée pas de job avant sélection explicite : le
+bilan propose le sélecteur de version existant, qui crée ensuite un job manuel.
+
 ## Correction explicite d'un artiste cloud
 
 Une entrée de `/me/sync/files` peut porter `artist_correction` avec

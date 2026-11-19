@@ -9,6 +9,28 @@ class PlaylistTrackPresentationTest {
     private val pending = PlaylistAcquisitionStatus("track", "pending", "missing")
     private val job = DownloadJobEntity("job", "track", "fixture", "running", progressPercent = 40f, createdAt = 1, updatedAt = 1)
 
+    @Test fun bulkCloudFeedbackCountsSearchesJobsChoicesAndFilesSeparately() {
+        val rows = listOf(pending, pending.copy(trackId = "active", jobStatus = "queued"),
+            pending.copy(trackId = "ambiguous", status = "source_not_authorized", errorCode = "audio_source_ambiguous"),
+            pending.copy(trackId = "ready", availability = "available"),
+            pending.copy(trackId = "failed", status = "failed"))
+        val text = playlistCloudRequestFeedback(rows, null)
+        assertTrue(text.contains("1 recherche demandée"))
+        assertTrue(text.contains("1 téléchargement en cours"))
+        assertTrue(text.contains("1 version à identifier"))
+        assertTrue(text.contains("1 déjà disponible"))
+        assertTrue(text.contains("1 titre non récupéré"))
+    }
+
+    @Test fun aManuallySelectedVersionShowsItsActiveJobInsteadOfTheOldAmbiguity() {
+        val ambiguous = pending.copy(status = "source_not_authorized", errorCode = "audio_source_ambiguous", audioTrackId = "audio")
+        val display = playlistAcquisitionForDisplay(ambiguous, mapOf("audio" to job))
+        assertEquals("running", display.jobStatus)
+        assertEquals(job.id, display.jobId)
+        assertNull(display.errorCode)
+        assertEquals(ambiguous.copy(availability = "available"), playlistAcquisitionForDisplay(ambiguous.copy(availability = "available"), mapOf("audio" to job)))
+    }
+
     @Test fun associatedPlaylistLabelsDoNotFallBackToLocalWhenPinned() {
         assertEquals("Playlist Spotify", playlistOriginLabel("spotify"))
         assertEquals("Playlist Deezer · Épinglée", playlistOriginLabel("deezer", true))

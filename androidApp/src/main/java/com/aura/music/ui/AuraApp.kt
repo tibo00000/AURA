@@ -429,6 +429,7 @@ fun AuraApp() {
                     repository = repository,
                     playerViewModel = playerViewModel,
                     playlistId = backStackEntry.arguments?.getString(AuraRoute.PlaylistIdArg).orEmpty(),
+                    onOpenDownloads = { navController.navigate(AuraRoute.Downloads) },
                     refreshToken = permissionRefreshTick,
                     onNavigateBack = { navController.popBackStack() },
                     onOpenArtist = { artistId -> navController.navigate(AuraRoute.artist(artistId)) { launchSingleTop = true } },

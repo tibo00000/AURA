@@ -39,6 +39,7 @@ internal fun playlistCloudUnavailableReason(hasLocalAudio: Boolean, cloudAvailab
 }
 
 internal fun playlistCloudRequestFeedback(rows: List<PlaylistAcquisitionStatus>, trackId: String?): String {
+    if (trackId == null) return playlistCloudRequestSummary(rows)
     val row = trackId?.let { id -> rows.firstOrNull { it.trackId == id } }
     return when {
         row?.availability == "available" -> "Ce titre est déjà disponible dans le cloud."
@@ -48,4 +49,28 @@ internal fun playlistCloudRequestFeedback(rows: List<PlaylistAcquisitionStatus>,
         row?.jobStatus == "running" -> "Le téléchargement cloud est en cours."
         else -> "Recherche audio demandée. Le téléchargement apparaîtra dans la file après identification."
     }
+}
+
+internal fun playlistCloudRequestSummary(rows: List<PlaylistAcquisitionStatus>): String {
+    if (rows.isEmpty()) return "Aucun fichier à demander."
+    val missing = rows.filter { it.availability != "available" }
+    val active = missing.count { it.jobStatus in setOf("queued", "running") }
+    val pending = missing.count { it.jobStatus !in setOf("queued", "running", "requires_resolution") && it.isAcquisitionInProgress() }
+    val choose = missing.count { it.errorCode == "audio_source_ambiguous" || it.jobStatus == "requires_resolution" }
+    val blocked = missing.size - active - pending - choose
+    return listOfNotNull(
+        pending.takeIf { it > 0 }?.let { if (it == 1) "1 recherche demandée" else "$it recherches demandées" },
+        active.takeIf { it > 0 }?.let { if (it == 1) "1 téléchargement en cours" else "$it téléchargements en cours" },
+        choose.takeIf { it > 0 }?.let { if (it == 1) "1 version à identifier dans le bilan" else "$it versions à identifier dans le bilan" },
+        blocked.takeIf { it > 0 }?.let { if (it == 1) "1 titre non récupéré · voir le bilan" else "$it titres non récupérés · voir le bilan" },
+        (rows.size - missing.size).takeIf { it > 0 }?.let { if (it == 1) "1 déjà disponible" else "$it déjà disponibles" },
+    ).joinToString("\n")
+}
+
+internal fun playlistAcquisitionForDisplay(
+    row: PlaylistAcquisitionStatus, jobs: Map<String, DownloadJobEntity>,
+): PlaylistAcquisitionStatus {
+    val job = jobs[row.audioTrackId ?: row.trackId] ?: return row
+    if (row.availability == "available" || job.status !in setOf("queued", "running", "requires_resolution")) return row
+    return row.copy(status = "admitted", jobId = job.id, jobStatus = job.status, errorCode = null)
 }

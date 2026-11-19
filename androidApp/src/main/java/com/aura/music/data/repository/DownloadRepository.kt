@@ -281,7 +281,7 @@ class DownloadRepository(
      * Automatically exits when there are no active jobs left.
      */
     suspend fun startPolling(userToken: String) = withContext(Dispatchers.IO) {
-        val auth = com.aura.music.core.AuthSessionManager.getInstance(context)
+        val auth = authSessionManagerProvider()
         val pollingAnchor = auth.authorize(userToken)
         if (isPolling) return@withContext
         isPolling = true
@@ -300,7 +300,10 @@ class DownloadRepository(
                 try {
                     val response = apiService.listDownloads(token = currentToken, limit = 50)
                     val items = response.data?.items
-                    if (items != null && response.error == null) {
+                    if (items != null && response.error == null && response.meta?.partialFailure != true) {
+                        if (!auth.isCurrent(pollingAnchor)) break
+                        reconcileJobTracks(items, System.currentTimeMillis()) { auth.isCurrent(pollingAnchor) }
+                        if (!auth.isCurrent(pollingAnchor)) break
                         val now = System.currentTimeMillis()
                         val activeJobMap = activeJobs.associateBy { it.id }
                         val updatedEntities = mutableListOf<DownloadJobEntity>()
@@ -329,16 +332,21 @@ class DownloadRepository(
 
                             val isReassign = item.operationType == "manual_reassign" ||
                                 manualReassignmentJobIds.remove(item.id)
-                            if (item.status == "succeeded" && (existing == null || existing.status != "succeeded" || isReassign)) {
+                            if (item.status == "succeeded" && item.audioAvailable != false && (existing == null || existing.status != "succeeded" || isReassign)) {
                                 markJobAsCloudReady(
                                     trackId = item.trackId,
-                                    invalidateStreamingCache = isReassign
+                                    invalidateStreamingCache = isReassign,
+                                    isScopeValid = { auth.isCurrent(pollingAnchor) }
                                 )
                             }
                         }
 
                         if (updatedEntities.isNotEmpty()) {
-                            database.downloadJobDao().upsert(updatedEntities)
+                            database.useWriterConnection { transactor ->
+                                transactor.immediateTransaction {
+                                    if (auth.isCurrent(pollingAnchor)) database.downloadJobDao().upsert(updatedEntities)
+                                }
+                            }
                         }
 
                         // Handle requires_resolution alert logic
@@ -565,43 +573,7 @@ class DownloadRepository(
                 )
             }
 
-            // 1. Ensure TrackEntity placeholders exist in Room before inserting jobs (strict FK constraint)
-            val missingTrackItems = items.distinctBy { it.trackId }.filter {
-                database.trackDao().getRawTrackById(it.trackId) == null
-            }
-            if (missingTrackItems.isNotEmpty()) {
-                if (authManager.sessionScope.value != initialSessionScope) return@withContext false
-                database.useWriterConnection { transactor ->
-                    transactor.immediateTransaction {
-                        if (authManager.sessionScope.value != initialSessionScope) return@immediateTransaction
-                        for (item in missingTrackItems) {
-                            if (database.trackDao().getRawTrackById(item.trackId) == null) {
-                                val placeholderTrack = TrackEntity(
-                                    id = item.trackId,
-                                    primaryArtistId = null,
-                                    albumId = null,
-                                    title = "Piste ${item.trackId.takeLast(6)}",
-                                    normalizedTitle = "piste",
-                                    displayArtistName = "Téléchargement",
-                                    displayAlbumTitle = null,
-                                    durationMs = null,
-                                    coverUri = null,
-                                    canonicalAudioSourceType = if (item.status == "succeeded") "cloud" else "cloud_only",
-                                    isLiked = false,
-                                    isDownloadedByAura = false,
-                                    isExplicit = null,
-                                    popularity = null,
-                                    genresJson = null,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                                database.trackDao().upsertTrack(placeholderTrack)
-                            }
-                        }
-                    }
-                }
-            }
-
+            reconcileJobTracks(items, now) { authManager.sessionScope.value == initialSessionScope }
             if (authManager.sessionScope.value != initialSessionScope) return@withContext false
 
             // 2. Safely upsert only modified/new jobs now that parent tracks are guaranteed to exist
@@ -631,7 +603,7 @@ class DownloadRepository(
 
             for (item in items) {
                 if (!isScopeValid()) return@withContext false
-                if (item.status == "succeeded") {
+                if (item.status == "succeeded" && item.audioAvailable != false) {
                     val existingJob = existingJobsById[item.id]
                     val isReassign = item.operationType == "manual_reassign" ||
                         manualReassignmentJobIds.remove(item.id)
@@ -1159,6 +1131,31 @@ class DownloadRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Error reassigning audio for track $trackId", e)
             return@withContext Result.failure(e)
+        }
+    }
+
+    private suspend fun reconcileJobTracks(
+        items: List<com.aura.music.data.network.DownloadJobResponseData>, now: Long,
+        isScopeValid: () -> Boolean,
+    ) {
+        if (!isScopeValid()) return
+        // Re-read in the transaction: a manual edit made during HTTP must survive.
+        val trackItems = items.distinctBy { it.trackId }
+        val needsMetadata = trackItems.any { item ->
+            val existing = database.trackDao().getRawTrackById(item.trackId)
+            existing == null || reconcileDownloadTrack(existing, item, now) != existing
+        }
+        if (needsMetadata) {
+            database.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    if (!isScopeValid()) return@immediateTransaction
+                    for (item in trackItems) {
+                        val existing = database.trackDao().getRawTrackById(item.trackId)
+                        val repaired = reconcileDownloadTrack(existing, item, now)
+                        if (repaired != existing) database.trackDao().upsertTrack(repaired)
+                    }
+                }
+            }
         }
     }
 

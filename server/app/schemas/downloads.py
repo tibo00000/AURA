@@ -48,6 +48,14 @@ class CandidatesQueryResponse(BaseModel):
     items: List[YtmCandidate]
 
 
+class DownloadTrackMetadata(BaseModel):
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    duration_ms: Optional[int] = None
+    cover_uri: Optional[str] = None
+
+
 class DownloadJobResponse(BaseModel):
     """Standard download job representation in list responses."""
     id: str
@@ -61,6 +69,8 @@ class DownloadJobResponse(BaseModel):
     attempt_count: int = 1
     created_at: datetime
     updated_at: datetime
+    metadata: Optional[DownloadTrackMetadata] = None
+    audio_available: Optional[bool] = None
 
 
 class PaginationMeta(BaseModel):

@@ -1,5 +1,17 @@
 # Playlists Screens
 
+## Demande de fichiers cloud : retour et versions ambiguës
+
+La confirmation indique le nombre de titres indisponibles dans le dernier
+bilan connu et précise que les anciens échecs seront réessayés. Après demande,
+un retour compact chiffré reste visible dans la playlist, avec accès au bilan
+et aux téléchargements. Une recherche acceptée ne signifie pas qu'un job audio
+existe déjà. Les titres disponibles et les jobs actifs restent distingués.
+Le bilan propose « Identifier la version » pour une recherche ambiguë sans job,
+en réutilisant le sélecteur audio existant. Seul le choix explicite lance le job.
+Les libellés provisoires des anciens jobs sont réparés au prochain relevé des
+téléchargements, sans suppression d'audio, réimport ou écriture des titres manuels.
+
 ## Role
 Documenter la liste des playlists et leur detail avec une forte lisibilite des actions d'edition.
 

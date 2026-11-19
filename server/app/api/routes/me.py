@@ -162,6 +162,7 @@ async def playlist_acquisitions(
     playlist_id: str,
     request: Request,
     retry_track_id: str | None = Query(default=None, max_length=200),
+    retry_failed: bool = Query(default=False),
     current_user: AuthenticatedUser = Depends(get_current_user),
     supabase=Depends(get_current_user_client),
 ):
@@ -187,8 +188,16 @@ async def playlist_acquisitions(
 
         rows = get_rows()
         if request.method == "POST":
-            existing = [row["track_id"] for row in rows if row.get("audio_track_id") and playable(row["track_id"])]
+            existing = [row["track_id"] for row in rows if playable(row["track_id"]) or
+                        (row.get("audio_track_id") and playable(row["audio_track_id"]))]
             rows = get_rows(enqueue=retry_track_id is None, retry=retry_track_id, existing=existing)
+            if retry_failed and retry_track_id is None:
+                retry_ids = [row["track_id"] for row in rows if row["track_id"] not in existing
+                             and row.get("error_code") != "source_identity_ambiguous"
+                             and row.get("status") in ("available", "source_not_authorized", "failed", "cancelled")
+                             and row.get("job_status") not in ("queued", "running", "requires_resolution")]
+                for track_id in retry_ids:
+                    rows = get_rows(retry=track_id, existing=existing)
         for row in rows:
             audio_track_id = row.get("audio_track_id")
             if playable(row["track_id"]):

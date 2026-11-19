@@ -299,6 +299,40 @@ class PerfFav002ScannerAndDownloadsTest {
     }
 
     @Test
+    fun syncActiveJobs_repairsNineHistoricalPlaceholdersWithoutRestoringRemovedAudio() = runBlocking {
+        val items = (0..8).map { index ->
+            val id = "trk_fixture_$index"
+            db.trackDao().upsertTrack(TrackEntity(
+                id = id, primaryArtistId = null, albumId = null, title = "Piste ${id.takeLast(6)}",
+                normalizedTitle = "piste", displayArtistName = "Téléchargement",
+                canonicalAudioSourceType = "cloud", isLiked = true, isDownloadedByAura = false,
+                createdAt = 10, updatedAt = 20,
+            ))
+            DownloadJobResponseData(
+                id = "job_$index", trackId = id, providerName = "youtube", status = "succeeded",
+                createdAt = "2026-11-19T00:30:00Z", updatedAt = "2026-11-19T00:36:00Z",
+                metadata = com.aura.music.data.network.DownloadTrackMetadataDto(
+                    title = "Titre $index", artist = "Artiste $index", album = "Album $index", durationMs = 180_000,
+                ), audioAvailable = false,
+            )
+        }
+        val auth = newAuthManager("A")
+        val repo = DownloadRepository(db, mockApiService { DownloadJobListResponseData(items) }, context) { auth }
+        assertTrue(repo.syncActiveJobs("Bearer ${token("A")}"))
+        val repaired = items.map { db.trackDao().getRawTrackById(it.trackId)!! }
+        repaired.forEachIndexed { index, track ->
+            assertEquals("Titre $index", track.title)
+            assertEquals("Artiste $index", track.displayArtistName)
+            assertEquals("cloud_only", track.canonicalAudioSourceType)
+            assertEquals(180_000L, track.durationMs)
+            assertTrue(track.isLiked)
+            assertEquals(10L, track.createdAt)
+        }
+        assertTrue(repo.syncActiveJobs("Bearer ${token("A")}"))
+        assertEquals(repaired, items.map { db.trackDao().getRawTrackById(it.trackId)!! })
+    }
+
+    @Test
     fun syncActiveJobs_alreadySucceededJobs_performZeroWritesAndZeroEmissions() = runBlocking {
         val createdIso = "2026-10-01T10:00:00Z"
         val updatedIso = "2026-10-01T10:05:00Z"

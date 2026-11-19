@@ -235,6 +235,15 @@ data class DownloadCreateResponseData(
 )
 
 @Serializable
+data class DownloadTrackMetadataDto(
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("cover_uri") val coverUri: String? = null,
+)
+
+@Serializable
 data class DownloadJobResponseData(
     @SerialName("id") val id: String,
     @SerialName("track_id") val trackId: String,
@@ -246,7 +255,9 @@ data class DownloadJobResponseData(
     @SerialName("attempt_count") val attemptCount: Int = 1,
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
-    @SerialName("operation_type") val operationType: String = "download"
+    @SerialName("operation_type") val operationType: String = "download",
+    val metadata: DownloadTrackMetadataDto? = null,
+    @SerialName("audio_available") val audioAvailable: Boolean? = null,
 )
 
 @Serializable

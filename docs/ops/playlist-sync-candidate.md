@@ -8,6 +8,65 @@ conservent leur contexte historique ; la publication autorisée est décrite ici
 
 ## Correctifs après l'essai de la grande playlist du 19 novembre
 
+### Demandes cloud et libellés des jobs après 0.5.1
+
+Branche `fix/playlist-cloud-request-feedback` depuis `4b1a4142` ; version
+0.5.1/code 9 conservée. Les jobs téléchargés sur un autre parcours n'avaient
+que leur identifiant dans `/downloads`. Android créait « Piste + suffixe »,
+puis le rapprochement cloud ne reconnaissait pas ce format comme provisoire.
+Une réponse enrichie fournit maintenant les métadonnées de l'intention privée
+exacte, par lot et avec filtre propriétaire. La présence actuelle de l'audio
+est distincte du succès historique du job. La lecture SQL et fichier de cette
+page s'exécute hors de la boucle événementielle FastAPI.
+
+Le client répare les libellés provisoires lors du relevé initial ou du suivi
+des jobs, en relisant la ligne dans une transaction. Les titres manuels,
+artistes/albums déjà renseignés, favoris et liens audio restent conservés.
+Un fichier retiré n'est pas annoncé à nouveau disponible sur la seule foi de
+l'ancien job réussi. Aucune migration ni purge de bibliothèque n'est requise.
+Le contrôle de session existant encadre également les nouvelles écritures du
+suivi ; la réparation répétée d'une réponse identique ne produit aucune écriture.
+
+La demande globale envoie le paramètre facultatif `retry_failed=true` pour
+réutiliser les relances unitaires existantes sur les anciens états terminaux.
+Les fichiers présents, jobs actifs et identités ambiguës restent exclus. Une
+réponse partielle ou une interruption de relance renvoie une erreur, sans
+présenter toutes les relances comme réussies. Aucun relâchement des baux,
+exclusions, droits, modes audio ou garde-fous des jobs n'est introduit.
+
+La confirmation indique un nombre issu du dernier bilan connu. Le retour
+compact distingue recherches, jobs actifs, versions à choisir, échecs et fichiers
+disponibles ; deux actions ouvrent téléchargements et bilan. Le bilan donne
+accès au sélecteur audio existant même si aucun job n'a encore été admis. Après
+sélection explicite, le job manuel actif remplace visuellement l'ancienne
+ambiguïté sans attendre un nouveau téléchargement terminé. L'ancien sélecteur
+local, qui utilisait la route de résolution interdite pour les jobs réservés
+aux playlists, est remplacé par ce même parcours manuel existant.
+
+Vérifications locales : 225 tests Android complets et 12 Shared Desktop réussis,
+432 tests backend complets sans réseau ni secrets ; lint zéro erreur,
+69 avertissements et trois informations. Le scénario Room répare neuf entrées
+synthétiques, conserve les favoris et vérifie l'absence de réécriture au rejeu.
+Les tests Compose vérifient les destinations des boutons et l'annulation de la
+confirmation. L'aperçu à police 130 % est contrôlé sur rendu Robolectric natif.
+
+Téléphone 0.5.1/code 9 connecté : après autorisation explicite d'une copie de
+diagnostic complète de Room et son journal, snapshot cohérent et contrôle
+SQLite `quick_check=ok`, conservés uniquement dans le dossier privé VPS
+`/root/aura-phone-playlist-diag-20261119`. La copie de travail préserve l'original.
+Les sommes de contrôle du WAL confirment 126 frames valides, avec fin de commit
+confirmée ; les frames préallouées d'une ancienne génération sont ignorées.
+Cette copie contient quatre anciens libellés Deezer, sans occurrence dans une
+playlist, et non les neuf libellés signalés. Aucun titre n'a été supprimé ou
+modifié sur le téléphone ou le VPS pendant ce diagnostic ; confirmation de
+l'état encore visible demandée à l'utilisateur avant toute correction ciblée.
+
+Actions externes nécessaires : redéployer le backend et mettre à jour Android.
+Aucune nouvelle migration ou configuration requise. Aucun nouveau push,
+déploiement, APK ou installation effectué dans ce correctif à ce stade.
+
+### Correctifs initiaux livrés en 0.5.1
+
 Branche `fix/playlist-sync-followup`, depuis `82153783`, version de développement
 0.5.0/code 8 inchangée. Les dialogues restent ouverts pendant les confirmations,
 gardent leur défilement après un choix et affichent leurs erreurs sur place.

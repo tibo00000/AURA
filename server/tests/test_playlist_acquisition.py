@@ -85,7 +85,7 @@ def test_acquisition_status_checks_streaming_and_does_not_trust_a_successful_job
     }
     assert db.rpc.call_args_list == [
         call("aura_get_playlist_acquisitions", preview | {"p_enqueue": False}),
-        call("aura_get_playlist_acquisitions", preview),
+        call("aura_get_playlist_acquisitions", preview | {"p_existing_track_ids": ["ready"]}),
     ]
 
 
@@ -111,7 +111,7 @@ def test_linked_occurrences_use_confirmed_audio_and_keep_existing_private_copy(m
     assert private["availability"] == "available" and "audio_track_id" not in private
     assert linked["track_id"] == linked_id and linked["audio_track_id"] == canonical_id
     assert linked["availability"] == "available"
-    assert db.rpc.call_args.args[1]["p_existing_track_ids"] == [private_id]
+    assert db.rpc.call_args.args[1]["p_existing_track_ids"] == [private_id, linked_id]
 
 
 def test_personal_cloud_listing_excludes_missing_and_empty_audio(tmp_path, monkeypatch):

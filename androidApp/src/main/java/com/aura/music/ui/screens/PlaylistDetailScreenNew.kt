@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.automirrored.rounded.ManageSearch
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
@@ -47,6 +48,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -103,6 +106,7 @@ fun PlaylistDetailScreenNew(
     onNavigateBack: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onOpenDownloads: () -> Unit = {},
 ) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val detailState = produceState<PlaylistDetail?>(initialValue = null, repository, playlistId) {
@@ -165,12 +169,13 @@ fun PlaylistDetailScreenNew(
     val needsCloudCheck = inProgress > 0 || playlistId in librarySyncPending
     var showAcquisitionReport by remember(playlistId, auraScope) { mutableStateOf(false) }
     var requestingCloud by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var showCloudFeedback by remember(playlistId, auraScope) { mutableStateOf(false) }
+    val identifyAudio = com.aura.music.ui.components.LocalReassignAudio.current
     var pendingSyncConfirmation by remember(playlistId, auraScope, sourceState?.sourceRevision) {
         mutableStateOf<PlaylistSyncConfirmation?>(null)
     }
-    var choosingVersion by remember(playlistId, auraScope) { mutableStateOf<Pair<String, List<com.aura.music.data.network.YtmCandidateDto>>?>(null) }
     val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
-    val jobsByTrack = remember(downloadJobs) { downloadJobs.associateBy { it.trackId } }
+    val jobsByTrack = remember(downloadJobs) { downloadJobs.sortedBy { it.createdAt }.associateBy { it.trackId } }
     val isOnline by appContainer.connectivityObserver.isOnline.collectAsState(initial = true)
     val syncedCloudTrackIds by cloudFileRepository.syncedTrackIds.collectAsState(initial = emptySet())
     val confirmedPlaylistCloudIds = remember(syncedCloudTrackIds, acquisitionStatuses) {
@@ -320,9 +325,13 @@ fun PlaylistDetailScreenNew(
                 if (!auth.isCurrent(owner)) return@launch
                 playlistPlayback.request(playlistId, currentDeviceId(), trackId, owner)
                 if (!auth.isCurrent(owner)) return@launch
+                showCloudFeedback = true
+                requestingCloud = false
                 snackbarHostState.showSnackbar(playlistCloudRequestFeedback(
                     playlistPlayback.statuses.value[playlistId].orEmpty(), trackId,
-                ))
+                ), actionLabel = "Téléchargements", duration = SnackbarDuration.Long).let {
+                    if (it == SnackbarResult.ActionPerformed && auth.isCurrent(owner)) onOpenDownloads()
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -341,6 +350,7 @@ fun PlaylistDetailScreenNew(
             action = PlaylistSyncAction.RequestCloud,
             retryTrackId = trackId,
             trackTitle = detail?.tracks?.firstOrNull { it.trackId == trackId }?.title,
+            missingCount = acquisitionReport?.count { it.availability != "available" },
         )
     }
 
@@ -705,6 +715,14 @@ fun PlaylistDetailScreenNew(
                     }
                 }
 
+                if (showCloudFeedback) item(key = "cloud_request_feedback") {
+                    PlaylistCloudFeedback(
+                        summary = playlistCloudRequestSummary(acquisitionStatuses.map { playlistAcquisitionForDisplay(it, jobsByTrack) }),
+                        onDownloads = onOpenDownloads,
+                        onReport = { showAcquisitionReport = true },
+                        onDismiss = { showCloudFeedback = false },
+                    )
+                }
                 if (detail.tracks.isEmpty()) {
                     item {
                         EmptyStateSurface(
@@ -818,7 +836,8 @@ fun PlaylistDetailScreenNew(
                         acquisitionReport == null -> item { Text("Bilan en attente de confirmation.") }
                         acquisitionReport.isEmpty() -> item { Text("Aucun titre dans ce bilan.") }
                     }
-                    itemsIndexed(acquisitionStatuses, key = { _, row -> row.trackId }) { _, row ->
+                    itemsIndexed(acquisitionStatuses, key = { _, row -> row.trackId }) { _, sourceRow ->
+                        val row = playlistAcquisitionForDisplay(sourceRow, jobsByTrack)
                         Column(Modifier.padding(vertical = 6.dp)) {
                             Text(titles[row.trackId] ?: "Titre de la playlist")
                             val label = when {
@@ -850,18 +869,21 @@ fun PlaylistDetailScreenNew(
                             if (row.availability != "available" && row.errorCode != "source_identity_ambiguous" &&
                                 row.status in listOf("source_not_authorized", "failed", "cancelled")
                             ) TextButton(enabled = !requestingCloud, onClick = { requestCloud(row.trackId) }) { Text("Réessayer") }
-                            if (row.availability != "available" && row.jobStatus == "requires_resolution") {
-                                row.jobId?.let { jobId ->
+                            if (row.availability != "available" && (row.errorCode == "audio_source_ambiguous" ||
+                                row.jobStatus == "requires_resolution") && identifyAudio != null
+                            ) {
+                                detail?.tracks?.firstOrNull { it.trackId == row.trackId }?.let { track ->
                                     TextButton(onClick = {
-                                        scope.launch {
-                                            val auth = appContainer.authSessionManager
-                                            val session = runCatching { auth.captureScope() }.getOrNull() ?: return@launch
-                                            val candidates = appContainer.downloadRepository.getCandidatesForJob(jobId, auth.getBearerHeader())
-                                            if (!auth.isCurrent(session)) return@launch
-                                            if (candidates.isNullOrEmpty()) snackbarHostState.showSnackbar("Aucune version disponible.")
-                                            else choosingVersion = jobId to candidates
-                                        }
-                                    }) { Text("Choisir la version") }
+                                        identifyAudio(com.aura.music.ui.components.ReassignAudioTarget(
+                                            trackId = row.audioTrackId ?: track.trackId,
+                                            title = track.title, artist = track.artistName.orEmpty(),
+                                            album = track.albumTitle, coverUri = track.coverUri,
+                                        ))
+                                    }) {
+                                        Icon(Icons.AutoMirrored.Rounded.ManageSearch, contentDescription = null)
+                                        Spacer(Modifier.size(8.dp))
+                                        Text("Identifier la version")
+                                    }
                                 }
                             }
                         }
@@ -871,32 +893,6 @@ fun PlaylistDetailScreenNew(
             confirmButton = { TextButton(onClick = { showAcquisitionReport = false }) { Text("Fermer") } },
         )
     }
-    choosingVersion?.let { (jobId, candidates) ->
-        AlertDialog(
-            onDismissRequest = { choosingVersion = null },
-            title = { Text("Choisir la version") },
-            text = {
-                LazyColumn(Modifier.height(220.dp)) {
-                    itemsIndexed(candidates, key = { _, candidate -> candidate.videoId }) { _, candidate ->
-                        TextButton(onClick = {
-                            choosingVersion = null
-                            scope.launch {
-                                val auth = appContainer.authSessionManager
-                                val owner = auraScope ?: return@launch
-                                if (!auth.isCurrent(owner)) return@launch
-                                val accepted = appContainer.downloadRepository.resolveJob(jobId, candidate.videoId, auth.getBearerHeader())
-                                if (!auth.isCurrent(owner)) return@launch
-                                if (!accepted) snackbarHostState.showSnackbar("Le choix de version n’a pas pu être confirmé. Réessaie.")
-                                playlistPlayback.verifyLater(playlistId)
-                            }
-                        }) { Text("${candidate.title} · ${candidate.artist}") }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { choosingVersion = null }) { Text("Annuler") } },
-        )
-    }
-
     if (showUncertainTracks && lastRefresh != null && trackToLink == null) {
         PlaylistCopiesDialog(
             tracks = lastRefresh.uncertain,
