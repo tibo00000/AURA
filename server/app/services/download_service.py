@@ -22,6 +22,7 @@ from app.core.aura_id_codec import parse_aura_id
 from app.core.id_generator import generate_id
 from app.domain.models import DownloadJob
 from app.providers.deezer.client import DeezerClient
+from app.services.audio_matching import artist_match_score, title_match_score
 from app.services.exceptions import AmbiguousMutation, BadRequest, Conflict, NotFound, ProviderUnavailable, RequiresResolutionException
 from app.services.download_lifecycle import (
     AdmissionIntent, DownloadAttempt, TaskSupervisor, blocking, cleanup_legacy_files, drain, legacy_audio, regular_file, validate_job_id,
@@ -61,7 +62,7 @@ ytmusic = YTMusic()
 
 
 def _get_sync_base() -> Path:
-    """Retourne le chemin de base absolu pour les fichiers synchronisés."""
+    """Retourne le chemin de base absolu pour les fichiers synchronisÃƒÆ’Ã‚Â©s."""
     sync_base = Path(get_settings().sync_files_dir)
     return sync_base if sync_base.is_absolute() else Path.cwd() / sync_base
 
@@ -71,13 +72,13 @@ def _get_global_cache_dir() -> Path:
 
 
 def _get_track_key(track_id: str) -> str:
-    """Calcule la clé canonique de stockage à partir du track_id fort."""
+    """Calcule la clÃƒÆ’Ã‚Â© canonique de stockage ÃƒÆ’Ã‚Â  partir du track_id fort."""
     import hashlib
     return hashlib.sha256(track_id.encode("utf-8")).hexdigest()
 
 
 def _normalize_search_string(s: str | None) -> str:
-    """Normalise un titre ou un artiste pour le matching tolérant (diacritiques, casse, ponctuation)."""
+    """Normalise un titre ou un artiste pour le matching tolÃƒÆ’Ã‚Â©rant (diacritiques, casse, ponctuation)."""
     if not s:
         return ""
     import unicodedata
@@ -119,8 +120,8 @@ def is_track_in_global_cache(track_id, title=None, artist_name=None):
 
 def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[bool, str]:
     """
-    Vérifie l'intégrité minimale et les magic bytes d'un fichier audio.
-    Rejette les fichiers 0-octet, les pages d'erreur HTML/JSON et les flux tronqués.
+    VÃƒÆ’Ã‚Â©rifie l'intÃƒÆ’Ã‚Â©gritÃƒÆ’Ã‚Â© minimale et les magic bytes d'un fichier audio.
+    Rejette les fichiers 0-octet, les pages d'erreur HTML/JSON et les flux tronquÃƒÆ’Ã‚Â©s.
     Retourne (is_valid, mime_type).
     """
     if not file_path.exists():
@@ -136,7 +137,7 @@ def _is_valid_audio_file(file_path: Path, min_size_bytes: int = 16) -> tuple[boo
         if len(header) < 16:
             return False, "application/octet-stream"
 
-        # Rejet immédiat si c'est une page d'erreur HTML ou JSON
+        # Rejet immÃƒÆ’Ã‚Â©diat si c'est une page d'erreur HTML ou JSON
         header_lower = header[:32].lower()
         if (
             header_lower.startswith(b"<!doc")
@@ -200,8 +201,8 @@ def _link_cached_track_to_user(
     override_metadata: Optional[dict] = None,
 ) -> bool:
     """
-    Crée un hardlink atomique depuis le cache global vers le répertoire personnel d'un utilisateur.
-    Écrit le fichier metadata.json correspondant pour le décompte du quota logique.
+    CrÃƒÆ’Ã‚Â©e un hardlink atomique depuis le cache global vers le rÃƒÆ’Ã‚Â©pertoire personnel d'un utilisateur.
+    ÃƒÆ’Ã¢â‚¬Â°crit le fichier metadata.json correspondant pour le dÃƒÆ’Ã‚Â©compte du quota logique.
     """
     import hashlib
     import json
@@ -283,8 +284,8 @@ def _propagate_reassigned_track_to_all_users(
     cover_uri: Optional[str] = None,
 ) -> None:
     """
-    Met à jour les hardlinks et metadata.json pour tous les utilisateurs ayant déjà ce track_id
-    dans leur répertoire personnel sync_files.
+    Met ÃƒÆ’Ã‚Â  jour les hardlinks et metadata.json pour tous les utilisateurs ayant dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  ce track_id
+    dans leur rÃƒÆ’Ã‚Â©pertoire personnel sync_files.
     """
     import hashlib
     import json
@@ -425,8 +426,8 @@ class DownloadService:
         self._supabase = supabase_client
         self.deezer_client = DeezerClient(self.settings.deezer_api_base_url)
         self._download_semaphore = asyncio.Semaphore(2)
-        # Verrouillage de concurrence par piste pour déploiement mono-processus Uvicorn.
-        # NOTE : Si le backend est mis à l'échelle sur plusieurs workers (Gunicorn --workers N),
+        # Verrouillage de concurrence par piste pour dÃƒÆ’Ã‚Â©ploiement mono-processus Uvicorn.
+        # NOTE : Si le backend est mis ÃƒÆ’Ã‚Â  l'ÃƒÆ’Ã‚Â©chelle sur plusieurs workers (Gunicorn --workers N),
         # migrer vers un verrou inter-processus (ex: fcntl.flock ou pg_advisory_lock).
         self._track_locks: Dict[str, asyncio.Lock] = {}
         self._track_locks_guard = asyncio.Lock()
@@ -453,14 +454,14 @@ class DownloadService:
         return supabase
 
     async def _get_track_lock(self, track_id: str) -> asyncio.Lock:
-        """Obtient ou crée un verrou asyncio pour le track_id donné (thread-safe mono-processus)."""
+        """Obtient ou crÃƒÆ’Ã‚Â©e un verrou asyncio pour le track_id donnÃƒÆ’Ã‚Â© (thread-safe mono-processus)."""
         async with self._track_locks_guard:
             if track_id not in self._track_locks:
                 self._track_locks[track_id] = asyncio.Lock()
             return self._track_locks[track_id]
 
     async def _prune_unused_locks(self) -> None:
-        """Purge d'hygiène mémoire : supprime les verrous inactifs non détenus du registre."""
+        """Purge d'hygiÃƒÆ’Ã‚Â¨ne mÃƒÆ’Ã‚Â©moire : supprime les verrous inactifs non dÃƒÆ’Ã‚Â©tenus du registre."""
         async with self._track_locks_guard:
             unlocked_keys = [k for k, lock in self._track_locks.items() if not lock.locked()]
             for k in unlocked_keys:
@@ -488,14 +489,14 @@ class DownloadService:
             self.supabase.table("download_jobs").update({
                 "status": "failed",
                 "error_code": "server_restarted",
-                "error_message": "Téléchargement interrompu par le redémarrage du serveur.",
+                "error_message": "TÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©chargement interrompu par le redÃƒÆ’Ã‚Â©marrage du serveur.",
             }).in_("status", ["running", "queued"]).execute()
             logger.info("Startup sweep: Marked orphaned 'running' and 'queued' download jobs as failed.")
         except Exception as e:
             logger.warning("Could not execute startup stale jobs sweep: %s", e)
 
     def _resolve_official_video_id(
-        self, artist: str, title: str, album: Optional[str] = None
+        self, artist: str, title: str, album: Optional[str] = None, *, strict: bool = False
     ) -> Optional[str]:
         """
         Surgical targeting strategy for official releases on YouTube Music.
@@ -525,19 +526,8 @@ class DownloadService:
                         continue
                     found_artist = artists_found[0].get("name", "")
                     
-                    # Fuzzy match artist name (case-insensitive) with collaboration support
                     direct_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
-                    max_ratio = direct_ratio
-                    if direct_ratio < 75:
-                        candidate_artists = [a.get("name", "").strip() for a in artists_found if a.get("name")]
-                        if found_artist:
-                            split_names = re.split(r",\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+", found_artist, flags=re.IGNORECASE)
-                            for s in split_names:
-                                s_clean = s.strip()
-                                if s_clean and s_clean not in candidate_artists:
-                                    candidate_artists.append(s_clean)
-                        individual_ratios = [fuzz.ratio(artist.lower(), cand.lower()) for cand in candidate_artists if cand]
-                        max_ratio = max([direct_ratio] + individual_ratios) if individual_ratios else direct_ratio
+                    max_ratio = artist_match_score(artist, [a.get("name", "") for a in artists_found])
 
                     logger.info("YTM Step A: found album %r by artist %r, fuzzy ratio=%d%% (direct=%d%%)", item.get("title"), found_artist, max_ratio, direct_ratio)
                     
@@ -563,16 +553,7 @@ class DownloadService:
                             if not track_title or not track_video_id:
                                 continue
                                 
-                            score = -1
-                            # Case-insensitive perfect match (100)
-                            if track_title.strip().lower() == title.strip().lower():
-                                score = 100
-                            # Content match (99)
-                            elif title.strip().lower() in track_title.strip().lower():
-                                score = 99
-                            # Partial match (fuzz.ratio)
-                            else:
-                                score = fuzz.ratio(title.lower(), track_title.lower())
+                            score = title_match_score(title, track_title)
                                 
                             logger.info("YTM Step C: scoring album track %r (videoId=%s) -> score=%d", track_title, track_video_id, score)
                             
@@ -589,20 +570,22 @@ class DownloadService:
                             return resolved_id
             except Exception as e:
                 logger.error("YTM Targeted Search: Exception during album strategy: %s", e, exc_info=True)
+                if strict:
+                    raise ProviderUnavailable("Audio catalogue temporarily unavailable") from None
 
         # Fallback to smart song search
         if not resolved_id:
             logger.info("Album strategy failed or skipped, trying smart song search fallback")
-            resolved_id = self._smart_song_search(artist, title)
+            resolved_id = self._smart_song_search(artist, title, strict=True) if strict else self._smart_song_search(artist, title)
             
         if resolved_id:
             return resolved_id
             
         # If still not found or score < 75%, trigger RequiresResolutionException
-        candidates = self._fetch_5_candidates(artist, title)
+        candidates = self._fetch_5_candidates(artist, title, strict=True) if strict else self._fetch_5_candidates(artist, title)
         raise RequiresResolutionException(candidates=candidates)
 
-    def _smart_song_search(self, artist: str, title: str) -> Optional[str]:
+    def _smart_song_search(self, artist: str, title: str, *, strict: bool = False) -> Optional[str]:
         """
         Smart fallback searching songs and filtering for high confidence match.
         """
@@ -627,27 +610,8 @@ class DownloadService:
                 
                 # Compute fuzzy scores
                 direct_artist_ratio = fuzz.ratio(artist.lower(), found_artist.lower())
-                title_ratio = fuzz.ratio(title.lower(), found_title.lower())
-                
-                # Evaluation of artist match (direct or collaboration)
-                effective_artist_ratio = direct_artist_ratio
-                if direct_artist_ratio < 75 and title_ratio >= 80:
-                    candidate_artists = [a.get("name", "").strip() for a in artists_found if a.get("name")]
-                    if found_artist:
-                        split_names = re.split(r",\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+", found_artist, flags=re.IGNORECASE)
-                        for s in split_names:
-                            s_clean = s.strip()
-                            if s_clean and s_clean not in candidate_artists:
-                                candidate_artists.append(s_clean)
-                    
-                    individual_ratios = [fuzz.ratio(artist.lower(), cand.lower()) for cand in candidate_artists if cand]
-                    max_individual_ratio = max(individual_ratios) if individual_ratios else 0
-                    
-                    # Strict guard: only accept collaboration if an individual artist matches >= 80%
-                    if max_individual_ratio >= 80:
-                        effective_artist_ratio = max_individual_ratio
-                        logger.info("YTM Smart Song Search: collaboration detected for %r in %r (individual ratio=%d%%)",
-                                    artist, found_artist, max_individual_ratio)
+                title_ratio = title_match_score(title, found_title)
+                effective_artist_ratio = artist_match_score(artist, [a.get("name", "") for a in artists_found])
                 
                 # Combined score
                 score = (effective_artist_ratio + title_ratio) / 2
@@ -665,6 +629,8 @@ class DownloadService:
             return None
         except Exception as e:
             logger.error("YTM Smart Song Search error: %s", e)
+            if strict:
+                raise ProviderUnavailable("Audio catalogue temporarily unavailable") from None
             return None
 
     def search_candidates(
@@ -673,6 +639,7 @@ class DownloadService:
         title: str = "",
         query: Optional[str] = None,
         limit: int = 10,
+        strict: bool = False,
     ) -> List[dict]:
         """Fetch candidate songs from YTM search for user choice (with 5-minute in-memory cache)."""
         clean_artist = (artist or "").strip()
@@ -723,11 +690,13 @@ class DownloadService:
             return candidates
         except Exception as e:
             logger.error("Failed to fetch YTM candidates: %s", e)
+            if strict:
+                raise ProviderUnavailable("Audio catalogue temporarily unavailable") from None
             return []
 
-    def _fetch_5_candidates(self, artist: str, title: str) -> List[dict]:
+    def _fetch_5_candidates(self, artist: str, title: str, *, strict: bool = False) -> List[dict]:
         """Fetch 5 candidate songs from YTM search for user choice."""
-        return self.search_candidates(artist=artist, title=title, limit=5)
+        return self.search_candidates(artist=artist, title=title, limit=5, strict=True) if strict else self.search_candidates(artist=artist, title=title, limit=5)
 
     def _job_gate(self, job_id: str) -> asyncio.Lock:
         return self._job_gates[hash(job_id) % len(self._job_gates)]
@@ -1156,7 +1125,7 @@ class DownloadService:
                     if current.status not in ('queued', 'running', 'requires_resolution'):
                         continue
                     await blocking(self._mutate_job, current, dict(status='superseded',
-                                   error_message='Remplacé par une réassignation manuelle'))
+                                   error_message='RemplacÃƒÆ’Ã‚Â© par une rÃƒÆ’Ã‚Â©assignation manuelle'))
                     previous = self._attempts.get(jid)
                     if previous is not None:
                         previous.cancelled.set()
@@ -1533,7 +1502,7 @@ class DownloadService:
             try:
                 resolved_video_id = await blocking(_run_resolve, on_cancel=attempt.cancelled.set)
             except RequiresResolutionException as e:
-                # Capture des candidats et mise à jour du job en requires_resolution
+                # Capture des candidats et mise ÃƒÆ’Ã‚Â  jour du job en requires_resolution
                 await self._update_job_status(
                     attempt,
                     status="requires_resolution",
@@ -1543,7 +1512,7 @@ class DownloadService:
                 return
             except Exception as e:
                 logger.error("Error during targeted search: %s", e)
-                # Si autre chose échoue, on continue avec le fallback de téléchargement normal par requête
+                # Si autre chose ÃƒÆ’Ã‚Â©choue, on continue avec le fallback de tÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©chargement normal par requÃƒÆ’Ã‚Âªte
 
         # Build download target
         if resolved_video_id:

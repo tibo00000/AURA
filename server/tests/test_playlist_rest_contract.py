@@ -77,6 +77,22 @@ def test_playlist_refresh_passes_canonical_track_identity_and_stable_request_to_
     assert args["p_tracks"][0]["track_id"] == build_aura_id("track", "deezer", "789")
 
 
+@pytest.mark.parametrize("reason,expected_header", [("playlist_link_changed", "playlist_link_changed"), (None, None)])
+def test_refresh_conflict_separates_copy_change_from_source_revision(reason, expected_header):
+    db = MagicMock()
+    db.rpc.return_value.execute.return_value.data = {"status": "conflict", "reason": reason}
+    api = FastAPI()
+    api.include_router(me.router)
+    api.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(id="owner", token="synthetic")
+    api.dependency_overrides[get_current_user_client] = lambda: db
+    response = TestClient(api).post("/me/playlists/mix/refresh", json={
+        "request_id": "00000000-0000-0000-0000-000000010081", "source_revision": 1,
+        "tracks": [{"provider": "deezer", "provider_id": "789", "title": "Title", "artist": "Artist"}],
+    })
+    assert response.status_code == 409
+    assert response.headers.get("X-Aura-Conflict") == expected_header
+
+
 @pytest.fixture
 def document():
     app=FastAPI()

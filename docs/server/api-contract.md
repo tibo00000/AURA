@@ -1,5 +1,16 @@
 # API Contract
 
+## Confirmation de copies provenant de plusieurs éditions
+
+`confirmed_links` reste une confirmation explicite par identifiants d'occurrence.
+Si la copie visée est déjà liée à une autre référence catalogue, le commit crée
+une nouvelle occurrence du même titre local avec la nouvelle référence, sans
+modifier la première. Le rejeu et une autre demande pour cette même référence
+n'ajoutent rien. Une copie supprimée ou appartenant à une autre playlist donne
+409 avec `X-Aura-Conflict: playlist_link_changed` ; un conflit de révision source
+conserve le 409 habituel. Les clients antérieurs restent compatibles.
+
+
 ## Objectif
 Definir le contrat HTTP de reference du backend AURA pour les capacites online, la sync cloud optionnelle et les jobs asynchrones.
 

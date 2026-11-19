@@ -1,5 +1,18 @@
 # Postgres Schema
 
+## Confirmation d'une copie déjà associée
+
+La migration `20261119005133_playlist_confirmed_occurrence_reuse.sql` remplace
+uniquement `aura_commit_playlist_refresh`. Sous le verrou existant de la playlist,
+une réutilisation explicitement confirmée d'une occurrence déjà associée crée
+une autre occurrence du même `track_id`, à la fin, avec la nouvelle référence.
+La première occurrence, ses métadonnées, son ordre et les exclusions restent
+intacts. La détection d'identité audio ambiguë conserve son refus d'acquisition
+automatique. Aucun lien n'est inféré à partir du titre/artiste. Ni table ni
+permission ni migration Room ne sont modifiées. La suppression manuelle et
+l'idempotence gardent la priorité sur une confirmation concurrente.
+
+
 ## Objectif
 Definir le schema detaille de `Supabase/Postgres` pour les donnees transactionnelles et synchronisables d'AURA.
 

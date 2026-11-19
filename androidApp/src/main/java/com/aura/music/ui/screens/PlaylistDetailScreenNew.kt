@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -142,6 +143,9 @@ fun PlaylistDetailScreenNew(
     var isSavingSource by remember(playlistId, auraScope) { mutableStateOf(false) }
     var isRefreshingSource by remember(playlistId, auraScope) { mutableStateOf(false) }
     var showUncertainTracks by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var refreshError by remember(playlistId, auraScope) { mutableStateOf<String?>(null) }
+    val copiesScroll = androidx.compose.runtime.key(playlistId, auraScope) { rememberLazyListState() }
+    val reportScroll = androidx.compose.runtime.key(playlistId, auraScope) { rememberLazyListState() }
     var trackToLink by remember(playlistId, auraScope) { mutableStateOf<com.aura.music.data.network.PlaylistTrackMetadata?>(null) }
     val lastRefresh = remember(sourceState?.lastRefreshJson) {
         sourceState?.lastRefreshJson?.let { runCatching { Json.decodeFromString<PlaylistRefreshResult>(it) }.getOrNull() }
@@ -239,6 +243,7 @@ fun PlaylistDetailScreenNew(
         val owner = auraScope ?: return
         if (!appContainer.authSessionManager.isCurrent(owner)) return
         isRefreshingSource = true
+        refreshError = null
         scope.launch {
             var feedback: String? = null
             try {
@@ -255,12 +260,16 @@ fun PlaylistDetailScreenNew(
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
                 val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, confirmedLinks)
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
-                if (result.uncertain.isEmpty()) feedback = "Playlist actualisée"
+                if (result.uncertain.isEmpty()) {
+                    showUncertainTracks = false
+                    feedback = "Playlist actualisée"
+                }
                 else showUncertainTracks = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                feedback = (failure as? PlaylistSourceReadException)?.message ?: "L’actualisation n’a pas pu être confirmée."
+                val message = (failure as? PlaylistSourceReadException)?.message ?: "L’actualisation n’a pas pu être confirmée."
+                if (showUncertainTracks) refreshError = message else feedback = message
             } finally {
                 isRefreshingSource = false
             }
@@ -311,7 +320,9 @@ fun PlaylistDetailScreenNew(
                 if (!auth.isCurrent(owner)) return@launch
                 playlistPlayback.request(playlistId, currentDeviceId(), trackId, owner)
                 if (!auth.isCurrent(owner)) return@launch
-                snackbarHostState.showSnackbar("Demande cloud enregistrée")
+                snackbarHostState.showSnackbar(playlistCloudRequestFeedback(
+                    playlistPlayback.statuses.value[playlistId].orEmpty(), trackId,
+                ))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -780,7 +791,7 @@ fun PlaylistDetailScreenNew(
             onDismissRequest = { showAcquisitionReport = false },
             title = { Text("Bilan de synchronisation") },
             text = {
-                LazyColumn(Modifier.height(260.dp)) {
+                LazyColumn(state = reportScroll, modifier = Modifier.height(260.dp)) {
                     lastRefresh?.let { result ->
                         item {
                             Text("Dernière actualisation", style = MaterialTheme.typography.titleSmall)
@@ -813,7 +824,9 @@ fun PlaylistDetailScreenNew(
                             val label = when {
                                 row.availability == "available" -> "Disponible dans le cloud"
                                 row.errorCode == "source_identity_ambiguous" -> "Plusieurs versions sont associées à ce titre. Vérifie les correspondances de la playlist."
-                                row.status == "source_not_authorized" -> "Source audio indisponible · aucun téléchargement lancé"
+                                row.errorCode == "audio_source_ambiguous" -> "Version audio non identifiée avec certitude · aucun téléchargement lancé"
+                                row.errorCode == "audio_source_unresolved" -> "Aucun fichier audio trouvé · aucun téléchargement lancé"
+                                row.status == "source_not_authorized" -> "Source audio non activée sur le serveur · aucun téléchargement lancé"
                                 row.errorCode == "cloud_file_missing" -> "Fichier cloud introuvable · téléchargement à relancer"
                                 row.errorCode == "acquisition_temporarily_unavailable" -> "Serveur temporairement indisponible · reprise automatique"
                                 row.errorCode == "retry_requested" -> "Relance demandée"
@@ -884,68 +897,43 @@ fun PlaylistDetailScreenNew(
         )
     }
 
-    if (showUncertainTracks && lastRefresh != null) {
-        AlertDialog(
-            onDismissRequest = { showUncertainTracks = false },
-            icon = { Icon(Icons.AutoMirrored.Rounded.FactCheck, null) },
-            title = { Text("Copies possibles") },
-            text = {
-                LazyColumn(Modifier.heightIn(max = 440.dp)) {
-                    item {
-                        Text("Même titre et artiste : les copies uniques sont proposées ensemble. Choisis seulement les versions ambiguës.", style = MaterialTheme.typography.bodySmall)
-                        val suggestions = inPlaylistSuggestions
-                        val librarySuggestions = inLibrarySuggestions
-                        if (suggestions.isNotEmpty() || librarySuggestions.isNotEmpty()) Button(onClick = {
-                            showUncertainTracks = false
-                            refreshSource(links = suggestions, libraryLinks = librarySuggestions)
-                        }, enabled = !isRefreshingSource) {
-                            Icon(Icons.Rounded.Link, contentDescription = null)
-                            Text("Valider les ${suggestions.size + librarySuggestions.size} propositions")
-                        }
-                    }
-                    itemsIndexed(lastRefresh.uncertain, key = { index, track -> track.trackId ?: index }) { _, track ->
-                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            val key = metadataMatchKey(track.title, track.artist)
-                            val proposed = detail?.tracks.orEmpty().filter { key != null && metadataMatchKey(it.title, it.artistName) == key }
-                            val fromLibrary = inLibrarySuggestions[track.trackId]
-                            val playlistCopy = proposed.singleOrNull()
-                            PlaylistMatchTrackRow(track.title, track.artist, fromLibrary?.albumTitle ?: playlistCopy?.albumTitle ?: track.album,
-                                fromLibrary?.coverUri ?: playlistCopy?.coverUri ?: track.coverUri,
-                                hasLocalAudio = !fromLibrary?.contentUri.isNullOrBlank() || !playlistCopy?.contentUri.isNullOrBlank() || knownLocalUris[playlistCopy?.trackId] != null,
-                                cloudAvailable = fromLibrary?.id in confirmedPlaylistCloudIds || playlistCopy?.trackId in confirmedPlaylistCloudIds,
-                                showAvailability = fromLibrary != null || playlistCopy != null,
-                            )
-                            Text(if (inPlaylistSuggestions.containsKey(track.trackId) || fromLibrary != null)
-                                "Copie proposée · validation groupée possible" else "Choisis la copie à réutiliser ou garde ce titre séparé",
-                                style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = {
-                                    showUncertainTracks = false
-                                    val id = track.trackId ?: return@TextButton
-                                    val occurrence = inPlaylistSuggestions[id]
-                                    when {
-                                        occurrence != null -> refreshSource(links = mapOf(id to occurrence))
-                                        fromLibrary != null -> refreshSource(libraryLinks = mapOf(id to fromLibrary))
-                                        else -> trackToLink = track
-                                    }
-                                }, enabled = track.trackId != null && !isRefreshingSource) {
-                                    Icon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Text(if (inPlaylistSuggestions.containsKey(track.trackId) || fromLibrary != null) "Réutiliser" else "Choisir")
-                                }
-                                TextButton(onClick = {
-                                    showUncertainTracks = false
-                                    track.trackId?.let { refreshSource(listOf(it)) }
-                                }, enabled = track.trackId != null && !isRefreshingSource) {
-                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Text("Garder séparé")
-                                }
-                            }
-                        }
+    if (showUncertainTracks && lastRefresh != null && trackToLink == null) {
+        PlaylistCopiesDialog(
+            tracks = lastRefresh.uncertain,
+            suggestionCount = inPlaylistSuggestions.size + inLibrarySuggestions.size,
+            busy = isRefreshingSource, error = refreshError, listState = copiesScroll,
+            onDismiss = { showUncertainTracks = false },
+            onConfirmSuggestions = {
+                refreshSource(links = inPlaylistSuggestions, libraryLinks = inLibrarySuggestions)
+            },
+            onReuse = { track ->
+                val id = track.trackId
+                if (id != null) {
+                    val occurrence = inPlaylistSuggestions[id]
+                    val fromLibrary = inLibrarySuggestions[id]
+                    when {
+                        occurrence != null -> refreshSource(links = mapOf(id to occurrence))
+                        fromLibrary != null -> refreshSource(libraryLinks = mapOf(id to fromLibrary))
+                        else -> trackToLink = track
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showUncertainTracks = false }) { Text("Fermer") } },
-        )
+            onSeparate = { track -> track.trackId?.let { refreshSource(listOf(it)) } },
+        ) { track ->
+            val matchKey = metadataMatchKey(track.title, track.artist)
+            val playlistCopy = detail?.tracks.orEmpty().singleOrNull {
+                matchKey != null && metadataMatchKey(it.title, it.artistName) == matchKey
+            }
+            val fromLibrary = inLibrarySuggestions[track.trackId]
+            PlaylistMatchTrackRow(
+                track.title, track.artist, fromLibrary?.albumTitle ?: playlistCopy?.albumTitle ?: track.album,
+                fromLibrary?.coverUri ?: playlistCopy?.coverUri ?: track.coverUri,
+                hasLocalAudio = !fromLibrary?.contentUri.isNullOrBlank() || !playlistCopy?.contentUri.isNullOrBlank() ||
+                    knownLocalUris[playlistCopy?.trackId] != null,
+                cloudAvailable = fromLibrary?.id in confirmedPlaylistCloudIds || playlistCopy?.trackId in confirmedPlaylistCloudIds,
+                showAvailability = fromLibrary != null || playlistCopy != null,
+            )
+        }
     }
 
     val linkCandidate = trackToLink

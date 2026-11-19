@@ -152,7 +152,7 @@ def test_automatic_mode_resolves_any_title_and_reuses_positive_results_but_refre
     assert resolver.call_count == 1
     assert worker._authorized_hint(automatic_intent(track_id="trk_another"))["resolved_video_id"] == "fixture0002"
     assert worker._authorized_hint({**intent, "error_code": "retry_requested"})["resolved_video_id"] == "fixture0003"
-    resolver.assert_called_with("Artist", "Another song", "Album")
+    resolver.assert_called_with("Artist", "Another song", "Album", strict=True)
 
 
 def test_explicit_manifest_source_keeps_priority_in_automatic_mode(tmp_path):
@@ -175,7 +175,8 @@ def test_incomplete_or_non_catalogue_sources_do_not_reach_the_resolver(intent):
     resolver.assert_not_called()
 
 
-@pytest.mark.parametrize("failure, expected", [(RequiresResolutionException([]), "audio_source_ambiguous"),
+@pytest.mark.parametrize("failure, expected", [(RequiresResolutionException([{"video_id": "fixture0000"}]), "audio_source_ambiguous"),
+                                             (RequiresResolutionException([]), "audio_source_unresolved"),
                                              (TimeoutError(), "acquisition_temporarily_unavailable")])
 def test_ambiguous_sources_and_temporary_network_failures_remain_distinct(failure, expected):
     downloads = SimpleNamespace(_resolve_official_video_id=MagicMock(side_effect=failure),

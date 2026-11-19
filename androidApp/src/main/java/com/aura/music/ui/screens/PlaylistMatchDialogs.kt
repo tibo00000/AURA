@@ -13,14 +13,20 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.FactCheck
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,6 +59,55 @@ import com.aura.music.ui.theme.TextPrimary
 import com.aura.music.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** The caller owns visibility and scroll, including while a child dialog is open. */
+@Composable
+internal fun PlaylistCopiesDialog(
+    tracks: List<PlaylistTrackMetadata>, suggestionCount: Int, busy: Boolean, error: String?,
+    listState: LazyListState, onConfirmSuggestions: () -> Unit,
+    onReuse: (PlaylistTrackMetadata) -> Unit, onSeparate: (PlaylistTrackMetadata) -> Unit,
+    onDismiss: () -> Unit, trackContent: @Composable (PlaylistTrackMetadata) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.AutoMirrored.Rounded.FactCheck, null) },
+        title = { Text("Copies possibles") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (error != null) Text(error, color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
+                LazyColumn(state = listState, modifier = Modifier.heightIn(max = 440.dp)) {
+                    item(key = "instructions") {
+                        Text("Réutilise une copie ou garde une occurrence séparée. Les autres titres restent à vérifier.",
+                            style = MaterialTheme.typography.bodySmall)
+                        if (suggestionCount > 0) Button(onClick = onConfirmSuggestions, enabled = !busy) {
+                            Icon(Icons.Rounded.Link, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(if (suggestionCount == 1) "Valider la proposition" else "Valider les $suggestionCount propositions")
+                        }
+                    }
+                    itemsIndexed(tracks, key = { index, track -> track.trackId ?: "unidentified:$index" }) { _, track ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            trackContent(track)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = { onReuse(track) }, enabled = track.trackId != null && !busy) {
+                                    Icon(Icons.Rounded.Link, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.size(4.dp)); Text("Réutiliser")
+                                }
+                                TextButton(onClick = { onSeparate(track) }, enabled = track.trackId != null && !busy) {
+                                    Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.size(4.dp)); Text("Garder séparé")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+    )
+}
 
 /** A compact native row, with asynchronous artwork and a separate availability cue. */
 @Composable

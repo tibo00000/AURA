@@ -57,4 +57,14 @@ class PlaylistTrackPresentationTest {
         assertNull(playlistCloudUnavailableReason(false, false, pending))
         assertEquals("Téléchargement cloud annulé", playlistCloudUnavailableReason(false, false, blocked.copy(status = "cancelled")))
     }
+
+    @Test fun ambiguousAudioIsNotMislabelledAsAnUnavailableOrQueuedFile() {
+        val ambiguous = pending.copy(status = "source_not_authorized", errorCode = "audio_source_ambiguous")
+        assertEquals("Version audio à identifier", playlistCloudUnavailableReason(false, false, ambiguous))
+        assertEquals("Aucun fichier audio trouvé", playlistCloudUnavailableReason(false, false,
+            ambiguous.copy(errorCode = "audio_source_unresolved")))
+        assertTrue(playlistCloudRequestFeedback(listOf(ambiguous), "track").contains("Aucun téléchargement"))
+        assertTrue(playlistCloudRequestFeedback(listOf(pending), "track").contains("après identification"))
+        assertTrue(playlistCloudRequestFeedback(listOf(pending.copy(jobStatus = "queued")), "track").contains("ajouté à la file"))
+    }
 }

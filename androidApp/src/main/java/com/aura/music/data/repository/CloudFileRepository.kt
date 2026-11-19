@@ -423,8 +423,14 @@ class CloudFileRepository(
                         val resolvedTitle = if (isPlaceholderTitle && itemTitle != null) itemTitle else trackToUpdate.title
                         val resolvedArtist = if ((isPlaceholderTitle || isPlaceholderArtist) && itemArtist != null) itemArtist else trackToUpdate.displayArtistName
                         val resolvedAlbum = if ((isPlaceholderTitle || isPlaceholderAlbum) && itemAlbum != null) itemAlbum else trackToUpdate.displayAlbumTitle
-                        val resolvedArtistId = if ((isPlaceholderTitle || isPlaceholderArtist) && item.artistId != null) item.artistId else trackToUpdate.primaryArtistId
-                        val resolvedAlbumId = if ((isPlaceholderTitle || isPlaceholderAlbum) && item.albumId != null) item.albumId else trackToUpdate.albumId
+                        val resolvedArtistId = if (item.artistId != null &&
+                            (isPlaceholderTitle || isPlaceholderArtist ||
+                                (trackToUpdate.primaryArtistId == null && itemArtist == trackToUpdate.displayArtistName))
+                        ) item.artistId else trackToUpdate.primaryArtistId
+                        val resolvedAlbumId = if (item.albumId != null &&
+                            (isPlaceholderTitle || isPlaceholderAlbum ||
+                                (trackToUpdate.albumId == null && itemAlbum == trackToUpdate.displayAlbumTitle))
+                        ) item.albumId else trackToUpdate.albumId
                         val itemDuration = item.durationMs
                         val resolvedDuration = if ((trackToUpdate.durationMs == null || trackToUpdate.durationMs == 0L || isPlaceholderTitle) && itemDuration != null && itemDuration > 0L) {
                             itemDuration
@@ -548,6 +554,10 @@ class CloudFileRepository(
                                     val live = database.trackDao().getRawTrackById(candidate.id)
                                     if (live == null) {
                                         candidate
+                                    } else if (existingById[candidate.id]?.let { it != live } == true) {
+                                        // A manual edit or download landed after the read phase.
+                                        // Keep that row; the next reconciliation can fill missing IDs.
+                                        live
                                     } else {
                                         val liveCover = live.coverUri
                                         val preserveLocalCover = !liveCover.isNullOrBlank() && (

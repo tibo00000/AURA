@@ -228,6 +228,9 @@ class PlaylistSourceRepository internal constructor(
         if (response.status == HttpStatusCode.Conflict) {
             clearPendingRefresh(playlistId, scope, request)
             sync.triggerManualSync()
+            if (response.headers["X-Aura-Conflict"] == "playlist_link_changed") {
+                throw PlaylistSourceReadException("Cette copie a été modifiée ou retirée. Choisis à nouveau la copie à réutiliser.")
+            }
             throw PlaylistSourceReadException("La source a changé sur un autre appareil. Réessaie après la synchronisation.")
         }
         if (response.status == HttpStatusCode.UnprocessableEntity) {

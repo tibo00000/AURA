@@ -142,6 +142,9 @@ async def commit_playlist_refresh(
         if result["status"] == "not_found":
             raise HTTPException(status_code=404, detail="Playlist unavailable")
         if result["status"] == "conflict":
+            if result.get("reason") == "playlist_link_changed":
+                raise HTTPException(status_code=409, detail="Playlist copy changed; choose it again",
+                                    headers={"X-Aura-Conflict": "playlist_link_changed"})
             raise HTTPException(status_code=409, detail="Playlist source changed on another device")
         raise ValueError("Unexpected refresh outcome")
     except HTTPException:

@@ -369,7 +369,16 @@ Resultat attendu :
 - Amélioration de la fluidité générale, de la recherche locale intelligente et de la réactivité instantanée des Favoris.
 - Résolution des crashs SQLite sur les likes/playlists et fiabilisation de la synchronisation des données distantes.
 
+## Correctifs après essai de grande playlist
+
+| ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
+|---|---|---|---|---|---|---|
+| PLAYLIST-SYNC-FIX-001 | android, backend | Conserver les dialogues, reconnaître les collaborations et réutiliser une occurrence déjà associée | completed | PLAYLIST-SYNC-E, PLAYLIST-SYNC-D | `docs/android/screens/playlists.md`, `docs/server/jobs.md`, `docs/server/api-contract.md`, `docs/server/database-postgres.md` | 216 tests Android complets puis 12 ciblés après le dernier garde-fou cloud, lint sans erreur ; 428 backend ; PostgreSQL 17 et huit scénarios playlist réussis. Mise en service non effectuée : client, backend et migration 20261119005133 requis. |
+| PLAYLIST-CLEANUP-001 | ops | Inventorier puis rapprocher les nouveaux doublons de Titi sans modifier les anciennes copies | in_progress | PLAYLIST-SYNC-FIX-001 | `docs/ops/playlist-sync-candidate.md` | Inventaire privé uniquement sur VPS : 49 ajouts, 44 correspondances possibles. Versions, usages hors Titi et périmètre à confirmer avant mutation ; aucune suppression ou réassociation réelle. |
+
 ## Journal des changements
+
+- 2026-11-19T14:21:37+01:00 | code, docs, test | PLAYLIST-SYNC-FIX-001, PLAYLIST-CLEANUP-001 | Suite aux captures, conservation des dialogues/défilement et erreurs sur place, rapprochement explicite des collaborations, statuts audio distincts, recherche fournisseur stricte et liens artiste/album manquants. Héra : deuxième référence confirmée conservée dans une nouvelle occurrence du même titre local, via migration locale 20261119005133. 216 tests Android puis 12 ciblés réussis, lint 0 erreur/69 avertissements/3 informations, 428 backend et huit scénarios PostgreSQL. Sonde sans téléchargement résout Monde/Maudit/En face. Inventaire Titi uniquement sur VPS ; aucune mutation de données réelles ni activation distante.
 
 - 2026-11-19T01:27:24+01:00 | release, ops, docs | `[RELEASE v0.5.0]`, `docs/ops/playlist-sync-candidate.md` | Sur demande utilisateur, intégration par avance rapide et push sur main, Android 0.5.0/code 8 compilé et publié en OTA. Signature identique, SHA-256 local/distant/public vérifié, santé 200 et seuil minimal 2 inchangé. 211 tests Android du candidat et lint sans erreur ; nouveau build ciblé après incrémentation. Backend, migrations, Desktop et données réelles inchangés ; sauvegarde conservée uniquement sur VPS en attente de validation après installation.
 

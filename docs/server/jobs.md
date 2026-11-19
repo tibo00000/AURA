@@ -192,6 +192,14 @@ travail natif réel et peut prolonger la maintenance si ce travail ne répond pa
 
 ## Vérification locale
 
+La résolution des acquisitions utilise une recherche stricte : une panne du
+fournisseur remonte comme indisponibilité temporaire, avec reprise du worker.
+La comparaison accepte une liste d'artistes qui inclut le même artiste principal
+et les mentions de featuring du titre ; elle conserve les distinctions live,
+remix et instrumentales. Une recherche encore ambiguë reste sans job et sans
+téléchargement ; une relance ne prouve pas l'admission dans la file.
+
+
 Depuis une copie sans `.env` ni credentials, avec configuration synthétique et
 réseau extérieur bloqué :
 

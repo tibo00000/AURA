@@ -43,9 +43,13 @@ internal data class PlaylistRecordingIdentity(val provider: String, val id: Stri
 
 internal fun PlaylistTrackMetadata.recordingIdentity() = PlaylistRecordingIdentity.from(provider, providerId)
 
+private val featuringTitle = Regex("\\s*[\\(\\[]\\s*(?:feat|ft)\\.?\\s+[^)\\]]*[\\)\\]]|\\s+(?:feat|ft)\\.?\\s+.*$", RegexOption.IGNORE_CASE)
+private val artistSeparator = Regex(",\\s*|\\s+&\\s+|\\s+feat\\.?\\s+|\\s+ft\\.?\\s+|\\s+vs\\.?\\s+|\\s+x\\s+", RegexOption.IGNORE_CASE)
+
+/** A proposal key only: featuring labels differ between libraries and providers. */
 internal fun metadataMatchKey(title: String, artist: String): Pair<String, String>? {
-    val normalizedTitle = SearchNormalizer.normalize(title)
-    val normalizedArtist = SearchNormalizer.normalize(artist)
+    val normalizedTitle = SearchNormalizer.normalize(featuringTitle.replace(title, ""))
+    val normalizedArtist = SearchNormalizer.normalize(artistSeparator.split(artist, limit = 2).first())
     return if (normalizedTitle.isBlank() || normalizedArtist.isBlank()) null else normalizedTitle to normalizedArtist
 }
 

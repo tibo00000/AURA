@@ -56,7 +56,7 @@ class PlaylistAcquisitionWorker:
             if cached and time.monotonic() - cached[0] < 300 and intent.get("error_code") != "retry_requested":
                 video_id = cached[1]
             else:
-                video_id = self.downloads._resolve_official_video_id(artist, title, metadata.get("album"))
+                video_id = self.downloads._resolve_official_video_id(artist, title, metadata.get("album"), strict=True)
             if isinstance(video_id, str) and _VIDEO_ID.fullmatch(video_id):
                 self._resolved_sources[key] = (time.monotonic(), video_id)
                 while len(self._resolved_sources) > 128:
@@ -117,8 +117,9 @@ class PlaylistAcquisitionWorker:
                 await self._finish(intent, "failed", job=job.id, error=job.error_code or "download_failed")
             else:
                 await self._finish(intent, "admitted", job=job.id, retry_after=30)
-        except RequiresResolutionException:
-            await self._finish(intent, "source_not_authorized", error="audio_source_ambiguous")
+        except RequiresResolutionException as exc:
+            code = "audio_source_ambiguous" if exc.candidates else "audio_source_unresolved"
+            await self._finish(intent, "source_not_authorized", error=code)
         except NotFound:
             await self._finish(intent, "cancelled", error="download_job_removed")
         except Exception as exc:

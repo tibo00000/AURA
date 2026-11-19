@@ -74,6 +74,28 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `Telecharger` ou `Supprimer le telechargement` selon l'etat local
 
 ## Etats
+
+### Vérification des copies et relances
+
+Le dialogue de copies reste ouvert pendant et après chaque validation tant que
+des titres restent à vérifier. Une erreur reste lisible dans ce dialogue ;
+aucun choix n'est perdu. Son défilement et celui du bilan restent mémorisés
+lorsqu'une confirmation ou un choix de copie les masque temporairement.
+La relance distingue une demande enregistrée d'un job réellement admis.
+Un résultat audio ambigu signifie qu'Aura ne peut pas choisir une version avec
+assez de confiance ; aucun transfert n'a commencé. Une panne réseau reste
+temporaire et conserve la reprise automatique, sans devenir une absence de fichier.
+
+Après acquisition, la réconciliation cloud complète un identifiant artiste ou
+album manquant si les noms correspondent aux métadonnées déjà affichées. Elle
+ne remplace ni les identifiants existants ni les éditions manuelles. Cela rend
+la page artiste accessible pour les titres créés auparavant par le snapshot.
+
+La clé de proposition rapproche l'artiste principal d'une liste de collaborateurs
+et ignore les mentions de featuring dans le titre, en conservant les libellés de
+versions live/remix. Cela déclenche une vérification explicite, jamais une fusion
+automatique. Plusieurs éditions ou plusieurs copies restent des choix individuels.
+
 - vide
 - contenu charge
 - suppression avec confirmation

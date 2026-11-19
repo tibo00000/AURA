@@ -6,6 +6,66 @@ Le chantier de démarrage Android et les protections de session intégrés
 0.4.3, code 7, pendant la préparation du candidat. Les relevés ci-dessous
 conservent leur contexte historique ; la publication autorisée est décrite ici.
 
+## Correctifs après l'essai de la grande playlist du 19 novembre
+
+Branche `fix/playlist-sync-followup`, depuis `82153783`, version de développement
+0.5.0/code 8 inchangée. Les dialogues restent ouverts pendant les confirmations,
+gardent leur défilement après un choix et affichent leurs erreurs sur place.
+Les mentions de collaborateurs/featuring permettent une proposition de copie,
+sans fusion automatique ni effacement d'occurrence volontaire.
+
+Héra était présent sous deux références Spotify ; la copie locale était déjà
+liée à la première. La migration
+`20261119005133_playlist_confirmed_occurrence_reuse.sql` conserve ce lien et
+crée une autre occurrence du même titre local sur confirmation de l'autre
+référence. Les exclusions et gardes d'identité audio restent prioritaires.
+Une copie retirée produit désormais un conflit distinct du changement de source.
+
+La recherche audio reconnaît le même artiste principal dans une collaboration
+et conserve les distinctions live/remix. Réseau temporairement indisponible,
+aucun résultat et résultat ambigu restent séparés. Un job n'est créé qu'après
+identification de sa source. La réconciliation cloud complète les liens
+artiste/album manquants lorsque les noms correspondent ; une ligne modifiée
+entre lecture et transaction reste intacte. Une nouvelle lecture peut compléter
+les liens, et les réponses identiques conservent l'absence d'écriture PERF-FAV.
+
+Vérifications : 216 tests Android complets réussis, dont deux nouveaux tests
+Compose, puis 12 tests ciblés de réconciliation après le dernier garde-fou.
+Lint final : zéro erreur, 69 avertissements et trois informations, inchangés.
+Backend : 79 tests ciblés puis 428 complets réussis dans Docker sans réseau ni
+`.env` réel. PostgreSQL 17 : 97 assertions, trois contrôles de rollback et huit
+scénarios playlist réussis. Le nouveau scénario couvre deux éditions, rejeux,
+copie étrangère avec rollback de l'ajout précédent et exclusion manuelle.
+Une sonde séparée en lecture seule résout Monde (`YVsEGsU9i24`), Maudit
+(`GFqbhQULYik`) et En face (`cCL1rqm0j6Q`) sur le catalogue réel. Cela ne teste
+ni le transfert audio ni les droits sur les sources.
+
+### Nettoyage de Titi
+
+Inventaire en lecture seule : 49 occurrences ajoutées par `source_refresh`,
+dont 44 ont un titre correspondant dans le cloud personnel, souvent avec
+des collaborateurs différents. Ce sont des candidats, pas 44 doublons audio
+prouvés. Les fichiers présents uniquement sur téléphone ne sont pas inventoriés.
+Rapport avec identifiants/durées conservé uniquement sur le VPS privé :
+`/root/aura-playlist-sync-20261117-2e2b9559/titi-cleanup-inventory-20261119.json`.
+
+Avant toute mutation réelle, confirmer chaque destination/version et vérifier
+les références des autres playlists, favoris et jobs actifs. Préparer uniquement
+sur le VPS la sauvegarde ciblée et le plan inverse. Le résultat visé est le
+rattachement des occurrences confirmées aux copies existantes, en gardant leurs
+identifiants, ordre, métadonnées source et fichiers originaux. Les cinq ajouts
+sans copie candidate restent en place ; les correspondances incertaines restent
+inchangées. Le cache partagé n'est pas une cible de suppression. Une éventuelle
+nouvelle copie personnelle ne peut être retirée qu'après contrôle de ses usages
+et validation distincte du périmètre. Aucun nettoyage réel n'a été effectué.
+
+Activation : mise à jour Android, image backend corrigée et migration nommée,
+après autorisation de livraison. Aucun réglage audio ou de sécurité à changer.
+Revenir à l'ancienne fonction réintroduirait le conflit des éditions liées ;
+cela ne doit jamais effacer les nouvelles occurrences. Aucun push, déploiement,
+APK supplémentaire, installation ou migration distante n'a été effectué dans
+ce correctif. Essai physique et mesure du démarrage restent à faire.
+
 ## Publication Android 0.5.0 du 19 novembre
 
 Sur instruction explicite de l'utilisateur, `fix/playlist-sync-program` a été

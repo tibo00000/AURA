@@ -205,6 +205,38 @@ class PerfFav003CloudReconciliationTest {
     }
 
     @Test
+    fun sourceSnapshotTrackGetsMissingArtistPageWithoutOverwritingManualMetadata() = runBlocking {
+        val auth = newAuthManager("A")
+        val repo = newCloudRepo(auth) { jsonOk(AuraResponse(data = SyncedFileListResponseData(emptyList()))) }
+        val track = TrackEntity(
+            id = "cloud:source-snapshot", primaryArtistId = null, albumId = null,
+            title = "Monde", normalizedTitle = "monde", displayArtistName = "Luidji, Ryan Koffi",
+            displayAlbumTitle = "Saison 00", canonicalAudioSourceType = "online",
+            isLiked = false, isDownloadedByAura = false,
+            createdAt = 1L, updatedAt = 1L,
+        )
+        db.trackDao().upsertTrack(track)
+        val item = SyncedFileResponseData(trackId = track.id, title = track.title,
+            artistName = track.displayArtistName, albumTitle = track.displayAlbumTitle,
+            artistId = "artist:luidji, ryan koffi", albumId = "album:saison-00")
+        repo.reconcileCloudTracksWithDatabase(listOf(item))
+        val attached = requireNotNull(db.trackDao().getRawTrackById(track.id))
+        assertEquals(item.artistId, attached.primaryArtistId)
+        assertEquals(item.albumId, attached.albumId)
+        assertNotNull(db.artistDao().getArtistDetail(requireNotNull(item.artistId)))
+        repo.reconcileCloudTracksWithDatabase(listOf(item))
+        assertEquals(attached, db.trackDao().getRawTrackById(track.id))
+        db.trackDao().upsertTrack(attached.copy(primaryArtistId = null, albumId = null,
+            displayArtistName = "Manual artist", displayAlbumTitle = "Manual album"))
+        repo.reconcileCloudTracksWithDatabase(listOf(item))
+        val manual = requireNotNull(db.trackDao().getRawTrackById(track.id))
+        assertNull(manual.primaryArtistId)
+        assertNull(manual.albumId)
+        assertEquals("Manual artist", manual.displayArtistName)
+        assertEquals("Manual album", manual.displayAlbumTitle)
+    }
+
+    @Test
     fun reconcileCloudTracksWithDatabase_withUnknownArtist_isIdempotentAndSkipsWrites() = runBlocking {
         val auth = newAuthManager("A")
         val repo = newCloudRepo(auth) { jsonOk(AuraResponse(data = SyncedFileListResponseData(emptyList()))) }

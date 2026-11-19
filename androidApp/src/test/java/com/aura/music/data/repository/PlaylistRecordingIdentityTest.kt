@@ -46,6 +46,17 @@ class PlaylistRecordingIdentityTest {
         assertTrue(suggestedLibraryTracks(listOf(source), listOf(candidate), listOf(row("already-there"))).isEmpty())
     }
 
+    @Test fun collaboratorLabelsProposeExistingCopiesWithoutCreatingACatalogueIdentity() {
+        val collaboration = source.copy(title = "Hadès (feat. Lujipeka)", artist = "Luv Resval, Lujipeka")
+        val local = library("track:local:hades").copy(title = "Hadès", artistName = "Luv Resval")
+        assertEquals(mapOf("source" to local), suggestedLibraryTracks(listOf(collaboration), listOf(local), emptyList()))
+        assertNull(PlaylistRecordingIdentity.parse(local.id))
+        assertEquals("track:local:hades", local.id)
+        assertTrue(suggestedLibraryTracks(listOf(collaboration), listOf(local.copy(artistName = "Lujipeka")), emptyList()).isEmpty())
+        assertTrue(suggestedLibraryTracks(listOf(collaboration), listOf(local.copy(title = "Hadès (Live)")), emptyList()).isEmpty())
+        assertTrue(suggestedLibraryTracks(listOf(collaboration), listOf(local, local.copy(id = "another-edition")), emptyList()).isEmpty())
+    }
+
     @Test fun individualChoicesFilterUnrelatedTitlesAndKeepIntentionalOccurrencesAndDistinctCopies() {
         val first = row("first", "already-here")
         val second = row("second", "already-here")
