@@ -77,3 +77,16 @@ Migration de production autorisée et appliquée, historique Supabase `202611191
 Les corrections d'artiste explicitement confirmées (`artist_correction`) sont préservées ; une référence catalogue contradictoire produit `needs_review`. Les références fournisseur supprimées ou interdites ne bloquent pas l'inventaire ; les pannes temporaires restent à réessayer.
 
 Une réponse partielle ne retire jamais des artistes invités déjà connus. La reprise peut compléter une liste de crédits incomplète lorsque ses identités connues sont incluses dans la réponse vérifiée ; les crédits manuels restent prioritaires. Ce cas est couvert côté Room et serveur.
+
+## Vérification sur téléphone
+
+1. Installer le candidat `r3` par-dessus Aura (`adb install -r`), sans désinstaller. Certificat historique et SHA-256 vérifiés ; application `com.aura.music`, version 0.5.1/code 9 pour cet essai. La migration Room 10 est additive ; un retour à un ancien APK Room 9 ne doit pas être tenté.
+2. Ouvrir Aura connecté et laisser l'application ouverte en Wi-Fi. Le rattrapage local démarre après 30 secondes, reste hors du thread UI et reprend au lancement suivant s'il est interrompu.
+3. Vérifier Titi : occurrences et ordre conservés (265 lors du nettoyage), favoris présents, anciens titres locaux toujours lisibles hors ligne. Le rattrapage n'ajoute aucun titre ni téléchargement audio.
+4. Ouvrir un titre enrichi en collaboration, puis retrouver ce titre depuis la page de chacun de ses artistes (bibliothèque/recherche). Les invités ont une identité individuelle ; un nom comportant une virgule reste une seule identité si le fournisseur le présente ainsi.
+5. Actualiser la playlist. Une copie locale/cloud différente et plausible est proposée à confirmation ; « Réutiliser » conserve l'occurrence et sa position, sans ligne temporaire. Une seconde actualisation ne redemande pas un choix confirmé.
+6. Vérifier qu'une réponse limitée au principal ne retire pas les invités connus. Modifier seulement le titre ou la pochette d'un morceau ne doit pas effacer ses crédits. Les éditions explicites d'artiste restent prioritaires.
+7. Fermer/réouvrir Aura et vérifier que les morceaux déjà traités ne sont pas rescannés. Un changement de compte annule les réponses de l'ancienne session. Couper brièvement le réseau suspend la progression sans perdre les fichiers.
+8. En cas de problème : relever titre, écran, heure et action ; consulter les logs `MetadataTransition` et `CloudFileRepository` avec `adb logcat -v threadtime`. Toute copie de diagnostic de la base reste exclusivement sur le VPS selon l'autorisation existante.
+
+Un résultat de métadonnées non identifié signifie que le fournisseur n'a pas donné une correspondance assez sûre pour compléter les champs. Il ne signifie pas que le fichier audio est absent ou illisible. Les choix de version audio déjà en attente dans les téléchargements restent indépendants de ce rattrapage.

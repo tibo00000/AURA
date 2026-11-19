@@ -33,7 +33,7 @@ class ArtistCreditsPlan internal constructor(
             }
             val first = wanted.first().artistId
             val updated = live.copy(primaryArtistId = first, displayArtistName = change.label)
-            if (updated != live) database.trackDao().upsertTrack(updated.copy(updatedAt = now))
+            if (updated != live) database.trackDao().upsertTrack(updated.copy(updatedAt = maxOf(live.updatedAt, now)))
         }
     }
 }

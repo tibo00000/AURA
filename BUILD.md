@@ -387,6 +387,9 @@ Resultat attendu :
 
 ## Journal des changements
 
+- 2026-11-19T17:12:54+00:00 | code, test, ops | MULTI-002..003 | Backend `3b72b8fd4d52` déployé après 441 tests de l'image immuable ; environnement, montages, commande et protections identiques. Santé 200 et accès anonymes fichiers/téléchargements/résolution 401 ; OTA 0.5.1 inchangée. Inventaire de transition explicite figé à 1068 fichiers cloud, sauvegardes et état persistés uniquement VPS, sans job audio actif au redémarrage. Traitement en cours. Révision locale de piste monotone même si un snapshot plus ancien complète ses crédits ; 3 tests Room ciblés et nouvel assemblage Android réussis. Protocole de validation téléphone documenté.
+
+
 - 2026-11-19T17:02:33+00:00 | code, test | MULTI-002..003 | Protection complémentaire des crédits invités contre une réponse partielle limitée au principal ; enrichissement des listes incomplètes sans mélange d'identités de fournisseurs ni modification des crédits manuels. 3 tests Room ciblés avec migration/édition/session et 9 tests backend ciblés réussis, APK réassemblé. Première image VPS vérifiée sur 440 tests avant ce dernier correctif ; nouvelle image requise avant activation.
 
 

@@ -79,13 +79,14 @@ class MultiArtistTransitionTest {
             db.trackDao().upsertTrack(track())
             suspend fun enrich(current: () -> Boolean = { true }) {
                 val raw = db.trackDao().getRawTrackById(track().id)!!
-                val plan = prepareArtistCredits(db, mapOf(raw.id to raw), mapOf(raw.id to credits), 10)
+                val plan = prepareArtistCredits(db, mapOf(raw.id to raw), mapOf(raw.id to credits), 0)
                 db.useWriterConnection { writer -> writer.immediateTransaction { plan.apply(db,current) } }
             }
             enrich { false }
             assertTrue(db.trackArtistDao().getCredits(track().id).isEmpty())
             enrich()
             assertEquals("SDM, Josman", db.trackDao().getRawTrackById(track().id)?.displayArtistName)
+            assertEquals(2L,db.trackDao().getRawTrackById(track().id)?.updatedAt)
             assertEquals(listOf(track().id), db.trackDao().getTracksForArtist("guest").map { it.id })
             assertEquals(1, db.artistDao().getAllBrowseArtists().first { it.id=="guest" }.trackCount)
             val before = db.trackDao().getRawTrackById(track().id)
