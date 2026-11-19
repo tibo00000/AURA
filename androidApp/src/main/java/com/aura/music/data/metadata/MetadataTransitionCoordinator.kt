@@ -26,6 +26,10 @@ internal class MetadataTransitionCoordinator(
         val dao = database.metadataTransitionDao()
         fun current() = auth.isCurrent(owner)
         if (!current()) return@withContext
+        val repaired = database.useWriterConnection { writer -> writer.immediateTransaction {
+            repairMissingTrackParents(database, System.currentTimeMillis(), ::current)
+        } }
+        if (repaired.changed && current()) onChanged()
         if (dao.hasRun(owner.userId, version) == 0) {
             val inventory = database.trackArtistDao().getTracksForTransition()
             database.useWriterConnection { writer -> writer.immediateTransaction {

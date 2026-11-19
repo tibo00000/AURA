@@ -2,6 +2,7 @@ package com.aura.music.data.playlist
 
 import androidx.room3.immediateTransaction
 import androidx.room3.useWriterConnection
+import com.aura.music.data.metadata.repairMissingTrackParents
 import com.aura.music.data.metadata.prepareArtistCredits
 import com.aura.music.data.local.AuraDatabase
 import com.aura.music.data.local.PlaylistEntity
@@ -65,6 +66,7 @@ class PlaylistSnapshotReconciler(
                 val playlistDao = database.playlistDao()
                 val observedRevision = playlistDao.getSnapshotRevision(userId)
                 if (observedRevision != null && snapshot.revision < observedRevision) return@immediateTransaction
+                repairMissingTrackParents(database, snapshot.playlists.maxOfOrNull { parseTimestamp(it.updatedAt) } ?: 0L, isCurrentSession)
                 val creditedTracks = linkedMapOf<String, TrackEntity>()
                 val incomingCredits = linkedMapOf<String, List<com.aura.music.data.network.ArtistCreditDto>>()
                 val protectedPlaylists = mutableSetOf<String>()

@@ -523,6 +523,7 @@ class CloudFileRepository(
                     database.useWriterConnection { transactor ->
                         transactor.immediateTransaction {
                             if (!isScopeStillValid(expectedScope)) return@immediateTransaction false
+                            com.aura.music.data.metadata.repairMissingTrackParents(database, now) { isScopeStillValid(expectedScope) }
                             if (orphanIds.isNotEmpty()) {
                                 val liveActiveJobTrackIds = try {
                                     database.downloadJobDao().getActiveJobs().map { it.trackId }.toSet()

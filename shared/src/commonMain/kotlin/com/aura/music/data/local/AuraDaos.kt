@@ -326,6 +326,16 @@ interface TrackDao {
     @Upsert
     suspend fun upsertTrackMediaLinks(items: List<TrackMediaLinkEntity>)
 
+    @Query("""SELECT tracks.* FROM tracks LEFT JOIN artists ON artists.id=tracks.primary_artist_id
+        WHERE tracks.primary_artist_id IS NOT NULL AND artists.id IS NULL
+        ORDER BY tracks.updated_at DESC, tracks.id ASC""")
+    suspend fun getTracksMissingArtistParent(): List<TrackEntity>
+
+    @Query("""SELECT tracks.* FROM tracks LEFT JOIN albums ON albums.id=tracks.album_id
+        WHERE tracks.album_id IS NOT NULL AND albums.id IS NULL
+        ORDER BY tracks.updated_at DESC, tracks.id ASC""")
+    suspend fun getTracksMissingAlbumParent(): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getRawTrackById(trackId: String): TrackEntity?
 

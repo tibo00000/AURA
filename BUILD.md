@@ -385,7 +385,19 @@ Resultat attendu :
 | MULTI-002 | completed | Crédits ordonnés, relation Room 10, artistes invités consultables, prévention des copies cloud supplémentaires | même référence |
 | MULTI-003 | completed | Inventaire unique par compte/version, enrichissement des seuls champs manquants et reprise après interruption | même référence |
 
+## Réparation des parents locaux historiques
+
+| ID | Area | Work Item | Status | Dependencies | Canonical Docs | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| SYNC-PARENTS-001 | android/shared | Restaurer les fiches artiste/album absentes sans modifier les pistes existantes | completed | MULTI-002 | `docs/android/room-schema.md` | 24 références artiste et 46 album déjà absentes en Room 9 ; erreur 787 reproduite sur téléphone Room 10 |
+
 ## Journal des changements
+
+- 2026-11-19T22:16:16+00:00 | code, docs, test | SYNC-PARENTS-001 completed | `MissingTrackParents.kt`, DAO et appels sous transaction immédiate dans snapshot, réconciliation cloud et rattrapage différé : seuls les parents absents sont recréés, IDs et données des pistes préservés, zéro écriture si cohérent et rollback sur changement de session. Test natif initial en échec 787 puis correction validée ; 234 tests Android et 12 partagés Desktop réussis, lint 0 erreur/69 avertissements/3 informations, APK assemblé en 0.5.1/code 9 et Room 10 inchangés. Simulation sur copie exclusivement VPS : 70 violations → 0, 24 fiches artiste et 42 fiches album créées, empreintes des neuf tables utilisateur et anciennes fiches inchangées. Base téléphone réelle inchangée par le diagnostic ; réparation via installation du candidat, validation physique restante. Aucun changement backend, sécurité, migration distante, OTA ou installation automatique.
+
+
+- 2026-11-19T22:00:54+00:00 | diagnostic, docs | SYNC-PARENTS-001 | Erreur locale 787 dans `ArtistCreditsPlan.apply` pendant l'application du snapshot. APK installé vérifié (`411c1aa7…`), copie Room+WAL exclusivement VPS, intégrité SQLite correcte. Les mêmes 24 parents artiste et 46 parents album manquent dans les diagnostics Room 9 et Room 10. Correction ciblée spécifiée dans `docs/android/room-schema.md`, aucun effacement ou changement backend prévu.
+
 
 - 2026-11-19T17:29:46+00:00 | code, schema, test, ops | MULTI-001..003 completed | Nettoyage de 4 doublons confirmés, 265 occurrences Titi conservées. Backend final `3b72b8fd4d52` et migration multi-artistes actifs ; compatibilité de 11 IDs audio historiques corrigée par `20261119171920_playlist_legacy_audio_identity_reuse.sql` (historique `20261119172246`, corps SQL normalisé `bb5160ce4e765f8c6d72a420cece9a22`). 97 assertions SQL d'isolation, 10 annulations, 3 rollbacks et 9 scénarios playlists réussis après ce correctif. Rattrapage cloud terminé : 1068 fichiers examinés, 583 résolus, 484 non identifiés, 1 à vérifier ; 1068 sauvegardes de métadonnées contrôlées, champs non vides et fichiers audio conservés (taille/date/inode). Relance d'un traitement terminé vérifiée sans appel fournisseur. Anciennes pages artiste regroupées corrigées sur identité canonique vérifiée sans toucher aux pochettes ni noms manuels ; 4 tests modèle, suite réconciliation cloud et 12 partagés Desktop réussis. Candidat Android compilé, validation téléphone restante. Aucun push, merge ou OTA ; version 0.5.1/code 9 conservée, sauvegardes exclusivement VPS.
 
