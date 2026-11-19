@@ -959,3 +959,16 @@ Publication Android facultative via `/app/updates/aura-0.4.2.apk`. SHA-256 `3d7c
 - Meilleure conservation des pochettes locales et synchronisation cloud fiabilisée.
 
 Publication Android facultative via `/app/updates/aura-0.4.3.apk` (`92022841` octets). SHA-256 `7967b5f5ecb070755af442fd8bcf255e0108208e26d7cd0d131226410c0f719f`. Les 158 tests unitaires (`12` `:shared` + `146` `:androidApp`) ont réussi sans échec ni ignoré. La signature APK v2 correspond à celle de `0.4.2` (`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`). Le descripteur OTA, le SHA-256 du téléchargement public et `/health` ont été vérifiés à 12 h 49, heure de Paris. Backend SEC-005.2 inchangé ; seuil de mise à jour obligatoire maintenu à 2.
+
+### [RELEASE v0.5.0] - 2026-11-19 (versionCode: 8)
+
+**Nouveautés pour l'utilisateur :**
+
+- Actualise tes playlists Spotify ou Deezer en tirant vers le bas.
+- Les nouveautés peuvent être téléchargées dans ton cloud et apparaissent dans la bibliothèque et la recherche.
+- Réutilise plus facilement les titres déjà présents grâce aux pochettes et aux correspondances proposées.
+- Les ajouts, retraits, changements d’ordre et doublons volontaires sont mieux conservés entre tes appareils.
+- Les titres retirés manuellement ne reviennent pas automatiquement lors des actualisations.
+- Des menus plus lisibles expliquent et confirment les changements de source et les demandes de fichiers cloud.
+
+Publication Android préparée sur demande de l'utilisateur, depuis main intégrant fix/playlist-sync-program par avance rapide. Version 0.5.0/code 8 ; seuil minimal inchangé à 2. Backend et neuf migrations déjà en service, aucun nouveau redéploiement backend ni migration nécessaire pour cette publication. Assemblage réussi ; APK de 92 710 965 octets, SHA-256 `a00ffa6e12df56f802a35a3e68709c0a325935eb6783594f0f2119fa6b08bbdc`, certificat identique à 0.4.3 (`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`). Les 211 tests Android du candidat et lint sans erreur ont précédé ce seul changement de version. Vérifications finales de l'OTA à consigner après publication.
