@@ -89,6 +89,7 @@ dependencies {
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    testImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
@@ -141,6 +142,7 @@ dependencies {
     testImplementation("io.ktor:ktor-client-mock:3.0.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.sqlite:sqlite-framework:2.7.0-alpha01")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

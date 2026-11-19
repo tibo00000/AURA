@@ -273,6 +273,11 @@ data class PlaylistListRow(
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
 
+data class PlaylistSourceProviderRow(
+    @ColumnInfo(name = "playlist_id") val playlistId: String,
+    @ColumnInfo(name = "source_provider") val sourceProvider: String?,
+)
+
 data class PlaylistDetailRow(
     val id: String,
     val name: String,

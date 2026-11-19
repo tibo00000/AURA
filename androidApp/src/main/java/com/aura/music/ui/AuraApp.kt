@@ -1161,6 +1161,7 @@ fun LazyListScope.trackList(
 fun PlaylistPreviewList(
     playlists: List<PlaylistListRow>,
     onOpenPlaylist: (String) -> Unit,
+    sourceProviders: Map<String, String> = emptyMap(),
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1168,7 +1169,7 @@ fun PlaylistPreviewList(
     ) {
         if (playlists.isEmpty()) {
             Text(
-                text = "No local playlist yet. Create one from Library to build reusable listening contexts.",
+                text = "Aucune playlist. Crée ou importe une playlist depuis la bibliothèque.",
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1177,8 +1178,8 @@ fun PlaylistPreviewList(
                 ListItem(
                     headlineContent = { Text(playlist.name) },
                     supportingContent = {
-                        val typeLabel = if (playlist.isPinned) "Pinned playlist" else "Local playlist"
-                        Text("$typeLabel | ${playlist.itemCount} track(s)")
+                        val typeLabel = com.aura.music.ui.screens.playlistOriginLabel(sourceProviders[playlist.id], playlist.isPinned)
+                        Text("$typeLabel · ${playlist.itemCount} titre(s)")
                     },
                     modifier = Modifier.clickable { onOpenPlaylist(playlist.id) },
                 )

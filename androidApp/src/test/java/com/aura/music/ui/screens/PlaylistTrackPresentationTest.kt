@@ -9,6 +9,13 @@ class PlaylistTrackPresentationTest {
     private val pending = PlaylistAcquisitionStatus("track", "pending", "missing")
     private val job = DownloadJobEntity("job", "track", "fixture", "running", progressPercent = 40f, createdAt = 1, updatedAt = 1)
 
+    @Test fun associatedPlaylistLabelsDoNotFallBackToLocalWhenPinned() {
+        assertEquals("Playlist Spotify", playlistOriginLabel("spotify"))
+        assertEquals("Playlist Deezer · Épinglée", playlistOriginLabel("deezer", true))
+        assertEquals("Playlist Aura", playlistOriginLabel(null))
+        assertEquals("Playlist Aura", playlistOriginLabel("unknown"))
+    }
+
     @Test fun localAudioIsReadyEvenWhenAnotherCloudIdentityIsPending() {
         assertEquals(TrackDownloadStatus.Downloaded, playlistTrackDownloadStatus(true, false, pending, job))
     }

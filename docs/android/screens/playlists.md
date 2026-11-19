@@ -86,6 +86,12 @@ Documenter la liste des playlists et leur detail avec une forte lisibilite des a
 - `android/app/src/main/java/com/aura/music/data/local/AuraDaos.kt` : requetes Room playlists et playlist_items
 ## Cohérence Android après acquisition
 
+Sur une playlist associée à Spotify ou Deezer, tirer la liste vers le bas lance la même actualisation que l'action du menu. L'indicateur Material reste actif jusqu'à la réponse ou l'erreur ; une actualisation déjà en cours n'est pas dupliquée. Le défilement et la file de lecture restent inchangés. Aucune confirmation n'est ajoutée au geste courant d'actualisation.
+
+Dans la bibliothèque et la liste des playlists, l'origine est affichée comme « Playlist Spotify », « Playlist Deezer » ou « Playlist Aura ». Cette origine vient d'une projection Room limitée à deux colonnes et au compte courant, observée uniquement sur ces écrans ; aucun accès réseau ni initialisation de la synchronisation n'est nécessaire. Le libellé se met à jour après association, changement ou retrait de source, y compris lorsque le changement vient d'un autre appareil.
+
+Les options de synchronisation explicitent leurs effets avant validation. Changer la source ouvre le sélecteur et conserve les titres existants ; les modifications Aura ne sont pas renvoyées au fournisseur. Retirer la source demande confirmation, conserve la playlist Aura et ne stoppe pas les téléchargements déjà lancés. Demander les fichiers cloud demande confirmation et concerne les fichiers du cloud, pas leur copie sur le téléphone. Fermer ou annuler ces dialogues n'effectue aucune mutation ni demande audio. La relance individuelle depuis le bilan confirme aussi le titre visé.
+
 Le résumé d'import distingue les références catalogue reconnues, les titres avec copies possibles dans la bibliothèque et les titres sans correspondance. Une copie possible n'est ni un nouveau titre certain ni une association automatique. Les compteurs sont des nombres courts, séparés de leurs libellés et lisibles à grande taille de police.
 
 Les choix de correspondance utilisent des pochettes asynchrones, le titre, l'artiste, l'album et l'état local/cloud confirmé. Le choix individuel filtre les copies sur le titre et l'artiste normalisés ; les occurrences volontaires restent distinctes. Les propositions non ambiguës peuvent être validées en une action explicite. Les métadonnées seules ne fusionnent jamais les identifiants.

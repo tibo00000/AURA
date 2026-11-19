@@ -693,6 +693,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist_sync_state WHERE playlist_id = :playlistId AND user_id = :userId")
     fun observePlaylistSyncState(playlistId: String, userId: String): Flow<PlaylistSyncStateEntity?>
 
+    @Query("SELECT playlist_id, source_provider FROM playlist_sync_state WHERE user_id = :userId AND source_provider IN ('spotify', 'deezer')")
+    fun observePlaylistSourceProviders(userId: String): Flow<List<PlaylistSourceProviderRow>>
+
     @Query("SELECT * FROM playlist_sync_state WHERE user_id = :userId")
     suspend fun getPlaylistSyncStates(userId: String): List<PlaylistSyncStateEntity>
 

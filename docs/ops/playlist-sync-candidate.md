@@ -5,6 +5,60 @@ Le chantier de démarrage Android et les protections de session intégrés
 à ce commit font partie du point de comparaison. La version client reste
 0.4.3, code 7, pendant la préparation du candidat.
 
+## Actualisation gestuelle et confirmations Android du 19 novembre
+
+Sur demande utilisateur, le glissement vers le bas d'une playlist liée appelle
+l'actualisation source existante. Le conteneur Material conserve AuraLazyColumn
+et son défilement ; son état de geste reste dans le composant de rafraîchissement.
+L'indicateur s'arrête dès la fin de l'opération, avant la durée du snackbar.
+Une opération active n'est pas dupliquée et une absence de réseau affiche un
+message. Une playlist sans source n'active pas de lecture fournisseur.
+
+La bibliothèque et la liste complète affichent Playlist Spotify, Playlist Deezer
+ou Playlist Aura, avec l'épinglage conservé. La projection Room ne lit que
+playlist_id/source_provider, filtrés par user_id, sans dernier bilan JSON ni
+initialisation du SyncRepository. Les émissions identiques sont supprimées.
+La collection UI est recréée quand la session change. Aucun schéma, migration,
+contrat backend, endpoint ni mécanisme d'authentification n'est modifié.
+
+Changer la source ouvre le sélecteur avec explication et confirmation explicite.
+Retirer la source et Demander les fichiers cloud ouvrent désormais un dialogue,
+avec Annuler et une action nommée. La relance individuelle depuis le bilan
+confirme le titre sans superposer le bilan et la confirmation. Le texte sépare
+la copie cloud du téléchargement sur téléphone et précise le traitement des
+anciens échecs. Retour reste une navigation sans effet de synchronisation.
+
+Vérification : 21 tests ciblés puis 211 tests Android complets, sans échec ni
+ignoré. Cinq tests Compose reproduisent le geste, sa désactivation sans source,
+l'absence de doublon pendant une actualisation et les confirmations/annulations
+des actions cloud et retrait ; les dialogues sont testés à police 130 %.
+Le test Room observe les changements de fournisseur et le retrait, ignore le
+compte B et les changements du seul bilan, sans appel réseau. Les tests PERF-FAV
+passent ; une première mesure d'indexation 50 000 titres donne 1 235 ms.
+La vérification physique du nouveau client reste à faire après installation.
+
+L'APK courant a été remplacé au même emplacement
+`aura-playlist-sync-20261118-r3.apk` pour ne pas conserver de versions binaires
+supplémentaires. Son nom désigne désormais l'emplacement courant ; distinguer
+les builds par l'empreinte et le commit du fichier de vérification.
+Nouvelle empreinte SHA-256 :
+`1333352fa8d322a84318f5cdd183ca16f672676d2973aad8eb957ba1e9d12745`,
+96 060 681 octets. Elle remplace l'empreinte historique `2caa0c9d…` consignée
+plus bas. Signature v2 et certificat identiques, version 0.4.3/code 7 inchangée.
+Les marqueurs du geste, de la confirmation et de la projection sont présents
+dans le DEX ; les classes de test sont absentes. Lint : 0 erreur,
+69 avertissements et 3 informations, totaux inchangés. La copie de build
+redondante a été supprimée après vérification de la copie livrée. Aucun build
+client n'a été installé par l'agent, ni publié en OTA. Aucun redéploiement
+backend ni migration ne sont nécessaires ; réinstaller l'APK courant.
+
+Contrôle manuel : dans la bibliothèque, vérifier le type Spotify/Deezer puis
+ouvrir la playlist et tirer vers le bas depuis son sommet. L'indicateur se
+termine sans ouvrir spontanément le bilan. Ouvrir chaque option et annuler :
+la source et les demandes audio restent inchangées. Pour tester le retrait réel,
+la playlist conserve ses occurrences et devient Playlist Aura ; une nouvelle
+association peut être confirmée dans le sélecteur.
+
 ## Ouverture des acquisitions automatiques du 19 novembre
 
 L'utilisateur demande de retirer la restriction à Paroboy pour les essais.

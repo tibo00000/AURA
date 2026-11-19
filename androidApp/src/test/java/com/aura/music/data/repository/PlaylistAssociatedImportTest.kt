@@ -22,6 +22,11 @@ import io.ktor.http.content.OutgoingContent
 import io.ktor.serialization.kotlinx.json.json
 import java.util.concurrent.Executor
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import org.json.JSONObject
@@ -162,6 +167,31 @@ class PlaylistAssociatedImportTest {
         assertFalse(matches[1].isMatchedLocally)
         assertEquals("track:deezer:789", matches[0].localTrackId)
         assertTrue(paths.isEmpty())
+    }
+
+    @Test fun sourceLabelsFollowRoomChangesWithoutNetworkAndStayScopedToTheAccount() = runBlocking {
+        val dao = db.playlistDao()
+        dao.insertPlaylist(PlaylistEntity("owned", "Owned", isPinned = false, createdAt = 1, updatedAt = 1))
+        dao.insertPlaylist(PlaylistEntity("other", "Other", isPinned = false, createdAt = 1, updatedAt = 1))
+        val observed = java.util.Collections.synchronizedList(mutableListOf<Map<String, String>>())
+        val collector = launch(Dispatchers.Default) { library.observePlaylistSourceProviders("A").collect { observed.add(it) } }
+        suspend fun awaitMap(expected: Map<String, String>) = withTimeout(5_000) {
+            while (observed.lastOrNull() != expected) delay(10)
+        }
+        try {
+            withTimeout(5_000) { while (observed.isEmpty()) delay(10) }
+            val owned = PlaylistSyncStateEntity("owned", "A", stamp, "order", 1, "spotify", "source", 1)
+            dao.upsertPlaylistSyncState(owned)
+            awaitMap(mapOf("owned" to "spotify"))
+            dao.upsertPlaylistSyncState(PlaylistSyncStateEntity("other", "B", stamp, "order", 1, "deezer", "55", 1))
+            dao.upsertPlaylistSyncState(owned.copy(lastRefreshJson = "{}"))
+            dao.upsertPlaylistSyncState(owned.copy(sourceProvider = "deezer", sourceExternalId = "55", sourceRevision = 2))
+            awaitMap(mapOf("owned" to "deezer"))
+            dao.upsertPlaylistSyncState(owned.copy(sourceProvider = null, sourceExternalId = null, sourceRevision = 3))
+            awaitMap(emptyMap())
+            assertEquals(listOf(emptyMap(), mapOf("owned" to "spotify"), mapOf("owned" to "deezer"), emptyMap()), observed.toList())
+            assertTrue(paths.isEmpty())
+        } finally { collector.cancel() }
     }
 
     @Test fun interruptedAssociationKeepsOneCreatedPlaylistAndReportsItsIdentity() = runBlocking {

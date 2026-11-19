@@ -33,6 +33,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -425,6 +426,11 @@ class LocalLibraryRepository(
 
     suspend fun getRecentQueries(limit: Int = 10): List<String> =
         withContext(Dispatchers.IO) { database.recentSearchDao().getRecentQueries(limit) }
+
+    fun observePlaylistSourceProviders(userId: String): Flow<Map<String, String>> =
+        database.playlistDao().observePlaylistSourceProviders(userId).map { rows ->
+            rows.mapNotNull { row -> row.sourceProvider?.let { row.playlistId to it } }.toMap()
+        }.distinctUntilChanged()
 
     suspend fun getPlaylists(): List<PlaylistListRow> =
         withContext(Dispatchers.IO) { database.playlistDao().getPlaylists() }

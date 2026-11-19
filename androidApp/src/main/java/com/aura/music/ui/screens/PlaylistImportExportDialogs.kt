@@ -105,6 +105,7 @@ fun PlaylistSourceDialog(
     spotifyAuthManager: SpotifyAuthManager,
     onDismiss: () -> Unit,
     onConfirm: (PlaylistSourceReference) -> Unit,
+    currentSourceName: String? = null,
 ) {
     var link by remember { mutableStateOf("") }
     var showSpotify by remember { mutableStateOf(false) }
@@ -119,9 +120,12 @@ fun PlaylistSourceDialog(
     val reference = remember(link) { PlaylistSourceReference.parse(link) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Source de la playlist") },
+        icon = { Icon(Icons.Rounded.Link, null) },
+        title = { Text(if (currentSourceName == null) "Associer une source" else "Changer la source $currentSourceName") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Cette source sera lue lors des prochaines actualisations. Les titres Aura sont conservés ; tes modifications dans Aura ne sont pas renvoyées à Spotify ou Deezer.",
+                    style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     value = link,
                     onValueChange = { link = it },
@@ -157,7 +161,9 @@ fun PlaylistSourceDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = reference != null, onClick = { reference?.let(onConfirm) }) { Text("Enregistrer") }
+            TextButton(enabled = reference != null, onClick = { reference?.let(onConfirm) }) {
+                Text(if (currentSourceName == null) "Associer" else "Changer la source")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )

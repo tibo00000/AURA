@@ -390,7 +390,8 @@ fun LibraryScreen(
                     }
                 } else {
                     item {
-                        PlaylistPreviewList(playlists = playlistsState.value.take(6), onOpenPlaylist = onOpenPlaylist)
+                        PlaylistPreviewList(playlists = playlistsState.value.take(6), onOpenPlaylist = onOpenPlaylist,
+                            sourceProviders = rememberPlaylistSourceProviders(repository))
                     }
                 }
                 
@@ -1279,6 +1280,7 @@ fun PlaylistsScreen(
     onNavigateBack: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
 ) {
+    val sourceProviders = rememberPlaylistSourceProviders(repository)
     var refreshTick by remember { mutableIntStateOf(0) }
     val playlistsState = produceState<List<PlaylistListRow>?>(initialValue = null, repository, refreshTick) {
         value = repository.getPlaylists()
@@ -1436,12 +1438,13 @@ fun PlaylistsScreen(
                                 maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
-                            val typeLabel = if (playlist.isPinned) "Épinglée • " else ""
+                            val typeLabel = playlistOriginLabel(sourceProviders[playlist.id], playlist.isPinned)
                             Text(
-                                text = "$typeLabel${playlist.itemCount} titre(s)",
+                                text = "$typeLabel · ${playlist.itemCount} titre(s)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary,
-                                maxLines = 1,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         Icon(

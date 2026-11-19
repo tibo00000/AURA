@@ -161,6 +161,9 @@ fun PlaylistDetailScreenNew(
     val needsCloudCheck = inProgress > 0 || playlistId in librarySyncPending
     var showAcquisitionReport by remember(playlistId, auraScope) { mutableStateOf(false) }
     var requestingCloud by remember(playlistId, auraScope) { mutableStateOf(false) }
+    var pendingSyncConfirmation by remember(playlistId, auraScope, sourceState?.sourceRevision) {
+        mutableStateOf<PlaylistSyncConfirmation?>(null)
+    }
     var choosingVersion by remember(playlistId, auraScope) { mutableStateOf<Pair<String, List<com.aura.music.data.network.YtmCandidateDto>>?>(null) }
     val downloadJobs by appContainer.downloadRepository.getAllJobs().collectAsState(initial = emptyList())
     val jobsByTrack = remember(downloadJobs) { downloadJobs.associateBy { it.trackId } }
@@ -228,11 +231,16 @@ fun PlaylistDetailScreenNew(
         confirmed: List<String> = emptyList(), links: Map<String, String> = emptyMap(),
         libraryLinks: Map<String, com.aura.music.data.local.TrackListRow> = emptyMap(),
     ) {
-        if (isRefreshingSource) return
+        if (isRefreshingSource || isSavingSource) return
+        if (!isOnline) {
+            scope.launch { snackbarHostState.showSnackbar("Connecte-toi à Internet pour actualiser cette playlist.") }
+            return
+        }
         val owner = auraScope ?: return
         if (!appContainer.authSessionManager.isCurrent(owner)) return
         isRefreshingSource = true
         scope.launch {
+            var feedback: String? = null
             try {
                 val confirmedLinks = links.toMutableMap()
                 for ((sourceId, candidate) in libraryLinks) {
@@ -247,17 +255,16 @@ fun PlaylistDetailScreenNew(
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
                 val result = sourceRepository.refresh(playlistId, currentDeviceId(), confirmed, confirmedLinks)
                 if (!appContainer.authSessionManager.isCurrent(owner)) return@launch
-                if (result.uncertain.isEmpty()) snackbarHostState.showSnackbar("Playlist actualisée")
+                if (result.uncertain.isEmpty()) feedback = "Playlist actualisée"
                 else showUncertainTracks = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                snackbarHostState.showSnackbar(
-                    (failure as? PlaylistSourceReadException)?.message ?: "L’actualisation n’a pas pu être confirmée.",
-                )
+                feedback = (failure as? PlaylistSourceReadException)?.message ?: "L’actualisation n’a pas pu être confirmée."
             } finally {
                 isRefreshingSource = false
             }
+            if (appContainer.authSessionManager.isCurrent(owner)) feedback?.let { snackbarHostState.showSnackbar(it) }
         }
     }
     fun saveSource(reference: PlaylistSourceReference?, revision: Long) {
@@ -291,7 +298,7 @@ fun PlaylistDetailScreenNew(
             ))
         }
     }
-    fun requestCloud(trackId: String? = null) {
+    fun sendCloudRequest(trackId: String? = null) {
         if (requestingCloud) return
         requestingCloud = true
         scope.launch {
@@ -317,10 +324,24 @@ fun PlaylistDetailScreenNew(
         }
     }
 
+    fun requestCloud(trackId: String? = null) {
+        if (requestingCloud) return
+        pendingSyncConfirmation = PlaylistSyncConfirmation(
+            action = PlaylistSyncAction.RequestCloud,
+            retryTrackId = trackId,
+            trackTitle = detail?.tracks?.firstOrNull { it.trackId == trackId }?.title,
+        )
+    }
+
     RouteScaffold(title = detail?.summary?.name ?: "Playlist", onNavigateBack = onNavigateBack, snackbarHostState = snackbarHostState) {
         if (detail == null) {
             EmptyStateSurface("Playlist introuvable", "Cette playlist n'existe plus localement.")
         } else {
+            PlaylistRefreshLayout(
+                isRefreshing = isRefreshingSource,
+                enabled = sourceName != null && !isSavingSource,
+                onRefresh = { refreshSource() },
+            ) {
             com.aura.music.ui.components.AuraLazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -565,20 +586,23 @@ fun PlaylistDetailScreenNew(
                                             DropdownMenuItem(
                                                 text = { Text("Changer la source") },
                                                 leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
-                                                enabled = !isSavingSource,
+                                                enabled = !isSavingSource && !isRefreshingSource,
                                                 onClick = { sourceEditRevision = sourceState?.sourceRevision ?: 0; showMenuOpen = false },
                                             )
                                             DropdownMenuItem(
                                                 text = { Text("Retirer la source") },
                                                 leadingIcon = { Icon(Icons.Rounded.LinkOff, contentDescription = null) },
-                                                enabled = !isSavingSource,
-                                                onClick = { showMenuOpen = false; sourceState?.let { saveSource(null, it.sourceRevision) } },
+                                                enabled = !isSavingSource && !isRefreshingSource,
+                                                onClick = {
+                                                    showMenuOpen = false
+                                                    pendingSyncConfirmation = PlaylistSyncConfirmation(PlaylistSyncAction.DetachSource, sourceName)
+                                                },
                                             )
                                         }
                                         DropdownMenuItem(
                                             text = { Text("Demander les fichiers cloud") },
                                             leadingIcon = { Icon(Icons.Rounded.CloudDownload, contentDescription = null) },
-                                            enabled = !requestingCloud,
+                                            enabled = !requestingCloud && !isSavingSource && !isRefreshingSource,
                                             onClick = { showMenuOpen = false; requestCloud() },
                                         )
                                     } else {
@@ -730,10 +754,27 @@ fun PlaylistDetailScreenNew(
 
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
+            }
         }
     }
 
-    if (showAcquisitionReport) {
+    pendingSyncConfirmation?.let { confirmation ->
+        PlaylistSyncConfirmationDialog(
+            confirmation = confirmation,
+            onDismiss = { pendingSyncConfirmation = null },
+            onConfirm = {
+                if (pendingSyncConfirmation == confirmation) {
+                    pendingSyncConfirmation = null
+                    when (confirmation.action) {
+                        PlaylistSyncAction.DetachSource -> sourceState?.let { saveSource(null, it.sourceRevision) }
+                        PlaylistSyncAction.RequestCloud -> sendCloudRequest(confirmation.retryTrackId)
+                    }
+                }
+            },
+        )
+    }
+
+    if (showAcquisitionReport && pendingSyncConfirmation == null) {
         val titles = remember(detail?.tracks) { detail?.tracks.orEmpty().associate { it.trackId to it.title } }
         AlertDialog(
             onDismissRequest = { showAcquisitionReport = false },
@@ -931,6 +972,7 @@ fun PlaylistDetailScreenNew(
         PlaylistSourceDialog(
             importManager = appContainer.playlistImportExportManager,
             spotifyAuthManager = appContainer.spotifyAuthManager,
+            currentSourceName = sourceName,
             onDismiss = { sourceEditRevision = null },
             onConfirm = { reference ->
                 sourceEditRevision = null
