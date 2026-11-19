@@ -65,6 +65,51 @@ Actions externes nécessaires : redéployer le backend et mettre à jour Android
 Aucune nouvelle migration ou configuration requise. Aucun nouveau push,
 déploiement, APK ou installation effectué dans ce correctif à ce stade.
 
+### APK candidat et backend livrés le 19 novembre à 16:36
+
+Sur demande explicite « prépare l'apk et redéploie le backend », assemblage
+ciblé `:androidApp:assembleDebug` réussi depuis le commit
+`de6011948369d5b6360cc740b74fcae2dbc81518`. La version reste 0.5.1/code 9
+pour cet essai, sans publication d'une release Android ou modification de l'OTA.
+Package `com.aura.music`, signature v2 et certificat SHA-256
+`9bdf88e7b7b10d8e3ce5e1b9232b6e8f9554e4f85f1113accf981b1705338307`
+identiques à l'installation existante. APK de 92 743 733 octets, SHA-256
+`25b917761959ad90d84c06a31d7cb61185bd0efc0778d344d24ae5f4d1009af3`.
+L'emplacement local unique `aura-playlist-sync-20261118-r3.apk` est remplacé
+par ce candidat, avec son reçu et son fichier d'empreinte. Aucun ancien APK
+supplémentaire n'est archivé. Aucun APK n'est installé automatiquement.
+
+Le backend utilise l'image
+`sha256:a40f7a7fe7835ffcdc53b9936b813914eff6cf526cc76a8945f9c931d516e95a`,
+dérivée de `b276eb36cb26`. Seuls `api/routes/downloads.py`, `api/routes/me.py`
+et `schemas/downloads.py` changent dans le runtime. Les 432 tests backend
+passent sur cette image sur le VPS, sans réseau ni secrets réels. Aucun job
+queued/running n'est présent lors des deux contrôles précédant la bascule.
+Le service seul est recréé, avec égalité vérifiée des variables, montages,
+commande et protections du conteneur. Le worker automatique reste activé.
+Aucune migration, configuration nouvelle ou suppression de données.
+
+À 16:36:04 heure de Paris : santé HTTPS 200, contrats des métadonnées et de
+`retry_failed` présents dans le schéma de l'API active ; accès anonymes à
+`/downloads` et au bilan playlist toujours refusés par 401. L'OTA publique
+conserve l'APK 0.5.1/code 9 précédent et son empreinte `47eaa6bb…` ; cette
+livraison du candidat se fait manuellement. Aucun push ni fusion effectué.
+
+Reçus, inspection privée du conteneur précédent, contexte et scripts dans
+`/root/aura-cloud-request-feedback-20261119`, privé sur le VPS. L'ancienne image
+est conservée. `rollback_backend_vps.py` est préparé mais non exécuté : il
+contrôle l'image courante et rétablit la chaîne Compose précédente sans modifier
+la base, les volumes ou l'OTA. Son utilisation requiert une nouvelle demande.
+Le retour à l'ancien backend retire les métadonnées enrichies et la relance
+globale des anciens échecs ; il ne supprime aucun titre ni aucune occurrence.
+
+L'utilisateur confirme que les neuf libellés ont retrouvé leur nom ou disparu :
+aucun nettoyage supplémentaire n'est nécessaire. La copie Room autorisée et
+les sauvegardes antérieures restent uniquement sur le VPS.
+Action restante : installer le candidat avec `adb install -r`, sans désinstaller,
+puis demander les fichiers cloud de Titi, vérifier les compteurs et les accès
+aux téléchargements/bilan, et sélectionner une version ambiguë explicitement.
+
 ### Correctifs initiaux livrés en 0.5.1
 
 Branche `fix/playlist-sync-followup`, depuis `82153783`, version de développement
