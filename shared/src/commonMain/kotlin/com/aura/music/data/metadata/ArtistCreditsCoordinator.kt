@@ -70,6 +70,9 @@ suspend fun prepareArtistCredits(
         val wanted = resolved.mapIndexed { index, (artist, credit) ->
             TrackArtistEntity(id, artist.id, index, if (index == 0) "primary" else credit.role, "catalogue")
         }
+        // Search results and old clients may only know the principal. Preserve
+        // already known guest credits when such a partial list arrives later.
+        if (wanted.size < previous.size && wanted.all { fresh -> previous.any { it.artistId == fresh.artistId } }) continue
         val label = credits.joinToString(", ") { it.name }
         // A title that still has a custom scalar artist label keeps that label.
         val allowed = setOf(credits.first().name, label, "Téléchargement", "Artiste Inconnu", "Artiste inconnu", "Unknown artist", "Unknown Artist", "")

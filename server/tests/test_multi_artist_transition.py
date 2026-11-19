@@ -122,3 +122,12 @@ def test_transition_does_not_reintroduce_an_explicitly_corrected_wrong_artist():
     updated=fill_missing(original,result)
     assert 'artists' not in updated and 'artist_id' not in updated
     assert updated['artist_name']==original['artist_name']
+
+
+def test_missing_guests_can_be_completed_but_partial_results_cannot_erase_credits():
+    credits=deezer_artist_credits(track())
+    old={'artists':credits[:1]}
+    full=fill_missing(old,{'status':'resolved','artists':credits})
+    assert full['artists']==credits
+    assert fill_missing(full,{'status':'resolved','artists':credits[:1]})['artists']==credits
+    assert fill_missing({'artists':credits[:1],'artists_origin':'manual'}, {'status':'resolved','artists':credits})['artists']==credits[:1]

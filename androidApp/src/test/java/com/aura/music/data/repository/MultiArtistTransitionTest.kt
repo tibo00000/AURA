@@ -92,6 +92,8 @@ class MultiArtistTransitionTest {
             val beforeCredits = db.trackArtistDao().getCredits(track().id)
             val plan = prepareArtistCredits(db,mapOf(before!!.id to before),mapOf(before.id to credits),20)
             assertFalse(plan.hasChanges)
+            val partial = prepareArtistCredits(db,mapOf(before.id to before),mapOf(before.id to credits.take(1)),20)
+            assertFalse(partial.hasChanges)
             enrich()
             assertEquals(before, db.trackDao().getRawTrackById(before.id))
             val result = AudioMetadataEditor(db, RuntimeEnvironment.getApplication()) {}.updateTrackMetadata(before.id,"New title",before.displayArtistName,null)

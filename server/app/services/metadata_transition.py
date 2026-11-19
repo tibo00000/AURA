@@ -66,8 +66,11 @@ async def resolve_metadata(client, track_id, metadata):
 def fill_missing(existing, result):
     updated=dict(existing)
     if result['status']=='resolved':
-        if not updated.get('artists') and updated.get('artists_origin') != 'manual' and not updated.get('artist_correction'):
-            updated['artists']=result['artists']
+        old_credits=updated.get('artists') or []
+        old_ids={a.get('id') for a in old_credits}
+        new_ids={a.get('id') for a in result['artists']}
+        if updated.get('artists_origin') != 'manual' and not updated.get('artist_correction') and old_ids.issubset(new_ids):
+            updated['artists']=result['artists'] if len(result['artists'])>=len(old_credits) else old_credits
         if not updated.get('artist_id') and result['artists'] and updated.get('artists_origin')!='manual' and not updated.get('artist_correction'):updated['artist_id']=result['artists'][0]['id']
         if not updated.get('artist_name') and result['artists']:updated['artist_name']=', '.join(a['name'] for a in result['artists'])
         if not updated.get('album_id') and result.get('album_id') and (not updated.get('album_title') or label(updated['album_title'])==label(result.get('album_title'))):updated['album_id']=result['album_id']

@@ -387,6 +387,9 @@ Resultat attendu :
 
 ## Journal des changements
 
+- 2026-11-19T17:02:33+00:00 | code, test | MULTI-002..003 | Protection complémentaire des crédits invités contre une réponse partielle limitée au principal ; enrichissement des listes incomplètes sans mélange d'identités de fournisseurs ni modification des crédits manuels. 3 tests Room ciblés avec migration/édition/session et 9 tests backend ciblés réussis, APK réassemblé. Première image VPS vérifiée sur 440 tests avant ce dernier correctif ; nouvelle image requise avant activation.
+
+
 - 2026-11-19T16:58:47+00:00 | test, ops, schema | MULTI-002..003 | 230 tests Android et 12 shared Desktop réussis, lint 0 erreur/69 avertissements/3 informations ; 439 tests backend complets puis 8 tests ciblés finaux réussis (correction artiste manuelle protégée). 11 tests Android ciblés finaux réussis ; APK 0.5.1/code 9 signé comme la version installée. PostgreSQL isolé 16.15 : 97 assertions d'isolation, 10 annulations, 3 rollbacks et 9 scénarios playlists. Migration `20261119161443_multi_artist_credits_and_existing_copy_reuse.sql` appliquée avec l'autorisation générale explicite de l'utilisateur (historique distant `20261119165604`). Empreinte du corps SQL CRLF `db03895b30eb086191f45b27daa76d83` conforme ; droits authentifiés/anon et RLS contrôlés. 265 occurrences Titi, empreinte `0d8c5f77f89168e088772520cd75fb8e` inchangée. Sauvegarde de fonction uniquement VPS ; backend et rattrapage pas encore activés à cette entrée.
 
 
