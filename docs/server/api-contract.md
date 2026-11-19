@@ -1,5 +1,16 @@
 # API Contract
 
+## Correction explicite d'un artiste cloud
+
+Une entrée de `/me/sync/files` peut porter `artist_correction` avec
+`previous_name` et `previous_id`. Ces valeurs décrivent exactement la valeur
+antérieure d'une correction utilisateur autorisée ; `artist_name`/`artist_id`
+portent sa destination. Un client applique cette correction uniquement si ses
+deux anciennes valeurs correspondent encore, puis le rejeu est sans effet.
+Un nom ou lien modifié depuis est conservé. Le champ est optionnel et les
+anciens clients continuent de lire le reste des métadonnées. Aucun identifiant
+de piste ni fichier audio n'est remplacé par cette correction.
+
 ## Confirmation de copies provenant de plusieurs éditions
 
 `confirmed_links` reste une confirmation explicite par identifiants d'occurrence.

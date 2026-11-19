@@ -57,14 +57,56 @@ identifiants, ordre, métadonnées source et fichiers originaux. Les cinq ajouts
 sans copie candidate restent en place ; les correspondances incertaines restent
 inchangées. Le cache partagé n'est pas une cible de suppression. Une éventuelle
 nouvelle copie personnelle ne peut être retirée qu'après contrôle de ses usages
-et validation distincte du périmètre. Aucun nettoyage réel n'a été effectué.
+et validation distincte du périmètre. Aucun nettoyage réel n'avait été effectué
+au moment de cet inventaire.
+
+### Nettoyage cloud exécuté sur instruction utilisateur
+
+Le 19 novembre, l'utilisateur demande explicitement de supprimer les doublons
+introduits dans le cloud, puis précise que les occurrences de Titi doivent
+rester en place. Deux passes sauvegardées uniquement sur le VPS réutilisent
+35 copies existantes et retirent 23 nouvelles copies personnelles audio et
+leurs 23 fichiers de métadonnées. Les 12 autres références réutilisées n'avaient
+pas de nouvelle copie audio personnelle. Les 264 occurrences, leurs identifiants,
+ordre, métadonnées source et révision source 1 sont conservés. Les transactions
+contrôlent aussi l'absence de références extérieures/favoris sur les nouveaux
+identifiants, l'absence de job actif et l'invariance des autres playlists.
+
+Une comparaison Chromaprint confirme les 23 doublons audio, après calibration
+sur un cas identique et un cas distinct. Les rapprochements de titre sans
+correspondance audio confirmée restent intacts, notamment Intro, Brûle,
+Anderson Paak et OG. Aucun cache partagé ni ancien fichier audio n'est supprimé.
+Les 35 copies d'origine restent lisibles via le résolveur de streaming.
+L'inventaire personnel passe de 1 090 à 1 067 fichiers audio.
+
+L'utilisateur confirme séparément la correction de Tout va bien : ancienne
+copie étiquetée Marilyn Manson, audio correspondant à Dalí. Son fichier audio
+et son identifiant sont conservés ; le JSON personnel reçoit Dalí et le marqueur
+de correction explicite. Le nouveau client compare les deux anciennes valeurs
+avant de corriger Room. Treize tests Android de réconciliation, 12 Shared Desktop
+et lint sans erreur valident ce complément. Le client actuellement publié peut
+garder son ancien nom en cache jusqu'à l'installation du client corrigé.
+
+Sauvegardes ciblées, empreintes avant/après, plans inverses SQL et reçus restent
+dans les sous-dossiers privés `titi-cleanup-20261119` et
+`titi-cleanup-20261119-pass2` de la sauvegarde VPS existante. Leurs `before.json`,
+`files-before.json`, `duplicates/`, `rollback-database.sql` et `result.json`
+permettent une restauration contrôlée sans modifier d'autre playlist. Ne pas
+effacer ces dossiers avant validation de l'utilisateur. Les originaux ont été
+vérifiés par SHA-256 et les nouvelles copies personnelles sont absentes après
+opération. Santé HTTPS 200 et OTA 0.5.0/code 8 inchangés.
+
+Il s'agit d'une correction de données autorisée, sans migration de schéma,
+nouvelle image backend ni OTA. Les corrections fonctionnelles de la branche
+restent à livrer selon les actions ci-dessous.
 
 Activation : mise à jour Android, image backend corrigée et migration nommée,
 après autorisation de livraison. Aucun réglage audio ou de sécurité à changer.
 Revenir à l'ancienne fonction réintroduirait le conflit des éditions liées ;
 cela ne doit jamais effacer les nouvelles occurrences. Aucun push, déploiement,
 APK supplémentaire, installation ou migration distante n'a été effectué dans
-ce correctif. Essai physique et mesure du démarrage restent à faire.
+ce correctif. Le nettoyage cloud décrit ci-dessus est effectif. Essai physique
+des correctifs client et mesure du démarrage restent à faire.
 
 ## Publication Android 0.5.0 du 19 novembre
 

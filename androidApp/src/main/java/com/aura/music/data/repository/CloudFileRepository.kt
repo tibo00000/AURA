@@ -419,12 +419,16 @@ class CloudFileRepository(
                         val itemTitle = item.title?.takeIf { it.isNotBlank() }
                         val itemArtist = item.artistName?.takeIf { it.isNotBlank() }
                         val itemAlbum = item.albumTitle?.takeIf { it.isNotBlank() }
+                        val artistCorrection = item.artistCorrection
+                        val applyArtistCorrection = artistCorrection != null && itemArtist != null &&
+                            trackToUpdate.displayArtistName == artistCorrection.previousName &&
+                            trackToUpdate.primaryArtistId == artistCorrection.previousId
 
                         val resolvedTitle = if (isPlaceholderTitle && itemTitle != null) itemTitle else trackToUpdate.title
-                        val resolvedArtist = if ((isPlaceholderTitle || isPlaceholderArtist) && itemArtist != null) itemArtist else trackToUpdate.displayArtistName
+                        val resolvedArtist = if ((isPlaceholderTitle || isPlaceholderArtist || applyArtistCorrection) && itemArtist != null) itemArtist else trackToUpdate.displayArtistName
                         val resolvedAlbum = if ((isPlaceholderTitle || isPlaceholderAlbum) && itemAlbum != null) itemAlbum else trackToUpdate.displayAlbumTitle
                         val resolvedArtistId = if (item.artistId != null &&
-                            (isPlaceholderTitle || isPlaceholderArtist ||
+                            (isPlaceholderTitle || isPlaceholderArtist || applyArtistCorrection ||
                                 (trackToUpdate.primaryArtistId == null && itemArtist == trackToUpdate.displayArtistName))
                         ) item.artistId else trackToUpdate.primaryArtistId
                         val resolvedAlbumId = if (item.albumId != null &&

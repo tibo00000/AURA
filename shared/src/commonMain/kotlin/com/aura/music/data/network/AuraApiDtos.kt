@@ -603,6 +603,12 @@ data class PlaylistItemCreate(
 )
 
 @Serializable
+data class CloudArtistCorrection(
+    @SerialName("previous_name") val previousName: String,
+    @SerialName("previous_id") val previousId: String? = null,
+)
+
+@Serializable
 data class SyncedFileResponseData(
     @SerialName("track_id") val trackId: String,
     @SerialName("synced") val synced: Boolean = true,
@@ -616,7 +622,8 @@ data class SyncedFileResponseData(
     @SerialName("album_id") val albumId: String? = null,
     @SerialName("cover_uri") val coverUri: String? = null,
     @SerialName("uploaded_at") val uploadedAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("artist_correction") val artistCorrection: CloudArtistCorrection? = null,
 )
 
 @Serializable

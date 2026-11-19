@@ -91,6 +91,11 @@ album manquant si les noms correspondent aux métadonnées déjà affichées. El
 ne remplace ni les identifiants existants ni les éditions manuelles. Cela rend
 la page artiste accessible pour les titres créés auparavant par le snapshot.
 
+Une correction cloud explicite peut aussi remplacer un ancien nom/lien connu
+via `artist_correction`, uniquement si le nom et l'identifiant précédents
+correspondent encore. Elle s'applique une fois ; un changement manuel plus
+récent est conservé, y compris s'il arrive entre lecture et transaction.
+
 La clé de proposition rapproche l'artiste principal d'une liste de collaborateurs
 et ignore les mentions de featuring dans le titre, en conservant les libellés de
 versions live/remix. Cela déclenche une vérification explicite, jamais une fusion

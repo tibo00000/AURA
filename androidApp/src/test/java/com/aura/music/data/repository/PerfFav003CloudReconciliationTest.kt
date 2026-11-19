@@ -237,6 +237,32 @@ class PerfFav003CloudReconciliationTest {
     }
 
     @Test
+    fun explicitCloudArtistCorrectionAppliesOnceAndPreservesALaterManualChoice() = runBlocking {
+        val auth = newAuthManager("A")
+        val oldId = "artist:wrong"
+        val newId = "artist:correct"
+        db.artistDao().insertArtistsIgnore(listOf(com.aura.music.data.local.ArtistEntity(
+            oldId, "Wrong artist", "wrong artist", createdAt = 1, updatedAt = 1)))
+        val track = TrackEntity("cloud:correction", oldId, null, "Song", "song", "Wrong artist",
+            canonicalAudioSourceType = "cloud", isLiked = true, isDownloadedByAura = false,
+            createdAt = 1, updatedAt = 1)
+        db.trackDao().upsertTrack(track)
+        val item = SyncedFileResponseData(trackId = track.id, title = track.title, artistName = "Correct artist",
+            artistId = newId, artistCorrection = com.aura.music.data.network.CloudArtistCorrection("Wrong artist", oldId))
+        val repo = newCloudRepo(auth) { jsonOk(AuraResponse(data = SyncedFileListResponseData(listOf(item)))) }
+        assertTrue(repo.getOrFetchCloudFiles(forceRefresh = true).isSuccess)
+        val fixed = requireNotNull(db.trackDao().getRawTrackById(track.id))
+        assertEquals("Correct artist", fixed.displayArtistName)
+        assertEquals(newId, fixed.primaryArtistId)
+        assertTrue(fixed.isLiked)
+        assertTrue(repo.getOrFetchCloudFiles(forceRefresh = true).isSuccess)
+        assertEquals(fixed, db.trackDao().getRawTrackById(track.id))
+        db.trackDao().upsertTrack(fixed.copy(displayArtistName = "My manual artist"))
+        assertTrue(repo.getOrFetchCloudFiles(forceRefresh = true).isSuccess)
+        assertEquals("My manual artist", db.trackDao().getRawTrackById(track.id)?.displayArtistName)
+    }
+
+    @Test
     fun reconcileCloudTracksWithDatabase_withUnknownArtist_isIdempotentAndSkipsWrites() = runBlocking {
         val auth = newAuthManager("A")
         val repo = newCloudRepo(auth) { jsonOk(AuraResponse(data = SyncedFileListResponseData(emptyList()))) }
