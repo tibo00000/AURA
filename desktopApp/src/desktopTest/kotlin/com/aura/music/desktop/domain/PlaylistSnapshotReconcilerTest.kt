@@ -130,6 +130,10 @@ class PlaylistSnapshotReconcilerTest {
         }
         DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { connection ->
             connection.createStatement().use { statement ->
+                // Reconstruct an actual version-5 fixture, including the absence of version-10 tables.
+                statement.execute("DROP TABLE track_artists")
+                statement.execute("DROP TABLE metadata_transition_state")
+                statement.execute("DROP TABLE metadata_transition_runs")
                 statement.execute("DROP TABLE playlist_snapshot_state")
                 statement.execute("DROP TABLE playlist_sync_state")
                 statement.execute("ALTER TABLE sync_outbox DROP COLUMN user_id")

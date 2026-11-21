@@ -25,8 +25,8 @@ android {
         applicationId = "com.aura.music"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.5.1"
+        versionCode = 10
+        versionName = "0.6.0"
 
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClientId\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")

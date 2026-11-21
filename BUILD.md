@@ -1040,3 +1040,17 @@ Publication Android facultative sur demande utilisateur, depuis `main` intégran
 - Réutilise une copie déjà associée à une autre édition sans perdre son ancienne association.
 
 Publication Android effectuée sur demande utilisateur depuis `main`, commit de release `62bf3a474d341d955f6f22983ac55db639d3b872`. APK `/app/updates/aura-0.5.1.apk` de 92 710 965 octets, SHA-256 `47eaa6bb49613e2298f9cec2080fc0921264152a7395bda9e349be10effbbbe9`, signature v2 et certificat identiques à 0.5.0. Encodage UTF-8 des messages existants restauré et nouvelle image retestée. Backend `b276eb36cb26` actif après 428 tests sur image ; environnement, montages, commande et protections conservés. Migration `20261119005133_playlist_confirmed_occurrence_reuse.sql` approuvée explicitement et appliquée (historique Supabase `20261119142451`) : empreinte de la nouvelle fonction et droits vérifiés, empreinte des 264 occurrences de Titi inchangée. Aucun incrément de schéma Room ni changement du seuil minimal 2. Descripteur OTA, empreinte du téléchargement HTTPS public et santé 200 vérifiés à 15:38:54, heure de Paris. Sauvegardes exclusivement VPS conservées ; installation laissée à l'utilisateur.
+
+
+### [RELEASE v0.6.0] - 2026-11-21 (versionCode: 10)
+
+**Nouveautés pour l’utilisateur :**
+
+- Retrouve les collaborations sur les pages de chaque artiste lorsque les crédits sont disponibles.
+- Les informations manquantes de ta bibliothèque sont complétées en arrière-plan quand la correspondance est fiable.
+- Réutilise les copies déjà présentes pour limiter les doublons lors des actualisations de playlists.
+- Suis les demandes de fichiers cloud et accède plus facilement aux téléchargements et aux choix de version.
+- Les titres téléchargés conservent mieux leur nom, leur artiste et leur pochette.
+- La synchronisation retrouve les anciennes playlists dont certaines fiches artiste ou album étaient manquantes.
+
+Publication demandée par l’utilisateur depuis `main`, intégrant les sept commits validés `4b1a4142..21e36e58`. Version Android avancée uniquement pour cette release ; seuil minimal conservé à 2 car les contrats serveur restent additifs. Candidat fonctionnel validé sur téléphone, 234 tests Android, 12 tests partagés Desktop et lint sans erreur. Backend `3b72b8fd4d52` déjà actif après 441 tests de son image ; deux migrations multi-artistes déjà appliquées et état vérifié. APK compilé de 92923957 octets, SHA-256 `4d20d5d98aa5afbf2203c09ab9cbdf4114e8dbd7f66af4b32ba42cf06afaa817`, signature v2 et certificat historique contrôlés. Les 30 tests du client JVM historique réussissent après correction de sa fixture v5, qui conservait à tort les tables v10 ; aucun code applicatif Desktop modifié. Descripteur OTA préparé ; vérification publique à consigner après publication. Les crédits restent dépendants des sources ; le complément systématique des anciens caches n’est pas inclus dans cette release.
